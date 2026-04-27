@@ -1,0 +1,19 @@
+docker compose -f docker-compose.prod.yml stop frontend
+docker compose -f docker-compose.prod.yml rm -f -v frontend
+docker builder prune -f
+docker image prune -f
+docker compose -f docker-compose.prod.yml build --no-cache frontend
+docker compose -f docker-compose.prod.yml up -d frontend
+
+
+# WILL BE TESTED
+docker compose -f docker-compose.prod.yml stop frontend
+docker compose -f docker-compose.prod.yml rm -f frontend
+docker compose -f docker-compose.prod.yml build --no-cache frontend
+docker compose -f docker-compose.prod.yml up -d frontend
+
+
+
+
+
+ npx skills add vercel-labs/agent-skills

@@ -1,0 +1,102 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: speed-limit-postgres
+    environment:
+      POSTGRES_USER: speedlimit
+      POSTGRES_PASSWORD: speedlimit123
+      POSTGRES_DB: speedlimit
+    ports:
+      - "5433:5432"  # Changed to 5433 to avoid conflict with local Postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U speedlimit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - speed-limit-network
+
+  backend:
+    build:
+      context: ./nestjs_backend
+      dockerfile: Dockerfile.dev
+    container_name: speed-limit-backend
+    environment:
+      DATABASE_URL: postgresql://speedlimit:speedlimit123@postgres:5432/speedlimit
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      FRONTEND_URL: http://localhost:3001
+      JWT_ACCESS_SECRET: 9u8ygtf32t879ducjhbgfd879cuoshebvgdyuc89ijodcyu8s9duhe3j
+      JWT_REFRESH_SECRET: 9u8ygtf32t879ducjhbgfd879cuoshebvgdyuc89ijodcyu8s9duhe3j
+      NODE_ENV: development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./nestjs_backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Entrypoint script handles seeding automatically (only if needed)
+    networks:
+      - speed-limit-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: speed-limit-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - speed-limit-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: speed-limit-frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:3000/api
+      API_URL: http://backend:3000/api
+      NODE_ENV: development
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    command: bun run dev
+    networks:
+      - speed-limit-network
+
+  adminer:
+    image: adminer:latest
+    container_name: speed-limit-adminer
+    ports:
+      - "9999:8080"
+    networks:
+      - speed-limit-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  speed-limit-network:
+    driver: bridge
+

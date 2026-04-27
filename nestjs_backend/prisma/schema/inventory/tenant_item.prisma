@@ -1,0 +1,54 @@
+model TenantItemSetting {
+  id                String   @id @default(uuid())
+  itemId            String   @unique
+  valuationMethod   String   @default("WEIGHTED_AVG")
+  standardCost      Decimal? @db.Decimal(15, 4)
+  averageCost       Decimal? @db.Decimal(15, 4)
+  minStock          Decimal? @db.Decimal(15, 4)
+  maxStock          Decimal? @db.Decimal(15, 4)
+  reorderPoint      Decimal? @db.Decimal(15, 4)
+  safetyStock       Decimal? @db.Decimal(15, 4)
+  leadTimeDays      Int?
+  preferredVendorId String?
+  isBatchActive     Boolean  @default(false)
+  isSerialActive    Boolean  @default(false)
+  shelfLifeDays     Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([itemId])
+}
+
+model UomConversion {
+  id        String   @id @default(uuid())
+  fromUomId String
+  toUomId   String
+  factor    Decimal  @db.Decimal(15, 6)
+  operation String   @default("MULTIPLY")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([fromUomId, toUomId])
+}
+
+model InventoryTransaction {
+  id              String   @id @default(uuid())
+  transactionDate DateTime @default(now())
+  itemId          String
+  type            String
+  documentType    String?
+  documentId      String?
+  quantity        Decimal  @db.Decimal(15, 4)
+  unitCost        Decimal  @db.Decimal(15, 4)
+  totalValue      Decimal  @db.Decimal(15, 4)
+  quantityBalance Decimal? @db.Decimal(15, 4)
+  valueBalance    Decimal? @db.Decimal(15, 4)
+  notes           String?
+  createdById     String?
+  createdAt       DateTime @default(now())
+
+  @@index([itemId])
+  @@index([transactionDate])
+  @@index([documentId])
+}

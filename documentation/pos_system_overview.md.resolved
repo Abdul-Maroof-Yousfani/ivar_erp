@@ -1,0 +1,148 @@
+# Complete POS System — Module Overview
+
+A modern retail POS system has these core areas. I've organized them by **priority** so you can plan what to build first.
+
+---
+
+## 🔴 Tier 1 — Core (Must Have)
+
+### 1. New Sale (✅ Already Built)
+- Barcode scanning / product search
+- Cart management (add, remove, quantity, per-item discount)
+- Live totals (subtotal, discount, tax, grand total)
+
+### 2. Checkout / Tender
+- **Order Summary** — final review of cart before payment
+- **Global Discount** — flat % or fixed amount off the entire order
+- **Alliance/Promo Discount** — pre-configured discount programs from a master list
+- **Tender Types:**
+  - 💵 **Cash** — amount tendered, change due calculation
+  - 💳 **Card** — reference number capture
+  - 🔀 **Partial/Split** — part cash + part card (amounts must equal total)
+- **Receipt Generation** — print or email receipt after sale
+
+### 3. Sales History / Orders
+- List of completed orders (filterable by date, cashier, terminal)
+- Order detail view (items, discounts, payment method)
+- **Void/Cancel** an order (with reason, manager approval)
+- **Return/Refund** — select items from a past order to return
+
+### 4. Cash Management
+- **Opening Balance** — cashier declares starting cash at shift start
+- **Cash Drop** — mid-shift cash removal to safe (recorded)
+- **Cash Pickup** — manager collects cash
+- **Closing/End of Day (EOD)** — cashier counts register, system compares expected vs actual
+- **Over/Short Report** — discrepancy tracking
+
+---
+
+## 🟡 Tier 2 — Important
+
+### 5. Customer Management
+- Quick customer lookup (phone, loyalty card, name)
+- Attach customer to a sale for tracking
+- Customer purchase history
+- **Loyalty Points** — earn on purchase, redeem as discount
+
+### 6. Hold / Recall Sale
+- **Hold** — park a half-done sale (customer forgot wallet, etc.)
+- **Recall** — bring back a held sale to resume checkout
+- Multiple holds per terminal
+
+### 7. Discount & Promotion Master
+- **Alliance Discounts** — company-wide agreements (e.g., 10% for partner employees)
+- **Promo Campaigns** — buy-2-get-1, seasonal %, bundle deals
+- **Coupon Codes** — one-time or multi-use codes
+- **Employee Discount** — automatic for staff purchases
+
+### 8. Inventory at POS
+- Real-time stock display per item (already showing In/Out)
+- **Stock Receive** — accept delivery at the store level
+- **Stock Transfer Request** — request items from warehouse
+- **Stock Count / Audit** — periodic physical count
+
+### 9. Exchange
+- Customer brings back Item A, swaps for Item B
+- System handles the price difference (customer pays extra or gets credit)
+
+---
+
+## 🟢 Tier 3 — Nice to Have
+
+### 10. Reports & Analytics
+| Report | Description |
+|--------|-------------|
+| Daily Sales Summary | Total sales, voids, returns, by tender type |
+| Hourly Sales | Sales volume by hour (peak analysis) |
+| Cashier Performance | Sales per cashier, avg transaction value |
+| Top Selling Items | Best sellers by quantity and revenue |
+| Discount Report | Total discounts given, by type |
+| Tax Report | Tax collected breakdown |
+| Stock Movement | Items sold vs received vs transferred |
+| Cash Drawer Report | Open/close/drop/pickup log |
+
+### 11. Multi-Terminal Management
+- Terminal status dashboard (online/offline)
+- Remote terminal configuration
+- Terminal-specific receipt headers
+
+### 12. Gift Cards
+- Sell and activate gift cards
+- Redeem gift card balance at checkout
+- Balance inquiry
+
+### 13. Layaway
+- Customer pays in installments
+- Items reserved until fully paid
+- Payment schedule tracking
+
+### 14. Price Override
+- Manager can override item price at POS (with reason + auth)
+- Audit trail for all price overrides
+
+---
+
+## 🗺 Recommended Build Order
+
+```mermaid
+graph TD
+    A[Phase 1 - NOW] --> B[Checkout / Tender Page]
+    A --> C[Sales History + Void]
+    B --> D[Phase 2]
+    C --> D
+    D --> E[Cash Management - Open/Close/Drop]
+    D --> F[Hold / Recall Sale]
+    D --> G[Discount & Promo Master]
+    E --> H[Phase 3]
+    F --> H
+    G --> H
+    H --> I[Customer + Loyalty]
+    H --> J[Returns / Exchange]
+    H --> K[Reports Dashboard]
+    K --> L[Phase 4]
+    I --> L
+    J --> L
+    L --> M[Gift Cards]
+    L --> N[Layaway]
+    L --> O[Price Override]
+```
+
+---
+
+## Your Current State
+
+| Feature | Status |
+|---------|--------|
+| Terminal Registration | ✅ Done |
+| Cashier Login | ✅ Done |
+| Location Guard | ✅ Done |
+| New Sale (scan/search/cart) | ✅ Done |
+| Checkout / Tender | 🔲 Next |
+| Sales History | 🔲 Planned |
+| Cash Management | 🔲 Future |
+| Everything else | 🔲 Future |
+
+---
+
+> [!TIP]
+> I recommend we build **Checkout + Tender** first (Phase 1), since you already have the cart working. After that, **Sales History + Void** is the natural next step. Let me know which features you want to prioritize and I'll create a detailed plan!

@@ -1,0 +1,44 @@
+model ExitClearance {
+  id                      String    @id @default(uuid())
+  employeeId              String
+  employeeName            String
+  designation             String?
+  department              String?
+  subDepartment           String?
+  location                String?
+  leavingReason           String?
+  contractEnd             DateTime?
+  lastWorkingDate         DateTime
+  reportingManager        String?
+  date                    DateTime  @default(now())
+  itAccessControl         Boolean   @default(false)
+  itPasswordInactivated   Boolean   @default(false)
+  itLaptopReturned        Boolean   @default(false)
+  itEquipment             Boolean   @default(false)
+  itWifiDevice            Boolean   @default(false)
+  itMobileDevice          Boolean   @default(false)
+  itSimCard               Boolean   @default(false)
+  itBillsSettlement       Boolean   @default(false)
+  financeAdvance          Boolean   @default(false)
+  financeLoan             Boolean   @default(false)
+  financeOtherLiabilities Boolean   @default(false)
+  adminVehicle            Boolean   @default(false)
+  adminKeys               Boolean   @default(false)
+  adminOfficeAccessories  Boolean   @default(false)
+  adminMobilePhone        Boolean   @default(false)
+  adminVisitingCards      Boolean   @default(false)
+  hrEobi                  Boolean   @default(false)
+  hrProvidentFund         Boolean   @default(false)
+  hrIdCard                Boolean   @default(false)
+  hrMedical               Boolean   @default(false)
+  hrThumbImpression       Boolean   @default(false)
+  hrLeavesRemaining       Boolean   @default(false)
+  hrOtherCompensation     Boolean   @default(false)
+  note                    String?
+  approvalStatus          String    @default("pending")
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  employee                Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+}

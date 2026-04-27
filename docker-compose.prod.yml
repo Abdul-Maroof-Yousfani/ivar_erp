@@ -1,0 +1,98 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: speed-limit-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: spl_admin
+      POSTGRES_PASSWORD: SecureDbPass2026
+      POSTGRES_DB: spl_core_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U spl_admin -d spl_core_db" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - speed-limit-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: speed-limit-redis
+    restart: always
+    volumes:
+      - redis_data:/data
+    networks:
+      - speed-limit-network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./nestjs_backend
+      dockerfile: Dockerfile
+    container_name: speed-limit-backend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://spl_admin:SecureDbPass2026@postgres:5432/spl_core_db?schema=public
+      DATABASE_URL_MANAGEMENT: postgresql://spl_admin:SecureDbPass2026@postgres:5432/spl_core_db?schema=public
+      MASTER_ENCRYPTION_KEY: savdbia8s98ydgiqwns98s0a9djsa98hsu_master_key_encryption
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      FRONTEND_URL: https://hr.spl.inplsoftwares.com,https://admin.spl.inplsoftwares.com,https://master.spl.inplsoftwares.com,https://auth.spl.inplsoftwares.com,https://erp.spl.inplsoftwares.com,https://pos.spl.inplsoftwares.com
+      JWT_ACCESS_SECRET: xr76tyhgvdfhrt67uhyfdhxui76t8ohybgftiuhgchj76tiy
+      JWT_REFRESH_SECRET: tf76yghtjuioy7gdehyu6t78rdye432wsterdtyuh
+      COOKIE_SECRET: ft67hubgti768yguvf7ihugyt78yhbgihbj
+      COOKIE_DOMAIN: .spl.inplsoftwares.com
+      NODE_ENV: production
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RUN_BACKUP_RESTORE: "true"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - speed-limit-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BASE_DOMAIN: spl.inplsoftwares.com
+        NEXT_PUBLIC_API_BASE_URL: https://auth.spl.inplsoftwares.com/api
+        NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: LjRCInkgXG3wowhfDggE0aUvovxxYUog0hdHcGarO/o=
+    container_name: speed-limit-frontend
+    restart: always
+    ports:
+      - "3001:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: https://auth.spl.inplsoftwares.com/api
+      NEXT_PUBLIC_BASE_DOMAIN: spl.inplsoftwares.com
+      API_URL: https://auth.spl.inplsoftwares.com/api
+      NODE_ENV: production
+      HOSTNAME: "0.0.0.0"
+      NEXT_PUBLIC_COOKIE_DOMAIN: .spl.inplsoftwares.com
+      NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: LjRCInkgXG3wowhfDggE0aUvovxxYUog0hdHcGarO/o=
+    depends_on:
+      - backend
+    networks:
+      - speed-limit-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+
+networks:
+  speed-limit-network:
+    driver: bridge
