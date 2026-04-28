@@ -1108,6 +1108,7 @@ function ViewEmployeeAttendanceDetailPage() {
           )}
         </CardContent>
       </Card>
+      </div>
     </DirectionalTransition>
   );
 }
