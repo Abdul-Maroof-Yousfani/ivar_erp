@@ -110,10 +110,10 @@ export function AttendanceProgressSummary({
   // Handle user-specific view restriction
   useEffect(() => {
     if (user && !isAdmin() && user.employeeId) {
-        // If regular user (not admin), force their employee ID
-        setSelectedEmployeeIds([user.employeeId]);
-        setSelectedDepartment("all");
-        setSelectedSubDepartment("all");
+      // If regular user (not admin), force their employee ID
+      setSelectedEmployeeIds([user.employeeId]);
+      setSelectedDepartment("all");
+      setSelectedSubDepartment("all");
     }
   }, [user, isAdmin]);
 
@@ -234,7 +234,7 @@ export function AttendanceProgressSummary({
         const emp = employees.find((e) => e.id === id);
         return emp?.employeeId;
       }).filter(Boolean);
-      
+
       filtered = filtered.filter((item) =>
         selectedEmployeeIdValues.includes(item.employeeId)
       );
@@ -296,191 +296,192 @@ export function AttendanceProgressSummary({
     updateFilters({ employeeIds: newIds });
   };
 
-    <DirectionalTransition>
+  return (
+    < DirectionalTransition >
       <div className="space-y-6 w-full max-w-full overflow-x-hidden">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">
-            View Employee Attendance Progress Summary
-          </h2>
-          <p className="text-muted-foreground">
-            View detailed attendance progress for employees
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">
+              View Employee Attendance Progress Summary
+            </h2>
+            <p className="text-muted-foreground">
+              View detailed attendance progress for employees
+            </p>
+          </div>
         </div>
-      </div>
 
-      <Card>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {isAdmin() && (
-              <>
-                <div className="space-y-2">
-                  <Label>Department</Label>
-                  <Autocomplete
-                    options={departmentOptions}
-                    value={selectedDepartment}
-                    onValueChange={(value) => {
-                      setSelectedDepartment(value || "all");
-                      setSelectedSubDepartment("all");
-                      updateFilters({ departmentId: value || "all" });
-                    }}
-                    placeholder="All Departments"
-                    searchPlaceholder="Search department..."
-                    emptyMessage="No departments found"
-                  />
-                </div>
+        <Card>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {isAdmin() && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Department</Label>
+                    <Autocomplete
+                      options={departmentOptions}
+                      value={selectedDepartment}
+                      onValueChange={(value) => {
+                        setSelectedDepartment(value || "all");
+                        setSelectedSubDepartment("all");
+                        updateFilters({ departmentId: value || "all" });
+                      }}
+                      placeholder="All Departments"
+                      searchPlaceholder="Search department..."
+                      emptyMessage="No departments found"
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label>Sub Department</Label>
-                  <Autocomplete
-                    options={subDepartmentOptions}
-                    value={selectedSubDepartment}
-                    onValueChange={(value) => {
-                      const newValue = value || "all";
-                      setSelectedSubDepartment(newValue);
-                      updateFilters({ subDepartmentId: newValue });
-                    }}
-                    placeholder={
-                      selectedDepartment === "all"
-                        ? "All Sub Departments"
-                        : "Select sub department"
+                  <div className="space-y-2">
+                    <Label>Sub Department</Label>
+                    <Autocomplete
+                      options={subDepartmentOptions}
+                      value={selectedSubDepartment}
+                      onValueChange={(value) => {
+                        const newValue = value || "all";
+                        setSelectedSubDepartment(newValue);
+                        updateFilters({ subDepartmentId: newValue });
+                      }}
+                      placeholder={
+                        selectedDepartment === "all"
+                          ? "All Sub Departments"
+                          : "Select sub department"
+                      }
+                      searchPlaceholder="Search sub department..."
+                      emptyMessage="No sub departments found"
+                      disabled={selectedDepartment === "all" || loadingSubDepartments}
+                      isLoading={loadingSubDepartments}
+                    />
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Employees</Label>
+                    <MultiSelect
+                      options={filteredEmployeeOptions}
+                      value={selectedEmployeeIds}
+                      onValueChange={handleEmployeeChange}
+                      placeholder="All Employees"
+                      searchPlaceholder="Search employees..."
+                      emptyMessage="No employees found"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="space-y-2 md:col-span-2">
+                <Label>Date Range</Label>
+                <DateRangePicker
+                  initialDateFrom={dateRange.from}
+                  initialDateTo={dateRange.to}
+                  showCompare={false}
+                  onUpdate={(values) => {
+                    if (values.range) {
+                      setDateRange(values.range);
+                      updateFilters({
+                        dateFrom: values.range.from,
+                        dateTo: values.range.to,
+                      });
                     }
-                    searchPlaceholder="Search sub department..."
-                    emptyMessage="No sub departments found"
-                    disabled={selectedDepartment === "all" || loadingSubDepartments}
-                    isLoading={loadingSubDepartments}
-                  />
-                </div>
-
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Employees</Label>
-                  <MultiSelect
-                    options={filteredEmployeeOptions}
-                    value={selectedEmployeeIds}
-                    onValueChange={handleEmployeeChange}
-                    placeholder="All Employees"
-                    searchPlaceholder="Search employees..."
-                    emptyMessage="No employees found"
-                  />
-                </div>
-              </>
-            )}
+                  }}
+                />
+              </div>
+            </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label>Date Range</Label>
-              <DateRangePicker
-                initialDateFrom={dateRange.from}
-                initialDateTo={dateRange.to}
-                showCompare={false}
-                onUpdate={(values) => {
-                  if (values.range) {
-                    setDateRange(values.range);
-                    updateFilters({
-                      dateFrom: values.range.from,
-                      dateTo: values.range.to,
-                    });
-                  }
-                }}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2 md:col-span-2">
-            <Label>Select Columns</Label>
-            <Popover
-              open={columnPopoverOpen}
-              onOpenChange={setColumnPopoverOpen}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  className="w-full justify-between"
-                >
-                  {selectedColumns.length === COLUMN_OPTIONS.length
-                    ? "All Columns Selected"
-                    : `${selectedColumns.length} Column${
-                        selectedColumns.length !== 1 ? "s" : ""
+              <Label>Select Columns</Label>
+              <Popover
+                open={columnPopoverOpen}
+                onOpenChange={setColumnPopoverOpen}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    className="w-full justify-between"
+                  >
+                    {selectedColumns.length === COLUMN_OPTIONS.length
+                      ? "All Columns Selected"
+                      : `${selectedColumns.length} Column${selectedColumns.length !== 1 ? "s" : ""
                       } Selected`}
-                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[300px] p-0" align="start">
-                <div className="p-4 space-y-2">
-                  <div className="flex items-center justify-between border-b pb-2">
-                    <Label className="text-sm font-semibold">
-                      Select Columns
-                    </Label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => {
-                        if (selectedColumns.length === COLUMN_OPTIONS.length) {
-                          setSelectedColumns([]);
-                        } else {
-                          setSelectedColumns(
-                            COLUMN_OPTIONS.map((col) => col.value)
-                          );
-                        }
-                      }}
-                    >
-                      {selectedColumns.length === COLUMN_OPTIONS.length
-                        ? "Deselect All"
-                        : "Select All"}
-                    </Button>
-                  </div>
-                  <ScrollArea className="h-[300px]">
-                    <div className="space-y-2 p-2">
-                      {COLUMN_OPTIONS.map((col) => (
-                        <div
-                          key={col.value}
-                          className="flex items-center space-x-2"
-                        >
-                          <Checkbox
-                            id={col.value}
-                            checked={selectedColumns.includes(col.value)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setSelectedColumns([
-                                  ...selectedColumns,
-                                  col.value,
-                                ]);
-                              } else {
-                                setSelectedColumns(
-                                  selectedColumns.filter((c) => c !== col.value)
-                                );
-                              }
-                            }}
-                          />
-                          <label
-                            htmlFor={col.value}
-                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
-                          >
-                            {col.label}
-                          </label>
-                        </div>
-                      ))}
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[300px] p-0" align="start">
+                  <div className="p-4 space-y-2">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <Label className="text-sm font-semibold">
+                        Select Columns
+                      </Label>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          if (selectedColumns.length === COLUMN_OPTIONS.length) {
+                            setSelectedColumns([]);
+                          } else {
+                            setSelectedColumns(
+                              COLUMN_OPTIONS.map((col) => col.value)
+                            );
+                          }
+                        }}
+                      >
+                        {selectedColumns.length === COLUMN_OPTIONS.length
+                          ? "Deselect All"
+                          : "Select All"}
+                      </Button>
                     </div>
-                  </ScrollArea>
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-        </CardContent>
-      </Card>
+                    <ScrollArea className="h-[300px]">
+                      <div className="space-y-2 p-2">
+                        {COLUMN_OPTIONS.map((col) => (
+                          <div
+                            key={col.value}
+                            className="flex items-center space-x-2"
+                          >
+                            <Checkbox
+                              id={col.value}
+                              checked={selectedColumns.includes(col.value)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedColumns([
+                                    ...selectedColumns,
+                                    col.value,
+                                  ]);
+                                } else {
+                                  setSelectedColumns(
+                                    selectedColumns.filter((c) => c !== col.value)
+                                  );
+                                }
+                              }}
+                            />
+                            <label
+                              htmlFor={col.value}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                            >
+                              {col.label}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          </CardContent>
+        </Card>
 
-      <div className="w-full max-w-full overflow-x-hidden">
-        <DataTable
-          columns={columns}
-          data={data}
-          searchFields={[
-            { key: "employeeName", label: "Employee" },
-            { key: "employeeId", label: "Employee ID" },
-          ]}
-          tableId="attendance-progress-summary"
-        />
+        <div className="w-full max-w-full overflow-x-hidden">
+          <DataTable
+            columns={columns}
+            data={data}
+            searchFields={[
+              { key: "employeeName", label: "Employee" },
+              { key: "employeeId", label: "Employee ID" },
+            ]}
+            tableId="attendance-progress-summary"
+          />
+        </div>
       </div>
-    </DirectionalTransition>
+    </DirectionalTransition >
   );
 }
