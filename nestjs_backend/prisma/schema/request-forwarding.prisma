@@ -1,0 +1,34 @@
+model RequestForwardingConfiguration {
+  id                      String                           @id @default(uuid())
+  requestType             String                           @unique
+  approvalFlow            String
+  status                  String                           @default("active")
+  createdById             String?
+  updatedById             String?
+  createdAt               DateTime                         @default(now())
+  updatedAt               DateTime                         @updatedAt
+  payrollApprovalRequests PayrollApprovalRequest[]
+  approvalLevels          RequestForwardingApprovalLevel[]
+
+  @@index([requestType])
+  @@index([status])
+}
+
+model RequestForwardingApprovalLevel {
+  id                 String                         @id @default(uuid())
+  configurationId    String
+  level              Int
+  approverType       String
+  departmentHeadMode String?
+  specificEmployeeId String?
+  departmentId       String?
+  subDepartmentId    String?
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @updatedAt
+  configuration      RequestForwardingConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+  specificEmployee   Employee?                      @relation("RequestForwardingSpecificEmployee", fields: [specificEmployeeId], references: [id])
+
+  @@index([configurationId])
+  @@index([level])
+  @@index([approverType])
+}

@@ -1,0 +1,139 @@
+model Attendance {
+  id                String    @id @default(uuid())
+  employeeId        String
+  date              DateTime
+  checkIn           DateTime?
+  checkOut          DateTime?
+  status            String    @default("present")
+  isRemote          Boolean   @default(false)
+  location          String?
+  latitude          Decimal?
+  longitude         Decimal?
+  workingHours      Decimal?
+  overtimeHours     Decimal?
+  lateMinutes       Int?
+  earlyLeaveMinutes Int?
+  breakDuration     Int?
+  notes             String?
+  approvedBy        String?
+  approvedAt        DateTime?
+  createdById       String?
+  updatedById       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  employee          Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+}
+
+model AttendanceRequestQuery {
+  id                  String    @id @default(uuid())
+  employeeId          String?
+  employeeName        String?
+  department          String?
+  subDepartment       String?
+  attendanceDate      DateTime
+  clockInTimeRequest  String?
+  clockOutTimeRequest String?
+  breakIn             String?
+  breakOut            String?
+  query               String
+  approval1           String?
+  approval1Status     String?
+  approval1Date       DateTime?
+  approval2           String?
+  approval2Status     String?
+  approval2Date       DateTime?
+  remarks             String?
+  approvalStatus      String    @default("pending")
+  approvedBy          String?
+  approvedAt          DateTime?
+  rejectionReason     String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  employee            Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([approvalStatus])
+  @@index([attendanceDate])
+}
+
+model LeaveApplication {
+  id                  String    @id @default(uuid())
+  employeeId          String
+  leaveTypeId         String
+  dayType             String    @default("fullDay")
+  fromDate            DateTime
+  toDate              DateTime
+  reasonForLeave      String
+  addressWhileOnLeave String
+  status              String    @default("pending")
+  approval1           String?
+  approval1Status     String?
+  approval1Date       DateTime?
+  approval2           String?
+  approval2Status     String?
+  approval2Date       DateTime?
+  remarks             String?
+  createdById         String?
+  updatedById         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  employee            Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([leaveTypeId])
+  @@index([status])
+  @@index([fromDate])
+  @@index([toDate])
+}
+
+model AttendanceExemption {
+  id              String    @id @default(uuid())
+  employeeId      String?
+  employeeName    String?
+  department      String?
+  subDepartment   String?
+  attendanceDate  DateTime
+  flagType        String
+  exemptionType   String
+  reason          String
+  approval1       String?
+  approval1Status String?
+  approval1Date   DateTime?
+  approval2       String?
+  approval2Status String?
+  approval2Date   DateTime?
+  remarks         String?
+  approvalStatus  String    @default("pending")
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?
+  createdById     String?
+  updatedById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  employee        Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([approvalStatus])
+  @@index([attendanceDate])
+}
+
+model WorkingHoursPolicyAssignment {
+  id                   String   @id @default(uuid())
+  employeeId           String
+  workingHoursPolicyId String
+  startDate            DateTime
+  endDate              DateTime
+  notes                String?
+  createdById          String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  employee             Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([workingHoursPolicyId])
+  @@index([startDate])
+  @@index([endDate])
+}
