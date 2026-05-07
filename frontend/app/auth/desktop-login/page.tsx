@@ -300,7 +300,7 @@ export default function DesktopLoginPage() {
         </div>
       </div>
       <div className="text-center space-y-1">
-        <p className="font-semibold text-foreground">Speed Pvt. Limited POS</p>
+        <p className="font-semibold text-foreground">Ivar POS</p>
         <p className="text-sm text-muted-foreground">Verifying your session...</p>
       </div>
     </div>

@@ -526,6 +526,12 @@ export function GeneratePayrollClient({
                                                                     <span className="text-right">{Math.round(Number(row.overtimeAmount || 0)).toLocaleString()}</span>
                                                                 </div>
                                                             )}
+                                                            {row.workingHoursPolicy?.overtimeStartsAt && (
+                                                                <div className="flex justify-between items-center gap-2 text-muted-foreground">
+                                                                    <span className="font-bold shrink-0">OT Starts:</span>
+                                                                    <span className="text-right">{row.workingHoursPolicy.overtimeStartsAt}</span>
+                                                                </div>
+                                                            )}
                                                             {row.bonusAmount > 0 && (
                                                                 <div className="flex justify-between items-center gap-2">
                                                                     <span className="font-bold shrink-0">Bonus:</span>

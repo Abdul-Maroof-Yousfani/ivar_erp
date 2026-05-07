@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { PrismaMasterService } from '../database/prisma-master.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { runInBackground } from '../common/utils/run-in-background.util';
 
@@ -9,8 +8,19 @@ export class WorkingHoursPolicyService {
   constructor(
     private prisma: PrismaService,
     private activityLogsService: ActivityLogsService,
-    private activityLogs: ActivityLogsService,
   ) {}
+
+  private calculateDefaultOvertimeStartsAt(endWorkingHours: string): string {
+    const [hours, minutes] = endWorkingHours.split(':').map(Number);
+    const normalizedHours = Number.isFinite(hours) ? hours : 0;
+    const normalizedMinutes = Number.isFinite(minutes) ? minutes : 0;
+    const totalMinutes = (normalizedHours * 60 + normalizedMinutes + 60) % 1440;
+    const resultHours = Math.floor(totalMinutes / 60)
+      .toString()
+      .padStart(2, '0');
+    const resultMinutes = (totalMinutes % 60).toString().padStart(2, '0');
+    return `${resultHours}:${resultMinutes}`;
+  }
 
   async list() {
     const items = await this.prisma.workingHoursPolicy.findMany({
@@ -40,8 +50,7 @@ export class WorkingHoursPolicyService {
         });
       }
 
-      const created = await this.prisma.workingHoursPolicy.create({
-        data: {
+      const createData: any = {
           name: body.name,
           startWorkingHours: body.startWorkingHours,
           endWorkingHours: body.endWorkingHours,
@@ -62,11 +71,17 @@ export class WorkingHoursPolicyService {
           shortDayDeductionAmount: body.shortDayDeductionAmount ?? null,
           overtimeRate: body.overtimeRate ?? null,
           gazzetedOvertimeRate: body.gazzetedOvertimeRate ?? null,
+          overtimeStartsAt:
+            body.overtimeStartsAt ??
+            this.calculateDefaultOvertimeStartsAt(body.endWorkingHours),
           dayOverrides: body.dayOverrides ?? null,
           status: body.status ?? 'active',
           isDefault: body.isDefault ?? false,
           createdById: ctx.userId,
-        },
+      };
+
+      const created = await this.prisma.workingHoursPolicy.create({
+        data: createData,
       });
 
       runInBackground(
@@ -130,9 +145,7 @@ export class WorkingHoursPolicyService {
         });
       }
 
-      const updated = await this.prisma.workingHoursPolicy.update({
-        where: { id },
-        data: {
+      const updateData: any = {
           name: body.name ?? existing.name,
           startWorkingHours:
             body.startWorkingHours ?? existing.startWorkingHours,
@@ -201,6 +214,13 @@ export class WorkingHoursPolicyService {
             body.gazzetedOvertimeRate !== undefined
               ? body.gazzetedOvertimeRate
               : existing.gazzetedOvertimeRate,
+          overtimeStartsAt:
+            body.overtimeStartsAt !== undefined
+              ? body.overtimeStartsAt
+              : (existing as any).overtimeStartsAt ??
+                this.calculateDefaultOvertimeStartsAt(
+                  body.endWorkingHours ?? existing.endWorkingHours,
+                ),
           dayOverrides:
             body.dayOverrides !== undefined
               ? body.dayOverrides
@@ -208,7 +228,11 @@ export class WorkingHoursPolicyService {
           status: body.status ?? existing.status,
           isDefault:
             body.isDefault !== undefined ? body.isDefault : existing.isDefault,
-        },
+      };
+
+      const updated = await this.prisma.workingHoursPolicy.update({
+        where: { id },
+        data: updateData,
       });
 
       runInBackground(

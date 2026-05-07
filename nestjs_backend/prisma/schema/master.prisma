@@ -360,6 +360,7 @@ model WorkingHoursPolicy {
   applyDeductionAfterShortDays Int?
   shortDayDeductionAmount      Decimal?
   overtimeRate                 Decimal?
+  overtimeStartsAt             String?
   gazzetedOvertimeRate         Decimal?
   dayOverrides                 Json?
   status                       String     @default("active")

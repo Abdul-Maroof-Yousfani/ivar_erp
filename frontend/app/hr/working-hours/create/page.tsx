@@ -72,6 +72,7 @@ export default function CreateWorkingHoursPolicyPage() {
 
   // Overtime Rates
   const [overtimeRate, setOvertimeRate] = useState("");
+  const [overtimeStartsAt, setOvertimeStartsAt] = useState("");
   const [gazzetedOvertimeRate, setGazzetedOvertimeRate] = useState("");
 
   // Day-wise Overrides
@@ -327,6 +328,22 @@ export default function CreateWorkingHoursPolicyPage() {
     return `${hour24.toString().padStart(2, "0")}:${minute.padStart(2, "0")}`;
   };
 
+  const addOneHourToTime = (time: string): string => {
+    if (!time) return "";
+    const [hours, minutes] = time.split(":").map(Number);
+    const totalMinutes = ((hours || 0) * 60 + (minutes || 0) + 60) % 1440;
+    const nextHours = Math.floor(totalMinutes / 60)
+      .toString()
+      .padStart(2, "0");
+    const nextMinutes = (totalMinutes % 60).toString().padStart(2, "0");
+    return `${nextHours}:${nextMinutes}`;
+  };
+
+  useEffect(() => {
+    if (!endWorkingHours) return;
+    setOvertimeStartsAt((prev) => prev || addOneHourToTime(endWorkingHours));
+  }, [endWorkingHours]);
+
   const TimePicker = ({
     value,
     onChange,
@@ -543,6 +560,7 @@ export default function CreateWorkingHoursPolicyPage() {
         : null,
       overtimeRate:
         overtimeRate && overtimeRate !== "0" ? parseFloat(overtimeRate) : null,
+      overtimeStartsAt: overtimeStartsAt || null,
       gazzetedOvertimeRate:
         gazzetedOvertimeRate && gazzetedOvertimeRate !== "0"
           ? parseFloat(gazzetedOvertimeRate)
@@ -586,6 +604,7 @@ export default function CreateWorkingHoursPolicyPage() {
     setApplyDeductionAfterShortDays("");
     setShortDayDeductionAmount("");
     setOvertimeRate("");
+    setOvertimeStartsAt("");
     setGazzetedOvertimeRate("");
     setDayOverrides({
       monday: {
@@ -1297,6 +1316,14 @@ export default function CreateWorkingHoursPolicyPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Overtime Starts At</Label>
+                  <TimePicker
+                    value={overtimeStartsAt}
+                    onChange={setOvertimeStartsAt}
+                    disabled={isPending}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Gazzeted Overtime Rate</Label>

@@ -2295,6 +2295,22 @@ export class PayrollService {
 
     const totalDaysInMonth = monthEndDate.getDate();
     const hourlyRate = basicSalary.div(totalDaysInMonth).div(8); // Use calculated basic salary
+    const parseTimeToHours = (time: string): number => {
+      const [hours, minutes] = time.split(':').map(Number);
+      return (hours || 0) + (minutes || 0) / 60;
+    };
+    const addOneHour = (time: string): string => {
+      const [hours, minutes] = time.split(':').map(Number);
+      const totalMinutes = (((hours || 0) * 60 + (minutes || 0) + 60) % 1440 + 1440) % 1440;
+      return `${Math.floor(totalMinutes / 60)
+        .toString()
+        .padStart(2, '0')}:${(totalMinutes % 60).toString().padStart(2, '0')}`;
+    };
+    const formatTime = (value: Date): string => {
+      const hours = value.getHours().toString().padStart(2, '0');
+      const minutes = value.getMinutes().toString().padStart(2, '0');
+      return `${hours}:${minutes}`;
+    };
 
     // Process overtime requests
     for (const ot of overtimes) {
@@ -2457,6 +2473,18 @@ export class PayrollService {
           attendance.overtimeHours instanceof Decimal
             ? attendance.overtimeHours
             : new Decimal(attendance.overtimeHours);
+      } else if (
+        !isOnHolidayOrOff &&
+        attendance.checkIn &&
+        attendance.checkOut &&
+        policy?.endWorkingHours
+      ) {
+        const overtimeStartTime =
+          policy.overtimeStartsAt || addOneHour(policy.endWorkingHours);
+        const overtimeStartHours = parseTimeToHours(overtimeStartTime);
+        const checkOutHours = parseTimeToHours(formatTime(new Date(attendance.checkOut)));
+        const inferredOvertimeHours = Math.max(0, checkOutHours - overtimeStartHours);
+        otHours = new Decimal(inferredOvertimeHours);
       }
 
       // For holidays/off days: use overtimeHours if available, otherwise all working hours are overtime

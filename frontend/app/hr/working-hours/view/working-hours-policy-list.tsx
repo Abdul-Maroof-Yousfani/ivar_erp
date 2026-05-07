@@ -61,6 +61,7 @@ export function WorkingHoursPolicyList({
         policy.name.toLowerCase().includes(searchLower) ||
         policy.startWorkingHours?.toLowerCase().includes(searchLower) ||
         policy.endWorkingHours?.toLowerCase().includes(searchLower) ||
+        policy.overtimeStartsAt?.toLowerCase().includes(searchLower) ||
         policy.lateStartTime?.toLowerCase().includes(searchLower) ||
         policy.halfDayStartTime?.toLowerCase().includes(searchLower) ||
         policy.createdBy?.toLowerCase().includes(searchLower)
@@ -77,6 +78,7 @@ export function WorkingHoursPolicyList({
         <td>${policy.name}</td>
         <td>${policy.startWorkingHours || "N/A"}</td>
         <td>${policy.endWorkingHours || "N/A"}</td>
+        <td>${policy.overtimeStartsAt || "N/A"}</td>
         <td>${policy.lateStartTime || "N/A"}</td>
         <td>${policy.halfDayStartTime || "N/A"}</td>
         <td>${policy.createdBy || "N/A"}</td>
@@ -105,6 +107,7 @@ export function WorkingHoursPolicyList({
                 <th>Policy Name</th>
                 <th>Start Time</th>
                 <th>End Time</th>
+                <th>OT Starts At</th>
                 <th>Late Time</th>
                 <th>Half Day Time</th>
                 <th>Created By</th>
@@ -129,6 +132,7 @@ export function WorkingHoursPolicyList({
       "Policy Name",
       "Start Time",
       "End Time",
+      "OT Starts At",
       "Late Time",
       "Half Day Time",
       "Created By",
@@ -139,6 +143,7 @@ export function WorkingHoursPolicyList({
       policy.name,
       policy.startWorkingHours || "N/A",
       policy.endWorkingHours || "N/A",
+      policy.overtimeStartsAt || "N/A",
       policy.lateStartTime || "N/A",
       policy.halfDayStartTime || "N/A",
       policy.createdBy || "N/A",
@@ -219,6 +224,7 @@ export function WorkingHoursPolicyList({
               { key: "name", label: "Policy Name" },
               { key: "startWorkingHours", label: "Start Time" },
               { key: "endWorkingHours", label: "End Time" },
+              { key: "overtimeStartsAt", label: "OT Starts At" },
             ]}
             onMultiDelete={hasPermission("hr.working-hour-policy.delete") ? handleMultiDelete : undefined}
             tableId="working-hours-policy-list"

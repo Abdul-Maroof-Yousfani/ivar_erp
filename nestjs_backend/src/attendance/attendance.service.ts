@@ -209,8 +209,12 @@ export class AttendanceService {
     const totalHours = checkOutHours - checkInHours - breakDuration / 60;
     const workingHours = new Decimal(Math.max(0, totalHours));
 
-    // Calculate overtime (hours worked beyond expected hours)
-    const overtimeHours = new Decimal(Math.max(0, totalHours - expectedHours));
+    const overtimeStartTime =
+      policy.overtimeStartsAt || this.addMinutesToTime(endTime, 60);
+    const overtimeStartHours = this.parseTimeToHours(overtimeStartTime);
+    const overtimeHours = isDayOff
+      ? new Decimal(Math.max(0, totalHours))
+      : new Decimal(Math.max(0, checkOutHours - overtimeStartHours));
 
     return {
       workingHours,
@@ -227,6 +231,20 @@ export class AttendanceService {
   private parseTimeToHours(timeStr: string): number {
     const [hours, minutes] = timeStr.split(':').map(Number);
     return hours + minutes / 60;
+  }
+
+  private addMinutesToTime(timeStr: string, minutesToAdd: number): string {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const normalizedHours = Number.isFinite(hours) ? hours : 0;
+    const normalizedMinutes = Number.isFinite(minutes) ? minutes : 0;
+    const totalMinutes =
+      ((normalizedHours * 60 + normalizedMinutes + minutesToAdd) % 1440 + 1440) %
+      1440;
+    const resultHours = Math.floor(totalMinutes / 60)
+      .toString()
+      .padStart(2, '0');
+    const resultMinutes = (totalMinutes % 60).toString().padStart(2, '0');
+    return `${resultHours}:${resultMinutes}`;
   }
 
   /**
