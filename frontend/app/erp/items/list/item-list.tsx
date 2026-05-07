@@ -44,7 +44,6 @@ interface Item {
     isActive: boolean;
     brand?: { name: string } | null;
     category?: { name: string } | null;
-    division?: { name: string } | null;
 }
 
 // ─── Filter Sheet ─────────────────────────────────────────────────────────────
@@ -244,11 +243,6 @@ function useItemColumns(onDelete: (id: string) => void, canUpdate: boolean, canD
             accessorKey: "category",
             header: "Category",
             cell: ({ row }) => row.original.category?.name ?? <span className="text-muted-foreground">—</span>,
-        },
-        {
-            accessorKey: "division",
-            header: "Division",
-            cell: ({ row }) => row.original.division?.name ?? <span className="text-muted-foreground">—</span>,
         },
         {
             accessorKey: "unitPrice",
@@ -629,7 +623,6 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
                         { key: "description", label: "Description" },
                         { key: "brand", label: "Brand" },
                         { key: "category", label: "Category" },
-                        { key: "division", label: "Division" },
                     ]}
                     filterSlot={filterSlot}
                     /* ── Server-side controls ── */

@@ -60,7 +60,6 @@ interface ItemRow {
     discountEndDate: string | null;
     brand?: { name: string } | null;
     category?: { name: string } | null;
-    division?: { name: string } | null;
     brandId?: string;
     categoryId?: string;
     silhouetteId?: string;
