@@ -121,6 +121,15 @@ export const columns: ColumnDef<WorkingHoursPolicyRow>[] = [
     ),
   },
   {
+    header: "OT Starts At",
+    accessorKey: "overtimeStartsAt",
+    size: 130,
+    enableSorting: true,
+    cell: ({ row }) => (
+      <HighlightText text={row.original.overtimeStartsAt || "N/A"} />
+    ),
+  },
+  {
     header: "Late Time",
     accessorKey: "lateStartTime",
     size: 120,
@@ -574,6 +583,7 @@ function RowActions({ row }: RowActionsProps) {
     applyDeductionAfterShortDays: policy.applyDeductionAfterShortDays?.toString() || "",
     shortDayDeductionAmount: policy.shortDayDeductionAmount?.toString() || "",
     overtimeRate: policy.overtimeRate?.toString() || "",
+    overtimeStartsAt: policy.overtimeStartsAt || "",
     gazzetedOvertimeRate: policy.gazzetedOvertimeRate?.toString() || "",
     status: policy.status,
     dayOverrides: initializeDayOverrides(),
@@ -596,6 +606,16 @@ function RowActions({ row }: RowActionsProps) {
       }
     }
   }, [policy.shortDayMins]);
+
+  useEffect(() => {
+    if (!editData.endWorkingHours || editData.overtimeStartsAt) return;
+    const [hours, minutes] = editData.endWorkingHours.split(":").map(Number);
+    const totalMinutes = ((hours || 0) * 60 + (minutes || 0) + 60) % 1440;
+    const defaultOvertimeStart = `${Math.floor(totalMinutes / 60)
+      .toString()
+      .padStart(2, "0")}:${(totalMinutes % 60).toString().padStart(2, "0")}`;
+    setEditData((prev) => ({ ...prev, overtimeStartsAt: defaultOvertimeStart }));
+  }, [editData.endWorkingHours, editData.overtimeStartsAt]);
 
   const calculateShortDayMins = (): number | null => {
     if (!editData.shortDayValue) return null;
@@ -668,6 +688,7 @@ function RowActions({ row }: RowActionsProps) {
         applyDeductionAfterShortDays: editData.applyDeductionAfterShortDays ? parseInt(editData.applyDeductionAfterShortDays) : null,
         shortDayDeductionAmount: editData.shortDayDeductionAmount ? parseFloat(editData.shortDayDeductionAmount) : null,
         overtimeRate: editData.overtimeRate && editData.overtimeRate !== "0" ? parseFloat(editData.overtimeRate) : null,
+        overtimeStartsAt: editData.overtimeStartsAt || null,
         gazzetedOvertimeRate: editData.gazzetedOvertimeRate && editData.gazzetedOvertimeRate !== "0" ? parseFloat(editData.gazzetedOvertimeRate) : null,
         status: editData.status,
         dayOverrides: groupDayOverrides(editData.dayOverrides, daysOfWeek),
@@ -1344,6 +1365,16 @@ function RowActions({ row }: RowActionsProps) {
                   </Select>
                 </div>
                 <div className="space-y-2">
+                  <Label>Overtime Starts At</Label>
+                  <TimePicker
+                    value={editData.overtimeStartsAt}
+                    onChange={(value) =>
+                      setEditData({ ...editData, overtimeStartsAt: value })
+                    }
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label>Gazzeted Overtime Rate</Label>
                   <Select
                     value={editData.gazzetedOvertimeRate || undefined}
@@ -1688,6 +1719,14 @@ function RowActions({ row }: RowActionsProps) {
                     <Label className="text-sm text-muted-foreground">Overtime Rate</Label>
                     <p className="font-medium">
                       {viewPolicy.overtimeRate ? `x${viewPolicy.overtimeRate}` : "None"}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Overtime Starts At</Label>
+                    <p className="font-medium">
+                      {viewPolicy.overtimeStartsAt
+                        ? formatTimeForDisplay(viewPolicy.overtimeStartsAt, true)
+                        : "N/A"}
                     </p>
                   </div>
                   <div>

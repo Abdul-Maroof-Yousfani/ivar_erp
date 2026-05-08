@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateItemDto, UpdateItemDto, BulkDiscountDto, RollbackCampaignDto, BulkSalePriceDto } from './dto/item.dto';
 
@@ -27,32 +28,63 @@ export class ItemService {
   ) { }
 
   async create(createItemDto: CreateItemDto) {
+    const MAX_CREATE_ATTEMPTS = 5;
     try {
-      const nextId = await this.generateNextItemId();
-      const data = await this.prisma.item.create({
-        data: {
-          ...createItemDto,
-          itemId: nextId,
-        },
-      });
-      return { status: true, data, message: 'Item created successfully' };
+      for (let attempt = 1; attempt <= MAX_CREATE_ATTEMPTS; attempt++) {
+        try {
+          const data = await this.prisma.$transaction(async (tx) => {
+            // Serialize itemId generation per tenant DB transaction.
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(920001)`;
+            const nextId = await this.generateNextItemIdTx(tx);
+            return tx.item.create({
+              data: {
+                ...createItemDto,
+                itemId: nextId,
+              },
+            });
+        });
+          return { status: true, data, message: 'Item created successfully' };
+        } catch (error: any) {
+          const isItemIdUniqueViolation =
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2002' &&
+            Array.isArray((error.meta as any)?.target) &&
+            (error.meta as any).target.includes('itemId');
+
+          if (!isItemIdUniqueViolation || attempt === MAX_CREATE_ATTEMPTS) {
+            throw error;
+          }
+        }
+      }
+
+      return { status: false, message: 'Could not generate a unique item ID. Please try again.' };
     } catch (error: any) {
       return { status: false, message: error.message };
     }
   }
 
-  private async generateNextItemId(): Promise<string> {
-    const last = await this.prisma.item.findFirst({
-      orderBy: { itemId: 'desc' },
-      select: { itemId: true },
-    });
-    const lastNum =
-      last && /^\d{6}$/.test(last.itemId) ? parseInt(last.itemId, 10) : 0;
-    const next = lastNum + 1;
+  private async generateNextItemIdTx(tx: Prisma.TransactionClient): Promise<string> {
+    const rows = await tx.$queryRaw<Array<{ max_num: number | string | bigint | null }>>`
+      SELECT COALESCE(MAX(CAST("itemId" AS INTEGER)), 0) AS max_num
+      FROM "Item"
+      WHERE "itemId" ~ '^[0-9]{6}$'
+    `;
+
+    const maxRaw = rows?.[0]?.max_num ?? 0;
+    const maxNum = Number(maxRaw);
+    const next = maxNum + 1;
+
     if (next > 999999) {
       throw new Error('Item ID sequence exceeded maximum 999999');
     }
     return String(next).padStart(6, '0');
+  }
+
+  private async generateNextItemId(): Promise<string> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(920001)`;
+      return this.generateNextItemIdTx(tx);
+    });
   }
 
   async nextItemId() {

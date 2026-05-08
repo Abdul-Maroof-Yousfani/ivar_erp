@@ -27,17 +27,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { getBrands } from "@/lib/actions/brand";
-import { getDivisions } from "@/lib/actions/division";
 import { getCategories } from "@/lib/actions/category";
 import { getGenders } from "@/lib/actions/gender";
 import { getColors } from "@/lib/actions/color";
 import { getSilhouettes } from "@/lib/actions/silhouette";
 import { getChannelClasses } from "@/lib/actions/channel-class";
-import { getItemClasses } from "@/lib/actions/item-class";
-import { getItemSubclasses } from "@/lib/actions/item-subclass";
 import { getSeasons } from "@/lib/actions/season";
 import { getSizes } from "@/lib/actions/size";
-import { getSegments } from "@/lib/actions/segment";
 import { createItem, getNextItemId } from "@/lib/actions/items";
 import { getTaxRates } from "@/lib/actions/tax-rate";
 import { getHsCodes } from "@/lib/actions/hs-code";
@@ -73,16 +69,12 @@ const itemFormSchema = z.object({
     imageUrl: z.string().optional(),
 
     // Step 2: Classification (Masters)
-    divisionId: z.string().optional(),
     categoryId: z.string().optional(),
     subCategoryId: z.string().optional(),
-    itemClassId: z.string().optional(),
-    itemSubclassId: z.string().optional(),
     channelClassId: z.string().optional(),
     genderId: z.string().optional(),
     seasonId: z.string().optional(),
     // uomId removed
-    segmentId: z.string().optional(),
 
     // Step 3: Pricing & Discount
     unitPrice: z.coerce.number().min(0),
@@ -99,11 +91,6 @@ const itemFormSchema = z.object({
     sizeId: z.string().optional(),
     colorId: z.string().optional(),
     silhouetteId: z.string().optional(),
-    case: z.string().optional(),
-    band: z.string().optional(),
-    movementType: z.string().optional(),
-    heelHeight: z.string().optional(),
-    width: z.string().optional(),
 });
 
 type ItemFormValues = z.infer<typeof itemFormSchema>;
@@ -253,34 +240,26 @@ export default function ItemCreatePage() {
     const [currentStep, setCurrentStep] = useState(0);
     const [masters, setMasters] = useState<{
         brands: any[];
-        divisions: any[];
         categories: any[];
         genders: any[];
         colors: any[];
         silhouettes: any[];
         channelClasses: any[];
-        itemClasses: any[];
-        itemSubclasses: any[];
         seasons: any[];
         // uoms removed
         sizes: any[];
-        segments: any[];
         taxRates: { id: string; taxRate1: number }[];
         hsCodes: any[];
     }>({
         brands: [],
-        divisions: [],
         categories: [],
         genders: [],
         colors: [],
         silhouettes: [],
         channelClasses: [],
-        itemClasses: [],
-        itemSubclasses: [],
         seasons: [],
         // uoms removed
         sizes: [],
-        segments: [],
         taxRates: [],
         hsCodes: [],
     });
@@ -315,9 +294,7 @@ export default function ItemCreatePage() {
         mode: "onChange",
     });
 
-    const watchBrandId = form.watch("brandId");
     const watchCategoryId = form.watch("categoryId");
-    const watchItemClassId = form.watch("itemClassId");
 
     // Image Upload State
     const [cropDialogOpen, setCropDialogOpen] = useState(false);
@@ -398,33 +375,34 @@ export default function ItemCreatePage() {
             setLoading(true);
             try {
                 const [
-                    brands, divisions, categories, genders, colors,
-                    silhouettes, channelClasses, itemClasses, itemSubclasses,
-                    seasons, sizes, segments, nextIdResp, taxRates, hsCodes
+                    brands, categories, genders, colors,
+                    silhouettes, channelClasses,
+                    seasons, sizes, nextIdResp, taxRates, hsCodes
                 ] = await Promise.all([
-                    getBrands(), getDivisions(), getCategories(), getGenders(), getColors(),
-                    getSilhouettes(), getChannelClasses(), getItemClasses(), getItemSubclasses(),
-                    getSeasons(), getSizes(), getSegments(), getNextItemId(), getTaxRates(),
+                    getBrands(), getCategories(), getGenders(), getColors(),
+                    getSilhouettes(), getChannelClasses(),
+                    getSeasons(), getSizes(), getNextItemId(), getTaxRates(),
                     getHsCodes()
                 ]);
 
+                const brandsData = brands.data || [];
+                const ivarBrand = brandsData.find((b: any) => b?.name?.toUpperCase() === "IVAR");
+                const fallbackBrand = brandsData[0];
+
                 setMasters({
-                    brands: brands.data || [],
-                    divisions: divisions.data || [],
+                    brands: brandsData,
                     categories: categories.data || [],
                     genders: genders.data || [],
                     colors: colors.data || [],
                     silhouettes: silhouettes.data || [],
                     channelClasses: channelClasses.data || [],
-                    itemClasses: itemClasses.data || [],
-                    itemSubclasses: itemSubclasses.data || [],
                     seasons: seasons.data || [],
                     // uoms removed
                     sizes: sizes.data || [],
-                    segments: segments.data || [],
                     taxRates: taxRates.data || [],
                     hsCodes: hsCodes.data || [],
                 });
+                form.setValue("brandId", ivarBrand?.id || fallbackBrand?.id || "", { shouldValidate: true });
                 if (nextIdResp?.status && nextIdResp?.data?.nextId) {
                     setNextItemId(nextIdResp.data.nextId);
                 }
@@ -440,9 +418,7 @@ export default function ItemCreatePage() {
     }, []);
 
     // Filtered masters for dependent dropdowns
-    const filteredDivisions = masters.divisions.filter((d: any) => d.brandId === watchBrandId);
     const filteredSubCategories = masters.categories.filter((c: any) => c.parentId === watchCategoryId);
-    const filteredItemSubclasses = masters.itemSubclasses.filter((s: any) => s.itemClassId === watchItemClassId);
 
     const nextStep = async () => {
         const fieldsToValidate = getFieldsForStep(currentStep);
@@ -480,13 +456,13 @@ export default function ItemCreatePage() {
     const getFieldsForStep = (step: number): (keyof ItemFormValues)[] => {
         switch (step) {
             case 0:
-                return ["brandId", "segmentId", "sku", "barCode", "hsCodeId", "isActive", "description"];
+                return ["brandId", "sku", "barCode", "hsCodeId", "isActive", "description"];
             case 1:
-                return ["divisionId", "categoryId", "subCategoryId", "itemClassId", "itemSubclassId", "channelClassId", "genderId", "seasonId"];
-            case 2:lo
+                return ["categoryId", "subCategoryId", "channelClassId", "genderId", "seasonId"];
+            case 2:
                 return ["unitPrice", "fob", "unitCost", "taxRate1", "taxRate2", "discountRate", "discountAmount", "discountStartDate", "discountEndDate"];
             case 3:
-                return ["sizeId", "colorId", "silhouetteId", "case", "band", "movementType", "heelHeight", "width"];
+                return ["sizeId", "colorId", "silhouetteId"];
             default:
                 return [];
         }
@@ -610,30 +586,12 @@ export default function ItemCreatePage() {
                                             </Dialog>
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                <FormField
-
-                                                    control={form.control}
-                                                    name="segmentId"
-                                                    render={({ field }) => (
-                                                        <MasterSelect
-                                                            label="Segment"
-                                                            field={field}
-                                                            options={masters.segments}
-
-                                                        />
-                                                    )}
-                                                />
-                                                <FormField
-                                                    control={form.control}
-                                                    name="brandId"
-                                                    render={({ field }) => (
-                                                        <MasterSelect
-                                                            label="Concept (Brand)"
-                                                            field={field}
-                                                            options={masters.brands}
-                                                        />
-                                                    )}
-                                                />
+                                                <FormItem>
+                                                    <FormLabel>Concept (Brand)</FormLabel>
+                                                    <FormControl>
+                                                        <Input value="IVAR" disabled />
+                                                    </FormControl>
+                                                </FormItem>
                                                 <FormItem>
                                                     <FormLabel>Item ID (Auto)</FormLabel>
                                                     <FormControl>
@@ -783,18 +741,6 @@ export default function ItemCreatePage() {
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                             <FormField
                                                 control={form.control}
-                                                name="divisionId"
-                                                render={({ field }) => (
-                                                    <MasterSelect
-                                                        label="Division"
-                                                        field={field}
-                                                        options={filteredDivisions}
-                                                        disabled={!watchBrandId}
-                                                    />
-                                                )}
-                                            />
-                                            <FormField
-                                                control={form.control}
                                                 name="categoryId"
                                                 render={({ field }) => (
                                                     <MasterSelect
@@ -813,29 +759,6 @@ export default function ItemCreatePage() {
                                                         field={field}
                                                         options={filteredSubCategories}
                                                         disabled={!watchCategoryId}
-                                                    />
-                                                )}
-                                            />
-                                            <FormField
-                                                control={form.control}
-                                                name="itemClassId"
-                                                render={({ field }) => (
-                                                    <MasterSelect
-                                                        label="Item Class"
-                                                        field={field}
-                                                        options={masters.itemClasses}
-                                                    />
-                                                )}
-                                            />
-                                            <FormField
-                                                control={form.control}
-                                                name="itemSubclassId"
-                                                render={({ field }) => (
-                                                    <MasterSelect
-                                                        label="Item Subclass"
-                                                        field={field}
-                                                        options={filteredItemSubclasses}
-                                                        disabled={!watchItemClassId}
                                                     />
                                                 )}
                                             />
@@ -1112,61 +1035,6 @@ export default function ItemCreatePage() {
                                                     />
                                                 )}
                                             />
-                                            <FormField
-                                                control={form.control}
-                                                name="case"
-                                                render={({ field }: { field: any }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Case</FormLabel>
-                                                        <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                            <FormField
-                                                control={form.control}
-                                                name="band"
-                                                render={({ field }: { field: any }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Band</FormLabel>
-                                                        <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                            <FormField
-                                                control={form.control}
-                                                name="movementType"
-                                                render={({ field }: { field: any }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Movement Type</FormLabel>
-                                                        <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                            <FormField
-                                                control={form.control}
-                                                name="heelHeight"
-                                                render={({ field }: { field: any }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Heel Height</FormLabel>
-                                                        <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                            <FormField
-                                                control={form.control}
-                                                name="width"
-                                                render={({ field }: { field: any }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Width</FormLabel>
-                                                        <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
                                         </div>
                                     )}
 
@@ -1194,12 +1062,6 @@ export default function ItemCreatePage() {
                                                     <Label className="text-muted-foreground text-xs">Brand (Concept)</Label>
                                                     <div className="font-medium">
                                                         {(masters.brands.find((b: any) => b.id === form.getValues("brandId")) as any)?.name}
-                                                    </div>
-                                                </div>
-                                                <div className="border p-3 rounded-md bg-white">
-                                                    <Label className="text-muted-foreground text-xs">Division</Label>
-                                                    <div className="font-medium">
-                                                        {(masters.divisions.find((d: any) => d.id === form.getValues("divisionId")) as any)?.name || "N/A"}
                                                     </div>
                                                 </div>
                                                 <div className="border p-3 rounded-md bg-white">
