@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3001",
+    "dev": "next dev -p 3002",
     "build": "next build",
     "start": "next start  -p 3001",
     "lint": "eslint"
@@ -58,7 +58,6 @@
     "motion": "^12.23.25",
     "next": "^16.2.1",
     "next-themes": "^0.4.6",
-    "qrcode.react": "^4.2.0",
     "react": "^19.2.4",
     "react-day-picker": "^9.11.2",
     "react-dnd": "^16.0.1",
