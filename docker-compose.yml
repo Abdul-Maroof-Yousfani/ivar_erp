@@ -26,9 +26,9 @@ services:
     container_name: speed-limit-backend
     environment:
       DATABASE_URL: postgresql://speedlimit:speedlimit123@postgres:5432/speedlimit
-      PORT: 3000
+      PORT: 5001
       HOSTNAME: 0.0.0.0
-      FRONTEND_URL: http://localhost:3001
+      FRONTEND_URL: http://localhost:3002
       JWT_ACCESS_SECRET: 9u8ygtf32t879ducjhbgfd879cuoshebvgdyuc89ijodcyu8s9duhe3j
       JWT_REFRESH_SECRET: 9u8ygtf32t879ducjhbgfd879cuoshebvgdyuc89ijodcyu8s9duhe3j
       NODE_ENV: development
@@ -71,7 +71,7 @@ services:
       API_URL: http://backend:3000/api
       NODE_ENV: development
     ports:
-      - "3001:3001"
+      - "3002:3002"
     volumes:
       - ./frontend:/app
       - /app/node_modules
