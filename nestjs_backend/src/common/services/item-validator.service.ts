@@ -33,14 +33,12 @@ export class ItemValidatorService {
         const err = (field: string, value: any, reason: string): ValidationError =>
             ({ row, field, value, reason, itemId, barCode });
 
-        // Required fields
+        // Required fields (aligned with new create flow)
         if (!data.sku || String(data.sku).trim() === '') {
             errors.push(err('SKU', data.sku, 'SKU is a required field and cannot be empty.'));
         }
 
-        if (!data.itemId || String(data.itemId).trim() === '') {
-            errors.push(err('ItemID', data.itemId, 'ItemID is a required unique identifier.'));
-        }
+        // ItemID is auto-generated now. If provided, it will be used to update existing items.
 
         if (data.unitPrice === null || data.unitPrice === undefined) {
             errors.push(err('UnitPrice', data.unitPrice, 'UnitPrice is required for catalog items.'));
@@ -81,9 +79,9 @@ export class ItemValidatorService {
             errors.push(err('Description', data.description, 'Description is too long (max 1000 characters).'));
         }
 
-        if (!data.concept || String(data.concept).trim() === '') {
-            errors.push(err('Concept', data.concept, 'Concept (Brand) is highly recommended for item classification.'));
-        }
+        // Classification fields (Category/SubCategory/ChannelClass/Gender/Season)
+        // are optional in the create flow, so we don't hard-require them here.
+        // If a tenant wants them required, we can enforce that via config later.
 
         return {
             isValid: errors.length === 0,

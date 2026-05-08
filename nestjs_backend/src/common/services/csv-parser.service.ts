@@ -14,6 +14,7 @@ export type ParseCallback = (record: ParsedRecord) => Promise<void>;
 @Injectable()
 export class CsvParserService {
     private readonly logger = new Logger(CsvParserService.name);
+    private static readonly HARDCODED_BRAND = 'IVAR';
 
     /**
      * Normalize N/A values to null
@@ -134,8 +135,10 @@ export class CsvParserService {
     private mapColumns(row: any): ParsedRecord['data'] {
         return {
             ...row, // Keep all original row properties available for generic processors
-            concept: this.normalizeValue(this.getValue(row, 'Concept')),
+            // Brand is hardcoded now (Concept removed from create flow)
+            concept: CsvParserService.HARDCODED_BRAND,
             description: this.normalizeValue(this.getValue(row, 'Description')),
+            imageUrl: this.normalizeValue(this.getValue(row, 'ImageUrl') || this.getValue(row, 'Image URL') || this.getValue(row, 'Image')),
             fob: this.parseNumber(this.getValue(row, 'FOB')) as number,
             unitCost: this.parseNumber(this.getValue(row, 'UnitCost')) as number,
             unitPrice: this.parseNumber(this.getValue(row, 'UnitPrice')) as number,
@@ -147,27 +150,27 @@ export class CsvParserService {
             discountAmount: this.parseNumber(this.getValue(row, 'DiscountAmount')) as number,
             isActive: this.parseBoolean(this.getValue(row, 'IsActive')) as boolean,
             sku: this.normalizeValue(this.getValue(row, 'SKU')),
+            hsCode: this.normalizeValue(this.getValue(row, 'HSCode')),
+            barCode: this.normalizeValue(this.getValue(row, 'BarCode')),
+
+            // Classification (as per create page)
+            category: this.normalizeValue(this.getValue(row, 'Category')),
+            subCategory: this.normalizeValue(this.getValue(row, 'SubCategory') || this.getValue(row, 'Sub Category')),
+            channelClass: this.normalizeValue(this.getValue(row, 'ChannelClass') || this.getValue(row, 'Channel Class')),
+            gender: this.normalizeValue(this.getValue(row, 'Gender')),
+            season: this.normalizeValue(this.getValue(row, 'Season')),
+
+            // Attributes (as per create page)
             size: this.normalizeValue(this.getValue(row, 'Size')),
             color: this.normalizeValue(this.getValue(row, 'Color')),
-            division: this.normalizeValue(this.getValue(row, 'Division')),
-            department: this.normalizeValue(this.getValue(row, 'Department')),
-            productCategory: this.normalizeValue(this.getValue(row, 'ProductCategory')),
             silhouette: this.normalizeValue(this.getValue(row, 'Silhouette')),
-            class: this.normalizeValue(this.getValue(row, 'Class')),
-            subclass: this.normalizeValue(this.getValue(row, 'Subclass')),
-            channelClass: this.normalizeValue(this.getValue(row, 'ChannelClass') || this.getValue(row, 'Channel Class')),
-            season: this.normalizeValue(this.getValue(row, 'Season')),
-            oldSeason: this.normalizeValue(this.getValue(row, 'OldSeason')),
-            gender: this.normalizeValue(this.getValue(row, 'Gender')),
-            case: this.normalizeValue(this.getValue(row, 'Case')),
-            band: this.normalizeValue(this.getValue(row, 'Band')),
-            movementType: this.normalizeValue(this.getValue(row, 'MovementType') || this.getValue(row, 'Movement Type')),
-            heelHeight: this.normalizeValue(this.getValue(row, 'HeelHeight') || this.getValue(row, 'Heel Height')),
-            width: this.normalizeValue(this.getValue(row, 'Width')),
-            hsCode: this.normalizeValue(this.getValue(row, 'HSCode')),
+
+            // NOTE: ItemID is auto-generated now; we still accept it (optional) for
+            // cases where the file intends to update existing items.
             itemId: this.normalizeValue(this.getValue(row, 'ItemID')),
-            barCode: this.normalizeValue(this.getValue(row, 'BarCode')),
-            segment: this.normalizeValue(this.getValue(row, 'Segment')),
+
+            // Note: Legacy fields like division/class/subclass/segment can still exist
+            // in old files, but are intentionally ignored by the current uploader.
         };
     }
 

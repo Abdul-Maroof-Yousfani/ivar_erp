@@ -1,6 +1,7 @@
 import { Process, Processor } from '@nestjs/bull';
 import { Logger } from '@nestjs/common';
 import type { Job } from 'bull';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CsvParserService, ParsedRecord } from '../../common/services/csv-parser.service';
 import { MasterDataService } from '../../common/services/master-data.service';
@@ -37,6 +38,7 @@ export interface UploadProgress {
 @Processor('item-upload')
 export class UploadProcessor {
     private readonly logger = new Logger(UploadProcessor.name);
+    private static readonly ITEM_ID_LOCK_KEY = 920001;
 
     constructor(
         private readonly csvParser: CsvParserService,
@@ -399,7 +401,9 @@ export class UploadProcessor {
      */
     private async processBatch(batch: ParsedRecord[], progress: UploadProgress, uploadId: string, prisma: PrismaService, tenantMasterData: MasterDataService): Promise<void> {
         // Bulk existence check
-        const itemIds = batch.map(r => String(r.data.itemId)).filter(Boolean);
+        const itemIds = batch
+            .map(r => (r.data.itemId ? String(r.data.itemId).trim() : ''))
+            .filter(Boolean);
         const existingItems = await prisma.item.findMany({
             where: { itemId: { in: itemIds } },
             select: { id: true, itemId: true }
@@ -407,24 +411,31 @@ export class UploadProcessor {
         const existingMap = new Map(existingItems.map(i => [i.itemId, i.id]));
 
         const toCreate: any[] = [];
+        const toCreateWithoutItemId: Array<{ data: any; row: number }> = [];
         const toUpdate: Array<{ id: string, data: any, row: number }> = [];
 
         for (const record of batch) {
             try {
                 const itemData = await this.prepareItemData(record, tenantMasterData);
-                const itemId = String(record.data.itemId);
+                const itemIdRaw = record.data.itemId ? String(record.data.itemId).trim() : '';
 
-                if (existingMap.has(itemId)) {
-                    toUpdate.push({
-                        id: existingMap.get(itemId) as string,
-                        data: itemData,
-                        row: record.row
-                    });
+                // If itemId is provided, this row targets update-or-create by itemId.
+                // If not provided, we always create a NEW item with auto-generated itemId.
+                if (itemIdRaw) {
+                    if (existingMap.has(itemIdRaw)) {
+                        toUpdate.push({
+                            id: existingMap.get(itemIdRaw) as string,
+                            data: itemData,
+                            row: record.row
+                        });
+                    } else {
+                        toCreate.push({
+                            ...itemData,
+                            itemId: itemIdRaw, // explicit itemId
+                        });
+                    }
                 } else {
-                    toCreate.push({
-                        ...itemData,
-                        itemId: itemId, // Required for creation
-                    });
+                    toCreateWithoutItemId.push({ data: itemData, row: record.row });
                 }
             } catch (error) {
                 this.logger.warn(`Failed to prepare row ${record.row}: ${error.message}`);
@@ -462,6 +473,29 @@ export class UploadProcessor {
             }
         }
 
+        // Creation without itemId (auto-generate, serialized by advisory lock)
+        if (toCreateWithoutItemId.length > 0) {
+            for (const row of toCreateWithoutItemId) {
+                try {
+                    await prisma.$transaction(async (tx) => {
+                        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${UploadProcessor.ITEM_ID_LOCK_KEY})`;
+                        const nextId = await this.generateNextItemIdTx(tx);
+                        await tx.item.create({
+                            data: {
+                                ...row.data,
+                                itemId: nextId,
+                            }
+                        });
+                    });
+                    progress.successRecords++;
+                } catch (e: any) {
+                    progress.failedRecords++;
+                    progress.errors.push({ row: row.row, reason: `Create failed: ${e.message}`, data: row.data });
+                }
+                progress.processedRecords++;
+            }
+        }
+
         // Batch updates via $transaction — one round trip instead of N sequential awaits
         if (toUpdate.length > 0) {
             try {
@@ -490,44 +524,75 @@ export class UploadProcessor {
     private async prepareItemData(record: ParsedRecord, tenantMasterData: MasterDataService): Promise<any> {
         const { data } = record;
 
-        // Step 1: All independent master data resolved in parallel
+        // Resolve master data (aligned with current create page fields)
         const [
-            brandId, itemClassId, categoryId, sizeId, colorId,
-            genderId, silhouetteId, channelClassId, seasonId, segmentId, hsCodeId,
+            brandId,
+            categoryId,
+            channelClassId,
+            genderId,
+            seasonId,
+            sizeId,
+            colorId,
+            silhouetteId,
+            hsCodeId,
         ] = await Promise.all([
+            // Brand is hardcoded as IVAR via CSV parser now
             tenantMasterData.getOrCreateBrand(data.concept as string),
-            tenantMasterData.getOrCreateItemClass(data.class as string),
-            tenantMasterData.getOrCreateCategory(data.productCategory as string),
+            tenantMasterData.getOrCreateCategory(data.category as string),
+            tenantMasterData.getOrCreateChannelClass(data.channelClass as string),
+            tenantMasterData.getOrCreateGender(data.gender as string),
+            tenantMasterData.getOrCreateSeason(data.season as string),
             tenantMasterData.getOrCreateSize(data.size as string),
             tenantMasterData.getOrCreateColor(data.color as string),
-            tenantMasterData.getOrCreateGender(data.gender as string),
             tenantMasterData.getOrCreateSilhouette(data.silhouette as string),
-            tenantMasterData.getOrCreateChannelClass(data.channelClass as string),
-            tenantMasterData.getOrCreateSeason(data.season as string),
-            tenantMasterData.getOrCreateSegment(data.segment as string),
             tenantMasterData.getOrCreateHsCode(data.hsCode ? String(data.hsCode) : ''),
         ]);
 
-        // Step 2: Dependent master data (needs brandId / itemClassId / categoryId from above)
-        const [divisionId, itemSubclassId, subCategoryId] = await Promise.all([
-            tenantMasterData.getOrCreateDivision(data.division as string, brandId),
-            tenantMasterData.getOrCreateItemSubclass(data.subclass as string, itemClassId),
-            tenantMasterData.getOrCreateSubCategory(data.subclass as string, categoryId),
-        ]);
+        // Dependent: subCategory needs categoryId
+        const subCategoryId = await tenantMasterData.getOrCreateSubCategory(data.subCategory as string, categoryId);
 
         return {
             sku: data.sku ? String(data.sku) : null,
             barCode: data.barCode ? String(data.barCode) : null,
             description: data.description ? String(data.description) : null,
+            imageUrl: data.imageUrl ? String(data.imageUrl) : null,
             unitPrice: data.unitPrice ? Number(data.unitPrice) : 0,
             unitCost: data.unitCost ? Number(data.unitCost) : 0,
             taxRate1: data.taxRate1 ? Number(data.taxRate1) : 0,
             taxRate2: data.taxRate2 ? Number(data.taxRate2) : 0,
+            discountRate: data.discountRate ? Number(data.discountRate) : 0,
+            discountAmount: data.discountAmount ? Number(data.discountAmount) : 0,
+            discountStartDate: data.discountStartDate ? new Date(data.discountStartDate) : null,
+            discountEndDate: data.discountEndDate ? new Date(data.discountEndDate) : null,
             status: data.isActive === false ? 'inactive' : 'active',
-            brandId, itemClassId, itemSubclassId, silhouetteId,
-            sizeId, colorId, seasonId, genderId, categoryId,
-            subCategoryId, hsCodeId, divisionId, channelClassId, segmentId,
+            brandId,
+            categoryId,
+            subCategoryId,
+            channelClassId,
+            genderId,
+            seasonId,
+            silhouetteId,
+            sizeId,
+            colorId,
+            hsCodeId,
         };
+    }
+
+    private async generateNextItemIdTx(tx: Prisma.TransactionClient): Promise<string> {
+        const rows = await tx.$queryRaw<Array<{ max_num: number | string | bigint | null }>>`
+          SELECT COALESCE(MAX(CAST("itemId" AS INTEGER)), 0) AS max_num
+          FROM "Item"
+          WHERE "itemId" ~ '^[0-9]{6}$'
+        `;
+
+        const maxRaw = rows?.[0]?.max_num ?? 0;
+        const maxNum = Number(maxRaw);
+        const next = maxNum + 1;
+
+        if (next > 999999) {
+            throw new Error('Item ID sequence exceeded maximum 999999');
+        }
+        return String(next).padStart(6, '0');
     }
 }
 
