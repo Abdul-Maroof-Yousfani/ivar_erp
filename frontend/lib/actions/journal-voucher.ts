@@ -76,3 +76,35 @@ export async function createJournalVoucher(data: any) {
         return { status: false, message: error.message || "An unexpected error occurred" };
     }
 }
+
+export async function getJournalVoucher(id: string) {
+    try {
+        const response = await authFetch(`/finance/journal-voucher/${id}`, {
+            cache: 'no-store',
+        });
+        if (!response.ok) {
+            return { status: false, data: null, message: response.data?.message || 'Failed to fetch journal voucher' };
+        }
+        return { status: true, data: response.data?.data || response.data };
+    } catch (error: any) {
+        return { status: false, data: null, message: error.message };
+    }
+}
+
+export async function updateJournalVoucher(id: string, data: any) {
+    try {
+        const response = await authFetch(`/finance/journal-voucher/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(data),
+        });
+        if (!response.ok) {
+            return { status: false, message: response.data?.message || 'Failed to update journal voucher' };
+        }
+        revalidatePath("/finance/journal-voucher/list");
+        revalidatePath("/erp/finance/journal-voucher/list");
+        revalidatePath(`/erp/finance/journal-voucher/${id}`);
+        return { status: true, message: "Journal voucher updated successfully", data: response.data };
+    } catch (error: any) {
+        return { status: false, message: error.message };
+    }
+}

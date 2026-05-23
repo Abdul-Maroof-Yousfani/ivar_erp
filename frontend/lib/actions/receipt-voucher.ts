@@ -113,3 +113,17 @@ export async function getSalesInvoices(search?: string, status?: string) {
         return { status: false, data: [] };
     }
 }
+
+export async function getReceiptVoucher(id: string) {
+    try {
+        const response = await authFetch(`/finance/receipt-vouchers/${id}`, {
+            cache: 'no-store',
+        });
+        if (!response.ok) {
+            return { status: false, data: null, message: response.data?.message || 'Failed to fetch receipt voucher' };
+        }
+        return { status: true, data: response.data?.data || response.data };
+    } catch (error: any) {
+        return { status: false, data: null, message: error.message };
+    }
+}

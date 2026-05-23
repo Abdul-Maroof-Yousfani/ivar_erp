@@ -259,3 +259,17 @@ export async function getSupplierSummary(supplierId: string) {
         return { status: false, data: null };
     }
 }
+
+export async function getPaymentVoucher(id: string) {
+    try {
+        const response = await authFetch(`/finance/payment-vouchers/${id}`, {
+            cache: 'no-store',
+        });
+        if (!response.ok) {
+            return { status: false, data: null, message: response.data?.message || 'Failed to fetch payment voucher' };
+        }
+        return { status: true, data: response.data?.data || response.data };
+    } catch (error: any) {
+        return { status: false, data: null, message: error.message };
+    }
+}

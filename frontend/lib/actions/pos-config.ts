@@ -284,3 +284,18 @@ export async function deactivateAlliance(id: string): Promise<{ status: boolean;
         return { status: false, message: 'Failed to deactivate alliance discount' };
     }
 }
+
+export async function queueMerchantsExport(options: any) {
+    try {
+        const response = await authFetch('/pos-config/merchants/export', {
+            method: 'POST',
+            body: JSON.stringify(options),
+        });
+        if (!response.ok) {
+            return { status: false, message: response.data?.message || 'Failed to queue export' };
+        }
+        return { status: true, message: response.data?.message || 'Export queued successfully' };
+    } catch (error: any) {
+        return { status: false, message: error.message };
+    }
+}
