@@ -1,11 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAccessToken } from "@/lib/auth";
+import { cookies } from "next/headers";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
 
 export async function POST(req: NextRequest) {
   try {
     const token = await getAccessToken();
+    const cookieStore = await cookies();
+
+    // Forward tenant-resolution cookies so the backend middleware can identify
+    // the company/tenant DB before the JWT guard populates req.user
+    const tenantCookieNames = ["companyId", "companyCode", "tenantCode", "tenantId"];
+    const cookieHeader = tenantCookieNames
+      .map((name) => {
+        const val = cookieStore.get(name)?.value;
+        return val ? `${name}=${encodeURIComponent(val)}` : null;
+      })
+      .filter(Boolean)
+      .join("; ");
+
     const incoming = await req.formData();
     const fd = new FormData();
     const file = incoming.get("file");
@@ -17,7 +31,10 @@ export async function POST(req: NextRequest) {
 
     const res = await fetch(`${API_BASE}/uploads`, {
       method: "POST",
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+      },
       body: fd,
     });
 
@@ -25,19 +42,21 @@ export async function POST(req: NextRequest) {
     if (!json.status) {
       return NextResponse.json(json, { status: res.status });
     }
-    // Convert relative URL to absolute URL if needed
+
+    // Ensure the URL is absolute
     const id = json.data?.id;
     let url = json.data?.url;
-    if (url && url.startsWith('/')) {
-      // Convert relative URL to absolute
-      const backendUrl = API_BASE.replace('/api', '');
-      url = `${backendUrl}${url}`;
+    if (url && url.startsWith("/")) {
+      url = `${API_BASE.replace("/api", "")}${url}`;
     } else if (!url) {
-      // Fallback: generate URL
       url = `${API_BASE}/uploads/${id}`;
     }
+
     return NextResponse.json({ status: true, data: { ...json.data, url } });
   } catch (error: any) {
-    return NextResponse.json({ status: false, message: error?.message || "Upload failed" }, { status: 500 });
+    return NextResponse.json(
+      { status: false, message: error?.message || "Upload failed" },
+      { status: 500 }
+    );
   }
 }

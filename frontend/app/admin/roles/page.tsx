@@ -12,7 +12,8 @@ function isSuperAdmin(user: any): boolean {
       normalized === "super_admin" ||
       normalized === "admin" ||
       normalized === "super admin" ||
-      normalized === "super-admin"
+      normalized === "super-admin" ||
+      normalized.includes("admin")
     );
   }
   return false;

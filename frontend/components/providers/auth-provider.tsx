@@ -25,6 +25,8 @@ export interface User {
   employeeId?: string | null;
   status?: string;
   roleId?: string | null;
+  roleExpiresAt?: string | null;
+  permissions?: string[];
   isFirstPassword?: boolean;
   employee?: {
     id: string;
@@ -315,13 +317,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const userData = data.data;
 
         // Ensure permissions are accessible in both formats for compatibility
-        // The API returns role.permissions as objects, but we also need flat array for fallback
-        if (userData.role?.permissions && Array.isArray(userData.role.permissions) && userData.role.permissions.length > 0) {
-          // Extract flat permissions array if not already present
-          if (!userData.permissions || !Array.isArray(userData.permissions)) {
+        if (!userData.permissions || !Array.isArray(userData.permissions)) {
+          if (userData.role?.permissions && Array.isArray(userData.role.permissions) && userData.role.permissions.length > 0) {
             userData.permissions = userData.role.permissions.map((p: any) =>
               p.permission?.name || p.name || p
             ).filter(Boolean);
+          } else {
+            userData.permissions = [];
           }
         }
 
@@ -531,24 +533,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Permission helpers
   const hasPermission = useCallback((permission: string): boolean => {
     if (isAdmin()) return true;
-    // Check in role.permissions object structure (from API /me)
+
+    // 1. Primary check: Use flat resolved permissions array (source of truth from backend including overrides)
+    if (user?.permissions && Array.isArray(user.permissions)) {
+      if (user.permissions.includes('*')) return true;
+      return user.permissions.includes(permission);
+    }
+
+    // 2. Fallback check: role.permissions structure (if flat array not populated yet)
     if (user?.role?.permissions && Array.isArray(user.role.permissions) && user.role.permissions.length > 0) {
-      // Check if permissions are in object format { permission: { name: "..." } }
       if (user.role.permissions[0].permission) {
         return user.role.permissions.some(p => p.permission?.name === permission);
       }
-      // Handle case where permissions might be strings in role.permissions
       if (typeof user.role.permissions[0] === 'string') {
         return (user.role.permissions as any as string[]).includes(permission);
       }
-    }
-
-    // Fallback: Check flat permissions array (from cookie or simplified user object)
-    // The user interface defines permissions?: string[] on the root object in some contexts (like lib/auth.ts)
-    // casting to any to bypass strict type checking for this fallback
-    const flatPermissions = (user as any)?.permissions;
-    if (flatPermissions && Array.isArray(flatPermissions)) {
-      return flatPermissions.includes(permission);
     }
 
     return false;
@@ -563,9 +562,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
 
-    // Check in role.permissions object structure (from API /me)
+    // 1. Primary check: Use flat resolved permissions array
+    if (user.permissions && Array.isArray(user.permissions)) {
+      if (user.permissions.includes('*')) return true;
+      const hasPermission = permissions.some(p => user.permissions?.includes(p));
+      if (process.env.NODE_ENV === 'development') {
+        console.log('RBAC hasAnyPermission result (flat array):', hasPermission, {
+          userPermissions: user.permissions,
+          required: permissions
+        });
+      }
+      return hasPermission;
+    }
+
+    // 2. Fallback check: Check in role.permissions object structure (from API /me)
     if (user?.role?.permissions && Array.isArray(user.role.permissions) && user.role.permissions.length > 0) {
-      // Check if permissions are in object format { permission: { name: "..." } }
       if (user.role.permissions[0].permission) {
         const userPermissionNames = user.role.permissions.map((p: any) => p.permission?.name).filter(Boolean);
         const hasPermission = permissions.some(permission => userPermissionNames.includes(permission));
@@ -578,7 +589,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         return hasPermission;
       }
-      // Handle case where permissions might be strings in role.permissions
       if (typeof user.role.permissions[0] === 'string') {
         const hasPermission = permissions.some(permission =>
           (user.role?.permissions as any as string[]).includes(permission)
@@ -593,19 +603,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Fallback: Check flat permissions array (from cookie)
-    const flatPermissions = (user as any)?.permissions;
-    if (flatPermissions && Array.isArray(flatPermissions)) {
-      const hasPermission = permissions.some(p => flatPermissions.includes(p));
-      if (process.env.NODE_ENV === 'development') {
-        console.log('RBAC hasAnyPermission result (flat array):', hasPermission, {
-          userPermissions: flatPermissions,
-          required: permissions
-        });
-      }
-      return hasPermission;
-    }
-
     if (process.env.NODE_ENV === 'development') {
       console.log('RBAC hasAnyPermission: No permissions found, returning false');
     }
@@ -614,25 +611,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const hasAllPermissions = useCallback((permissions: string[]): boolean => {
     if (isAdmin()) return true;
-    // Check in role.permissions object structure
+
+    // 1. Primary check: Use flat resolved permissions array
+    if (user?.permissions && Array.isArray(user.permissions)) {
+      if (user.permissions.includes('*')) return true;
+      return permissions.every(p => user.permissions?.includes(p));
+    }
+
+    // 2. Fallback check: Check in role.permissions object structure
     if (user?.role?.permissions && Array.isArray(user.role.permissions) && user.role.permissions.length > 0) {
       if (user.role.permissions[0].permission) {
         return permissions.every(permission =>
           user.role?.permissions?.some(p => p.permission?.name === permission)
         );
       }
-      // Handle case where permissions might be strings in role.permissions
       if (typeof user.role.permissions[0] === 'string') {
         return permissions.every(permission =>
           (user.role?.permissions as any as string[]).includes(permission)
         );
       }
-    }
-
-    // Fallback: Check flat permissions array
-    const flatPermissions = (user as any)?.permissions;
-    if (flatPermissions && Array.isArray(flatPermissions)) {
-      return permissions.every(p => flatPermissions.includes(p));
     }
 
     return false;

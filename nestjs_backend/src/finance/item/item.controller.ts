@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ItemService } from './item.service';
-import { CreateItemDto, UpdateItemDto, BulkDiscountDto, RollbackCampaignDto, BulkSalePriceDto } from './dto/item.dto';
+import { CreateItemDto, UpdateItemDto, BulkDiscountDto, RollbackCampaignDto, BulkSalePriceDto, BulkSearchIdsDto } from './dto/item.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -118,6 +118,13 @@ export class ItemController {
     return this.itemService.rollbackCampaign(dto);
   }
 
+  @Post('bulk-search')
+  @Permissions('erp.item.read')
+  @ApiOperation({ summary: 'Bulk search items by an array of barcodes, SKUs, or Item IDs' })
+  async bulkSearchByBarcodes(@Body() dto: BulkSearchIdsDto) {
+    return this.itemService.bulkSearchByBarcodes(dto.barcodes);
+  }
+
   // ── Standard CRUD ───────────────────────────────────────────────────────────
 
   @Get('code/:code')
@@ -141,10 +148,11 @@ export class ItemController {
     return this.itemService.update(id, updateItemDto);
   }
 
-  @Delete(':id')
-  @Permissions('erp.item.delete')
-  @ApiOperation({ summary: 'Delete item' })
-  async remove(@Param('id') id: string) {
-    return this.itemService.remove(id);
-  }
+  // DISABLED: Items cannot be deleted to maintain data integrity
+  // @Delete(':id')
+  // @Permissions('erp.item.delete')
+  // @ApiOperation({ summary: 'Delete item' })
+  // async remove(@Param('id') id: string) {
+  //   return this.itemService.remove(id);
+  // }
 }

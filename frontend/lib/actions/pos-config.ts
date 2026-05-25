@@ -285,17 +285,29 @@ export async function deactivateAlliance(id: string): Promise<{ status: boolean;
     }
 }
 
-export async function queueMerchantsExport(options: any) {
+// ══════════════════════════════════════════════════════════════
+//  Merchants Exporter
+// ══════════════════════════════════════════════════════════════
+
+export async function queueMerchantsExport(filters: {
+    search?: string;
+    locationId?: string;
+    bankName?: string;
+    isActive?: boolean;
+}): Promise<{ status: boolean; message: string; data?: { jobId: string } }> {
     try {
-        const response = await authFetch('/pos-config/merchants/export', {
+        const queryParams = new URLSearchParams();
+        if (filters.search) queryParams.append('search', filters.search);
+        if (filters.locationId) queryParams.append('locationId', filters.locationId);
+        if (filters.bankName) queryParams.append('bankName', filters.bankName);
+        if (filters.isActive !== undefined) queryParams.append('isActive', String(filters.isActive));
+
+        const res = await authFetch(`/pos-config/merchants/export?${queryParams.toString()}`, {
             method: 'POST',
-            body: JSON.stringify(options),
         });
-        if (!response.ok) {
-            return { status: false, message: response.data?.message || 'Failed to queue export' };
-        }
-        return { status: true, message: response.data?.message || 'Export queued successfully' };
-    } catch (error: any) {
-        return { status: false, message: error.message };
+        return res.data;
+    } catch {
+        return { status: false, message: 'Failed to queue merchant background export' };
     }
 }
+

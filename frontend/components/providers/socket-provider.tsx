@@ -33,11 +33,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         const baseUrl = API_URL.replace(/\/api$/, "");
 
         const socket = io(baseUrl, {
-            transports: ["websocket"],
+            transports: ["websocket", "polling"],
             auth: {
                 token: document.cookie
                     .split("; ")
-                    .find((row) => row.startsWith("access_token="))
+                    .find((row) => row.startsWith("accessToken="))
                     ?.split("=")[1],
             },
         });

@@ -9,6 +9,8 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Upload } from "lucide-react";
+import { ProtectedSalaryCell } from "@/components/common/protected-salary-cell";
+import { ProtectedSalaryInput } from "@/components/common/protected-salary-input";
 
 type Option = { id: string; name: string; allocationId?: string | null };
 
@@ -310,11 +312,16 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
           <Label>
             Employee Salary (Compensation) <span className="text-destructive">*</span>
           </Label>
-          <Input
-            type="number"
-            placeholder="Enter employee salary"
-            {...register("employeeSalary")}
-            disabled={isPending}
+          <Controller
+            name="employeeSalary"
+            control={control}
+            render={({ field }) => (
+              <ProtectedSalaryInput
+                {...field}
+                placeholder="Enter employee salary"
+                disabled={isPending}
+              />
+            )}
           />
           {errors?.employeeSalary && (
             <p className="text-xs text-red-500">{errors.employeeSalary.message}</p>

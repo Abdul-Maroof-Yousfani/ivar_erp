@@ -21,12 +21,24 @@ export async function GET(
         const uploadType = req.nextUrl.searchParams.get("type") || "item";
         let backendPath: string;
 
-        if (uploadType === "hscode") {
+        if (uploadType === "item-update") {
+            backendPath = `${API_URL}/items/bulk-update-prices/${uploadId}/events`;
+        } else if (uploadType === "hscode") {
             backendPath = `${API_URL}/master/hs-codes/bulk-upload/${uploadId}/events`;
+        } else if (uploadType === "alliance") {
+            backendPath = `${API_URL}/pos-config/alliances/bulk-upload/${uploadId}/events`;
+        } else if (uploadType === "merchant") {
+            backendPath = `${API_URL}/pos-config/merchants/bulk-upload/${uploadId}/events`;
         } else if (uploadType === "employee") {
             backendPath = `${API_URL}/employees/bulk-upload/${uploadId}/events`;
         } else if (uploadType === "attendance") {
             backendPath = `${API_URL}/attendances/bulk-upload/${uploadId}/events`;
+        } else if (uploadType === "coa") {
+            backendPath = `${API_URL}/finance/chart-of-accounts/bulk-upload/${uploadId}/events`;
+        } else if (uploadType === "sales-history") {
+            backendPath = `${API_URL}/pos-sales/bulk-upload/${uploadId}/events`;
+        } else if (uploadType === "stock") {
+            backendPath = `${API_URL}/warehouse/stock/bulk-upload/${uploadId}/events`;
         } else {
             backendPath = `${API_URL}/items/bulk-upload/${uploadId}/events`;
         }

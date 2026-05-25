@@ -241,10 +241,10 @@ function HourlySalesChart({ data }: { data: HourlyBucket[] }) {
                         <div className="w-full flex items-end" style={{ height: "88px" }}>
                             <div
                                 className={`w-full rounded-t transition-all ${isCurrent
-                                        ? "bg-blue-500"
-                                        : bucket.sales > 0
-                                            ? "bg-blue-300 dark:bg-blue-700"
-                                            : "bg-muted"
+                                    ? "bg-blue-500"
+                                    : bucket.sales > 0
+                                        ? "bg-blue-300 dark:bg-blue-700"
+                                        : "bg-muted"
                                     }`}
                                 style={{ height: `${Math.max(heightPct, 4)}%` }}
                             />
@@ -274,7 +274,7 @@ export default function PosPage() {
         setError(null);
         try {
             const [dashRes, sessionRes] = await Promise.allSettled([
-                authFetch("/pos-dashboard/stats"),
+                authFetch("//stats"),
                 authFetch("/pos-session/current"),
             ]);
 

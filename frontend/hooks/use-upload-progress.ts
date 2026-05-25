@@ -35,7 +35,7 @@ export interface UploadStatusResponse {
     completedAt: string | null;
 }
 
-export function useUploadProgress(uploadId: string | null, uploadType: 'item' | 'hscode' | 'employee' | 'attendance' = 'item') {
+export function useUploadProgress(uploadId: string | null, uploadType: 'item' | 'item-update' | 'hscode' | 'employee' | 'attendance' | 'coa' | 'alliance' | 'sales-history' | 'stock' | 'merchant' = 'item') {
     const [data, setData] = useState<UploadStatusResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -62,14 +62,32 @@ export function useUploadProgress(uploadId: string | null, uploadType: 'item' | 
 
     const getApiEndpoint = useCallback((endpoint: string) => {
         const baseUrl = getApiBaseUrl();
+        if (uploadType === 'item-update') {
+            return `${baseUrl}/items/bulk-update-prices/${endpoint}`;
+        }
         if (uploadType === 'hscode') {
             return `${baseUrl}/master/hs-codes/bulk-upload/${endpoint}`;
+        }
+        if (uploadType === 'alliance') {
+            return `${baseUrl}/pos-config/alliances/bulk-upload/${endpoint}`;
+        }
+        if (uploadType === 'merchant') {
+            return `${baseUrl}/pos-config/merchants/bulk-upload/${endpoint}`;
         }
         if (uploadType === 'employee') {
             return `${baseUrl}/employees/bulk-upload/${endpoint}`;
         }
         if (uploadType === 'attendance') {
             return `${baseUrl}/attendances/bulk-upload/${endpoint}`;
+        }
+        if (uploadType === 'coa') {
+            return `${baseUrl}/finance/chart-of-accounts/bulk-upload/${endpoint}`;
+        }
+        if (uploadType === 'sales-history') {
+            return `${baseUrl}/pos-sales/bulk-upload/${endpoint}`;
+        }
+        if (uploadType === 'stock') {
+            return `${baseUrl}/warehouse/stock/bulk-upload/${endpoint}`;
         }
         return `${baseUrl}/items/bulk-upload/${endpoint}`;
     }, [uploadType]);

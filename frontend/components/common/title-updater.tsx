@@ -36,6 +36,7 @@ const ACTION_TITLES = new Set([
   "create request",
   "issue bonus",
   "view pf",
+  "view eobi",
   "create withdraw",
   "view withdraw",
   "view ledger",

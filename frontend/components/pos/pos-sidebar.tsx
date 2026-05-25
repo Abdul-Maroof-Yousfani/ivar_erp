@@ -93,7 +93,7 @@ export function PosSidebar() {
                         </div>
                         <div className="flex flex-col group-data-[collapsible=icon]:hidden transition-opacity duration-200">
                             <span className="font-bold text-base leading-tight text-sidebar-foreground">
-                                Ivar
+                                IVAR
                             </span>
                             <span className="text-xs text-sidebar-foreground/60 font-medium">
                                 POS Terminal
@@ -164,7 +164,7 @@ export function PosSidebar() {
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                     <SidebarMenuItem>
-                        <SidebarMenuButton 
+                        <SidebarMenuButton
                             onClick={logout}
                             className="text-destructive hover:text-destructive hover:bg-destructive/10 transition-colors pointer-events-auto cursor-pointer"
                         >

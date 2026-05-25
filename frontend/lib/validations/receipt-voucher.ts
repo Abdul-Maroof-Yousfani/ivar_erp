@@ -2,8 +2,12 @@ import { z } from "zod";
 
 export const receiptVoucherDetailSchema = z.object({
     accountId: z.string().min(1, "Account is required"),
+    tagAccountId: z.string().optional(),
     debit: z.coerce.number().min(0).default(0),
     credit: z.coerce.number().min(0).default(0),
+    narration: z.string().optional(),
+    refBillNo: z.string().optional(),
+    isTaxApplicable: z.boolean().optional(),
 });
 
 export const receiptVoucherInvoiceSchema = z.object({
@@ -20,6 +24,10 @@ export const receiptVoucherSchema = z.object({
     chequeNo: z.string().optional(),
     chequeDate: z.date().optional(),
     customerId: z.string().optional(),
+    isAdvance: z.boolean().optional(),
+    isTaxApplicable: z.boolean().optional(),
+    debitAccountId: z.string().optional(),
+    debitAmount: z.coerce.number().optional(),
     invoices: z.array(receiptVoucherInvoiceSchema).optional(),
     description: z.string().min(1, "Description is required"),
     details: z.array(receiptVoucherDetailSchema).min(2, "At least two detail rows are required"),

@@ -62,7 +62,7 @@ export function ReceiptVoucherPrint({ voucher }: { voucher: ReceiptVoucher }) {
              <span className="font-bold">Voucher Number:</span>
              <span className="font-bold">{voucher.rvNo}</span>
            </div>
-           <div className="flex justify-between mb-2">
+           <div className="flex justify-between">
              <div className="flex gap-2">
                <span className="font-bold">Date:</span>
                <span>{voucher.rvDate ? format(new Date(voucher.rvDate), "dd/MM/yyyy") : ""}</span>
@@ -73,7 +73,7 @@ export function ReceiptVoucherPrint({ voucher }: { voucher: ReceiptVoucher }) {
              </div>
            </div>
            {isBank && (
-             <div className="flex gap-2">
+             <div className="flex gap-2 mt-2">
                <span className="font-bold">Cheque #:</span>
                <span className="uppercase">{voucher.chequeNo || "—"}</span>
              </div>
@@ -200,10 +200,11 @@ export function ReceiptVoucherPrint({ voucher }: { voucher: ReceiptVoucher }) {
       {/* Remarks */}
       <div className="mt-4 mb-8">
         <div className="font-bold text-xs sm:text-[14px]">Remarks</div>
+        <p className="text-xs sm:text-[13px] mt-1 text-gray-700">{voucher.description}</p>
       </div>
 
       {/* Signatures */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div className="border border-black h-20 p-2 flex flex-col justify-start items-center">
           <span className="text-[10px] sm:text-[11px] font-bold text-center">PREPARED BY</span>
         </div>
@@ -212,12 +213,6 @@ export function ReceiptVoucherPrint({ voucher }: { voucher: ReceiptVoucher }) {
         </div>
         <div className="border border-black h-20 p-2 flex flex-col justify-start items-center">
           <span className="text-[10px] sm:text-[11px] font-bold text-center">APPROVED BY</span>
-        </div>
-        <div className="border border-black h-20 p-2 flex flex-col justify-start items-center">
-          <span className="text-[10px] sm:text-[11px] font-bold text-center">CHIEF EXECUTIVE</span>
-        </div>
-        <div className="border border-black h-20 p-2 flex flex-col justify-start items-center">
-          <span className="text-[10px] sm:text-[11px] font-bold text-center">RECEIVED BY</span>
         </div>
       </div>
 

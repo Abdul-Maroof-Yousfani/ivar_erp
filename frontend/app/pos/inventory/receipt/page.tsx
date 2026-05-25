@@ -186,7 +186,7 @@ export default function StockReceiptPage() {
                 ) : (
                     <div className="space-y-3">
                         {filtered.map((transfer) => (
-                            <Card key={transfer.id} className="overflow-hidden border-border/60">
+                            <Card key={transfer.id} className="overflow-hidden border-border/60 !py-0">
                                 {/* Main Row */}
                                 <CardContent className="p-0">
                                     <div className="flex items-center gap-4 p-4">

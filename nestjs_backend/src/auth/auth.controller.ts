@@ -11,10 +11,10 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { PrismaMasterService } from '../database/prisma-master.service';
+import { PermissionGuard } from '../common/guards/permission.guard';
 import { PrismaService } from '../database/prisma.service';
 
-import { SetMetadata, createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { SetMetadata } from '@nestjs/common';
 
 export const OptionalJwtAuth = () => SetMetadata('isOptional', true);
 import {
@@ -702,7 +702,7 @@ export class AuthController {
   }
 
   @Post('update-profile')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard('profile.update'))
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update current user profile' })
   async updateProfile(@Req() req: any, @Body() body: UpdateUserProfileDto) {
@@ -818,6 +818,30 @@ export class AuthController {
     return this.service.updateUser(body.id, body.data);
   }
 
+  @Post('users/reset-password')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Admin reset of a user password — sets isFirstPassword to true' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        userId: { type: 'string', example: 'uuid' },
+        newPassword: { type: 'string', example: 'NewPass@123' },
+      },
+    },
+  })
+  async adminResetPassword(
+    @Req() req: any,
+    @Body() body: { userId: string; newPassword: string },
+  ) {
+    return this.service.adminResetPassword(
+      req.user.userId,
+      body.userId,
+      body.newPassword,
+    );
+  }
+
   @Get('roles')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -849,6 +873,14 @@ export class AuthController {
   async verifyPassword(@Req() req: any, @Body() body: { password: string }) {
     const isValid = await this.service.verifyPassword(req.user.userId, body.password);
     return { status: isValid, message: isValid ? 'Password verified' : 'Invalid password' };
+  }
+
+  @Post('verify-manager')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Verify manager credentials' })
+  async verifyManager(@Body() body: { emailOrId: string; password: string }) {
+    return this.service.verifyManager(body.emailOrId, body.password);
   }
 
   @Get('profiles')

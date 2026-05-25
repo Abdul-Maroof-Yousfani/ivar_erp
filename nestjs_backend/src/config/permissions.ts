@@ -1807,8 +1807,8 @@ export const PERMISSIONS = [
   { name: 'erp.inventory.stock-transfer.read', description: 'View Stock Transfer History' },
   { name: 'erp.inventory.delivery-note.read', description: 'View Delivery Notes' },
   { name: 'erp.inventory.delivery-note.create', description: 'Create Delivery Note' },
-  { name: 'erp.inventory.stock-received.read', description: 'View Stock Received' },
-  { name: 'erp.inventory.stock-received.update', description: 'Update Stock Received Status' },
+  { name: 'erp.inventory.stock-ledger.read', description: 'View Stock Ledger' },
+  { name: 'erp.inventory.stock-ledger.update', description: 'Update Stock Ledger Status' },
   { name: 'erp.inventory.return-transfer.read', description: 'View Return Transfers' },
   { name: 'erp.inventory.return-transfer.create', description: 'Create Return Transfer' },
 
@@ -1818,6 +1818,9 @@ export const PERMISSIONS = [
   { name: 'erp.inventory.warehouse.update', description: 'Update Warehouse' },
   { name: 'erp.inventory.warehouse.delete', description: 'Delete Warehouse' },
   { name: 'erp.inventory.warehouse.inventory.view', description: 'View Warehouse Inventory Levels' },
+
+  { name: 'erp.inventory.claims.acknowledge', description: 'Acknowledge Inventory Claim' },
+  { name: 'erp.inventory.claims.reject', description: 'Reject Inventory Claim' },
 
   // ── ERP Items ───────────────────────────────────────────────────────────────
   { name: 'erp.item.read', description: 'View Items Catalog' },
@@ -1995,6 +1998,9 @@ export const PERMISSIONS = [
 
   // ── POS — Dashboard ─────────────────────────────────────────────────────────
   { name: 'pos.dashboard.view', description: 'View POS Dashboard & Stats' },
+
+  // ── Profile Management ──────────────────────────────────────────────────────
+  { name: 'profile.update', description: 'Update Own Profile Information' },
 
 ];
 

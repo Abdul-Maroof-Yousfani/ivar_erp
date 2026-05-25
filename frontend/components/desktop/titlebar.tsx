@@ -34,7 +34,7 @@ export function DesktopTitlebar() {
       <div className="flex items-center gap-2 px-3">
         <Image src="/logo.png" alt="POS" width={14} height={14} className="object-contain opacity-80" />
         <span className="text-[11px] font-semibold text-muted-foreground tracking-wide">
-          Ivar - POS
+          IVAR - POS
         </span>
       </div>
 

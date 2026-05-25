@@ -69,7 +69,7 @@ export function StockTransferHistoryList({ initialEntries }: StockTransferHistor
     };
 
     return (
-        <Card className="overflow-hidden shadow-sm border-2">
+        <Card className="overflow-hidden shadow-sm border-2 py-0!">
             <CardContent className="p-0">
                 <Table>
                     <TableHeader className="bg-muted/50">

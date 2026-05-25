@@ -1,25 +1,12 @@
 // @ts-nocheck
-import { config } from 'dotenv';
-import { resolve } from 'path';
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/management-client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
 
-// Load .env from parent directory
-config({ path: resolve(__dirname, '../.env') });
-
 async function main() {
-    const connectionString = process.env.DATABASE_URL_MANAGEMENT;
-    
-    if (!connectionString) {
-        console.error('❌ DATABASE_URL_MANAGEMENT is not defined in .env file');
-        process.exit(1);
-    }
-    
-    console.log('🔗 Using connection string:', connectionString.replace(/:[^:@]+@/, ':****@'));
-    
-    const pool = new Pool({ connectionString });
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL_MANAGEMENT });
     const adapter = new PrismaPg(pool);
     const prisma = new PrismaClient({ adapter });
 

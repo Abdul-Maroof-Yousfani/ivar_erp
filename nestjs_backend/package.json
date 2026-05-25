@@ -30,10 +30,13 @@
     "prisma:tenant:push": "bun scripts/push-tenants-schema.ts",
     "prisma:tenant:seed": "bun scripts/seed-tenant.ts",
     "seed:kpi-templates": "bun scripts/seed-kpi-templates.ts",
+    "seed:opening-balances": "bun scripts/seed-opening-balances.ts",
     "prisma:tenant:studio": "bun scripts/studio-tenant.ts",
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.787.0",
+    "@aws-sdk/s3-request-presigner": "^3.787.0",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",
     "@fastify/multipart": "^9.3.0",
@@ -64,7 +67,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
     "csv-parse": "^6.1.0",
-    "dotenv": "^17.4.2",
+    "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
     "fastify": "^5.8.4",
     "fs": "^0.0.1-security",
@@ -78,6 +81,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sharp": "^0.34.5",
+    "ts-morph": "^28.0.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

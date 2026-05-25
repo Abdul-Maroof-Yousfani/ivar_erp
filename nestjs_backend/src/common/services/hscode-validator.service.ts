@@ -56,6 +56,7 @@ export class HsCodeValidatorService {
             { field: 'regulatoryDutyRd', name: 'Regulatory Duty (RD)', value: data.regulatoryDutyRd },
             { field: 'additionalCustomsDutyAcd', name: 'Additional Customs Duty (ACD)', value: data.additionalCustomsDutyAcd },
             { field: 'salesTax', name: 'Sales Tax (ST)', value: data.salesTax },
+            { field: 'additionalSalesTaxAst', name: 'Additional Sales Tax (AST)', value: data.additionalSalesTaxAst },
             { field: 'incomeTax', name: 'Income Tax (IT)', value: data.incomeTax },
         ];
 
@@ -129,7 +130,7 @@ export class HsCodeValidatorService {
 
         records.forEach((record) => {
             if (record.data.hsCode) {
-                const normalized = record.data.hsCode.trim().toLowerCase();
+                const normalized = String(record.data.hsCode).trim();
                 const existing = hsCodeMap.get(normalized) || [];
                 hsCodeMap.set(normalized, [...existing, record.row]);
             }

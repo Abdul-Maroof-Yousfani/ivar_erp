@@ -116,13 +116,17 @@ export default async function ViewItemPage({ params }: PageProps) {
             <InfoSection title="Basic Details">
                 <InfoItem label="Description" value={item.description} />
                 <InfoItem label="Brand" value={item.brand?.name} />
+                <InfoItem label="Segment" value={item.segment?.name} />
                 <InfoItem label="Barcode" value={item.barCode} />
                 <InfoItem label="HS Code" value={item.hsCode} />
             </InfoSection>
 
             <InfoSection title="Classification">
+                <InfoItem label="Division" value={item.division?.name} />
                 <InfoItem label="Category" value={item.category?.name} />
                 <InfoItem label="Sub Category" value={item.subCategory?.name} />
+                <InfoItem label="Item Class" value={item.itemClass?.name} />
+                <InfoItem label="Item Subclass" value={item.itemSubclass?.name} />
                 <InfoItem label="Channel Class" value={item.channelClass?.name} />
                 <InfoItem label="Gender" value={item.gender?.name} />
                 <InfoItem label="Season" value={item.season?.name} />
@@ -149,6 +153,11 @@ export default async function ViewItemPage({ params }: PageProps) {
                 <InfoItem label="Size" value={item.size?.name} />
                 <InfoItem label="Color" value={item.color?.name} />
                 <InfoItem label="Silhouette" value={item.silhouette?.name} />
+                <InfoItem label="Case" value={item.case} />
+                <InfoItem label="Band" value={item.band} />
+                <InfoItem label="Movement Type" value={item.movementType} />
+                <InfoItem label="Heel Height" value={item.heelHeight} />
+                <InfoItem label="Width" value={item.width} />
             </InfoSection>
         </div>
     );

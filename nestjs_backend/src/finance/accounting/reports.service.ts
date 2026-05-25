@@ -10,123 +10,218 @@ export class ReportsService {
   // TRIAL BALANCE (6-Column Format)
   // Returns opening balance, period transactions, and closing balance
   // ─────────────────────────────────────────────────────────────────────────
-  async getTrialBalance(from?: string, to?: string) {
-    const accounts = await this.prisma.chartOfAccount.findMany({
-      where: { isGroup: false, isActive: true },
-      select: { id: true, code: true, name: true, type: true, balance: true,
-        parent: { select: { code: true, name: true } } },
+      async getTrialBalance(from?: string, to?: string, includeTagAccounts: boolean = false) {
+    const allAccounts = await this.prisma.chartOfAccount.findMany({
+      where: { isActive: true },
+      select: { id: true, code: true, name: true, type: true, balance: true, isGroup: true, parentId: true },
       orderBy: { code: 'asc' },
     });
 
-    if (!from && !to) {
-      // Use stored running balances (no period specified)
-      let totalDebit = 0, totalCredit = 0;
-      const rows = accounts.map(a => {
-        const bal = Number(a.balance);
-        const isDebitNormal = a.type === AccountType.ASSET || a.type === AccountType.EXPENSE;
-        const debit  = isDebitNormal && bal > 0 ? bal : (!isDebitNormal && bal < 0 ? -bal : 0);
-        const credit = !isDebitNormal && bal > 0 ? bal : (isDebitNormal && bal < 0 ? -bal : 0);
-        totalDebit  += debit;
-        totalCredit += credit;
-        return { 
-          ...a, 
-          balance: bal, 
-          debit, 
-          credit,
-          openingDebit: 0,
-          openingCredit: 0,
-          transactionDebit: 0,
-          transactionCredit: 0,
-          closingDebit: debit,
-          closingCredit: credit,
-        };
-      });
-      return { rows, totalDebit, totalCredit, balanced: Math.abs(totalDebit - totalCredit) < 0.01 };
-    }
+    const accountMap = new Map<string, any>(allAccounts.map(a => [a.id, { ...a, balance: Number(a.balance) }]));
 
-    // Period-based: calculate opening, transactions, and closing
     const fromDate = from ? new Date(from) : undefined;
     const toDate = to ? new Date(to) : undefined;
 
-    // Get opening balances (transactions before 'from' date)
-    const openingAgg = fromDate ? await this.prisma.accountTransaction.groupBy({
-      by: ['accountId'],
-      where: { transactionDate: { lt: fromDate } },
-      _sum: { debit: true, credit: true },
-    }) : [];
+    // 1. Get Opening Balances
+    const openingWhere: any = fromDate ? {
+      OR: [
+        { sourceType: 'OPENING_BALANCE' },
+        { transactionDate: { lt: fromDate }, sourceType: { not: 'OPENING_BALANCE' } }
+      ]
+    } : { sourceType: 'OPENING_BALANCE' };
 
-    const openingMap = new Map(openingAgg.map(t => [t.accountId, {
-      debit:  Number(t._sum.debit  ?? 0),
-      credit: Number(t._sum.credit ?? 0),
-    }]));
-
-    // Get period transactions (between 'from' and 'to')
-    const dateFilter: any = {};
-    if (fromDate) dateFilter.gte = fromDate;
-    if (toDate)   dateFilter.lte = toDate;
-
-    const txAgg = await this.prisma.accountTransaction.groupBy({
-      by: ['accountId'],
-      where: { transactionDate: dateFilter },
+    const openingAgg = await this.prisma.accountTransaction.groupBy({
+      by: includeTagAccounts ? ['accountId', 'tagAccountId'] : ['accountId'],
+      where: openingWhere,
       _sum: { debit: true, credit: true },
     });
 
-    const txMap = new Map(txAgg.map(t => [t.accountId, {
-      debit:  Number(t._sum.debit  ?? 0),
-      credit: Number(t._sum.credit ?? 0),
-    }]));
+    // 2. Get Period Transactions
+    const txWhere: any = { sourceType: { not: 'OPENING_BALANCE' } };
+    if (fromDate || toDate) {
+      txWhere.transactionDate = {};
+      if (fromDate) txWhere.transactionDate.gte = fromDate;
+      if (toDate) txWhere.transactionDate.lte = toDate;
+    }
 
+    const txAgg = await this.prisma.accountTransaction.groupBy({
+      by: includeTagAccounts ? ['accountId', 'tagAccountId'] : ['accountId'],
+      where: txWhere,
+      _sum: { debit: true, credit: true },
+    });
+
+    const getKey = (accId: string, tagId?: string | null) => includeTagAccounts && tagId ? `${accId}_${tagId}` : accId;
+    const amountsMap = new Map<string, { openingDr: number, openingCr: number, txDr: number, txCr: number, accountId: string, tagAccountId: string | null }>();
+
+    for (const o of openingAgg) {
+      const k = getKey(o.accountId, (o as any).tagAccountId);
+      if (!amountsMap.has(k)) amountsMap.set(k, { openingDr: 0, openingCr: 0, txDr: 0, txCr: 0, accountId: o.accountId, tagAccountId: (o as any).tagAccountId || null });
+      const entry = amountsMap.get(k)!;
+      entry.openingDr += Number(o._sum.debit ?? 0);
+      entry.openingCr += Number(o._sum.credit ?? 0);
+    }
+
+    for (const t of txAgg) {
+      const k = getKey(t.accountId, (t as any).tagAccountId);
+      if (!amountsMap.has(k)) amountsMap.set(k, { openingDr: 0, openingCr: 0, txDr: 0, txCr: 0, accountId: t.accountId, tagAccountId: (t as any).tagAccountId || null });
+      const entry = amountsMap.get(k)!;
+      entry.txDr += Number(t._sum.debit ?? 0);
+      entry.txCr += Number(t._sum.credit ?? 0);
+    }
+    
+    // 3. Build data for leaf accounts and tag accounts
+    const leafNodes: any[] = [];
+    
+    for (const [k, v] of amountsMap.entries()) {
+      const acc = accountMap.get(v.accountId);
+      if (!acc) continue;
+
+      const openNet = v.openingDr - v.openingCr;
+      const openingDebit = openNet > 0 ? openNet : 0;
+      const openingCredit = openNet < 0 ? -openNet : 0;
+
+      const closingNet = (v.openingDr + v.txDr) - (v.openingCr + v.txCr);
+      const closingDebit = closingNet > 0 ? closingNet : 0;
+      const closingCredit = closingNet < 0 ? -closingNet : 0;
+
+      if (openingDebit === 0 && openingCredit === 0 && v.txDr === 0 && v.txCr === 0 && closingDebit === 0 && closingCredit === 0) {
+        continue;
+      }
+
+      if (includeTagAccounts && v.tagAccountId) {
+        // Find Tag Name from ChartOfAccount if exists, or Payee tables if needed.
+        // Wait, if tag is in ChartOfAccount:
+        const tagAcc = accountMap.get(v.tagAccountId);
+        
+        leafNodes.push({
+          id: k,
+          isTagAccount: true,
+          parentId: acc.id,
+          code: tagAcc ? tagAcc.code : v.tagAccountId,
+          name: tagAcc ? tagAcc.name : `Tag: ${v.tagAccountId}`,
+          type: acc.type,
+          openingDebit, openingCredit,
+          transactionDebit: v.txDr, transactionCredit: v.txCr,
+          closingDebit, closingCredit,
+        });
+      } else {
+        leafNodes.push({
+          ...acc,
+          openingDebit, openingCredit,
+          transactionDebit: v.txDr, transactionCredit: v.txCr,
+          closingDebit, closingCredit,
+        });
+      }
+    }
+
+    // 4. Roll up to parent groups
+    const nodeMap = new Map<string, any>();
+    for (const node of leafNodes) {
+      nodeMap.set(node.id, node);
+    }
+    
+    for (const acc of allAccounts) {
+      if (acc.isGroup && !nodeMap.has(acc.id)) {
+        nodeMap.set(acc.id, {
+          ...acc,
+          openingDebit: 0, openingCredit: 0,
+          transactionDebit: 0, transactionCredit: 0,
+          closingDebit: 0, closingCredit: 0,
+        });
+      }
+    }
+
+    const childMap = new Map<string, any[]>();
+    for (const node of nodeMap.values()) {
+      if (node.parentId) {
+        if (!childMap.has(node.parentId)) childMap.set(node.parentId, []);
+        childMap.get(node.parentId)!.push(node);
+      }
+    }
+
+    const rollUp = (nodeId: string) => {
+      const node = nodeMap.get(nodeId);
+      if (!node) return;
+      
+      const children = childMap.get(nodeId) || [];
+      
+      // If this node has children, ignore its own directly posted balances to prevent double counting
+      if (children.length > 0) {
+        node.openingDebit = 0;
+        node.openingCredit = 0;
+        node.transactionDebit = 0;
+        node.transactionCredit = 0;
+        node.closingDebit = 0;
+        node.closingCredit = 0;
+      }
+
+      for (const child of children) {
+        rollUp(child.id);
+        
+        // Always roll up! This fixes the issue where leaf accounts did not roll up tag accounts
+        node.openingDebit += child.openingDebit || 0;
+        node.openingCredit += child.openingCredit || 0;
+        node.transactionDebit += child.transactionDebit || 0;
+        node.transactionCredit += child.transactionCredit || 0;
+        node.closingDebit += child.closingDebit || 0;
+        node.closingCredit += child.closingCredit || 0;
+      }
+
+      // After adding all children, recalculate net for THIS node
+      const openNet = node.openingDebit - node.openingCredit;
+      node.openingDebit = openNet > 0 ? openNet : 0;
+      node.openingCredit = openNet < 0 ? -openNet : 0;
+      
+      // We do NOT net Transactions! Transactions should show total Dr and total Cr volume.
+      
+      const closeNet = node.closingDebit - node.closingCredit;
+      node.closingDebit = closeNet > 0 ? closeNet : 0;
+      node.closingCredit = closeNet < 0 ? -closeNet : 0;
+    };
+
+    // Find root nodes and roll up
+    for (const node of nodeMap.values()) {
+      if (!node.parentId) {
+        rollUp(node.id);
+      }
+    }
+
+    // 5. Calculate Grand Totals from Root Nodes ONLY
     let totalOpeningDebit = 0, totalOpeningCredit = 0;
     let totalTxDebit = 0, totalTxCredit = 0;
     let totalClosingDebit = 0, totalClosingCredit = 0;
 
-    const rows = accounts.map(a => {
-      const opening = openingMap.get(a.id) ?? { debit: 0, credit: 0 };
-      const tx = txMap.get(a.id) ?? { debit: 0, credit: 0 };
-      
-      // Calculate net opening balance
-      const isDebitNormal = a.type === AccountType.ASSET || a.type === AccountType.EXPENSE;
-      const openingBalance = isDebitNormal 
-        ? opening.debit - opening.credit 
-        : opening.credit - opening.debit;
-      
-      const openingDebit = openingBalance > 0 ? openingBalance : 0;
-      const openingCredit = openingBalance < 0 ? -openingBalance : 0;
-      
-      // Period transactions
-      const transactionDebit = tx.debit;
-      const transactionCredit = tx.credit;
-      
-      // Calculate closing balance
-      const closingBalance = openingBalance + (isDebitNormal 
-        ? tx.debit - tx.credit 
-        : tx.credit - tx.debit);
-      
-      const closingDebit = closingBalance > 0 ? closingBalance : 0;
-      const closingCredit = closingBalance < 0 ? -closingBalance : 0;
+    const roots = Array.from(nodeMap.values()).filter(n => !n.parentId && !n.isTagAccount);
+    for (const root of roots) {
+      totalOpeningDebit += root.openingDebit;
+      totalOpeningCredit += root.openingCredit;
+      totalTxDebit += root.transactionDebit;
+      totalTxCredit += root.transactionCredit;
+      totalClosingDebit += root.closingDebit;
+      totalClosingCredit += root.closingCredit;
+    }
 
-      totalOpeningDebit += openingDebit;
-      totalOpeningCredit += openingCredit;
-      totalTxDebit += transactionDebit;
-      totalTxCredit += transactionCredit;
-      totalClosingDebit += closingDebit;
-      totalClosingCredit += closingCredit;
+    // 6. Flatten tree
+    const rows: any[] = [];
+    const traverse = (nodeId: string, level = 0) => {
+      const node = nodeMap.get(nodeId);
+      if (!node) return;
+      
+      if (node.openingDebit !== 0 || node.openingCredit !== 0 || node.transactionDebit !== 0 || node.transactionCredit !== 0 || node.closingDebit !== 0 || node.closingCredit !== 0) {
+        rows.push({ ...node, level });
+      }
+      
+      const children = childMap.get(nodeId) || [];
+      children.sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+      for (const child of children) {
+        traverse(child.id, level + 1);
+      }
+    };
 
-      return { 
-        ...a, 
-        balance: Number(a.balance),
-        debit: closingDebit,
-        credit: closingCredit,
-        openingDebit,
-        openingCredit,
-        transactionDebit,
-        transactionCredit,
-        closingDebit,
-        closingCredit,
-      };
-    }).filter(r => r.openingDebit !== 0 || r.openingCredit !== 0 || 
-                   r.transactionDebit !== 0 || r.transactionCredit !== 0 ||
-                   r.closingDebit !== 0 || r.closingCredit !== 0);
+    roots.sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+    for (const root of roots) {
+      traverse(root.id, 0);
+    }
 
     return { 
       rows, 
@@ -143,16 +238,13 @@ export class ReportsService {
       to 
     };
   }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // GENERAL LEDGER  (per account, with opening balance)
-  // ─────────────────────────────────────────────────────────────────────────
   async getGeneralLedger(
     accountId: string,
     from?: string,
     to?: string,
     page = 1,
     limit = 50,
+    sourceType?: string,
   ) {
     const account = await this.prisma.chartOfAccount.findUnique({
       where: { id: accountId },
@@ -160,14 +252,23 @@ export class ReportsService {
     });
     if (!account) throw new NotFoundException('Account not found');
 
-    // Opening balance = sum of all transactions BEFORE `from`
-    let openingBalance = 0;
+    const isDebitNormal = account.type === AccountType.ASSET || account.type === AccountType.EXPENSE;
+
+    // Opening balance = sum of all transactions BEFORE `from` matching optional filters
+    const openingWhere: any = { accountId };
     if (from) {
+      openingWhere.transactionDate = { lt: new Date(from) };
+    }
+    if (sourceType) {
+      openingWhere.sourceType = sourceType;
+    }
+
+    let openingBalance = 0;
+    if (from || sourceType) {
       const before = await this.prisma.accountTransaction.aggregate({
-        where: { accountId, transactionDate: { lt: new Date(from) } },
+        where: openingWhere,
         _sum: { debit: true, credit: true },
       });
-      const isDebitNormal = account.type === AccountType.ASSET || account.type === AccountType.EXPENSE;
       const d = Number(before._sum.debit ?? 0);
       const c = Number(before._sum.credit ?? 0);
       openingBalance = isDebitNormal ? d - c : c - d;
@@ -180,31 +281,74 @@ export class ReportsService {
         ...(to   && { lte: new Date(to) }),
       };
     }
+    if (sourceType) {
+      where.sourceType = sourceType;
+    }
 
-    const [transactions, total] = await Promise.all([
+    // Stable sort order: transactionDate, then createdAt, then id to prevent row shifting
+    const orderBy = [
+      { transactionDate: 'asc' as const },
+      { createdAt: 'asc' as const },
+      { id: 'asc' as const }
+    ];
+
+    const [transactions, total, totalAgg] = await Promise.all([
       this.prisma.accountTransaction.findMany({
         where,
-        orderBy: { transactionDate: 'asc' },
+        orderBy,
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.accountTransaction.count({ where }),
+      this.prisma.accountTransaction.aggregate({
+        where,
+        _sum: { debit: true, credit: true },
+      }),
     ]);
 
-    // Compute running balance per row
-    const isDebitNormal = account.type === AccountType.ASSET || account.type === AccountType.EXPENSE;
-    let running = openingBalance;
+    // Calculate starting balance for this specific page by summing transactions skipped
+    let pageStartingBalance = openingBalance;
+    if (page > 1) {
+      const skippedTx = await this.prisma.accountTransaction.findMany({
+        where,
+        orderBy,
+        skip: 0,
+        take: (page - 1) * limit,
+        select: { debit: true, credit: true },
+      });
+      for (const tx of skippedTx) {
+        const d = Number(tx.debit), c = Number(tx.credit);
+        pageStartingBalance += isDebitNormal ? d - c : c - d;
+      }
+    }
+
+    // Compute running balance per row on current page
+    let running = pageStartingBalance;
     const rows = transactions.map(tx => {
       const d = Number(tx.debit), c = Number(tx.credit);
       running += isDebitNormal ? d - c : c - d;
-      return { ...tx, debit: d, credit: c, runningBalance: running };
+      return {
+        ...tx,
+        debit: d,
+        credit: c,
+        runningBalance: running,
+      };
     });
+
+    const rangeTotalDebit = Number(totalAgg._sum.debit ?? 0);
+    const rangeTotalCredit = Number(totalAgg._sum.credit ?? 0);
+    const rangeClosingBalance = isDebitNormal
+      ? openingBalance + rangeTotalDebit - rangeTotalCredit
+      : openingBalance + rangeTotalCredit - rangeTotalDebit;
 
     return {
       account: { ...account, balance: Number(account.balance) },
       openingBalance,
       rows,
       closingBalance: running,
+      rangeTotalDebit,
+      rangeTotalCredit,
+      rangeClosingBalance,
       pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

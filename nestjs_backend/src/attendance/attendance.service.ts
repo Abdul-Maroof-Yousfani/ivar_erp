@@ -209,12 +209,17 @@ export class AttendanceService {
     const totalHours = checkOutHours - checkInHours - breakDuration / 60;
     const workingHours = new Decimal(Math.max(0, totalHours));
 
-    const overtimeStartTime =
-      policy.overtimeStartsAt || this.addMinutesToTime(endTime, 60);
-    const overtimeStartHours = this.parseTimeToHours(overtimeStartTime);
-    const overtimeHours = isDayOff
-      ? new Decimal(Math.max(0, totalHours))
-      : new Decimal(Math.max(0, checkOutHours - overtimeStartHours));
+    // Calculate overtime (hours worked beyond expected hours, or from otStartsAt)
+    let overtimeHours = new Decimal(0);
+    if (isDayOff) {
+      overtimeHours = new Decimal(Math.max(0, totalHours - expectedHours));
+    } else if (policy.otStartsAt) {
+      const otStartsAtHours = this.parseTimeToHours(policy.otStartsAt);
+      const otStart = Math.max(checkInHours, otStartsAtHours);
+      overtimeHours = new Decimal(Math.max(0, checkOutHours - otStart));
+    } else {
+      overtimeHours = new Decimal(Math.max(0, totalHours - expectedHours));
+    }
 
     return {
       workingHours,
@@ -231,20 +236,6 @@ export class AttendanceService {
   private parseTimeToHours(timeStr: string): number {
     const [hours, minutes] = timeStr.split(':').map(Number);
     return hours + minutes / 60;
-  }
-
-  private addMinutesToTime(timeStr: string, minutesToAdd: number): string {
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    const normalizedHours = Number.isFinite(hours) ? hours : 0;
-    const normalizedMinutes = Number.isFinite(minutes) ? minutes : 0;
-    const totalMinutes =
-      ((normalizedHours * 60 + normalizedMinutes + minutesToAdd) % 1440 + 1440) %
-      1440;
-    const resultHours = Math.floor(totalMinutes / 60)
-      .toString()
-      .padStart(2, '0');
-    const resultMinutes = (totalMinutes % 60).toString().padStart(2, '0');
-    return `${resultHours}:${resultMinutes}`;
   }
 
   /**
@@ -661,6 +652,128 @@ export class AttendanceService {
       return {
         status: false,
         message: error?.message || 'Failed to create attendance records',
+      };
+    }
+  }
+
+  async checkIn(
+    body: {
+      employeeId: string;
+      date?: string | Date;
+      checkInTime?: string | Date;
+      isRemote?: boolean;
+      location?: string;
+      latitude?: number;
+      longitude?: number;
+      notes?: string;
+    },
+    ctx: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    try {
+      const checkInDate = body.date ? new Date(body.date) : new Date();
+      const date = new Date(checkInDate.getTime() + 12 * 60 * 60 * 1000);
+      date.setUTCHours(0, 0, 0, 0);
+
+      const checkInTime = body.checkInTime ? new Date(body.checkInTime) : new Date();
+
+      const existing = await this.prisma.attendance.findUnique({
+        where: {
+          employeeId_date: {
+            employeeId: body.employeeId,
+            date: date,
+          },
+        },
+      });
+
+      if (existing) {
+        return this.update(
+          existing.id,
+          {
+            checkIn: checkInTime,
+            checkOut: existing.checkOut,
+            isRemote: body.isRemote !== undefined ? body.isRemote : existing.isRemote,
+            location: body.location || existing.location || undefined,
+            latitude: body.latitude !== undefined ? body.latitude : undefined,
+            longitude: body.longitude !== undefined ? body.longitude : undefined,
+            notes: body.notes ? (existing.notes ? `${existing.notes} | ${body.notes}` : body.notes) : (existing.notes || undefined),
+          },
+          ctx,
+        );
+      } else {
+        return this.create(
+          {
+            employeeId: body.employeeId,
+            date: date,
+            checkIn: checkInTime,
+            status: 'present',
+            isRemote: body.isRemote,
+            location: body.location,
+            latitude: body.latitude,
+            longitude: body.longitude,
+            notes: body.notes,
+          },
+          ctx,
+        );
+      }
+    } catch (error: any) {
+      return {
+        status: false,
+        message: error?.message || 'Failed to check in',
+      };
+    }
+  }
+
+  async checkOut(
+    body: {
+      employeeId: string;
+      date?: string | Date;
+      checkOutTime?: string | Date;
+      location?: string;
+      latitude?: number;
+      longitude?: number;
+      notes?: string;
+    },
+    ctx: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    try {
+      const checkOutDate = body.date ? new Date(body.date) : new Date();
+      const date = new Date(checkOutDate.getTime() + 12 * 60 * 60 * 1000);
+      date.setUTCHours(0, 0, 0, 0);
+
+      const checkOutTime = body.checkOutTime ? new Date(body.checkOutTime) : new Date();
+
+      const existing = await this.prisma.attendance.findUnique({
+        where: {
+          employeeId_date: {
+            employeeId: body.employeeId,
+            date: date,
+          },
+        },
+      });
+
+      if (!existing) {
+        return {
+          status: false,
+          message: 'Check-in record not found for today. Please check in first.',
+        };
+      }
+
+      return this.update(
+        existing.id,
+        {
+          checkIn: existing.checkIn,
+          checkOut: checkOutTime,
+          location: body.location || existing.location || undefined,
+          latitude: body.latitude !== undefined ? body.latitude : undefined,
+          longitude: body.longitude !== undefined ? body.longitude : undefined,
+          notes: body.notes ? (existing.notes ? `${existing.notes} | ${body.notes}` : body.notes) : (existing.notes || undefined),
+        },
+        ctx,
+      );
+    } catch (error: any) {
+      return {
+        status: false,
+        message: error?.message || 'Failed to check out',
       };
     }
   }

@@ -94,7 +94,7 @@ export function VouchersListPage({ vouchers }: Props) {
                             </TableRow>
                         ) : vouchers.map((v) => {
                             const isExpired = v.expiresAt ? new Date(v.expiresAt) < new Date() : false;
-                            const statusLabel = !v.isActive ? "Voided" : v.isRedeemed ? "Redeemed" : isExpired ? "Expired" : "Active";
+                            const statusLabel = !v.isActive ? "redeemed" : v.isRedeemed ? "Redeemed" : isExpired ? "Expired" : "Active";
                             const statusVariant = !v.isActive ? "secondary" : v.isRedeemed ? "default" : isExpired ? "outline" : "default";
                             return (
                                 <TableRow key={v.id}>

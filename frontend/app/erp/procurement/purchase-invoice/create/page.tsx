@@ -57,6 +57,8 @@ interface LandedCost {
   landedCostNumber: string;
   supplier?: Supplier;
   grn?: {
+    id: string;
+    grnNumber: string;
     purchaseOrder?: {
       vendor?: Supplier;
     };

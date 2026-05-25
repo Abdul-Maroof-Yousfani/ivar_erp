@@ -38,7 +38,7 @@ export function OpeningBalanceClient() {
   const [entries, setEntries] = useState<Record<string, OpeningBalanceEntry>>({});
   const [date, setDate] = useState<Date>(new Date());
   const [isPending, startTransition] = useTransition();
-  const [companyName, setCompanyName] = useState("Ivar");
+  const [companyName, setCompanyName] = useState("Speed pvt.LD");
 
   useEffect(() => {
     loadAccounts();

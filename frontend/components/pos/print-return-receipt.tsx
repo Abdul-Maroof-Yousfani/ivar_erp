@@ -333,85 +333,78 @@ function ReturnBody({
             {/* ── Column headers ── */}
             <div
                 className="text-[10px] font-bold border-b pb-1"
-                style={{ display: "grid", gridTemplateColumns: "2fr 0.5fr 0.5fr 0.9fr", gap: "0 4px" }}
+                style={{ display: "grid", gridTemplateColumns: "2fr 0.5fr 0.5fr 0.8fr 0.8fr 0.8fr", gap: "0 4px" }}
             >
                 <span>Name / Code</span>
                 <span style={{ textAlign: "center" }}>Size</span>
                 <span style={{ textAlign: "center" }}>Qty</span>
-                <span style={{ textAlign: "right" }}>Refund</span>
+                <span style={{ textAlign: "right" }}>Retail</span>
+                <span style={{ textAlign: "right" }}>WOST</span>
+                <span style={{ textAlign: "right" }}>Total</span>
             </div>
 
             {/* ── Returned item lines ── */}
             {returnedLines.map((line, idx) => {
                 const qty          = line.returnQty;
                 const unitPrice    = line.unitPrice ?? line.paidPerUnit;
-                const lineSubtotal = unitPrice * qty;
-                const discAmt      = line.discountAmount  ?? 0;
-                const discPct      = line.discountPercent ?? 0;
-                const taxAmt       = line.taxAmount  ?? 0;
                 const taxPct       = line.taxPercent ?? 0;
-                const couponDed    = line.couponDeduction ?? 0;
-                const refundPerUnit = line.refundPerUnit ?? line.paidPerUnit;
-                const lineRefund   = refundPerUnit * qty;
-                const afterDiscount = lineSubtotal - discAmt;
-                const afterTax      = afterDiscount + taxAmt;
-                const afterCoupon   = afterTax - couponDed;
-                const uniqueNo      = line.sku || "—";
+                const taxDivisor   = 1 + (taxPct / 100);
+                
+                // Calculate WOST from retail price
+                const retailPrice  = unitPrice;
+                const wostPerUnit  = retailPrice / taxDivisor;
+                const totalWost    = Math.round(wostPerUnit * qty * 100) / 100;
+                
+                // Discount
+                const discPct      = line.discountPercent ?? 0;
+                const discAmt      = line.discountAmount  ?? 0;
+                const afterDisc    = totalWost - discAmt;
+                
+                // Tax
+                const taxAmt       = line.taxAmount ?? 0;
+                
+                // Value including tax
+                const valueIncludingTax = afterDisc + taxAmt;
+                
+                const uniqueNo = line.sku || "—";
 
                 return (
                     <div key={idx} className="pb-2 border-b border-dashed last:border-0">
-
                         {/* Item name — full width bold */}
                         <p className="font-bold text-[11px] leading-tight mb-0.5">{line.name}</p>
 
                         {/* Data row */}
                         <div
                             className="text-[11px]"
-                            style={{ display: "grid", gridTemplateColumns: "2fr 0.5fr 0.5fr 0.9fr", gap: "0 4px" }}
+                            style={{ display: "grid", gridTemplateColumns: "2fr 0.5fr 0.5fr 0.8fr 0.8fr 0.8fr", gap: "0 4px" }}
                         >
-                            <span className="truncate" style={{ color: "gray" }}>{uniqueNo}</span>
+                            <span className="text-muted-foreground truncate">{uniqueNo}</span>
                             <span style={{ textAlign: "center" }}>{line.size || "—"}</span>
                             <span style={{ textAlign: "center", fontWeight: "bold" }}>{qty}</span>
-                            <span style={{ textAlign: "right", fontWeight: "bold" }}>{fmt(lineRefund)}</span>
+                            <span style={{ textAlign: "right" }}>{fmt(retailPrice)}</span>
+                            <span style={{ textAlign: "right" }}>{fmt(wostPerUnit)}</span>
+                            <span style={{ textAlign: "right", fontWeight: "bold" }}>{fmt(totalWost)}</span>
                         </div>
 
                         {/* FBR-style breakdown */}
                         <div className="mt-1 space-y-0.5 text-[10px]">
-                            <Row label="Unit Price"           value={fmt(unitPrice)} />
-                            <Row label="Qty × Unit Price"     value={fmt(lineSubtotal)} />
-                            {discAmt > 0 && (
-                                <>
-                                    <Row label={`Discount${discPct ? ` (${discPct}%)` : ""}`} value={`−${fmt(discAmt)}`} />
-                                    <Row label="Amount after Discount" value={fmt(afterDiscount)} />
-                                </>
-                            )}
-                            {taxAmt > 0 && (
-                                <>
-                                    <Row label={`Sales Tax${taxPct ? ` (${taxPct}%)` : ""}`} value={fmt(taxAmt)} />
-                                    <Row label="Amount after Tax" value={fmt(afterTax)} />
-                                </>
-                            )}
-                            {couponDed > 0 && (
-                                <>
-                                    <Row label="Coupon / Voucher" value={`−${fmt(couponDed)}`} />
-                                    <Row label="After Coupon"     value={fmt(afterCoupon)} />
-                                </>
-                            )}
-                            {line.priceAdjusted && (
-                                <p className="text-[10px]">* Refunded at current lower price</p>
-                            )}
+                            <Row label="Discount %" value={`${discPct}%`} />
+                            <Row label="Discount Amount" value={discAmt > 0 ? fmt(discAmt) : "—"} />
+                            <Row label="Amount after Discount" value={fmt(afterDisc)} />
+                            <Row label="Sales Tax Rate" value={`${taxPct}%`} />
+                            <Row label="Sales Tax Amount" value={taxAmt > 0 ? fmt(taxAmt) : "—"} />
                             <div
-                                className="font-bold border-t border-dashed pt-0.5 mt-0.5"
+                                className="flex justify-between font-bold text-[10px] border-t border-dashed pt-0.5 mt-0.5"
                                 style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold" }}
                             >
-                                <span>Line Refund</span>
-                                <span>{fmt(lineRefund)}</span>
+                                <span>Value Including Sales Tax</span>
+                                <span>{fmt(valueIncludingTax)}</span>
                             </div>
                         </div>
 
                         {/* Show source order if multi-order return */}
                         {originalOrders.length > 1 && (
-                            <p className="text-[10px] mt-0.5" style={{ color: "gray" }}>
+                            <p className="text-[10px] mt-0.5 text-muted-foreground">
                                 From: {line.orderNumber}
                             </p>
                         )}
@@ -421,7 +414,45 @@ function ReturnBody({
 
             <Separator />
 
-            {/* ── Totals ── */}
+            {/* ── Summary totals (same as sales receipt) ── */}
+            <div className="space-y-0.5 text-[11px]">
+                {/* Calculate totals */}
+                {(() => {
+                    const subtotal = returnedLines.reduce((s, line) => {
+                        const qty = line.returnQty;
+                        const unitPrice = line.unitPrice ?? line.paidPerUnit;
+                        const taxPct = line.taxPercent ?? 0;
+                        const taxDivisor = 1 + (taxPct / 100);
+                        const wostPerUnit = unitPrice / taxDivisor;
+                        return s + (wostPerUnit * qty);
+                    }, 0);
+                    
+                    const totalDiscount = returnedLines.reduce((s, line) => s + (line.discountAmount ?? 0), 0);
+                    const valueForSales = subtotal - totalDiscount;
+                    const totalTax = returnedLines.reduce((s, line) => s + (line.taxAmount ?? 0), 0);
+                    const totalValueIncludingTax = valueForSales + totalTax;
+                    
+                    return (
+                        <>
+                            <Row label={`Total Value Excluding Sales Tax (${returnedLines.length})`} value={fmt(Math.round(subtotal))} />
+                            <Row label="Total Discount" value={totalDiscount > 0 ? fmt(Math.round(totalDiscount)) : "—"} />
+                            <Row label="Value for Sales" value={fmt(Math.round(valueForSales))} />
+                            <Row label="Total Sales Tax" value={fmt(Math.round(totalTax))} />
+                            <div
+                                className="flex justify-between font-bold text-[11px] border-t pt-0.5 mt-0.5"
+                                style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold" }}
+                            >
+                                <span>Total Value Including Sales Tax</span>
+                                <span>{fmt(Math.round(totalValueIncludingTax))}</span>
+                            </div>
+                        </>
+                    );
+                })()}
+            </div>
+
+            <Separator />
+
+            {/* ── Refund details ── */}
             <div className="space-y-0.5 text-[11px]">
                 <Row label="Items Returned" value={`${totalUnits} unit${totalUnits !== 1 ? "s" : ""}`} />
                 {paymentMethod && (
@@ -514,14 +545,16 @@ function ReturnBody({
 
             <Separator />
 
-            {/* ── Terms ── */}
+            {/* ── Terms & Conditions ── */}
             <div className="text-[10px] space-y-0.5">
-                <p className="font-bold text-[11px]">TERMS &amp; CONDITIONS OF SALE</p>
-                <p>No Refund.</p>
-                <p>Exchanges on unused products within 10 days only from the outlet where purchased.</p>
-                <p>Claim will not be accepted without Sales Tax Invoice.</p>
-                <p>Sales and promotional items are strictly non-exchangeable.</p>
-                <p>Item purchases at full price which go on sale will be exchanged at the marked down price.</p>
+                <p className="font-bold text-[11px]">TERMS &amp; CONDITIONS</p>
+                <p>• Damaged / defective items must be reported within 4 days of purchase</p>
+                <p>• Exchanges are only accepted within 7 days of purchase</p>
+                <p>• Refunds only eligible only on manufacturing defects</p>
+                <p>• Used, washed, altered, or worn items are not eligible for exchanges</p>
+                <p>• Tags must be intact for any exchange</p>
+                <p>• One exchange per order only (exchanged item can not be exchanged again)</p>
+                <p>• Sale items are non-returnable &amp; non-exchangeable (unless defected)</p>
             </div>
 
             <Separator />

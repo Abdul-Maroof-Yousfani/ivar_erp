@@ -172,6 +172,9 @@ export function PrintClaimReceipt({
         }))
         : (claimedLinesProp || []);
 
+    // Extract voucher details if claim is approved
+    const voucher = claim?.voucher;
+
     useEffect(() => {
         if (!isLoading && settings.receiptAutoPrint) {
             const timer = setTimeout(() => window.print(), 400);
@@ -196,6 +199,7 @@ export function PrintClaimReceipt({
         reasonCode, reasonNotes, reviewNotes,
         claimedLines, claimedAmount, approvedAmount,
         submittedAt, reviewedAt, settings,
+        voucher, // Pass voucher data
     };
 
     return (
@@ -291,6 +295,7 @@ interface ClaimBodyProps {
     submittedAt?: string;
     reviewedAt?: string;
     settings: PosSettings;
+    voucher?: any; // Voucher details
 }
 
 function ClaimBody({
@@ -299,6 +304,7 @@ function ClaimBody({
     reasonCode, reasonNotes, reviewNotes,
     claimedLines, claimedAmount, approvedAmount,
     submittedAt, reviewedAt, settings,
+    voucher, // Voucher data
 }: ClaimBodyProps) {
 
     const Row = ({ label, value, bold = false }: {
@@ -461,18 +467,68 @@ function ClaimBody({
                     <>
                         <p className="font-bold text-center" style={{ color: statusColor }}>✓ CLAIM APPROVED ✓</p>
                         <p className="text-center">Please present this receipt to collect your refund.</p>
+                        
+                        {/* ── Exchange Voucher Details ── */}
+                        {voucher && voucher.voucherType === 'EXCHANGE' && (
+                            <div className="mt-2 pt-2 border-t border-dashed space-y-1" style={{ borderColor: statusColor }}>
+                                <p className="font-bold text-center" style={{ color: "#10b981" }}>🎫 EXCHANGE VOUCHER ISSUED 🎫</p>
+                                <div className="space-y-0.5 text-[10px] bg-green-50 dark:bg-green-950/20 p-2 rounded">
+                                    <Row label="Voucher Code" value={voucher.code} bold />
+                                    <Row label="Voucher Amount" value={`Rs. ${fmt(Number(voucher.faceValue))}`} bold />
+                                    <Row label="Valid Until" value={fmtDate(voucher.expiresAt)} />
+                                    <Row label="Status" value={voucher.isRedeemed ? "USED" : "ACTIVE"} />
+                                </div>
+                                <p className="text-center text-[10px] mt-1">Use this voucher code for your next purchase!</p>
+                            </div>
+                        )}
                     </>
                 )}
                 {isRejected && (
                     <>
                         <p className="font-bold text-center" style={{ color: statusColor }}>✗ CLAIM REJECTED ✗</p>
-                        <p className="text-center">This claim has been reviewed and rejected.</p>
+                        <p className="text-center text-[10px] leading-tight">This claim has been reviewed and rejected.</p>
+                        
+                        {/* ── Rejection Details ── */}
+                        {reviewNotes && (
+                            <div className="mt-2 pt-2 border-t border-dashed space-y-1" style={{ borderColor: statusColor }}>
+                                <p className="font-bold text-center text-[10px]">REJECTION REASON:</p>
+                                <p className="text-center text-[9px] leading-tight px-1">{reviewNotes}</p>
+                            </div>
+                        )}
+                        
+                        {/* ── Product Return Instructions ── */}
+                        <div className="mt-2 pt-2 border-t border-dashed space-y-1" style={{ borderColor: statusColor }}>
+                            <p className="font-bold text-center text-[10px]">📦 PRODUCT RETURN 📦</p>
+                            <p className="text-center text-[9px] leading-tight">
+                                Your product is ready for pickup at our store.
+                            </p>
+                            <p className="text-center text-[9px] leading-tight mt-1">
+                                Please collect within 7 days with this receipt.
+                            </p>
+                            <p className="text-center text-[9px] leading-tight mt-1 font-bold">
+                                For queries, contact: {storePhone || "+92-XXX-XXXXXXX"}
+                            </p>
+                        </div>
                     </>
                 )}
                 {isPending && (
                     <>
                         <p className="font-bold text-center" style={{ color: statusColor }}>⏳ CLAIM UNDER PROCESS ⏳</p>
                         <p className="text-center">Your claim is being reviewed. Please check back later.</p>
+                        
+                        {/* ── Important Disclaimer ── */}
+                        <div className="mt-2 pt-2 border-t border-dashed space-y-1" style={{ borderColor: statusColor }}>
+                            <p className="font-bold text-center text-[10px]">⚠️ IMPORTANT DISCLAIMER ⚠️</p>
+                            <p className="text-center text-[9px] leading-tight">
+                                This receipt does NOT guarantee claim acceptance. 
+                                The final decision rests with Product Line Management. 
+                                Your product has been sent for inspection.
+                            </p>
+                            <p className="text-center text-[9px] leading-tight mt-1">
+                                Acceptance/rejection of this claim will be at the 
+                                sole discretion of Product Line.
+                            </p>
+                        </div>
                     </>
                 )}
             </div>
@@ -487,6 +543,20 @@ function ClaimBody({
                     </div>
                 </>
             )}
+
+            <Separator />
+
+            {/* ── Terms & Conditions ── */}
+            <div className="text-[10px] space-y-0.5">
+                <p className="font-bold text-[11px]">TERMS &amp; CONDITIONS</p>
+                <p>• Damaged / defective items must be reported within 4 days of purchase</p>
+                <p>• Exchanges are only accepted within 7 days of purchase</p>
+                <p>• Refunds only eligible only on manufacturing defects</p>
+                <p>• Used, washed, altered, or worn items are not eligible for exchanges</p>
+                <p>• Tags must be intact for any exchange</p>
+                <p>• One exchange per order only (exchanged item can not be exchanged again)</p>
+                <p>• Sale items are non-returnable &amp; non-exchangeable (unless defected)</p>
+            </div>
 
             <Separator />
 

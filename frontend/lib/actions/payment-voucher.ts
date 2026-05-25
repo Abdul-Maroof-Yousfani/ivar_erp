@@ -3,6 +3,21 @@
 import { authFetch } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
+export interface PaymentVoucherDetail {
+    id: string;
+    accountId: string;
+    accountName?: string;
+    accountCode?: string;
+    tagAccountId?: string;
+    tagAccountName?: string;
+    tagAccountCode?: string;
+    debit: number;
+    credit: number;
+    narration?: string;
+    refBillNo?: string;
+    isTaxApplicable?: boolean;
+}
+
 export interface PaymentVoucher {
     id: string;
     type: "bank" | "cash";
@@ -11,6 +26,7 @@ export interface PaymentVoucher {
     refBillNo?: string;
     billDate?: string; // ISO string
     creditAccountId: string;
+    creditAccountCode?: string;
     creditAccount?: any; // populated from backend
     creditAccountName?: string; // helper for UI
     creditAmount: number;
@@ -20,11 +36,7 @@ export interface PaymentVoucher {
     isAdvance: boolean;
     chequeNo?: string;
     chequeDate?: string; // ISO string
-    details: {
-        accountId: string;
-        accountName?: string;
-        debit: number;
-    }[];
+    details: PaymentVoucherDetail[];
     createdAt: string;
     createdBy: string;
 }
@@ -60,14 +72,20 @@ export async function getPaymentVouchers(type?: "bank" | "cash") {
             };
         }
 
-        // Map backend data to frontend interface if needed
-        // Backend returns `creditAccount` object, frontend list expects `creditAccountName`
+        // Map backend data to frontend interface
         const mappedData = vouchersArray.map((pv: any) => ({
             ...pv,
+            creditAmount: pv.creditAmount !== undefined ? Number(pv.creditAmount) : 0,
             creditAccountName: pv.creditAccount?.name || "Unknown Account",
+            creditAccountCode: pv.creditAccount?.code || "",
             details: pv.details?.map((d: any) => ({
                 ...d,
-                accountName: d.account?.name || "Unknown Account"
+                accountName:     d.account?.name     || d.accountName     || "Unknown Account",
+                accountCode:     d.account?.code     || d.accountCode     || "",
+                tagAccountName:  d.tagAccount?.name  || d.tagAccountName  || "",
+                tagAccountCode:  d.tagAccount?.code  || d.tagAccountCode  || "",
+                debit:           Number(d.debit)  || 0,
+                credit:          Number(d.credit) || 0,
             })) || []
         }));
 
@@ -260,16 +278,38 @@ export async function getSupplierSummary(supplierId: string) {
     }
 }
 
-export async function getPaymentVoucher(id: string) {
+// Get a single payment voucher by ID
+export async function getPaymentVoucher(id: string): Promise<{ status: boolean; data: PaymentVoucher | null; message?: string }> {
     try {
         const response = await authFetch(`/finance/payment-vouchers/${id}`, {
             cache: 'no-store',
+            next: { revalidate: 0 },
         });
+
         if (!response.ok) {
-            return { status: false, data: null, message: response.data?.message || 'Failed to fetch payment voucher' };
+            return { status: false, data: null, message: `Failed to fetch voucher: ${response.status}` };
         }
-        return { status: true, data: response.data?.data || response.data };
+
+        const raw = response.data?.data ?? response.data;
+        const voucher: PaymentVoucher = {
+            ...raw,
+            creditAmount: raw.creditAmount !== undefined ? Number(raw.creditAmount) : 0,
+            creditAccountName: raw.creditAccount?.name || raw.creditAccountName || "Unknown Account",
+            creditAccountCode: raw.creditAccount?.code || raw.creditAccountCode || "",
+            details: (raw.details ?? []).map((d: any) => ({
+                ...d,
+                accountName:     d.account?.name     || d.accountName     || "Unknown Account",
+                accountCode:     d.account?.code     || d.accountCode     || "",
+                tagAccountName:  d.tagAccount?.name  || d.tagAccountName  || "",
+                tagAccountCode:  d.tagAccount?.code  || d.tagAccountCode  || "",
+                debit:           Number(d.debit)  || 0,
+                credit:          Number(d.credit) || 0,
+            })),
+        };
+
+        return { status: true, data: voucher };
     } catch (error: any) {
+        console.error("Error fetching payment voucher:", error);
         return { status: false, data: null, message: error.message };
     }
 }

@@ -116,20 +116,8 @@ export class ItemBulkUploadController {
     @ApiOperation({ summary: 'Download CSV template' })
     async downloadTemplate(@Res() res: any) {
         const template = [
-            // Brand/Concept is hardcoded to "IVAR" in the backend now.
-            // ItemID is optional (if provided, row will target update-by-itemId; if omitted, a new itemId is generated).
-            'Category,Sub Category,Channel Class,Gender,Season,SKU,BarCode,Description,ImageUrl,UnitPrice,UnitCost,FOB,TaxRate1,TaxRate2,DiscountRate,DiscountAmount,DiscountStartDate,DiscountEndDate,IsActive,HSCode,Size,Color,Silhouette,ItemID',
-            // Sample items (clothing) — ItemID blank means "create new"
-            'Tops,T-Shirts,MONO,Men,Summer 2026,IVAR-M-TS-001,IVAR000000001,Cotton Crewneck T-Shirt,,1499,800,0,5,0,0,0,,,true,610910,S,Black,Regular Fit,',
-            'Tops,Polos,MULTI,Men,Summer 2026,IVAR-M-PO-002,IVAR000000002,Pique Polo Shirt,,2499,1400,0,5,0,0,0,,,true,610510,M,Navy,Slim Fit,',
-            'Bottoms,Jeans,MONO,Men,All Season,IVAR-M-JE-003,IVAR000000003,Straight Fit Denim Jeans,,3999,2400,0,5,0,0,0,,,true,620342,32,Blue,Straight,',
-            'Outerwear,Hoodies,MULTI,Men,Winter 2026,IVAR-M-HO-004,IVAR000000004,Fleece Pullover Hoodie,,4499,2800,0,5,0,10,0,,,true,611020,L,Grey,Relaxed,',
-            'Tops,Blouses,MONO,Women,Summer 2026,IVAR-W-BL-005,IVAR000000005,Satin Button Blouse,,3299,1900,0,5,0,0,0,,,true,620640,S,Cream,Classic,',
-            'Dresses,Midi Dresses,MULTI,Women,Summer 2026,IVAR-W-DR-006,IVAR000000006,Floral Midi Dress,,5499,3200,0,5,0,15,0,,,true,620443,M,Green,A-Line,',
-            'Bottoms,Trousers,MONO,Women,All Season,IVAR-W-TR-007,IVAR000000007,High Waist Trousers,,3799,2200,0,5,0,0,0,,,true,620463,28,Beige,Tapered,',
-            'Tops,T-Shirts,MULTI,Kids,Summer 2026,IVAR-K-TS-008,IVAR000000008,Graphic Tee (Kids),,1299,700,0,5,0,0,0,,,true,610910,6-7Y,Red,Regular Fit,',
-            'Activewear,Joggers,MONO,Men,All Season,IVAR-M-JG-009,IVAR000000009,Training Joggers,,2999,1700,0,5,0,0,0,,,true,610343,M,Charcoal,Tapered,',
-            'Outerwear,Jackets,MULTI,Women,Winter 2026,IVAR-W-JK-010,IVAR000000010,Lightweight Bomber Jacket,,6999,4200,0,5,0,0,0,,,true,620193,L,Olive,Bomber,',
+            'Brand,Division,SKU,Description,Size,Unique No.,Color,Product Category/Series,Silhouette/Product Type,Channel Class,Department,Class,Sub Class,Heel Height,Season,Old Season,Gender,Width,Case Material,Band,Movement Type,Movement Name,HS Code,UOM,Item ID,Currency,FOB,Unit Cost,Unit Price,Sale Tax Rate,Additional Sales Tax,Discount Start Date,Discount End Date,Discount %,BarCode,Launch Date',
+            'BrandX,Mens,SKU-001,Sample Description,M,ITEM-001,Red,Shoes,Casual,Retail,Footwear,ClassA,Subclass1,Low,Summer 2026,,Male,Medium,Steel,Leather,Automatic,ETA 5001,1234,PC,ITEM-001,PKR,12.50,150,200,5,0,,,0,BAR-001,',
         ].join('\n');
         res.header('Content-Type', 'text/csv');
         res.header('Content-Disposition', 'attachment; filename="item-upload-template.csv"');

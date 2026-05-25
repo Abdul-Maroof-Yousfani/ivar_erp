@@ -136,3 +136,17 @@ export async function approveSourceTransferRequest(id: string, userId?: string) 
         throw error;
     }
 }
+
+export async function acknowledgeClaimTransfer(id: string, userId?: string) {
+    try {
+        const response = await authFetch(`/transfer-request/${id}/acknowledge-claim`, {
+            method: "POST",
+            body: JSON.stringify({ userId }),
+        });
+        revalidatePath("/erp/inventory/transactions/plm-claims");
+        return response.data ?? { status: false, message: "Failed to acknowledge claim" };
+    } catch (error) {
+        console.error("Acknowledge claim transfer error:", error);
+        return { status: false, message: error instanceof Error ? error.message : "Failed to acknowledge claim" };
+    }
+}

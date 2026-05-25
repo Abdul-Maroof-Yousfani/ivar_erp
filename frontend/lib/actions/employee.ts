@@ -565,3 +565,29 @@ export async function getEmployeeRejoiningHistory(employeeId: string): Promise<{
     };
   }
 }
+
+// ─── Export Employees ─────────────────────────────────────────────────────────
+
+export async function queueEmployeesExport(
+  search?: string,
+  departmentId?: string,
+  designationId?: string,
+  status?: string,
+): Promise<{ status: boolean; data?: { jobId: string }; message?: string }> {
+  try {
+    const params = new URLSearchParams();
+    if (search)        params.append('search',        search);
+    if (departmentId)  params.append('departmentId',  departmentId);
+    if (designationId) params.append('designationId', designationId);
+    if (status)        params.append('status',        status);
+    const qs = params.toString();
+
+    const res = await authFetch(`/employees/export${qs ? `?${qs}` : ''}`, {
+      method: 'POST',
+    });
+    return res.data ?? { status: false, message: 'No response from server' };
+  } catch (error) {
+    console.error('Queue employee export error:', error);
+    return { status: false, message: 'Failed to connect to server' };
+  }
+}

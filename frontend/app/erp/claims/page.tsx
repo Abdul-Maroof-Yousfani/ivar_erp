@@ -12,6 +12,9 @@ import {
     Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
 } from "@/components/ui/sheet";
 import {
+    Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
@@ -55,6 +58,9 @@ export default function ClaimsPage() {
     const [showDetail, setShowDetail] = useState(false);
     const [isStartingReview, setIsStartingReview] = useState(false);
     const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+    const [isRejecting, setIsRejecting] = useState(false);
+    const [showRejectDialog, setShowRejectDialog] = useState(false);
+    const [rejectionReason, setRejectionReason] = useState("");
     const [reviewNotes, setReviewNotes] = useState("");
     // Per-item approved qty state
     const [itemApprovals, setItemApprovals] = useState<Record<string, { approvedQty: number; notes: string }>>({});
@@ -123,6 +129,31 @@ export default function ClaimsPage() {
             } else { toast.error(res.data?.message || "Review failed"); }
         } catch { toast.error("Review submission failed"); }
         finally { setIsSubmittingReview(false); }
+    };
+
+    const handleRejectClaim = async () => {
+        if (!selectedClaim || !rejectionReason.trim()) {
+            toast.error("Please provide a rejection reason");
+            return;
+        }
+        setIsRejecting(true);
+        try {
+            const res = await authFetch(`/pos-claims/${selectedClaim.id}/reject`, {
+                method: "POST",
+                body: { 
+                    rejectionReason: rejectionReason.trim(),
+                    notes: rejectionReason.trim()
+                },
+            });
+            if (res.ok && res.data?.status) {
+                toast.success(res.data.message);
+                setShowRejectDialog(false);
+                setShowDetail(false);
+                setRejectionReason("");
+                fetchClaims();
+            } else { toast.error(res.data?.message || "Rejection failed"); }
+        } catch { toast.error("Rejection failed"); }
+        finally { setIsRejecting(false); }
     };
 
     const totalApprovedInReview = useMemo(() => {
@@ -370,6 +401,14 @@ export default function ClaimsPage() {
                                     )}
                                     {canReview && (
                                         <PermissionGuard permissions="erp.claims.approve" fallback={null}>
+                                            <Button 
+                                                variant="destructive" 
+                                                onClick={() => setShowRejectDialog(true)} 
+                                                className="gap-2"
+                                            >
+                                                <XCircle className="h-4 w-4" />
+                                                Reject Claim
+                                            </Button>
                                             <Button onClick={handleSubmitReview} disabled={isSubmittingReview} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
                                                 {isSubmittingReview ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                                                 Submit Decision
@@ -381,6 +420,73 @@ export default function ClaimsPage() {
                         )}
                     </SheetContent>
                 </Sheet>
+
+                {/* Reject Confirmation Dialog */}
+                <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2 text-destructive">
+                                <XCircle className="h-5 w-5" />
+                                Reject Claim
+                            </DialogTitle>
+                            <DialogDescription>
+                                This will reject the entire claim. The customer will be notified and the product should be returned.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-3 py-4">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="rejection-reason" className="text-sm font-medium">
+                                    Rejection Reason <span className="text-destructive">*</span>
+                                </Label>
+                                <Textarea
+                                    id="rejection-reason"
+                                    placeholder="e.g., Product damage not covered under warranty, Customer misuse detected..."
+                                    value={rejectionReason}
+                                    onChange={(e) => setRejectionReason(e.target.value)}
+                                    rows={4}
+                                    className="resize-none"
+                                />
+                            </div>
+                            {selectedClaim && (
+                                <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
+                                    <p className="font-medium">Claim: {selectedClaim.claimNumber}</p>
+                                    <p className="text-muted-foreground">Order: {selectedClaim.salesOrder?.orderNumber}</p>
+                                    <p className="text-muted-foreground">Amount: Rs. {fmt(selectedClaim.claimedAmount)}</p>
+                                </div>
+                            )}
+                        </div>
+                        <DialogFooter className="gap-2 sm:gap-0">
+                            <Button 
+                                variant="ghost" 
+                                onClick={() => {
+                                    setShowRejectDialog(false);
+                                    setRejectionReason("");
+                                }}
+                                disabled={isRejecting}
+                            >
+                                Cancel
+                            </Button>
+                            <Button 
+                                variant="destructive" 
+                                onClick={handleRejectClaim}
+                                disabled={isRejecting || !rejectionReason.trim()}
+                                className="gap-2"
+                            >
+                                {isRejecting ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        Rejecting...
+                                    </>
+                                ) : (
+                                    <>
+                                        <XCircle className="h-4 w-4" />
+                                        Confirm Rejection
+                                    </>
+                                )}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </div>
         </PermissionGuard>
     );

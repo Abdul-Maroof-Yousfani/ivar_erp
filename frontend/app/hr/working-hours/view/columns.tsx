@@ -121,15 +121,6 @@ export const columns: ColumnDef<WorkingHoursPolicyRow>[] = [
     ),
   },
   {
-    header: "OT Starts At",
-    accessorKey: "overtimeStartsAt",
-    size: 130,
-    enableSorting: true,
-    cell: ({ row }) => (
-      <HighlightText text={row.original.overtimeStartsAt || "N/A"} />
-    ),
-  },
-  {
     header: "Late Time",
     accessorKey: "lateStartTime",
     size: 120,
@@ -583,8 +574,8 @@ function RowActions({ row }: RowActionsProps) {
     applyDeductionAfterShortDays: policy.applyDeductionAfterShortDays?.toString() || "",
     shortDayDeductionAmount: policy.shortDayDeductionAmount?.toString() || "",
     overtimeRate: policy.overtimeRate?.toString() || "",
-    overtimeStartsAt: policy.overtimeStartsAt || "",
     gazzetedOvertimeRate: policy.gazzetedOvertimeRate?.toString() || "",
+    otStartsAt: policy.otStartsAt || "",
     status: policy.status,
     dayOverrides: initializeDayOverrides(),
   });
@@ -606,16 +597,6 @@ function RowActions({ row }: RowActionsProps) {
       }
     }
   }, [policy.shortDayMins]);
-
-  useEffect(() => {
-    if (!editData.endWorkingHours || editData.overtimeStartsAt) return;
-    const [hours, minutes] = editData.endWorkingHours.split(":").map(Number);
-    const totalMinutes = ((hours || 0) * 60 + (minutes || 0) + 60) % 1440;
-    const defaultOvertimeStart = `${Math.floor(totalMinutes / 60)
-      .toString()
-      .padStart(2, "0")}:${(totalMinutes % 60).toString().padStart(2, "0")}`;
-    setEditData((prev) => ({ ...prev, overtimeStartsAt: defaultOvertimeStart }));
-  }, [editData.endWorkingHours, editData.overtimeStartsAt]);
 
   const calculateShortDayMins = (): number | null => {
     if (!editData.shortDayValue) return null;
@@ -688,8 +669,8 @@ function RowActions({ row }: RowActionsProps) {
         applyDeductionAfterShortDays: editData.applyDeductionAfterShortDays ? parseInt(editData.applyDeductionAfterShortDays) : null,
         shortDayDeductionAmount: editData.shortDayDeductionAmount ? parseFloat(editData.shortDayDeductionAmount) : null,
         overtimeRate: editData.overtimeRate && editData.overtimeRate !== "0" ? parseFloat(editData.overtimeRate) : null,
-        overtimeStartsAt: editData.overtimeStartsAt || null,
         gazzetedOvertimeRate: editData.gazzetedOvertimeRate && editData.gazzetedOvertimeRate !== "0" ? parseFloat(editData.gazzetedOvertimeRate) : null,
+        otStartsAt: editData.otStartsAt || null,
         status: editData.status,
         dayOverrides: groupDayOverrides(editData.dayOverrides, daysOfWeek),
       });
@@ -1342,7 +1323,7 @@ function RowActions({ row }: RowActionsProps) {
             {/* Overtime Rates */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Overtime Rates</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Overtime Rate</Label>
                   <Select
@@ -1365,16 +1346,6 @@ function RowActions({ row }: RowActionsProps) {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Overtime Starts At</Label>
-                  <TimePicker
-                    value={editData.overtimeStartsAt}
-                    onChange={(value) =>
-                      setEditData({ ...editData, overtimeStartsAt: value })
-                    }
-                    disabled={isPending}
-                  />
-                </div>
-                <div className="space-y-2">
                   <Label>Gazzeted Overtime Rate</Label>
                   <Select
                     value={editData.gazzetedOvertimeRate || undefined}
@@ -1394,6 +1365,16 @@ function RowActions({ row }: RowActionsProps) {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Overtime Starts At</Label>
+                  <TimePicker
+                    value={editData.otStartsAt || ""}
+                    onChange={(value) =>
+                      setEditData({ ...editData, otStartsAt: value })
+                    }
+                    disabled={isPending}
+                  />
                 </div>
               </div>
             </div>
@@ -1676,7 +1657,7 @@ function RowActions({ row }: RowActionsProps) {
                       </div>
                       <div>
                         <Label className="text-xs text-muted-foreground">Amount</Label>
-                        <p className="font-medium">{viewPolicy.halfDayDeductionAmount}%</p>
+                        <p className="font-medium">{viewPolicy.halfDayDeductionAmount}</p>
                       </div>
                     </div>
                   </div>
@@ -1697,7 +1678,7 @@ function RowActions({ row }: RowActionsProps) {
                       </div>
                       <div>
                         <Label className="text-xs text-muted-foreground">Amount</Label>
-                        <p className="font-medium">{viewPolicy.shortDayDeductionAmount}%</p>
+                        <p className="font-medium">{viewPolicy.shortDayDeductionAmount}</p>
                       </div>
                     </div>
                   </div>
@@ -1714,7 +1695,7 @@ function RowActions({ row }: RowActionsProps) {
               {/* Overtime Rates */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Overtime Rates</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <Label className="text-sm text-muted-foreground">Overtime Rate</Label>
                     <p className="font-medium">
@@ -1722,17 +1703,15 @@ function RowActions({ row }: RowActionsProps) {
                     </p>
                   </div>
                   <div>
-                    <Label className="text-sm text-muted-foreground">Overtime Starts At</Label>
-                    <p className="font-medium">
-                      {viewPolicy.overtimeStartsAt
-                        ? formatTimeForDisplay(viewPolicy.overtimeStartsAt, true)
-                        : "N/A"}
-                    </p>
-                  </div>
-                  <div>
                     <Label className="text-sm text-muted-foreground">Gazzeted Overtime Rate</Label>
                     <p className="font-medium">
                       {viewPolicy.gazzetedOvertimeRate ? `x${viewPolicy.gazzetedOvertimeRate}` : "None"}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Overtime Starts At</Label>
+                    <p className="font-medium">
+                      {viewPolicy.otStartsAt ? formatTimeForDisplay(viewPolicy.otStartsAt, true) : "N/A"}
                     </p>
                   </div>
                 </div>

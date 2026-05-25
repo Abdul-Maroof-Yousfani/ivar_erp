@@ -17,11 +17,13 @@ import {
   Loader2,
   LayoutDashboard,
   MapPin,
+  Download,
 } from "lucide-react";
 import {
   getEmployees,
   deleteEmployee,
   updateEmployee,
+  queueEmployeesExport,
   type Employee,
 } from "@/lib/actions/employee";
 import { getDepartments, type Department } from "@/lib/actions/department";
@@ -45,6 +47,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { EmployeeBulkUploadModal } from "@/components/employee/bulk-upload-modal";
+import { ProtectedSalaryCell } from "@/components/common/protected-salary-cell";
 
 export default function EmployeeListPage() {
   const router = useRouter();
@@ -55,6 +58,7 @@ export default function EmployeeListPage() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [bulkUploadId, setBulkUploadId] = useState<string | null>(null);
   const [impersonatePendingId, setImpersonatePendingId] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
@@ -167,14 +171,7 @@ export default function EmployeeListPage() {
       header: "Salary",
       cell: ({ row }) => {
         const salary = parseFloat(row.getValue("employeeSalary"));
-        return (
-          <div className="font-medium">
-            {new Intl.NumberFormat("en-PK", {
-              style: "currency",
-              currency: "PKR",
-            }).format(salary)}
-          </div>
-        );
+        return <ProtectedSalaryCell salary={salary} />;
       },
     },
     {
@@ -320,6 +317,25 @@ export default function EmployeeListPage() {
     }
   };
 
+  const handleExport = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const result = await queueEmployeesExport();
+      if (result.status) {
+        toast.success("Export queued — you'll get a notification when your file is ready.", {
+          duration: 6000,
+        });
+      } else {
+        toast.error(result.message || "Failed to queue export");
+      }
+    } catch {
+      toast.error("Export failed. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <PermissionGuard permissions="hr.employee.read">
       <div className="space-y-6">
@@ -329,6 +345,19 @@ export default function EmployeeListPage() {
             <p className="text-muted-foreground">Manage employee records</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              disabled={isExporting || employees.length === 0}
+              className="border-emerald-500/40 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+            >
+              {isExporting ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 mr-2" />
+              )}
+              {isExporting ? "Queuing…" : "Export"}
+            </Button>
             <Link href="/hr/employee/create" transitionTypes={["nav-forward"]}>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />

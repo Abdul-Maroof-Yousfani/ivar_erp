@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import Cookies from "js-cookie";
 import { setEnvironmentCookie } from "@/app/actions/set-environment";
 
-export type EnvironmentType = "HR" | "ERP" | "POS" | "ADMIN";
+export type EnvironmentType = "HR" | "ERP" | "POS" | "ADMIN" | "MASTER";
 
 interface EnvironmentContextType {
   environment: EnvironmentType;
@@ -31,19 +31,19 @@ export function EnvironmentProvider({ children }: { children: React.ReactNode })
 
       // Check subdomain strictly
       if (hostname.startsWith("erp.")) envFromUrl = "ERP";
-      else if (hostname.startsWith("master.")) envFromUrl = null; // Do not overwrite on master domain, let cookies decide
       else if (hostname.startsWith("pos.")) envFromUrl = "POS";
       else if (hostname.startsWith("admin.")) envFromUrl = "ADMIN";
       else if (hostname.startsWith("hr.")) envFromUrl = "HR";
+      // Note: "master." subdomain is intentionally left as null — let cookies decide
 
       // If subdomain didn't give it, check pathname
-      if (!envFromUrl && !hostname.startsWith("master.")) {
+      if (!envFromUrl) {
         if (pathname.startsWith("/erp") || pathname.startsWith("/finance")) envFromUrl = "ERP";
         else if (pathname.startsWith("/pos")) envFromUrl = "POS";
         else if (pathname.startsWith("/admin") || pathname.startsWith("/activity-logs")) envFromUrl = "ADMIN";
+        else if (pathname.startsWith("/master")) envFromUrl = "MASTER";
         else if (pathname.startsWith("/hr") || pathname.startsWith("/dashboard")) envFromUrl = "HR";
-      }
-    }
+      }    }
 
     if (envFromUrl) {
       setEnvironmentState(envFromUrl);
@@ -70,6 +70,11 @@ export function EnvironmentProvider({ children }: { children: React.ReactNode })
         setEnvironmentState("ADMIN");
         if (typeof document !== "undefined") {
           document.documentElement.dataset.environment = "ADMIN";
+        }
+      } else if (saved === "MASTER") {
+        setEnvironmentState("MASTER");
+        if (typeof document !== "undefined") {
+          document.documentElement.dataset.environment = "MASTER";
         }
       } else {
         // Default to HR
@@ -111,7 +116,7 @@ export function EnvironmentProvider({ children }: { children: React.ReactNode })
       if (!silent && typeof window !== "undefined") {
         // Use caller-supplied targetPath if provided, otherwise fall back to env root.
         // This allows module-switcher to land on the first accessible route for partial-permission users.
-        const defaultPath = env === "ERP" ? "/erp" : env === "ADMIN" ? "/admin" : env === "POS" ? "/pos" : "/hr";
+        const defaultPath = env === "ERP" ? "/erp" : env === "ADMIN" ? "/admin" : env === "POS" ? "/pos" : env === "MASTER" ? "/master" : "/hr";
         const path = targetPath ?? defaultPath;
         // Using window.location.href triggers a full page navigation allowing Next middleware
         // (middleware.ts) to correctly physically assign the user to the target subdomain.
@@ -128,7 +133,7 @@ export function EnvironmentProvider({ children }: { children: React.ReactNode })
   };
 
   const toggleEnvironment = () => {
-    const next = environment === "HR" ? "ERP" : environment === "ERP" ? "POS" : environment === "POS" ? "ADMIN" : "HR";
+    const next = environment === "HR" ? "ERP" : environment === "ERP" ? "POS" : environment === "POS" ? "MASTER" : environment === "MASTER" ? "ADMIN" : "HR";
     setEnvironment(next);
   };
 

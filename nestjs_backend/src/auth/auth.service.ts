@@ -36,7 +36,7 @@ function parseExpiryToMs(expiry: string) {
 
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
+  private readonly logger: Logger;
 
   constructor(
     private prismaMaster: PrismaMasterService,
@@ -45,7 +45,9 @@ export class AuthService {
     @Optional() private prisma: PrismaService,
     private encryptionService: EncryptionService,
     private posSessionService: PosSessionService,
-  ) {}
+  ) {
+    this.logger = new Logger(AuthService.name);
+  }
 
   async login(
     email: string,
@@ -166,14 +168,9 @@ export class AuthService {
       this.logger.debug(
         `[LOGIN] Step 7: Fetching permissions | roleId=${user.roleId || 'none'}`,
       );
-      const rolePermissions = user.roleId
-        ? await this.prismaMaster.rolePermission.findMany({
-            where: { roleId: user.roleId },
-            select: { permission: { select: { name: true } } },
-          })
-        : [];
+      const permissions = await this.getUserPermissions(user.id);
       this.logger.debug(
-        `[LOGIN] Step 7 OK: ${rolePermissions.length} permissions`,
+        `[LOGIN] Step 7 OK: ${permissions.length} permissions`,
       );
 
       this.logger.log(
@@ -189,7 +186,7 @@ export class AuthService {
             firstName: user.firstName,
             lastName: user.lastName,
             role: user.role?.name || null,
-            permissions: rolePermissions.map((rp) => rp.permission.name),
+            permissions,
           },
           accessToken,
           refreshToken,
@@ -372,12 +369,7 @@ export class AuthService {
     );
 
     // Fetch permissions for impersonated user
-    const impersonatePerms = targetUser.roleId
-      ? await this.prismaMaster.rolePermission.findMany({
-          where: { roleId: targetUser.roleId },
-          select: { permission: { select: { name: true } } },
-        })
-      : [];
+    const permissions = await this.getUserPermissions(targetUser.id);
 
     return {
       status: true,
@@ -388,7 +380,7 @@ export class AuthService {
           firstName: targetUser.firstName,
           lastName: targetUser.lastName,
           role: targetUser.role?.name || null,
-          permissions: impersonatePerms.map((rp) => rp.permission.name),
+          permissions,
           employee: {
             id: employeeDetails.id,
             employeeId: employeeDetails.employeeId,
@@ -445,12 +437,7 @@ export class AuthService {
     );
 
     // Fetch permissions for restored user
-    const stopImpersonatePerms = user.roleId
-      ? await this.prismaMaster.rolePermission.findMany({
-          where: { roleId: user.roleId },
-          select: { permission: { select: { name: true } } },
-        })
-      : [];
+    const permissions = await this.getUserPermissions(user.id);
 
     return {
       status: true,
@@ -461,7 +448,7 @@ export class AuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role?.name || null,
-          permissions: stopImpersonatePerms.map((rp) => rp.permission.name),
+          permissions,
         },
         accessToken,
         refreshToken,
@@ -679,10 +666,7 @@ export class AuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role?.name || null,
-          permissions:
-            user.role?.permissions
-              .filter((p) => p.permission)
-              .map((p) => p.permission.name) || [],
+          permissions: await this.getUserPermissions(user.id),
         },
         tenant: {
           id: tenant.id,
@@ -1159,6 +1143,7 @@ export class AuthService {
         employeeId: true,
         status: true,
         roleId: true,
+        roleExpiresAt: true,
         createdAt: true,
         updatedAt: true,
         isFirstPassword: true,
@@ -1219,6 +1204,8 @@ export class AuthService {
     }
 
     if (!user) return { status: false, message: 'Identity not found' };
+
+    user.permissions = await this.getUserPermissions(userId);
 
     // Resolve employee details if prisma is available
     if (this.prisma) {
@@ -1455,6 +1442,11 @@ export class AuthService {
       orderBy: { createdAt: 'desc' },
       include: {
         role: true,
+        userPermissions: {
+          include: {
+            permission: true
+          }
+        }
       },
     })) as any[];
 
@@ -1619,7 +1611,36 @@ export class AuthService {
   }
 
   async updateUser(id: string, data: any) {
-    const user = await this.prismaMaster.user.update({ where: { id }, data });
+    const { userPermissions, ...userData } = data;
+
+    // Handle roleExpiresAt date parsing if sent as string
+    if (userData.roleExpiresAt !== undefined) {
+      userData.roleExpiresAt = userData.roleExpiresAt ? new Date(userData.roleExpiresAt) : null;
+    }
+
+    const user = await this.prismaMaster.user.update({ 
+      where: { id }, 
+      data: userData 
+    });
+
+    if (userPermissions !== undefined) {
+      // Delete existing overrides
+      await this.prismaMaster.userPermission.deleteMany({
+        where: { userId: id }
+      });
+
+      // Create new overrides
+      if (Array.isArray(userPermissions) && userPermissions.length > 0) {
+        await this.prismaMaster.userPermission.createMany({
+          data: userPermissions.map((up: any) => ({
+            userId: id,
+            permissionId: up.permissionId,
+            isAllowed: up.isAllowed ?? true,
+            expiresAt: up.expiresAt ? new Date(up.expiresAt) : null
+          }))
+        });
+      }
+    }
 
     // Sync to employee record in tenant DB if employee link is being established/changed
     if (data.employeeId && this.prisma) {
@@ -1694,8 +1715,10 @@ export class AuthService {
       where: { id: userId },
       select: {
         roleId: true,
+        roleExpiresAt: true,
         role: {
           select: {
+            name: true,
             permissions: {
               select: {
                 permission: { select: { name: true } },
@@ -1703,12 +1726,54 @@ export class AuthService {
             },
           },
         },
+        userPermissions: {
+          where: {
+            OR: [
+              { expiresAt: null },
+              { expiresAt: { gt: new Date() } }
+            ]
+          },
+          select: {
+            isAllowed: true,
+            permission: { select: { name: true } },
+          },
+        },
       },
     });
 
-    if (!user?.roleId || !user.role) return [];
+    if (!user) return [];
 
-    return user.role.permissions.map((rp) => rp.permission.name);
+    const permissionsSet = new Set<string>();
+
+    // 1. Process role permissions if role has not expired
+    const isRoleActive = user.roleId && user.role && (!user.roleExpiresAt || user.roleExpiresAt > new Date());
+    if (isRoleActive && user.role) {
+      const roleName = user.role.name.toLowerCase();
+      if (roleName === 'super_admin' || roleName === 'admin') {
+        permissionsSet.add('*');
+      } else {
+        user.role.permissions.forEach((rp) => {
+          if (rp.permission?.name) {
+            permissionsSet.add(rp.permission.name);
+          }
+        });
+      }
+    }
+
+    // 2. Process direct user permission overrides
+    if (user.userPermissions) {
+      user.userPermissions.forEach((up) => {
+        if (up.permission?.name) {
+          if (up.isAllowed) {
+            permissionsSet.add(up.permission.name);
+          } else {
+            permissionsSet.delete(up.permission.name);
+          }
+        }
+      });
+    }
+
+    return Array.from(permissionsSet);
   }
 
   async hasAnyPermission(
@@ -1737,6 +1802,125 @@ export class AuthService {
     });
     if (!user || !user.password) return false;
     return bcrypt.compare(password, user.password);
+  }
+
+  /**
+   * Admin-initiated password reset for any user.
+   * Sets isFirstPassword = true so the user is forced to change on next login.
+   */
+  async adminResetPassword(
+    actingUserId: string,
+    targetUserId: string,
+    newPassword: string,
+  ) {
+    // Only admins can reset other users' passwords
+    const actingUser = await this.prismaMaster.user.findUnique({
+      where: { id: actingUserId },
+      include: { role: true },
+    });
+
+    const roleName = (actingUser?.role?.name || '').toLowerCase().trim();
+    const isAdmin =
+      actingUser?.role?.isSystem ||
+      ['admin', 'super_admin', 'super admin', 'super-admin'].includes(roleName);
+
+    if (!isAdmin) {
+      return { status: false, message: 'Not authorized to reset passwords' };
+    }
+
+    const targetUser = await this.prismaMaster.user.findUnique({
+      where: { id: targetUserId },
+    });
+
+    if (!targetUser) {
+      return { status: false, message: 'User not found' };
+    }
+
+    if ((newPassword || '').length < authConfig.password.minLength) {
+      return {
+        status: false,
+        message: `Password must be at least ${authConfig.password.minLength} characters`,
+      };
+    }
+
+    const hashed = await bcrypt.hash(
+      newPassword,
+      authConfig.password.saltRounds,
+    );
+
+    await this.prismaMaster.user.update({
+      where: { id: targetUserId },
+      data: {
+        password: hashed,
+        isFirstPassword: true,
+        mustChangePassword: true,
+      },
+    });
+
+    this.logger.log(
+      `[ADMIN RESET PASSWORD] userId=${targetUserId} reset by actingUserId=${actingUserId}`,
+    );
+
+    return { status: true, message: 'Password reset successfully' };
+  }
+
+  async verifyManager(emailOrId: string, pass: string): Promise<{ status: boolean; message: string; data?: { userId: string; email: string } }> {
+    const user = await this.prismaMaster.user.findFirst({
+      where: {
+        OR: [
+          { email: { equals: emailOrId, mode: 'insensitive' } },
+          { employeeId: emailOrId },
+          { id: emailOrId },
+        ],
+      },
+      include: {
+        role: {
+          include: {
+            permissions: {
+              include: {
+                permission: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      return { status: false, message: 'Manager account not found' };
+    }
+
+    if (user.status !== 'active') {
+      return { status: false, message: 'Manager account is not active' };
+    }
+
+    if (!user.password) {
+      return { status: false, message: 'Invalid credentials' };
+    }
+
+    const isValid = await bcrypt.compare(pass, user.password);
+    if (!isValid) {
+      return { status: false, message: 'Invalid credentials' };
+    }
+
+    const roleName = (user.role?.name || '').toLowerCase().trim();
+    const isManagerOrAdmin =
+      user.role?.isSystem ||
+      roleName.includes('manager') ||
+      roleName.includes('admin') ||
+      user.role?.permissions.some(
+        (p) => p.permission.name === 'pos.return.create',
+      );
+
+    if (!isManagerOrAdmin) {
+      return { status: false, message: 'This user is not authorized as a Manager' };
+    }
+
+    return {
+      status: true,
+      message: 'Manager verified successfully',
+      data: { userId: user.id, email: user.email },
+    };
   }
 
   // Helper to detect device type from user agent

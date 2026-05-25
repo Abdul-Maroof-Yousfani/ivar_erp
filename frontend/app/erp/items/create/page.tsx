@@ -27,13 +27,17 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { getBrands } from "@/lib/actions/brand";
+import { getDivisions } from "@/lib/actions/division";
 import { getCategories } from "@/lib/actions/category";
 import { getGenders } from "@/lib/actions/gender";
 import { getColors } from "@/lib/actions/color";
 import { getSilhouettes } from "@/lib/actions/silhouette";
 import { getChannelClasses } from "@/lib/actions/channel-class";
+import { getItemClasses } from "@/lib/actions/item-class";
+import { getItemSubclasses } from "@/lib/actions/item-subclass";
 import { getSeasons } from "@/lib/actions/season";
 import { getSizes } from "@/lib/actions/size";
+import { getSegments } from "@/lib/actions/segment";
 import { createItem, getNextItemId } from "@/lib/actions/items";
 import { getTaxRates } from "@/lib/actions/tax-rate";
 import { getHsCodes } from "@/lib/actions/hs-code";
@@ -61,7 +65,7 @@ const itemFormSchema = z.object({
     // Step 1: Basic Info
     brandId: z.string().min(1, "Brand is required"),
     description: z.string().optional(),
-    sku: z.string().min(1, "SKU is required"),
+    sku: z.string().optional(),
     // itemId removed (auto-generated)
     barCode: z.string().optional(),
     hsCodeId: z.string().optional(),
@@ -69,12 +73,16 @@ const itemFormSchema = z.object({
     imageUrl: z.string().optional(),
 
     // Step 2: Classification (Masters)
+    divisionId: z.string().optional(),
     categoryId: z.string().optional(),
     subCategoryId: z.string().optional(),
+    itemClassId: z.string().optional(),
+    itemSubclassId: z.string().optional(),
     channelClassId: z.string().optional(),
     genderId: z.string().optional(),
     seasonId: z.string().optional(),
     // uomId removed
+    segmentId: z.string().optional(),
 
     // Step 3: Pricing & Discount
     unitPrice: z.coerce.number().min(0),
@@ -91,11 +99,16 @@ const itemFormSchema = z.object({
     sizeId: z.string().optional(),
     colorId: z.string().optional(),
     silhouetteId: z.string().optional(),
+    case: z.string().optional(),
+    band: z.string().optional(),
+    movementType: z.string().optional(),
+    heelHeight: z.string().optional(),
+    width: z.string().optional(),
 });
 
 type ItemFormValues = z.infer<typeof itemFormSchema>;
 
-const STEPS = ["Basic Details", "Classification", "Pricing & Discounts", "Attributes", "Review"];
+const STEPS = ["Basic & Pricing", "Classification", "Attributes", "Review & Generate"];
 
 // ─── Inline barcode preview (used in form + success screen) ──────────────────
 
@@ -240,26 +253,34 @@ export default function ItemCreatePage() {
     const [currentStep, setCurrentStep] = useState(0);
     const [masters, setMasters] = useState<{
         brands: any[];
+        divisions: any[];
         categories: any[];
         genders: any[];
         colors: any[];
         silhouettes: any[];
         channelClasses: any[];
+        itemClasses: any[];
+        itemSubclasses: any[];
         seasons: any[];
         // uoms removed
         sizes: any[];
+        segments: any[];
         taxRates: { id: string; taxRate1: number }[];
         hsCodes: any[];
     }>({
         brands: [],
+        divisions: [],
         categories: [],
         genders: [],
         colors: [],
         silhouettes: [],
         channelClasses: [],
+        itemClasses: [],
+        itemSubclasses: [],
         seasons: [],
         // uoms removed
         sizes: [],
+        segments: [],
         taxRates: [],
         hsCodes: [],
     });
@@ -294,7 +315,15 @@ export default function ItemCreatePage() {
         mode: "onChange",
     });
 
+    const watchBrandId = form.watch("brandId");
     const watchCategoryId = form.watch("categoryId");
+    const watchSubCategoryId = form.watch("subCategoryId");
+    const watchGenderId = form.watch("genderId");
+    const watchSeasonId = form.watch("seasonId");
+    const watchSizeId = form.watch("sizeId");
+    const watchColorId = form.watch("colorId");
+    const watchSilhouetteId = form.watch("silhouetteId");
+    const watchItemClassId = form.watch("itemClassId");
 
     // Image Upload State
     const [cropDialogOpen, setCropDialogOpen] = useState(false);
@@ -375,34 +404,60 @@ export default function ItemCreatePage() {
             setLoading(true);
             try {
                 const [
-                    brands, categories, genders, colors,
-                    silhouettes, channelClasses,
-                    seasons, sizes, nextIdResp, taxRates, hsCodes
+                    brands, divisions, categories, genders, colors,
+                    silhouettes, channelClasses, itemClasses, itemSubclasses,
+                    seasons, sizes, segments, nextIdResp, taxRates, hsCodes
                 ] = await Promise.all([
-                    getBrands(), getCategories(), getGenders(), getColors(),
-                    getSilhouettes(), getChannelClasses(),
-                    getSeasons(), getSizes(), getNextItemId(), getTaxRates(),
+                    getBrands(), getDivisions(), getCategories(), getGenders(), getColors(),
+                    getSilhouettes(), getChannelClasses(), getItemClasses(), getItemSubclasses(),
+                    getSeasons(), getSizes(), getSegments(), getNextItemId(), getTaxRates(),
                     getHsCodes()
                 ]);
 
-                const brandsData = brands.data || [];
-                const ivarBrand = brandsData.find((b: any) => b?.name?.toUpperCase() === "IVAR");
-                const fallbackBrand = brandsData[0];
-
                 setMasters({
-                    brands: brandsData,
+                    brands: brands.data || [],
+                    divisions: divisions.data || [],
                     categories: categories.data || [],
                     genders: genders.data || [],
                     colors: colors.data || [],
                     silhouettes: silhouettes.data || [],
                     channelClasses: channelClasses.data || [],
+                    itemClasses: itemClasses.data || [],
+                    itemSubclasses: itemSubclasses.data || [],
                     seasons: seasons.data || [],
                     // uoms removed
                     sizes: sizes.data || [],
+                    segments: segments.data || [],
                     taxRates: taxRates.data || [],
                     hsCodes: hsCodes.data || [],
                 });
-                form.setValue("brandId", ivarBrand?.id || fallbackBrand?.id || "", { shouldValidate: true });
+
+                // Pre-select Brand "Ivar"
+                const brandList = brands.data || [];
+                const ivarBrand = brandList.find((b: any) => b.name.toLowerCase() === "ivar" || b.name.toUpperCase() === "IVAR");
+                if (ivarBrand) {
+                    form.setValue("brandId", ivarBrand.id);
+                } else if (brandList.length > 0) {
+                    form.setValue("brandId", brandList[0].id);
+                }
+
+                // Pre-select first Segment
+                const segmentList = segments.data || [];
+                if (segmentList.length > 0) {
+                    form.setValue("segmentId", segmentList[0].id);
+                }
+
+                // Pre-select default HS Code
+                const hsCodeList = hsCodes.data || [];
+                if (hsCodeList.length > 0) {
+                    const defaultHs = hsCodeList.find((h: any) => h.hsCode === "610910") || hsCodeList[0];
+                    form.setValue("hsCodeId", defaultHs.id);
+                }
+
+                // Set default premium placeholder image URL and status active
+                form.setValue("imageUrl", "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=400&q=80");
+                form.setValue("isActive", true);
+
                 if (nextIdResp?.status && nextIdResp?.data?.nextId) {
                     setNextItemId(nextIdResp.data.nextId);
                 }
@@ -417,8 +472,46 @@ export default function ItemCreatePage() {
         fetchMasters();
     }, []);
 
+    // Reactive effect to dynamically compute SKU, Barcode, and Description
+    useEffect(() => {
+        const genderRec = masters.genders.find((g: any) => g.id === watchGenderId);
+        const subCategoryRec = masters.categories.find((c: any) => c.id === watchSubCategoryId);
+        const silhouetteRec = masters.silhouettes.find((s: any) => s.id === watchSilhouetteId);
+        const colorRec = masters.colors.find((c: any) => c.id === watchColorId);
+        const sizeRec = masters.sizes.find((s: any) => s.id === watchSizeId);
+        const categoryRec = masters.categories.find((c: any) => c.id === watchCategoryId);
+        const seasonRec = masters.seasons.find((s: any) => s.id === watchSeasonId);
+
+        const brandCode = "IVAR";
+        const genderCode = genderRec ? genderRec.name.charAt(0).toUpperCase() : "X";
+        const subCatCode = subCategoryRec ? subCategoryRec.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() : "XX";
+        const silCode = silhouetteRec ? silhouetteRec.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() : "XX";
+        const colCode = colorRec ? colorRec.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase() : "XXX";
+        const sizeCode = sizeRec ? sizeRec.name.replace(/[^A-Za-z0-9]/g, "").toUpperCase() : "XX";
+        const serial = nextItemId ? nextItemId.slice(-3) : "001";
+
+        const computedSku = `${brandCode}-${genderCode}-${subCatCode}-${silCode}-${colCode}-${sizeCode}-${serial}`;
+        const computedDescription = `Ivar ${categoryRec?.name || ""} ${subCategoryRec?.name || ""} in ${colorRec?.name || ""} for ${genderRec?.name || ""} (${seasonRec?.name || ""} - ${silhouetteRec?.name || ""}, Size ${sizeRec?.name || ""})`;
+
+        form.setValue("sku", computedSku);
+        form.setValue("barCode", computedSku);
+        form.setValue("description", computedDescription);
+    }, [
+        watchGenderId,
+        watchSubCategoryId,
+        watchSilhouetteId,
+        watchColorId,
+        watchSizeId,
+        watchCategoryId,
+        watchSeasonId,
+        masters,
+        nextItemId
+    ]);
+
     // Filtered masters for dependent dropdowns
+    const filteredDivisions = masters.divisions.filter((d: any) => d.brandId === watchBrandId);
     const filteredSubCategories = masters.categories.filter((c: any) => c.parentId === watchCategoryId);
+    const filteredItemSubclasses = masters.itemSubclasses.filter((s: any) => s.itemClassId === watchItemClassId);
 
     const nextStep = async () => {
         const fieldsToValidate = getFieldsForStep(currentStep);
@@ -456,13 +549,13 @@ export default function ItemCreatePage() {
     const getFieldsForStep = (step: number): (keyof ItemFormValues)[] => {
         switch (step) {
             case 0:
-                return ["brandId", "sku", "barCode", "hsCodeId", "isActive", "description"];
+                return ["brandId", "segmentId", "unitPrice", "fob", "unitCost", "taxRate1", "taxRate2", "discountRate", "discountAmount", "discountStartDate", "discountEndDate"];
             case 1:
                 return ["categoryId", "subCategoryId", "channelClassId", "genderId", "seasonId"];
             case 2:
-                return ["unitPrice", "fob", "unitCost", "taxRate1", "taxRate2", "discountRate", "discountAmount", "discountStartDate", "discountEndDate"];
-            case 3:
                 return ["sizeId", "colorId", "silhouetteId"];
+            case 3:
+                return [];
             default:
                 return [];
         }
@@ -525,215 +618,158 @@ export default function ItemCreatePage() {
                                 </CardHeader>
                                 <CardContent className="space-y-6">
 
-                                    {/* STEP 1: BASIC DETAILS */}
+                                    {/* STEP 1: BASIC & PRICING */}
                                     {currentStep === 0 && (
-                                        <>
-                                            {/* Image Upload Section */}
-                                            <div className="flex flex-col items-center gap-6 mb-6">
-                                                <div
-                                                    className="relative cursor-pointer group"
-                                                    onClick={() => document.getElementById("item-image-input")?.click()}
-                                                >
-                                                    {imagePreview ? (
-                                                        <img
-                                                            src={imagePreview}
-                                                            alt="Item preview"
-                                                            className="w-40 h-40 rounded-md object-cover border-4 border-border group-hover:opacity-80 transition-opacity"
-                                                        />
-                                                    ) : (
-                                                        <div className="w-40 h-40 rounded-md bg-muted flex items-center justify-center border-4 border-border group-hover:bg-muted/80 transition-colors">
-                                                            <div className="flex flex-col items-center text-muted-foreground">
-                                                                <Upload className="h-10 w-10 mb-2" />
-                                                                <span className="text-xs">Upload Image</span>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <input
-                                                    id="item-image-input"
-                                                    type="file"
-                                                    accept="image/*"
-                                                    onChange={handleImageChange}
-                                                    className="hidden"
-                                                />
-                                            </div>
-
-                                            <Dialog open={cropDialogOpen} onOpenChange={handleCropDialogClose}>
-                                                <DialogContent className="sm:max-w-[480px]">
-                                                    <DialogHeader>
-                                                        <DialogTitle>Crop Item Image</DialogTitle>
-                                                    </DialogHeader>
-                                                    <div className="relative w-full h-80 bg-muted rounded-md overflow-hidden">
-                                                        {cropSrc && (
-                                                            <Cropper
-                                                                image={cropSrc}
-                                                                crop={crop}
-                                                                zoom={zoom}
-                                                                aspect={1}
-                                                                onCropChange={setCrop}
-                                                                onZoomChange={setZoom}
-                                                                onCropComplete={onCropComplete}
-                                                            />
-                                                        )}
-                                                    </div>
-                                                    <DialogFooter>
-                                                        <div className="flex w-full justify-end gap-2">
-                                                            <Button variant="outline" onClick={() => handleCropDialogClose(false)}>Cancel</Button>
-                                                            <Button onClick={confirmCropAndUpload}>Save</Button>
-                                                        </div>
-                                                    </DialogFooter>
-                                                </DialogContent>
-                                            </Dialog>
-
+                                        <div className="space-y-6">
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                <FormItem>
-                                                    <FormLabel>Concept (Brand)</FormLabel>
-                                                    <FormControl>
-                                                        <Input value="IVAR" disabled />
-                                                    </FormControl>
-                                                </FormItem>
-                                                <FormItem>
-                                                    <FormLabel>Item ID (Auto)</FormLabel>
-                                                    <FormControl>
-                                                        <Input value={nextItemId || ""} disabled />
-                                                    </FormControl>
-                                                </FormItem>
                                                 <FormField
                                                     control={form.control}
-                                                    name="sku"
-                                                    render={({ field }: { field: any }) => (
-                                                        <FormItem>
-                                                            <FormLabel>SKU <span className="text-red-500">*</span></FormLabel>
-                                                            <FormControl>
-                                                                <Input placeholder="SKU Number" {...field} value={field.value ?? ""} />
-                                                            </FormControl>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )}
-                                                />
-                                                <FormField
-                                                    control={form.control}
-                                                    name="barCode"
-                                                    render={({ field }: { field: any }) => (
-                                                        <FormItem>
-                                                            <FormLabel>Barcode</FormLabel>
-                                                            <div className="flex gap-2">
-                                                                <FormControl>
-                                                                    <Input
-                                                                        placeholder="EAN / UPC / Code128"
-                                                                        {...field}
-                                                                        value={field.value ?? ""}
-                                                                        className="font-mono"
-                                                                    />
-                                                                </FormControl>
-                                                                <DropdownMenu>
-                                                                    <DropdownMenuTrigger asChild>
-                                                                        <Button
-                                                                            type="button"
-                                                                            variant="outline"
-                                                                            size="icon"
-                                                                            className="shrink-0"
-                                                                            title="Auto-generate barcode"
-                                                                        >
-                                                                            <Wand2 className="h-4 w-4" />
-                                                                        </Button>
-                                                                    </DropdownMenuTrigger>
-                                                                    <DropdownMenuContent align="end" className="w-52">
-                                                                        <DropdownMenuLabel className="text-xs text-muted-foreground">
-                                                                            Generate barcode
-                                                                        </DropdownMenuLabel>
-                                                                        <DropdownMenuSeparator />
-                                                                        {BARCODE_PATTERNS.map((p) => (
-                                                                            <DropdownMenuItem
-                                                                                key={p.value}
-                                                                                onClick={() => field.onChange(generateBarcode(p.value as BarcodePattern, form.getValues("sku")))}
-                                                                            >
-                                                                                <div>
-                                                                                    <div className="font-medium text-sm">{p.label}</div>
-                                                                                    <div className="text-xs text-muted-foreground">{p.description}</div>
-                                                                                </div>
-                                                                            </DropdownMenuItem>
-                                                                        ))}
-                                                                        {field.value && (
-                                                                            <>
-                                                                                <DropdownMenuSeparator />
-                                                                                <DropdownMenuItem
-                                                                                    onClick={() => {
-                                                                                        // Re-generate with same pattern by detecting format
-                                                                                        const v = field.value as string;
-                                                                                        const pattern: BarcodePattern =
-                                                                                            /^\d{13}$/.test(v) ? "ean13" :
-                                                                                            /^\d{12}$/.test(v) ? "upca" :
-                                                                                            /^[A-Z0-9]{10}$/.test(v) ? "code128" : "sku";
-                                                                                        field.onChange(generateBarcode(pattern, form.getValues("sku")));
-                                                                                    }}
-                                                                                >
-                                                                                    <RefreshCw className="h-3.5 w-3.5 mr-2" />
-                                                                                    Regenerate
-                                                                                </DropdownMenuItem>
-                                                                            </>
-                                                                        )}
-                                                                    </DropdownMenuContent>
-                                                                </DropdownMenu>
-                                                            </div>
-                                                            {field.value && (
-                                                                <div className="mt-2 flex items-center gap-3 p-2 rounded-md bg-muted/50 border">
-                                                                    <SvgBarcodePreview value={field.value} />
-                                                                    <span className="text-xs font-mono text-muted-foreground break-all">{field.value}</span>
-                                                                </div>
-                                                            )}
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )}
-                                                />
-                                                <FormField
-                                                    control={form.control}
-                                                    name="hsCodeId"
+                                                    name="brandId"
                                                     render={({ field }) => (
                                                         <MasterSelect
-                                                            label="HS Code"
+                                                            label="Concept (Brand) - Locked"
                                                             field={field}
-                                                            options={masters.hsCodes.map(h => ({ id: h.id, name: h.hsCode }))}
+                                                            options={masters.brands}
+                                                            disabled={true}
                                                         />
                                                     )}
                                                 />
                                                 <FormField
                                                     control={form.control}
-                                                    name="description"
-                                                    render={({ field }: { field: any }) => (
-                                                        <FormItem className="col-span-full">
-                                                            <FormLabel>Description</FormLabel>
-                                                            <FormControl>
-                                                                <Textarea placeholder="Detailed product description..." {...field} value={field.value ?? ""} />
-                                                            </FormControl>
-                                                            <FormMessage />
-                                                        </FormItem>
-                                                    )}
-                                                />
-                                                <FormField
-                                                    control={form.control}
-                                                    name="isActive"
+                                                    name="segmentId"
                                                     render={({ field }) => (
-                                                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 col-span-full">
-                                                            <FormControl>
-                                                                <Checkbox
-                                                                    checked={field.value}
-                                                                    onCheckedChange={field.onChange}
-                                                                />
-                                                            </FormControl>
-                                                            <div className="space-y-1 leading-none">
-                                                                <FormLabel>
-                                                                    Active Item
-                                                                </FormLabel>
-                                                                <FormDescription>
-                                                                    This item will be visible in sales and inventory channels.
-                                                                </FormDescription>
-                                                            </div>
-                                                        </FormItem>
+                                                        <MasterSelect
+                                                            label="Segment"
+                                                            field={field}
+                                                            options={masters.segments}
+                                                        />
                                                     )}
                                                 />
+                                                <FormItem>
+                                                    <FormLabel>Item ID (Auto-Generated)</FormLabel>
+                                                    <FormControl>
+                                                        <Input value={nextItemId || ""} disabled className="font-mono bg-muted" />
+                                                    </FormControl>
+                                                </FormItem>
                                             </div>
-                                        </>
+
+                                            <div className="border-t my-4 py-4">
+                                                <h3 className="font-semibold text-lg mb-4 text-primary">Pricing Details</h3>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="unitPrice"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Unit Price <span className="text-red-500">*</span></FormLabel>
+                                                                <FormControl>
+                                                                    <Input type="number" {...field} value={field.value ?? ""} className="font-semibold text-teal-700" />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="fob"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>FOB</FormLabel>
+                                                                <FormControl>
+                                                                    <Input type="number" {...field} value={field.value ?? ""} />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="unitCost"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Unit Cost</FormLabel>
+                                                                <FormControl>
+                                                                    <Input type="number" {...field} value={field.value ?? ""} />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="taxRate1"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Tax Rate 1 (%)</FormLabel>
+                                                                <Select
+                                                                    value={field.value !== undefined && field.value !== null ? String(field.value) : ""}
+                                                                    onValueChange={(val) => field.onChange(Number(val))}
+                                                                >
+                                                                    <FormControl>
+                                                                        <SelectTrigger>
+                                                                            <SelectValue placeholder="Select Tax Rate 1" />
+                                                                        </SelectTrigger>
+                                                                    </FormControl>
+                                                                    <SelectContent>
+                                                                        {masters.taxRates.map((tr) => (
+                                                                            <SelectItem key={tr.id} value={String(tr.taxRate1)}>
+                                                                                {tr.taxRate1}%
+                                                                            </SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="taxRate2"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Tax Rate 2 (%)</FormLabel>
+                                                                <FormControl>
+                                                                    <Input type="number" {...field} value={field.value ?? ""} />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="border-t my-4 py-4">
+                                                <h3 className="font-semibold text-base mb-4 text-muted-foreground">Discount Information (Optional)</h3>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="discountRate"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Discount Rate (%)</FormLabel>
+                                                                <FormControl>
+                                                                    <Input type="number" {...field} value={field.value ?? ""} />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="discountAmount"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Discount Amount</FormLabel>
+                                                                <FormControl>
+                                                                    <Input type="number" {...field} value={field.value ?? ""} />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
                                     )}
 
                                     {/* STEP 2: CLASSIFICATION */}
@@ -795,212 +831,22 @@ export default function ItemCreatePage() {
                                                     />
                                                 )}
                                             />
-                                            {/* UOM removed */}
-
+                                            <FormField
+                                                control={form.control}
+                                                name="hsCodeId"
+                                                render={({ field }) => (
+                                                    <MasterSelect
+                                                        label="HS Code"
+                                                        field={field}
+                                                        options={masters.hsCodes.map(h => ({ id: h.id, name: h.hsCode }))}
+                                                    />
+                                                )}
+                                            />
                                         </div>
                                     )}
 
-                                    {/* STEP 3: PRICING & DISCOUNTS */}
+                                    {/* STEP 3: ATTRIBUTES */}
                                     {currentStep === 2 && (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                            <FormField
-                                                control={form.control}
-                                                name="unitPrice"
-                                                render={({ field }: { field: any }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Unit Price</FormLabel>
-                                                        <FormControl>
-                                                            <Input type="number" {...field} value={field.value ?? ""} />
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                            <FormField
-                                                control={form.control}
-                                                name="fob"
-                                                render={({ field }: { field: any }) => (
-                                                    <FormItem>
-                                                        <FormLabel>FOB</FormLabel>
-                                                        <FormControl>
-                                                            <Input type="number" {...field} value={field.value ?? ""} />
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                            <FormField
-                                                control={form.control}
-                                                name="unitCost"
-                                                render={({ field }: { field: any }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Unit Cost</FormLabel>
-                                                        <FormControl>
-                                                            <Input type="number" {...field} value={field.value ?? ""} />
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                            <FormField
-                                                control={form.control}
-                                                name="taxRate1"
-                                                render={({ field }: { field: any }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Tax Rate 1 (%)</FormLabel>
-                                                        <Select
-                                                            value={field.value !== undefined && field.value !== null ? String(field.value) : ""}
-                                                            onValueChange={(val) => field.onChange(Number(val))}
-                                                        >
-                                                            <FormControl>
-                                                                <SelectTrigger>
-                                                                    <SelectValue placeholder="Select Tax Rate 1" />
-                                                                </SelectTrigger>
-                                                            </FormControl>
-                                                            <SelectContent>
-                                                                {masters.taxRates.map((tr) => (
-                                                                    <SelectItem key={tr.id} value={String(tr.taxRate1)}>
-                                                                        {tr.taxRate1}%
-                                                                    </SelectItem>
-                                                                ))}
-                                                            </SelectContent>
-                                                        </Select>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                            <FormField
-                                                control={form.control}
-                                                name="taxRate2"
-                                                render={({ field }: { field: any }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Tax Rate 2 (%)</FormLabel>
-                                                        <FormControl>
-                                                            <Input type="number" {...field} value={field.value ?? ""} />
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-
-                                            <div className="col-span-full border-t my-4 py-4">
-                                                <h3 className="font-semibold mb-4">Discount Information</h3>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                    <FormField
-                                                        control={form.control}
-                                                        name="discountRate"
-                                                        render={({ field }: { field: any }) => (
-                                                            <FormItem>
-                                                                <FormLabel>Discount Rate (%)</FormLabel>
-                                                                <FormControl>
-                                                                    <Input type="number" {...field} value={field.value ?? ""} />
-                                                                </FormControl>
-                                                                <FormMessage />
-                                                            </FormItem>
-                                                        )}
-                                                    />
-                                                    <FormField
-                                                        control={form.control}
-                                                        name="discountAmount"
-                                                        render={({ field }: { field: any }) => (
-                                                            <FormItem>
-                                                                <FormLabel>Discount Amount</FormLabel>
-                                                                <FormControl>
-                                                                    <Input type="number" {...field} value={field.value ?? ""} />
-                                                                </FormControl>
-                                                                <FormMessage />
-                                                            </FormItem>
-                                                        )}
-                                                    />
-                                                    <FormField
-                                                        control={form.control}
-                                                        name="discountStartDate"
-                                                        render={({ field }) => (
-                                                            <FormItem className="flex flex-col">
-                                                                <FormLabel>Discount Start Date</FormLabel>
-                                                                <Popover>
-                                                                    <PopoverTrigger asChild>
-                                                                        <FormControl>
-                                                                            <Button
-                                                                                variant={"outline"}
-                                                                                className={cn(
-                                                                                    "pl-3 text-left font-normal",
-                                                                                    !field.value && "text-muted-foreground"
-                                                                                )}
-                                                                            >
-                                                                                {field.value ? (
-                                                                                    format(field.value, "PPP")
-                                                                                ) : (
-                                                                                    <span>Pick a date</span>
-                                                                                )}
-                                                                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                                                            </Button>
-                                                                        </FormControl>
-                                                                    </PopoverTrigger>
-                                                                    <PopoverContent className="w-auto p-0" align="start">
-                                                                        <Calendar
-                                                                            mode="single"
-                                                                            selected={field.value}
-                                                                            onSelect={field.onChange}
-                                                                            disabled={(date) =>
-                                                                                date < new Date("1900-01-01")
-                                                                            }
-                                                                            initialFocus
-                                                                        />
-                                                                    </PopoverContent>
-                                                                </Popover>
-                                                                <FormMessage />
-                                                            </FormItem>
-                                                        )}
-                                                    />
-                                                    <FormField
-                                                        control={form.control}
-                                                        name="discountEndDate"
-                                                        render={({ field }) => (
-                                                            <FormItem className="flex flex-col">
-                                                                <FormLabel>Discount End Date</FormLabel>
-                                                                <Popover>
-                                                                    <PopoverTrigger asChild>
-                                                                        <FormControl>
-                                                                            <Button
-                                                                                variant={"outline"}
-                                                                                className={cn(
-                                                                                    "pl-3 text-left font-normal",
-                                                                                    !field.value && "text-muted-foreground"
-                                                                                )}
-                                                                            >
-                                                                                {field.value ? (
-                                                                                    format(field.value, "PPP")
-                                                                                ) : (
-                                                                                    <span>Pick a date</span>
-                                                                                )}
-                                                                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                                                            </Button>
-                                                                        </FormControl>
-                                                                    </PopoverTrigger>
-                                                                    <PopoverContent className="w-auto p-0" align="start">
-                                                                        <Calendar
-                                                                            mode="single"
-                                                                            selected={field.value}
-                                                                            onSelect={field.onChange}
-                                                                            disabled={(date) =>
-                                                                                date < new Date("1900-01-01")
-                                                                            }
-                                                                            initialFocus
-                                                                        />
-                                                                    </PopoverContent>
-                                                                </Popover>
-                                                                <FormMessage />
-                                                            </FormItem>
-                                                        )}
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* STEP 4: ATTRIBUTES */}
-                                    {currentStep === 3 && (
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                             <FormField
                                                 control={form.control}
@@ -1038,45 +884,127 @@ export default function ItemCreatePage() {
                                         </div>
                                     )}
 
-                                    {/* STEP 5: REVIEW */}
-                                    {currentStep === 4 && (
-                                        <div className="space-y-6">
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                                <div className="border p-3 rounded-md bg-white">
-                                                    <Label className="text-muted-foreground text-xs">Image</Label>
-                                                    <div className="font-medium">
-                                                        {imagePreview ? (
-                                                            <img src={imagePreview} alt="Item" className="w-16 h-16 object-cover rounded mt-1" />
-                                                        ) : "N/A"}
+                                    {/* STEP 4: REVIEW & GENERATE */}
+                                    {currentStep === 3 && (
+                                        <div className="space-y-8">
+                                            <div className="bg-slate-50 border rounded-xl p-6 shadow-sm flex flex-col md:flex-row items-center gap-8">
+                                                <div className="flex-shrink-0">
+                                                    <img
+                                                        src={form.getValues("imageUrl") || "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=400&q=80"}
+                                                        alt="Item preview"
+                                                        className="w-32 h-32 rounded-lg object-cover border bg-white"
+                                                    />
+                                                </div>
+                                                <div className="flex-grow space-y-2 text-center md:text-left">
+                                                    <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                                                        Active Status (Locked)
                                                     </div>
-                                                </div>
-                                                <div className="border p-3 rounded-md bg-white">
-                                                    <Label className="text-muted-foreground text-xs">Item ID</Label>
-                                                    <div className="font-medium">{nextItemId}</div>
-                                                </div>
-                                                <div className="border p-3 rounded-md bg-white">
-                                                    <Label className="text-muted-foreground text-xs">SKU</Label>
-                                                    <div className="font-medium">{form.getValues("sku")}</div>
-                                                </div>
-                                                <div className="border p-3 rounded-md bg-white">
-                                                    <Label className="text-muted-foreground text-xs">Brand (Concept)</Label>
-                                                    <div className="font-medium">
-                                                        {(masters.brands.find((b: any) => b.id === form.getValues("brandId")) as any)?.name}
+                                                    <h3 className="text-xl font-bold text-slate-900 tracking-tight">
+                                                        {form.getValues("description") || "No Description Generated"}
+                                                    </h3>
+                                                    <div className="text-sm font-mono text-slate-500">
+                                                        SKU: <span className="font-semibold text-slate-800">{form.getValues("sku") || "N/A"}</span>
                                                     </div>
-                                                </div>
-                                                <div className="border p-3 rounded-md bg-white">
-                                                    <Label className="text-muted-foreground text-xs">Category</Label>
-                                                    <div className="font-medium">
-                                                        {(masters.categories.find((c: any) => c.id === form.getValues("categoryId")) as any)?.name || "N/A"}
-                                                    </div>
-                                                </div>
-                                                <div className="border p-3 rounded-md bg-white">
-                                                    <Label className="text-muted-foreground text-xs">Price</Label>
-                                                    <div className="font-medium">{String(form.getValues("unitPrice") || 0)}</div>
                                                 </div>
                                             </div>
-                                            <div className="bg-muted p-4 rounded-md">
-                                                <p className="text-sm font-medium">Please review the information above before submitting. Creation is final for this step.</p>
+
+                                            {/* Barcode section */}
+                                            {form.getValues("sku") && (
+                                                <div className="bg-white border rounded-xl p-6 flex flex-col items-center gap-3">
+                                                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Dynamic Barcode</span>
+                                                    <SvgBarcodePreview value={form.getValues("sku") || "IVAR"} height={48} />
+                                                    <span className="text-sm font-mono font-bold tracking-widest text-slate-800">
+                                                        {form.getValues("sku")}
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                <div className="border rounded-xl p-6 bg-white space-y-4">
+                                                    <h4 className="font-bold text-slate-900 border-b pb-2">Classification Info</h4>
+                                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                                        <div>
+                                                            <span className="text-slate-400 block text-xs">Concept (Brand)</span>
+                                                            <span className="font-medium text-slate-800">Ivar</span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-slate-400 block text-xs">Category</span>
+                                                            <span className="font-medium text-slate-800">
+                                                                {(masters.categories.find((c: any) => c.id === form.getValues("categoryId")) as any)?.name || "N/A"}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-slate-400 block text-xs">Sub Category</span>
+                                                            <span className="font-medium text-slate-800">
+                                                                {(masters.categories.find((c: any) => c.id === form.getValues("subCategoryId")) as any)?.name || "N/A"}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-slate-400 block text-xs">Gender</span>
+                                                            <span className="font-medium text-slate-800">
+                                                                {(masters.genders.find((g: any) => g.id === form.getValues("genderId")) as any)?.name || "N/A"}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-slate-400 block text-xs">Season</span>
+                                                            <span className="font-medium text-slate-800">
+                                                                {(masters.seasons.find((s: any) => s.id === form.getValues("seasonId")) as any)?.name || "N/A"}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-slate-400 block text-xs">HS Code</span>
+                                                            <span className="font-medium text-slate-800 font-mono">
+                                                                {(masters.hsCodes.find((h: any) => h.id === form.getValues("hsCodeId")) as any)?.hsCode || "N/A"}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="border rounded-xl p-6 bg-white space-y-4">
+                                                    <h4 className="font-bold text-slate-900 border-b pb-2">Attributes & Pricing</h4>
+                                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                                        <div>
+                                                            <span className="text-slate-400 block text-xs">Size</span>
+                                                            <span className="font-medium text-slate-800">
+                                                                {(masters.sizes.find((s: any) => s.id === form.getValues("sizeId")) as any)?.name || "N/A"}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-slate-400 block text-xs">Color</span>
+                                                            <span className="font-medium text-slate-800">
+                                                                {(masters.colors.find((c: any) => c.id === form.getValues("colorId")) as any)?.name || "N/A"}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-slate-400 block text-xs">Silhouette</span>
+                                                            <span className="font-medium text-slate-800">
+                                                                {(masters.silhouettes.find((s: any) => s.id === form.getValues("silhouetteId")) as any)?.name || "N/A"}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-slate-400 block text-xs">Unit Price</span>
+                                                            <span className="font-bold text-emerald-700">
+                                                                {Number(form.getValues("unitPrice") || 0).toLocaleString("en-US", { style: "currency", currency: "PKR", minimumFractionDigits: 0 })}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-slate-400 block text-xs">Unit Cost</span>
+                                                            <span className="font-medium text-slate-800">
+                                                                {Number(form.getValues("unitCost") || 0).toLocaleString("en-US", { style: "currency", currency: "PKR", minimumFractionDigits: 0 })}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-slate-400 block text-xs">FOB</span>
+                                                            <span className="font-medium text-slate-800">
+                                                                {Number(form.getValues("fob") || 0).toLocaleString("en-US", { style: "currency", currency: "PKR", minimumFractionDigits: 0 })}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+                                                Please review all details. Item ID, SKU, Barcode, HS Code, and Description are dynamically auto-generated based on the classification and attributes you selected in the previous steps.
                                             </div>
                                         </div>
                                     )}

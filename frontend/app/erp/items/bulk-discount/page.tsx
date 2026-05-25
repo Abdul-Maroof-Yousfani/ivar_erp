@@ -24,13 +24,17 @@ import {
     AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
     AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 import {
     ArrowLeft, Filter, X, ChevronRight, Search, Tag,
     Loader2, Percent, DollarSign, CalendarRange, Square, AlertTriangle,
     Sparkles, RotateCcw, Info, MapPin, Store, CheckCircle2, History,
-    Trash2, XCircle, Globe, Download, Undo2,
+    Trash2, XCircle, Globe, Download, Undo2, Zap, Upload, FileText
 } from 'lucide-react';
 
 // ── APIs & Actions ────────────────────────────────────────────────────────────
@@ -40,7 +44,7 @@ import {
 } from '@/lib/api';
 import {
     getItems, getAllItemIds, bulkApplyDiscount, rollbackCampaign,
-    getDiscountCampaigns,
+    getDiscountCampaigns, bulkSearchItems,
     type BulkDiscountItemOverride,
 } from '@/lib/actions/items';
 import { PermissionGuard } from '@/components/auth/permission-guard';
@@ -60,6 +64,7 @@ interface ItemRow {
     discountEndDate: string | null;
     brand?: { name: string } | null;
     category?: { name: string } | null;
+    division?: { name: string } | null;
     brandId?: string;
     categoryId?: string;
     silhouetteId?: string;
@@ -348,6 +353,12 @@ export default function BulkDiscountPage() {
     const [selectAllPages, setSelectAllPages] = useState(false);
     const [selectAllLoading, setSelectAllLoading] = useState(false);
 
+    // Quick Select
+    const [isQuickSelectOpen, setIsQuickSelectOpen] = useState(false);
+    const [quickSelectText, setQuickSelectText] = useState('');
+    const [quickSelectLoading, setQuickSelectLoading] = useState(false);
+    const [importedItems, setImportedItems] = useState<Map<string, ItemRow>>(new Map());
+
     // ── Item Filters ───────────────────────────────────────────────────────
     const [brands, setBrands] = useState<any[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
@@ -417,7 +428,14 @@ export default function BulkDiscountPage() {
         });
     }, [step, itemPage, itemSearch, appliedFilters, itemsMeta.totalPages, queryClient]);
 
-    const selectedItems = useMemo(() => allItems.filter(i => selectedIds.has(i.id)), [allItems, selectedIds]);
+    const selectedItems = useMemo(() => {
+        const items = new Map<string, ItemRow>();
+        // Add current page items first
+        allItems.forEach(i => { if (selectedIds.has(i.id)) items.set(i.id, i); });
+        // Add imported items that aren't on this page
+        importedItems.forEach((v, k) => { if (selectedIds.has(k) && !items.has(k)) items.set(k, v); });
+        return Array.from(items.values());
+    }, [allItems, selectedIds, importedItems]);
     const allPageSelected = allItems.length > 0 && allItems.every(i => selectedIds.has(i.id));
     const somePageSelected = allItems.some(i => selectedIds.has(i.id));
 
@@ -556,6 +574,63 @@ export default function BulkDiscountPage() {
         setAppliedFilters({ brandIds: [], categoryIds: [], silhouetteIds: [], genderIds: [] });
         setItemPage(1);
         setSelectAllPages(false);
+    };
+
+    const handleQuickSelect = async () => {
+        const text = quickSelectText.trim();
+        if (!text) return;
+
+        // Split by commas, newlines, or tabs and remove empty strings
+        const barcodes = text.split(/[\n,\t]+/).map(b => b.trim()).filter(Boolean);
+        if (barcodes.length === 0) return;
+
+        setQuickSelectLoading(true);
+        try {
+            const res = await bulkSearchItems(barcodes);
+            if (res.status && res.data) {
+                const foundItems: ItemRow[] = res.data;
+                if (foundItems.length === 0) {
+                    toast.error('No items found matching those barcodes');
+                } else {
+                    setSelectedIds(prev => {
+                        const next = new Set(prev);
+                        foundItems.forEach(i => next.add(i.id));
+                        return next;
+                    });
+                    setImportedItems(prev => {
+                        const next = new Map(prev);
+                        foundItems.forEach(i => next.set(i.id, i));
+                        return next;
+                    });
+                    toast.success(`Found ${foundItems.length} items`);
+                    setQuickSelectText('');
+                    setIsQuickSelectOpen(false);
+                }
+            } else {
+                toast.error('Failed to search items');
+            }
+        } catch {
+            toast.error('An error occurred during search');
+        } finally {
+            setQuickSelectLoading(false);
+        }
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const result = event.target?.result;
+            if (typeof result === 'string') {
+                setQuickSelectText(prev => prev ? prev + '\n' + result : result);
+            }
+        };
+        reader.readAsText(file);
+        
+        // Reset file input
+        e.target.value = '';
     };
 
     const handleApply = async () => {
@@ -952,6 +1027,11 @@ export default function BulkDiscountPage() {
                                                     <Search className="h-3.5 w-3.5" />
                                                 </Button>
                                             </form>
+
+                                            <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5"
+                                                onClick={() => setIsQuickSelectOpen(true)}>
+                                                <Zap className="h-3.5 w-3.5 text-primary" /> Quick Select
+                                            </Button>
 
                                             {/* Filter trigger */}
                                             <Tooltip>
@@ -1599,6 +1679,63 @@ export default function BulkDiscountPage() {
                         </AlertDialogFooter>
                     </AlertDialogContent>
                 </AlertDialog>
+
+                {/* ── Quick Select Dialog ── */}
+                <Dialog open={isQuickSelectOpen} onOpenChange={setIsQuickSelectOpen}>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <Zap className="h-5 w-5 text-primary" />
+                                Quick Select Items
+                            </DialogTitle>
+                            <DialogDescription>
+                                Paste barcodes, SKUs, or Item IDs separated by commas or new lines. You can also upload a CSV or TXT file.
+                            </DialogDescription>
+                        </DialogHeader>
+                        
+                        <div className="space-y-4 py-2">
+                            <Textarea 
+                                placeholder="e.g. 89611234567, 100234&#10;SKU-9921"
+                                value={quickSelectText}
+                                onChange={e => setQuickSelectText(e.target.value)}
+                                className="min-h-[150px] font-mono text-sm"
+                            />
+                            
+                            <div className="flex items-center justify-between">
+                                <Label htmlFor="barcode-file" className="cursor-pointer">
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                                        <Upload className="h-4 w-4" />
+                                        <span>Upload TXT/CSV</span>
+                                    </div>
+                                    <Input 
+                                        id="barcode-file" 
+                                        type="file" 
+                                        accept=".txt,.csv" 
+                                        className="hidden" 
+                                        onChange={handleFileUpload}
+                                    />
+                                </Label>
+                                
+                                {quickSelectText && (
+                                    <span className="text-xs text-muted-foreground">
+                                        {quickSelectText.split(/[\n,\t]+/).filter(Boolean).length} items detected
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsQuickSelectOpen(false)}>Cancel</Button>
+                            <Button onClick={handleQuickSelect} disabled={quickSelectLoading || !quickSelectText.trim()}>
+                                {quickSelectLoading ? (
+                                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Searching...</>
+                                ) : (
+                                    <><Search className="h-4 w-4 mr-2" /> Find & Select</>
+                                )}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
 
             </div>
         </PermissionGuard>

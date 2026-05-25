@@ -13,7 +13,7 @@ export const columns: ColumnDef<PFWithdrawal>[] = [
     },
     {
         id: "employeeDetails",
-        accessorFn: (row) => `${row.employee.employeeName} ${row.employee.employeeId} ${row.employee.department.name} ${row.employee.subDepartment?.name || ''}`,
+        accessorFn: (row) => `${row.employee.employeeName} ${row.employee.employeeId} ${row.employee.department?.name || ''} ${row.employee.subDepartment?.name || ''}`,
         header: "Employee Details",
         cell: ({ row }) => (
             <div className="space-y-1">
@@ -21,10 +21,12 @@ export const columns: ColumnDef<PFWithdrawal>[] = [
                 <div className="text-xs text-muted-foreground">
                     {row.original.employee.employeeId}
                 </div>
-                <div className="text-xs text-muted-foreground">
-                    {row.original.employee.department.name}
-                    {row.original.employee.subDepartment?.name ? ` • ${row.original.employee.subDepartment.name}` : ""}
-                </div>
+                {(row.original.employee.department?.name || row.original.employee.subDepartment?.name) && (
+                    <div className="text-xs text-muted-foreground">
+                        {row.original.employee.department?.name || 'N/A'}
+                        {row.original.employee.subDepartment?.name ? ` • ${row.original.employee.subDepartment.name}` : ""}
+                    </div>
+                )}
             </div>
         ),
     },

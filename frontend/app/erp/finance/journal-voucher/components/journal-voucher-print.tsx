@@ -184,7 +184,7 @@ export function JournalVoucherPrint({ voucher }: { voucher: JournalVoucher }) {
       </div>
 
       {/* Signatures */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div className="border border-black h-20 p-2 flex flex-col justify-start items-center">
           <span className="text-[10px] sm:text-[11px] font-bold text-center">PREPARED BY</span>
         </div>
@@ -193,12 +193,6 @@ export function JournalVoucherPrint({ voucher }: { voucher: JournalVoucher }) {
         </div>
         <div className="border border-black h-20 p-2 flex flex-col justify-start items-center">
           <span className="text-[10px] sm:text-[11px] font-bold text-center">APPROVED BY</span>
-        </div>
-        <div className="border border-black h-20 p-2 flex flex-col justify-start items-center">
-          <span className="text-[10px] sm:text-[11px] font-bold text-center">CHIEF EXECUTIVE</span>
-        </div>
-        <div className="border border-black h-20 p-2 flex flex-col justify-start items-center">
-          <span className="text-[10px] sm:text-[11px] font-bold text-center">RECEIVED BY</span>
         </div>
       </div>
 

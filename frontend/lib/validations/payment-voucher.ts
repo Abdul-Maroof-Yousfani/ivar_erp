@@ -1,9 +1,13 @@
 import { z } from "zod";
 
 export const paymentVoucherDetailSchema = z.object({
-    accountId: z.string().min(1, "Account is required"),
-    debit: z.coerce.number().min(0).default(0),
-    credit: z.coerce.number().min(0).default(0),
+    accountId:       z.string().min(1, "Account is required"),
+    tagAccountId:    z.string().optional(),
+    debit:           z.coerce.number().min(0).default(0),
+    credit:          z.coerce.number().min(0).default(0),
+    narration:       z.string().optional(),   // per-line narration
+    refBillNo:       z.string().optional(),   // per-line bill ref
+    isTaxApplicable: z.boolean().optional(),  // per-line tax flag
 });
 
 export const paymentVoucherInvoiceSchema = z.object({
@@ -16,7 +20,7 @@ export const paymentVoucherSchema = z.object({
     isAdvance: z.boolean().default(false),
     pvNo: z.string().min(1, "PV Number is required"),
     pvDate: z.date({
-        required_error: "PV Date is required",
+        message: "PV Date is required",
     }),
     refBillNo: z.string().optional(),
     billDate: z.date().optional(),

@@ -62,7 +62,7 @@ export function PaymentVoucherPrint({ voucher }: { voucher: PaymentVoucher }) {
              <span className="font-bold">Voucher Number:</span>
              <span className="font-bold">{voucher.pvNo}</span>
            </div>
-           <div className="flex justify-between mb-2">
+           <div className="flex justify-between">
              <div className="flex gap-2">
                <span className="font-bold">Date:</span>
                <span>{voucher.pvDate ? format(new Date(voucher.pvDate), "dd/MM/yyyy") : ""}</span>
@@ -72,10 +72,12 @@ export function PaymentVoucherPrint({ voucher }: { voucher: PaymentVoucher }) {
                <span>{voucher.id.replace(/-/g, "").slice(-5).toUpperCase()}</span>
              </div>
            </div>
-           <div className="flex gap-2">
-             <span className="font-bold">Cheque #:</span>
-             <span className="uppercase">{voucher.chequeNo || "—"}</span>
-           </div>
+           {isBank && (
+             <div className="flex gap-2 mt-2">
+               <span className="font-bold">Cheque #:</span>
+               <span className="uppercase">{voucher.chequeNo || "—"}</span>
+             </div>
+           )}
         </div>
       </div>
 
@@ -196,6 +198,7 @@ export function PaymentVoucherPrint({ voucher }: { voucher: PaymentVoucher }) {
       {/* Remarks */}
       <div className="mt-4 mb-8">
         <div className="font-bold text-xs sm:text-[14px]">Remarks</div>
+        <p className="text-xs sm:text-[13px] mt-1 text-gray-700">{voucher.description}</p>
       </div>
 
       {/* Signatures */}

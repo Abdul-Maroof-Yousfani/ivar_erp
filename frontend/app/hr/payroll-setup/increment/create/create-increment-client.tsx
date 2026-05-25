@@ -48,6 +48,7 @@ import {
 } from "@/lib/actions/department";
 import { getEmployeeGrades, type EmployeeGrade } from "@/lib/actions/employee-grade";
 import { getDesignations, type Designation } from "@/lib/actions/designation";
+import { ProtectedSalaryCell } from "@/components/common/protected-salary-cell";
 import { bulkCreateIncrements, updateIncrement, type Increment, getLatestEmployeeSalary } from "@/lib/actions/increment";
 
 interface EmployeeIncrementItem {
@@ -684,13 +685,13 @@ export function CreateIncrementClient({
                           
                           // Get salary - show LATEST salary (from increment or joining)
                           const getSalary = () => {
-                            if (isLoading) return "Loading...";
+                            if (isLoading) return null;
                             const latestSalary = latestSalaries[empId];
                             if (latestSalary !== undefined) {
-                              return `PKR ${Number(latestSalary).toLocaleString()}`;
+                              return latestSalary;
                             }
-                            if (!employeeDetail) return "N/A";
-                            return employeeDetail.employeeSalary ? `PKR ${Number(employeeDetail.employeeSalary).toLocaleString()}` : "N/A";
+                            if (!employeeDetail) return null;
+                            return employeeDetail.employeeSalary ? Number(employeeDetail.employeeSalary) : null;
                           };
                           
                           // Get joining date
@@ -710,7 +711,15 @@ export function CreateIncrementClient({
                                 </div>
                               </TableCell>
                               <TableCell>{getDesignationName()}</TableCell>
-                              <TableCell>{getSalary()}</TableCell>
+                              <TableCell>
+                                {isLoading ? (
+                                  "Loading..."
+                                ) : getSalary() !== null ? (
+                                  <ProtectedSalaryCell salary={getSalary()!} />
+                                ) : (
+                                  "N/A"
+                                )}
+                              </TableCell>
                               <TableCell>{getDate()}</TableCell>
                             </TableRow>
                           );

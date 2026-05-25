@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
     Table,
     TableBody,
@@ -13,6 +14,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Minus, Plus, Trash2, CircleDot, Truck } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { ManagerVerificationDialog } from "@/components/auth/manager-verification-dialog";
+import { useAuth } from "@/components/providers/auth-provider";
 
 export interface CartItem {
     id: string;
@@ -24,8 +27,9 @@ export interface CartItem {
     color: string;
     quantity: number;
     price: number;
-    discountPercent: number;
+    discountPercent: number; // Original/default discount
     discountAmount: number;
+    overrideDiscountPercent?: number; // Manager override discount (for record)
     taxPercent: number;
     taxAmount: number;
     total: number;
@@ -49,8 +53,100 @@ export function CartTable({
     onRemoveItem,
     onToggleTransit,
 }: CartTableProps) {
+    const { user } = useAuth();
+    const isManager = user?.role === 'manager' || user?.role === 'admin';
+    
+    const [showManagerVerification, setShowManagerVerification] = useState(false);
+    const [pendingDiscountChange, setPendingDiscountChange] = useState<{
+        itemId: string;
+        newDiscount: number;
+    } | null>(null);
+    
+    // Track editing state for each item
+    const [editingDiscounts, setEditingDiscounts] = useState<Record<string, string>>({});
+
+    const handleDiscountInputChange = (itemId: string, value: string) => {
+        // Allow typing without immediate validation
+        setEditingDiscounts(prev => ({ ...prev, [itemId]: value }));
+    };
+
+    const handleDiscountBlur = (itemId: string) => {
+        const value = editingDiscounts[itemId];
+        if (value === undefined || value === '') {
+            // Clear editing state if empty
+            setEditingDiscounts(prev => {
+                const next = { ...prev };
+                delete next[itemId];
+                return next;
+            });
+            return;
+        }
+
+        const newDiscount = Number(value);
+        const item = items.find(i => i.id === itemId);
+        if (!item) return;
+
+        const currentDiscount = item.overrideDiscountPercent ?? item.discountPercent;
+        const maxAllowedDiscount = 50;
+
+        // Validation: Cannot decrease current discount
+        if (newDiscount < currentDiscount) {
+            alert(`Cannot decrease discount from ${currentDiscount}% to ${newDiscount}%. Discount can only be increased.`);
+            setEditingDiscounts(prev => {
+                const next = { ...prev };
+                delete next[itemId];
+                return next;
+            });
+            return;
+        }
+
+        // Validation: Cannot exceed maximum limit
+        if (newDiscount > maxAllowedDiscount) {
+            alert(`Cannot set discount above ${maxAllowedDiscount}%. Maximum limit reached.`);
+            setEditingDiscounts(prev => {
+                const next = { ...prev };
+                delete next[itemId];
+                return next;
+            });
+            return;
+        }
+
+        // Clear editing state
+        setEditingDiscounts(prev => {
+            const next = { ...prev };
+            delete next[itemId];
+            return next;
+        });
+
+        // If user is manager/admin, allow direct change
+        if (isManager) {
+            onDiscountChange?.(itemId, newDiscount);
+            return;
+        }
+
+        // Otherwise, require manager verification
+        setPendingDiscountChange({ itemId, newDiscount });
+        setShowManagerVerification(true);
+    };
+
+    const handleManagerVerified = (_managerUserId?: string) => {
+        if (pendingDiscountChange) {
+            onDiscountChange?.(
+                pendingDiscountChange.itemId,
+                pendingDiscountChange.newDiscount
+            );
+            setPendingDiscountChange(null);
+        }
+    };
+
+    const handleVerificationCancel = () => {
+        setPendingDiscountChange(null);
+        setShowManagerVerification(false);
+    };
+
     return (
-        <div className="rounded-xl border bg-card shadow-sm overflow-x-auto flex-1 min-w-0">
+        <>
+            <div className="rounded-xl border bg-card shadow-sm overflow-x-auto flex-1 min-w-0">
             <Table>
                 <TableHeader>
                     <TableRow className="bg-muted/40 hover:bg-muted/40">
@@ -249,24 +345,37 @@ export function CartTable({
 
                                 {/* Discount % */}
                                 <TableCell>
-                                    <div className="flex items-center justify-center gap-1">
-                                        <Input
-                                            type="number"
-                                            min={0}
-                                            max={100}
-                                            value={item.discountPercent}
-                                            disabled={!onDiscountChange}
-                                            onChange={(e) =>
-                                                onDiscountChange?.(
-                                                    item.id,
-                                                    Number(e.target.value)
-                                                )
-                                            }
-                                            className="w-14 h-7 text-center text-sm p-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-40 disabled:cursor-not-allowed"
-                                        />
-                                        <span className="text-xs text-muted-foreground">
-                                            %
-                                        </span>
+                                    <div className="flex flex-col items-center gap-0.5">
+                                        <div className="flex items-center justify-center gap-1">
+                                            <Input
+                                                type="number"
+                                                min={item.overrideDiscountPercent ?? item.discountPercent}
+                                                max={50}
+                                                value={editingDiscounts[item.id] ?? (item.overrideDiscountPercent ?? item.discountPercent)}
+                                                disabled={!onDiscountChange}
+                                                onChange={(e) =>
+                                                    handleDiscountInputChange(
+                                                        item.id,
+                                                        e.target.value
+                                                    )
+                                                }
+                                                onBlur={() => handleDiscountBlur(item.id)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.currentTarget.blur();
+                                                    }
+                                                }}
+                                                className="w-14 h-7 text-center text-sm p-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-40 disabled:cursor-not-allowed"
+                                            />
+                                            <span className="text-xs text-muted-foreground">
+                                                %
+                                            </span>
+                                        </div>
+                                        {item.overrideDiscountPercent != null && (
+                                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                                                Override: {item.discountPercent}% → {item.overrideDiscountPercent}%
+                                            </span>
+                                        )}
                                     </div>
                                 </TableCell>
 
@@ -318,5 +427,15 @@ export function CartTable({
                 </TableBody>
             </Table>
         </div>
+
+        {/* Manager Verification Dialog */}
+        <ManagerVerificationDialog
+            open={showManagerVerification}
+            onOpenChange={handleVerificationCancel}
+            onVerified={handleManagerVerified}
+            title="Manager Verification Required"
+            description="Discount override requires manager authorization. Enter manager password to proceed."
+        />
+    </>
     );
 }

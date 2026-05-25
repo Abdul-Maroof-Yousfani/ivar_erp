@@ -5,6 +5,7 @@ export interface WorkingHoursPolicy {
   name: string;
   startWorkingHours: string;
   endWorkingHours: string;
+  otStartsAt?: string | null;
   shortDayMins?: number | null;
   startBreakTime?: string | null;
   endBreakTime?: string | null;
@@ -20,7 +21,6 @@ export interface WorkingHoursPolicy {
   applyDeductionAfterShortDays?: number | null;
   shortDayDeductionAmount?: number | null;
   overtimeRate?: number | null;
-  overtimeStartsAt?: string | null;
   gazzetedOvertimeRate?: number | null;
   dayOverrides?:
   | Array<{
@@ -94,6 +94,7 @@ export async function createWorkingHoursPolicy(data: {
   name: string;
   startWorkingHours: string;
   endWorkingHours: string;
+  otStartsAt?: string | null;
   shortDayMins?: number | null;
   startBreakTime?: string | null;
   endBreakTime?: string | null;
@@ -109,7 +110,6 @@ export async function createWorkingHoursPolicy(data: {
   applyDeductionAfterShortDays?: number | null;
   shortDayDeductionAmount?: number | null;
   overtimeRate?: number | null;
-  overtimeStartsAt?: string | null;
   gazzetedOvertimeRate?: number | null;
   status?: string;
   dayOverrides?:
@@ -158,6 +158,7 @@ export async function updateWorkingHoursPolicy(id: string, data: {
   name: string;
   startWorkingHours: string;
   endWorkingHours: string;
+  otStartsAt?: string | null;
   shortDayMins?: number | null;
   startBreakTime?: string | null;
   endBreakTime?: string | null;
@@ -173,7 +174,6 @@ export async function updateWorkingHoursPolicy(id: string, data: {
   applyDeductionAfterShortDays?: number | null;
   shortDayDeductionAmount?: number | null;
   overtimeRate?: number | null;
-  overtimeStartsAt?: string | null;
   gazzetedOvertimeRate?: number | null;
   status?: string;
   dayOverrides?:

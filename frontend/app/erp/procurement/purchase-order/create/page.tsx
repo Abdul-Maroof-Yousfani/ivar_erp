@@ -649,6 +649,11 @@ export default function CreateDirectPurchaseOrder() {
                 open={bulkUploadOpen}
                 onOpenChange={setBulkUploadOpen}
                 onSuccess={() => router.push('/erp/procurement/purchase-order')}
+                vendorId={selectedVendorId}
+                orderType={orderType}
+                goodsType={goodsType}
+                expectedDeliveryDate={expectedDeliveryDate}
+                notes={notes}
             />
         </div>
         </PermissionGuard>
