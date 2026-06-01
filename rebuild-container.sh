@@ -113,7 +113,7 @@ if [ "$DEPLOY_MODE" -eq 1 ]; then
 
         if confirm "Build backend?"; then
             info "Building backend..."
-            bun run build || { error "Backend build failed!"; exit 1; }
+            NODE_OPTIONS="--max-old-space-size=3072" bun run build || { error "Backend build failed!"; exit 1; }
             success "Backend built successfully."
         fi
 
