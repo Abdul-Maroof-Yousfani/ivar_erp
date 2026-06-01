@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { warehouseApi, inventoryApi, locationApi, brandApi, categoryApi, silhouetteApi, genderApi, Warehouse, WarehouseLocation } from '@/lib/api';
 import { createTransferRequest, createReturnTransferRequest, createOutletToOutletTransferRequest } from '@/lib/actions/transfer-request';
 import { toast } from 'sonner';
-import { ArrowLeft, ArrowRightLeft, Search, Package, Save, History, RotateCcw, Trash2, Plus, CheckCircle2, Info, Loader2, WarehouseIcon, ArrowDown, Filter, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, ArrowRightLeft, Search, Package, Save, History, RotateCcw, Trash2, Plus, CheckCircle2, Info, Loader2, WarehouseIcon, ArrowDown, Filter, X, ChevronDown, ChevronRight, ScanBarcode, Volume2, VolumeX, Keyboard, Sparkles } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
@@ -55,6 +55,17 @@ export default function StockTransferPage() {
     const [bulkQty, setBulkQty] = useState<number>(1);
     const [searchQuery, setSearchQuery] = useState('');
 
+    // Barcode scanner states
+    const [barcodeTab, setBarcodeTab] = useState<'scan' | 'search'>('scan');
+    const [globalScannerActive, setGlobalScannerActive] = useState(true);
+    const [autoIncrement, setAutoIncrement] = useState(true);
+    const [lastScannedItem, setLastScannedItem] = useState<{ sku: string; description: string; timestamp: string } | null>(null);
+    const [scanning, setScanning] = useState(false);
+    const [soundEnabled, setSoundEnabled] = useState(true);
+    const [scannerInput, setScannerInput] = useState('');
+
+    const scannerInputRef = useRef<HTMLInputElement>(null);
+
     // Filter State
     const [brands, setBrands] = useState<any[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
@@ -74,6 +85,249 @@ export default function StockTransferPage() {
     const [filterSearch, setFilterSearch] = useState('');
     const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
     const toggleSection = (key: string) => setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
+
+    // Web Audio API Synthesized Audio Cues
+    const playScanSuccessBeep = () => {
+        if (typeof window === 'undefined') return;
+        try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(1050, audioCtx.currentTime); // Crisp, positive beep
+            gainNode.gain.setValueAtTime(0.06, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.08);
+        } catch (e) {
+            console.warn('Audio Context failed:', e);
+        }
+    };
+
+    const playScanErrorBuzz = () => {
+        if (typeof window === 'undefined') return;
+        try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc1 = audioCtx.createOscillator();
+            const osc2 = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc1.connect(gainNode);
+            osc2.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            osc1.type = 'sawtooth';
+            osc2.type = 'sawtooth';
+            osc1.frequency.setValueAtTime(140, audioCtx.currentTime); // Bass/buzz mismatch sound
+            osc2.frequency.setValueAtTime(143, audioCtx.currentTime);
+            
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.22);
+            
+            osc1.start();
+            osc2.start();
+            osc1.stop(audioCtx.currentTime + 0.22);
+            osc2.stop(audioCtx.currentTime + 0.22);
+        } catch (e) {
+            console.warn('Audio Context failed:', e);
+        }
+    };
+
+    // Focus scanner helper
+    const focusScannerInput = () => {
+        if (scannerInputRef.current) {
+            scannerInputRef.current.focus();
+        }
+    };
+
+    // Auto-focus on mount and tab switch
+    useEffect(() => {
+        if (barcodeTab === 'scan') {
+            const timer = setTimeout(() => {
+                focusScannerInput();
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [barcodeTab]);
+
+    // Shortcut key: F2 to focus scanner input
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'F2') {
+                e.preventDefault();
+                setBarcodeTab('scan');
+                setTimeout(focusScannerInput, 50);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    // Barcode Resolution handler
+    const handleBarcodeResolve = async (barcode: string) => {
+        if (!barcode.trim()) return;
+        if (!selectedWarehouseId) {
+            if (soundEnabled) playScanErrorBuzz();
+            toast.error('Please select a warehouse first.');
+            return;
+        }
+        setScanning(true);
+        try {
+            let searchLocationId = undefined;
+            if (transferMode !== 'WAREHOUSE_TO_OUTLET') {
+                const sourceLocId = transferMode === 'OUTLET_TO_WAREHOUSE' ? destLocationId : sourceLocationId;
+                if (sourceLocId && sourceLocId !== 'unassigned') {
+                    searchLocationId = sourceLocId;
+                }
+            }
+
+            const res = await inventoryApi.search(barcode.trim(), selectedWarehouseId, searchLocationId, appliedFilters);
+            if (!res.status || !res.data || res.data.length === 0) {
+                if (soundEnabled) playScanErrorBuzz();
+                toast.error(`No item found for barcode/SKU: "${barcode}"`);
+                return;
+            }
+
+            const cleanedBarcode = barcode.trim().toLowerCase();
+            let matchedItem = res.data.find((item: any) => 
+                (item.barCode && item.barCode.toLowerCase() === cleanedBarcode) ||
+                (item.sku && item.sku.toLowerCase() === cleanedBarcode) ||
+                (item.itemId && item.itemId.toLowerCase() === cleanedBarcode)
+            );
+
+            if (!matchedItem && res.data.length === 1) {
+                matchedItem = res.data[0];
+            } else if (!matchedItem && res.data.length > 1) {
+                if (soundEnabled) playScanErrorBuzz();
+                toast.warning(`Multiple items found for "${barcode}". Please use manual search.`);
+                return;
+            }
+
+            if (!matchedItem) {
+                if (soundEnabled) playScanErrorBuzz();
+                toast.error(`No item found for barcode/SKU: "${barcode}"`);
+                return;
+            }
+
+            let availableStock = typeof matchedItem.totalQuantity === 'number' ? matchedItem.totalQuantity : 0;
+
+            const itemData = {
+                id: matchedItem.id,
+                sku: matchedItem.sku ?? matchedItem.itemId ?? '',
+                description: matchedItem.description ?? matchedItem.name ?? '',
+                availableStock: availableStock,
+            };
+
+            const existingIndex = selectedItems.findIndex(i => i.id === itemData.id);
+            if (existingIndex > -1) {
+                if (autoIncrement) {
+                    const newQty = selectedItems[existingIndex].quantity + bulkQty;
+                    if (newQty > itemData.availableStock) {
+                        toast.warning(`Quantity exceeds available stock (${itemData.availableStock})`);
+                    }
+                    setSelectedItems(prev => prev.map((item, idx) => 
+                        idx === existingIndex 
+                            ? { ...item, quantity: item.quantity + bulkQty }
+                            : item
+                    ));
+                    if (soundEnabled) playScanSuccessBeep();
+                    toast.success(`Incremented quantity for ${itemData.sku} (Total: ${newQty})`, {
+                        id: `scan-inc-${itemData.id}`,
+                    });
+                } else {
+                    if (soundEnabled) playScanErrorBuzz();
+                    toast.info(`Item ${itemData.sku} is already added.`, {
+                        id: `scan-dup-${itemData.id}`,
+                    });
+                }
+            } else {
+                if (bulkQty > itemData.availableStock) {
+                    toast.warning(`Quantity exceeds available stock (${itemData.availableStock})`);
+                }
+                setSelectedItems(prev => [...prev, {
+                    id: itemData.id,
+                    sku: itemData.sku,
+                    description: itemData.description,
+                    quantity: bulkQty,
+                    notes: '',
+                    availableStock: itemData.availableStock,
+                }]);
+                if (soundEnabled) playScanSuccessBeep();
+                toast.success(`Added ${itemData.sku} to transfer list.`, {
+                    id: `scan-add-${itemData.id}`,
+                });
+            }
+
+            setLastScannedItem({
+                sku: itemData.sku,
+                description: itemData.description,
+                timestamp: new Date().toLocaleTimeString(),
+            });
+
+        } catch (error) {
+            if (soundEnabled) playScanErrorBuzz();
+            toast.error('Failed to resolve scanned item');
+        } finally {
+            setScanning(false);
+        }
+    };
+
+    // Global Scanner Keyboard Input Interceptor
+    useEffect(() => {
+        if (!globalScannerActive) return;
+
+        let buffer = '';
+        let lastKeyTime = Date.now();
+
+        const handleGlobalKeyDown = (e: KeyboardEvent) => {
+            const activeEl = document.activeElement;
+            if (activeEl) {
+                const tag = activeEl.tagName.toLowerCase();
+                const type = (activeEl as HTMLInputElement).type?.toLowerCase();
+
+                if (activeEl.id === 'barcode-scanner-input') {
+                    return;
+                }
+
+                if (
+                    tag === 'textarea' ||
+                    (tag === 'input' && (type === 'text' || type === 'number' || type === 'search' || type === 'date')) ||
+                    activeEl.getAttribute('role') === 'combobox' ||
+                    activeEl.classList.contains('autofocus-ignore')
+                ) {
+                    return;
+                }
+            }
+
+            const now = Date.now();
+            
+            if (now - lastKeyTime > 80 && buffer.length > 0) {
+                buffer = '';
+            }
+
+            lastKeyTime = now;
+
+            if (e.key === 'Enter') {
+                if (buffer.length >= 3) {
+                    e.preventDefault();
+                    const barcode = buffer;
+                    buffer = '';
+                    handleBarcodeResolve(barcode);
+                } else {
+                    buffer = '';
+                }
+            } else if (e.key.length === 1) {
+                buffer += e.key;
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalKeyDown);
+        return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+    }, [globalScannerActive, selectedItems, autoIncrement, bulkQty, soundEnabled, selectedWarehouseId, transferMode, destLocationId, sourceLocationId, appliedFilters]);
 
     useEffect(() => {
         loadWarehouses();
@@ -697,157 +951,332 @@ export default function StockTransferPage() {
                                 </SheetContent>
                             </Sheet>
 
+                            {/* Search & bulk add */}
                             <div className="p-4 bg-primary/5 rounded-lg border border-primary/10">
-                                <Label className="text-sm font-semibold mb-3 block">Bulk Search & Multi-Select</Label>
-                                <div className="flex flex-col md:flex-row gap-3 items-end">
-                                    <div className="w-full md:w-32 space-y-1.5">
-                                        <Label htmlFor="bulk-qty" className="text-xs text-muted-foreground">Bulk Qty</Label>
-                                        <Input
-                                            id="bulk-qty"
-                                            type="number"
-                                            min="1"
-                                            value={bulkQty}
-                                            onChange={(e) => setBulkQty(Number(e.target.value))}
-                                            className="h-10 border-primary/20 focus-visible:ring-primary shadow-sm"
-                                        />
-                                    </div>
+                                {/* Barcode / Search Tabs */}
+                                <div className="flex border-b border-muted/50 mb-4 gap-2 pb-0.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setBarcodeTab('scan')}
+                                        className={cn(
+                                            "flex items-center gap-2 px-4 py-2 border-b-2 font-medium text-xs tracking-wider uppercase transition-all select-none focus:outline-none",
+                                            barcodeTab === 'scan'
+                                                ? "border-primary text-primary font-bold"
+                                                : "border-transparent text-muted-foreground hover:text-foreground"
+                                        )}
+                                    >
+                                        <ScanBarcode className="h-4 w-4" />
+                                        Barcode Scanning
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setBarcodeTab('search')}
+                                        className={cn(
+                                            "flex items-center gap-2 px-4 py-2 border-b-2 font-medium text-xs tracking-wider uppercase transition-all select-none focus:outline-none",
+                                            barcodeTab === 'search'
+                                                ? "border-primary text-primary font-bold"
+                                                : "border-transparent text-muted-foreground hover:text-foreground"
+                                        )}
+                                    >
+                                        <Search className="h-4 w-4" />
+                                        Manual Bulk Search
+                                    </button>
+                                </div>
 
-                                    <div className="flex-1 space-y-1.5 relative">
-                                        <Label htmlFor="item-search" className="text-xs text-muted-foreground">Search Items (Select Multiple)</Label>
-                                        <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
-                                            <PopoverTrigger asChild>
-                                                <div className="relative">
-                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                                    <Input
-                                                        id="item-search"
-                                                        placeholder="Type SKU or description to search..."
-                                                        value={searchQuery}
-                                                        onChange={(e) => handleItemSearch(e.target.value)}
-                                                        onFocus={() => searchQuery.length >= 2 && setIsPopoverOpen(true)}
-                                                        className="h-10 pl-10 border-primary/20 focus-visible:ring-primary shadow-sm"
-                                                    />
-                                                    {searchLoading && (
-                                                        <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-                                                    )}
+                                {barcodeTab === 'scan' ? (
+                                    <div className="space-y-4">
+                                        <style dangerouslySetInnerHTML={{ __html: `
+                                            @keyframes laser-sweep {
+                                                0% { top: 0%; opacity: 0.2; }
+                                                50% { opacity: 1; }
+                                                100% { top: 100%; opacity: 0.2; }
+                                            }
+                                            .animate-laser-sweep {
+                                                animation: laser-sweep 2.5s infinite ease-in-out;
+                                            }
+                                        `}} />
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            {/* Visual scanner glowing box */}
+                                            <div className="md:col-span-1 relative h-36 bg-neutral-950 rounded-lg overflow-hidden border border-primary/20 flex flex-col items-center justify-center p-4 group select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)]">
+                                                {/* Glowing background pulses */}
+                                                <div className="absolute inset-0 bg-primary/5 group-hover:bg-primary/10 transition-colors duration-500" />
+                                                
+                                                {/* Simulated laser scan line */}
+                                                <div className="absolute left-0 right-0 h-[2px] bg-red-500 shadow-[0_0_8px_#ef4444] animate-laser-sweep z-10" />
+                                                
+                                                {/* Visual scanner elements */}
+                                                <div className="z-20 text-center space-y-2">
+                                                    <div className="inline-flex p-2 bg-neutral-900 border border-neutral-800 rounded-full text-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.1)]">
+                                                        <ScanBarcode className={cn("h-6 w-6", scanning ? "animate-pulse" : "")} />
+                                                    </div>
+                                                    <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono font-bold">
+                                                        {scanning ? 'Resolving Code...' : 'Scanner Hook Active'}
+                                                    </div>
+                                                    <div className="text-[11px] text-neutral-400">
+                                                        Press <kbd className="px-1.5 py-0.5 bg-neutral-900 border border-neutral-850 rounded text-[10px] font-mono text-primary font-bold shadow-sm">F2</kbd> to focus scanner
+                                                    </div>
                                                 </div>
-                                            </PopoverTrigger>
-                                            <PopoverContent
-                                                className="w-[var(--radix-popover-trigger-width)] p-0 shadow-xl border-primary/10"
-                                                align="start"
-                                                onOpenAutoFocus={(e: Event) => e.preventDefault()}
-                                            >
-                                                <Command className="rounded-lg" shouldFilter={false}>
-                                                    <CommandList className="max-h-[350px]">
-                                                        {itemOptions.length === 0 ? (
-                                                            <div className="py-6 px-4 text-center space-y-1">
-                                                                {searchLoading ? (
-                                                                    <p className="text-sm text-muted-foreground">Searching...</p>
-                                                                ) : searchQuery.length > 0 && activeFilterCount > 0 ? (
-                                                                    <>
-                                                                        <p className="text-sm font-medium text-muted-foreground">No results for "{searchQuery}"</p>
-                                                                        <p className="text-xs text-muted-foreground">with {activeFilterCount} active filter{activeFilterCount > 1 ? 's' : ''}. Try clearing some filters.</p>
-                                                                    </>
-                                                                ) : searchQuery.length > 0 ? (
-                                                                    <>
-                                                                        <p className="text-sm font-medium text-muted-foreground">No items match "{searchQuery}"</p>
-                                                                        <p className="text-xs text-muted-foreground">Try a different SKU or description.</p>
-                                                                    </>
-                                                                ) : activeFilterCount > 0 ? (
-                                                                    <>
-                                                                        <p className="text-sm font-medium text-muted-foreground">No items match the active filters</p>
-                                                                        <p className="text-xs text-muted-foreground">Try removing some filters or type a search term.</p>
-                                                                    </>
-                                                                ) : (
-                                                                    <p className="text-sm text-muted-foreground">Type at least 2 characters to search, or apply filters above.</p>
-                                                                )}
-                                                            </div>
+                                            </div>
+
+                                            {/* Main Scanning Controls and inputs */}
+                                            <div className="md:col-span-2 space-y-3 flex flex-col justify-between">
+                                                <div className="flex flex-col md:flex-row gap-3 items-end">
+                                                    {/* Bulk quantity multiplier */}
+                                                    <div className="w-full md:w-24 space-y-1">
+                                                        <Label htmlFor="scan-qty" className="text-xs text-muted-foreground">Scan Qty</Label>
+                                                        <Input
+                                                            id="scan-qty"
+                                                            type="number"
+                                                            min="1"
+                                                            value={bulkQty}
+                                                            onChange={e => setBulkQty(Number(e.target.value))}
+                                                            className="h-9 border-primary/20 focus-visible:ring-primary shadow-sm"
+                                                        />
+                                                    </div>
+
+                                                    {/* Scanner input field */}
+                                                    <div className="flex-1 space-y-1 w-full">
+                                                        <Label htmlFor="barcode-scanner-input" className="text-xs text-muted-foreground">Scan Barcode / SKU</Label>
+                                                        <div className="relative">
+                                                            <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
+                                                            <Input
+                                                                id="barcode-scanner-input"
+                                                                ref={scannerInputRef}
+                                                                type="text"
+                                                                placeholder="Scan with handheld scanner, or type SKU and hit Enter..."
+                                                                value={scannerInput}
+                                                                onChange={e => setScannerInput(e.target.value)}
+                                                                onKeyDown={e => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.preventDefault();
+                                                                        handleBarcodeResolve(scannerInput);
+                                                                        setScannerInput('');
+                                                                    }
+                                                                }}
+                                                                className="h-9 pl-9 pr-10 border-primary/30 focus-visible:ring-primary shadow-sm font-mono text-sm"
+                                                            />
+                                                            {scanning && (
+                                                                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-primary" />
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Scanner Config Settings */}
+                                                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-1 text-xs select-none border-t border-muted/50">
+                                                    <label className="flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground transition-colors font-medium">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={globalScannerActive}
+                                                            onChange={e => setGlobalScannerActive(e.target.checked)}
+                                                            className="rounded border-neutral-300 text-primary focus:ring-primary h-3.5 w-3.5"
+                                                        />
+                                                        <div className="flex items-center gap-1">
+                                                            <Keyboard className="h-3.5 w-3.5 text-muted-foreground/75" />
+                                                            <span>Global Background Listener</span>
+                                                        </div>
+                                                    </label>
+
+                                                    <label className="flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground transition-colors font-medium">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={autoIncrement}
+                                                            onChange={e => setAutoIncrement(e.target.checked)}
+                                                            className="rounded border-neutral-300 text-primary focus:ring-primary h-3.5 w-3.5"
+                                                        />
+                                                        <div className="flex items-center gap-1">
+                                                            <Plus className="h-3.5 w-3.5 text-muted-foreground/75" />
+                                                            <span>Auto-increment quantity</span>
+                                                        </div>
+                                                    </label>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSoundEnabled(!soundEnabled)}
+                                                        className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors font-medium md:ml-auto"
+                                                    >
+                                                        {soundEnabled ? (
+                                                            <>
+                                                                <Volume2 className="h-3.5 w-3.5 text-primary" />
+                                                                <span>Sound Cues Enabled</span>
+                                                            </>
                                                         ) : (
-                                                            <CommandGroup>
-                                                                <div className="flex items-center justify-between px-3 py-1.5 border-b border-muted/50">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Search Results</span>
-                                                                        <span className="text-xs text-muted-foreground">({itemOptions.length})</span>
-                                                                    </div>
-                                                                    <button
-                                                                        type="button"
-                                                                        className="text-xs text-primary underline underline-offset-2 hover:text-primary/70 transition-colors"
-                                                                        onClick={() => {
-                                                                            const unselected = itemOptions
-                                                                                .map((o: any) => o.item)
-                                                                                .filter((item: any) => !selectedItems.some(s => s.id === item.id));
-                                                                            unselected.forEach((item: any) => toggleItemSelection(item));
-                                                                        }}
-                                                                    >
-                                                                        Select all
-                                                                    </button>
-                                                                </div>
-                                                                <ScrollArea showShadows={true} shadowSize="md" className="h-[300px]">
-                                                                    {itemOptions.map((opt) => {
-                                                                        const item = (opt as any).item;
-                                                                        const isSelected = selectedItems.some(i => i.id === item.id);
-                                                                        return (
-                                                                            <CommandItem
-                                                                                key={item.id}
-                                                                                value={`${item.sku} ${item.description}`}
-                                                                                onSelect={() => toggleItemSelection(item)}
-                                                                                className={cn(
-                                                                                    "flex items-center justify-between gap-3 px-4 py-3 cursor-pointer transition-all duration-200 border-b border-muted/50 last:border-0",
-                                                                                    isSelected ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-accent"
-                                                                                )}
-                                                                            >
-                                                                                <div className="flex flex-col gap-1 min-w-0 flex-1">
-                                                                                    <div className="flex items-center gap-2">
-                                                                                        <span className={cn(
-                                                                                            "font-mono text-[10px] px-1.5 py-0.5 rounded border leading-none font-bold",
-                                                                                            isSelected ? "bg-primary text-primary-foreground border-primary" : "bg-muted text-muted-foreground border-muted-foreground/20"
-                                                                                        )}>
-                                                                                            {item.sku}
-                                                                                        </span>
-                                                                                        <span className={cn(
-                                                                                            "truncate text-sm",
-                                                                                            isSelected ? "font-bold text-primary" : "font-medium"
-                                                                                        )}>
-                                                                                            {item.description}
-                                                                                        </span>
-                                                                                    </div>
-                                                                                    <div className="flex items-center gap-3">
-                                                                                        <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                                                                                            <WarehouseIcon className="h-3 w-3" />
-                                                                                            Stock: <span className={cn("font-bold", item.availableStock > 0 ? "text-foreground" : "text-destructive")}>{item.availableStock}</span>
-                                                                                        </span>
-                                                                                        {isSelected && (
-                                                                                            <Badge variant="outline" className="h-4 text-[9px] px-1 bg-primary/5 text-primary border-primary/20">Added</Badge>
-                                                                                        )}
-                                                                                    </div>
-                                                                                </div>
-                                                                                <div className="shrink-0 flex items-center justify-center w-8">
-                                                                                    {isSelected ? (
-                                                                                        <CheckCircle2 className="h-5 w-5 text-primary fill-primary/10" />
-                                                                                    ) : (
-                                                                                        <Plus className="h-4 w-4 text-muted-foreground opacity-50" />
-                                                                                    )}
-                                                                                </div>
-                                                                            </CommandItem>
-                                                                        );
-                                                                    })}
-                                                                </ScrollArea>
-                                                            </CommandGroup>
+                                                            <>
+                                                                <VolumeX className="h-3.5 w-3.5 text-muted-foreground/70" />
+                                                                <span>Muted</span>
+                                                            </>
                                                         )}
-                                                    </CommandList>
-                                                </Command>
-                                            </PopoverContent>
-                                        </Popover>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Last Scanned Feedback Banner */}
+                                        {lastScannedItem && (
+                                            <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded px-3 py-2 text-xs animate-fade-in">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <span className="font-mono bg-primary text-primary-foreground font-bold px-1.5 py-0.5 rounded text-[10px]">{lastScannedItem.sku}</span>
+                                                    <span className="truncate text-foreground font-medium">{lastScannedItem.description}</span>
+                                                    <span className="text-muted-foreground">successfully added.</span>
+                                                </div>
+                                                <span className="text-[10px] text-muted-foreground/75 font-mono italic whitespace-nowrap">{lastScannedItem.timestamp}</span>
+                                            </div>
+                                        )}
                                     </div>
-                                </div>
-                                <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground bg-primary/5 p-2 rounded border border-primary/5">
-                                    <div className="flex items-center gap-2 text-primary font-medium italic">
-                                        <Info className="h-3 w-3" />
-                                        <span>Click items in the list to toggle selection. Popover stays open for multiple selects.</span>
+                                ) : (
+                                    <div className="space-y-4">
+                                        <div className="flex flex-col md:flex-row gap-3 items-end">
+                                            <div className="w-full md:w-32 space-y-1.5">
+                                                <Label htmlFor="bulk-qty" className="text-xs text-muted-foreground">Bulk Qty</Label>
+                                                <Input
+                                                    id="bulk-qty"
+                                                    type="number"
+                                                    min="1"
+                                                    value={bulkQty}
+                                                    onChange={(e) => setBulkQty(Number(e.target.value))}
+                                                    className="h-10 border-primary/20 focus-visible:ring-primary shadow-sm"
+                                                />
+                                            </div>
+
+                                            <div className="flex-1 space-y-1.5 relative w-full">
+                                                <Label htmlFor="item-search" className="text-xs text-muted-foreground">Search Items (Select Multiple)</Label>
+                                                <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+                                                    <PopoverTrigger asChild>
+                                                        <div className="relative">
+                                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                                            <Input
+                                                                id="item-search"
+                                                                placeholder="Type SKU or description to search..."
+                                                                value={searchQuery}
+                                                                onChange={(e) => handleItemSearch(e.target.value)}
+                                                                onFocus={() => searchQuery.length >= 2 && setIsPopoverOpen(true)}
+                                                                className="h-10 pl-10 border-primary/20 focus-visible:ring-primary shadow-sm"
+                                                            />
+                                                            {searchLoading && (
+                                                                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                                                            )}
+                                                        </div>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent
+                                                        className="w-[var(--radix-popover-trigger-width)] p-0 shadow-xl border-primary/10"
+                                                        align="start"
+                                                        onOpenAutoFocus={(e: Event) => e.preventDefault()}
+                                                    >
+                                                        <Command className="rounded-lg" shouldFilter={false}>
+                                                            <CommandList className="max-h-[350px]">
+                                                                {itemOptions.length === 0 ? (
+                                                                    <div className="py-6 px-4 text-center space-y-1">
+                                                                        {searchLoading ? (
+                                                                            <p className="text-sm text-muted-foreground">Searching...</p>
+                                                                        ) : searchQuery.length > 0 && activeFilterCount > 0 ? (
+                                                                            <>
+                                                                                <p className="text-sm font-medium text-muted-foreground">No results for "{searchQuery}"</p>
+                                                                                <p className="text-xs text-muted-foreground">with {activeFilterCount} active filter{activeFilterCount > 1 ? 's' : ''}. Try clearing some filters.</p>
+                                                                            </>
+                                                                        ) : searchQuery.length > 0 ? (
+                                                                            <>
+                                                                                <p className="text-sm font-medium text-muted-foreground">No items match "{searchQuery}"</p>
+                                                                                <p className="text-xs text-muted-foreground">Try a different SKU or description.</p>
+                                                                            </>
+                                                                        ) : activeFilterCount > 0 ? (
+                                                                            <>
+                                                                                <p className="text-sm font-medium text-muted-foreground">No items match the active filters</p>
+                                                                                <p className="text-xs text-muted-foreground">Try removing some filters or type a search term.</p>
+                                                                            </>
+                                                                        ) : (
+                                                                            <p className="text-sm text-muted-foreground">Type at least 2 characters to search, or apply filters above.</p>
+                                                                        )}
+                                                                    </div>
+                                                                ) : (
+                                                                    <CommandGroup>
+                                                                        <div className="flex items-center justify-between px-3 py-1.5 border-b border-muted/50">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Search Results</span>
+                                                                                <span className="text-xs text-muted-foreground">({itemOptions.length})</span>
+                                                                            </div>
+                                                                            <button
+                                                                                type="button"
+                                                                                className="text-xs text-primary underline underline-offset-2 hover:text-primary/70 transition-colors"
+                                                                                onClick={() => {
+                                                                                    const unselected = itemOptions
+                                                                                        .map((o: any) => o.item)
+                                                                                        .filter((item: any) => !selectedItems.some(s => s.id === item.id));
+                                                                                    unselected.forEach((item: any) => toggleItemSelection(item));
+                                                                                }}
+                                                                            >
+                                                                                Select all
+                                                                            </button>
+                                                                        </div>
+                                                                        <ScrollArea showShadows={true} shadowSize="md" className="h-[300px]">
+                                                                            {itemOptions.map((opt) => {
+                                                                                const item = (opt as any).item;
+                                                                                const isSelected = selectedItems.some(i => i.id === item.id);
+                                                                                return (
+                                                                                    <CommandItem
+                                                                                        key={item.id}
+                                                                                        value={`${item.sku} ${item.description}`}
+                                                                                        onSelect={() => toggleItemSelection(item)}
+                                                                                        className={cn(
+                                                                                            "flex items-center justify-between gap-3 px-4 py-3 cursor-pointer transition-all duration-200 border-b border-muted/50 last:border-0",
+                                                                                            isSelected ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-accent"
+                                                                                        )}
+                                                                                    >
+                                                                                        <div className="flex flex-col gap-1 min-w-0 flex-1">
+                                                                                            <div className="flex items-center gap-2">
+                                                                                                <span className={cn(
+                                                                                                    "font-mono text-[10px] px-1.5 py-0.5 rounded border leading-none font-bold",
+                                                                                                    isSelected ? "bg-primary text-primary-foreground border-primary" : "bg-muted text-muted-foreground border-muted-foreground/20"
+                                                                                                )}>
+                                                                                                    {item.sku}
+                                                                                                </span>
+                                                                                                <span className={cn(
+                                                                                                    "truncate text-sm",
+                                                                                                    isSelected ? "font-bold text-primary" : "font-medium"
+                                                                                                )}>
+                                                                                                    {item.description}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                            <div className="flex items-center gap-3">
+                                                                                                <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                                                                                    <WarehouseIcon className="h-3 w-3" />
+                                                                                                    Stock: <span className={cn("font-bold", item.availableStock > 0 ? "text-foreground" : "text-destructive")}>{item.availableStock}</span>
+                                                                                                </span>
+                                                                                                {isSelected && (
+                                                                                                    <Badge variant="outline" className="h-4 text-[9px] px-1 bg-primary/5 text-primary border-primary/20">Added</Badge>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <div className="shrink-0 flex items-center justify-center w-8">
+                                                                                            {isSelected ? (
+                                                                                                <CheckCircle2 className="h-5 w-5 text-primary fill-primary/10" />
+                                                                                            ) : (
+                                                                                                <Plus className="h-4 w-4 text-muted-foreground opacity-50" />
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </CommandItem>
+                                                                                );
+                                                                            })}
+                                                                        </ScrollArea>
+                                                                    </CommandGroup>
+                                                                )}
+                                                            </CommandList>
+                                                        </Command>
+                                                    </PopoverContent>
+                                                </Popover>
+                                            </div>
+                                        </div>
+                                        <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground bg-primary/5 p-2 rounded border border-primary/5">
+                                            <div className="flex items-center gap-2 text-primary font-medium italic">
+                                                <Info className="h-3 w-3" />
+                                                <span>Click items in the list to toggle selection. Popover stays open for multiple selects.</span>
+                                            </div>
+                                            <div className="font-semibold">
+                                                {selectedItems.length} items currently in list
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="font-semibold">
-                                        {selectedItems.length} items currently in list
-                                    </div>
-                                </div>
+                                )}
                             </div>
                         </div>
 
