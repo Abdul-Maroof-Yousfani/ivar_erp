@@ -86,6 +86,7 @@ export class InventoryService {
       genderIds?: string[];
     }
   ) {
+    const normalizedQuery = query.trim().replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
     const filterWhere: any = {};
     if (filters?.brandIds?.length) filterWhere.brandId = { in: filters.brandIds };
     if (filters?.categoryIds?.length) filterWhere.categoryId = { in: filters.categoryIds };
@@ -94,12 +95,12 @@ export class InventoryService {
 
     const items = await this.prisma.item.findMany({
       where: {
-        OR: query
+        OR: normalizedQuery
           ? [
-              { sku: { contains: query, mode: 'insensitive' } },
-              { description: { contains: query, mode: 'insensitive' } },
-              { barCode: { contains: query, mode: 'insensitive' } },
-              { itemId: { contains: query, mode: 'insensitive' } },
+              { sku: { contains: normalizedQuery, mode: 'insensitive' } },
+              { description: { contains: normalizedQuery, mode: 'insensitive' } },
+              { barCode: { contains: normalizedQuery, mode: 'insensitive' } },
+              { itemId: { contains: normalizedQuery, mode: 'insensitive' } },
             ]
           : undefined,
         isActive: true,
