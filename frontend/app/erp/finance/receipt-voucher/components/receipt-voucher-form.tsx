@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useForm, useFieldArray, Controller, SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { receiptVoucherSchema, type ReceiptVoucherFormValues } from "@/lib/validations/receipt-voucher";
@@ -12,14 +12,82 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Loader2, CreditCard, Wallet } from "lucide-react";
+import { Plus, Trash2, Loader2, CreditCard, Wallet, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { createReceiptVoucher, getAllCustomers, getPendingInvoicesByCustomer } from "@/lib/actions/receipt-voucher";
 import { ChartOfAccount } from "@/lib/actions/chart-of-account";
+import { ChartOfAccountSelect, getSharedTree } from "@/components/ui/chart-of-account-select";
 import { cn } from "@/lib/utils";
+import { calculateTaxForAccount } from "@/lib/utils/tax-calculator";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from "@/components/ui/command";
+import { CheckIcon, ChevronDownIcon, Tag } from "lucide-react";
+
+// ─── Tag account selector ─────────────────────────────────────────────────────
+function TagAccountSelect({ children, value, onValueChange, disabled }: {
+    children: ChartOfAccount[];
+    value?: string;
+    onValueChange: (v: string) => void;
+    disabled?: boolean;
+}) {
+    const [open, setOpen] = useState(false);
+    const selected = children.find((c) => c.id === value);
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <button type="button" disabled={disabled} className={cn(
+                    "flex items-center w-full h-8 px-2 rounded-md border border-dashed border-input bg-background text-xs cursor-pointer select-none text-left",
+                    "hover:bg-accent hover:text-accent-foreground transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50",
+                    open && "ring-1 ring-ring/20",
+                    disabled && "pointer-events-none opacity-50"
+                )}>
+                    <Tag className="h-3 w-3 shrink-0 text-muted-foreground mr-1.5" />
+                    <span className={cn("flex-1 min-w-0 truncate", !selected && "text-muted-foreground")}>
+                        {selected ? `${selected.code} - ${selected.name}` : "Tag sub-account (optional)"}
+                    </span>
+                    <ChevronDownIcon className={cn("ml-1 h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-200", open && "rotate-180")} />
+                </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-0" align="start" sideOffset={4}>
+                <Command>
+                    <CommandInput placeholder="Search sub-account..." className="h-8 text-xs" />
+                    <CommandList className="max-h-52">
+                        <CommandEmpty className="py-4 text-center text-xs text-muted-foreground">No sub-accounts found.</CommandEmpty>
+                        <CommandGroup>
+                            {value && (
+                                <CommandItem value="__clear__" onSelect={() => { onValueChange(""); setOpen(false); }} className="text-xs text-muted-foreground italic">
+                                    Clear tag
+                                </CommandItem>
+                            )}
+                            {children.map((child) => (
+                                <CommandItem key={child.id} value={`${child.code} ${child.name}`} onSelect={() => { onValueChange(child.id); setOpen(false); }} className="flex items-center gap-2 text-xs">
+                                    <span className="font-mono text-muted-foreground shrink-0">{child.code}</span>
+                                    <span className="flex-1 truncate">{child.name}</span>
+                                    {value === child.id && <CheckIcon className="h-3 w-3 shrink-0 text-primary" />}
+                                </CommandItem>
+                            ))}
+                        </CommandGroup>
+                    </CommandList>
+                </Command>
+            </PopoverContent>
+        </Popover>
+    );
+}
 
 type InvoiceReceiptEntry = {
     salesInvoiceId: string;
@@ -30,13 +98,14 @@ type InvoiceReceiptEntry = {
     receivingNow: number;
 };
 
-export function ReceiptVoucherForm({ accounts }: { accounts: ChartOfAccount[] }) {
+export function ReceiptVoucherForm() {
     const router = useRouter();
     const [isPending, setIsPending] = useState(false);
     const [customers, setCustomers] = useState<any[]>([]);
     const [pendingInvoices, setPendingInvoices] = useState<any[]>([]);
     const [selectedInvoices, setSelectedInvoices] = useState<InvoiceReceiptEntry[]>([]);
     const [loadingCustomers, setLoadingCustomers] = useState(true);
+    const [tree, setTree] = useState<ChartOfAccount[]>([]);
 
     const form = useForm<ReceiptVoucherFormValues>({
         resolver: zodResolver(receiptVoucherSchema) as any,
@@ -50,16 +119,55 @@ export function ReceiptVoucherForm({ accounts }: { accounts: ChartOfAccount[] })
             chequeDate: undefined,
             description: "",
             customerId: "",
+            isAdvance: false,
+            isTaxApplicable: false,
             invoices: [],
             details: [
-                { accountId: "", debit: 0, credit: 0 },
-                { accountId: "", debit: 0, credit: 0 },
+                { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
+                { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
             ],
         },
     });
 
     const { fields, append, remove } = useFieldArray({ control: form.control, name: "details" });
     const voucherType = form.watch("type");
+
+    // Poll for shared tree
+    useEffect(() => {
+        const initial = getSharedTree();
+        if (initial.length > 0) { setTree(initial); return; }
+        const id = setInterval(() => {
+            const t = getSharedTree();
+            if (t.length > 0) { setTree(t); clearInterval(id); }
+        }, 300);
+        return () => clearInterval(id);
+    }, []);
+
+    // Clear tagAccountId when accountId changes for a row
+    const prevAccountIds = useRef<Record<number, string>>({});
+    const watchDetails = form.watch("details") || [];
+    useEffect(() => {
+        watchDetails.forEach((detail: any, index: number) => {
+            const accountId = detail.accountId;
+            if (prevAccountIds.current[index] !== undefined && prevAccountIds.current[index] !== accountId) {
+                form.setValue(`details.${index}.tagAccountId`, "");
+            }
+            prevAccountIds.current[index] = accountId;
+        });
+    }, [watchDetails.map((d: any) => d.accountId).join(",")]);
+
+    function findInTree(nodes: ChartOfAccount[], id: string): ChartOfAccount | undefined {
+        for (const node of nodes) {
+            if (node.id === id) return node;
+            if (node.children?.length) { const f = findInTree(node.children, id); if (f) return f; }
+        }
+    }
+    const rowChildren = useMemo(() => {
+        return watchDetails.map((detail: any) => {
+            if (!detail.accountId || tree.length === 0) return [];
+            return findInTree(tree, detail.accountId)?.children ?? [];
+        });
+    }, [watchDetails.map((d: any) => d.accountId).join(","), tree]);
 
     useEffect(() => {
         const prefix = voucherType === "bank" ? "BRV" : "CRV";
@@ -108,9 +216,100 @@ export function ReceiptVoucherForm({ accounts }: { accounts: ChartOfAccount[] })
 
     const totalInvoiceReceipts = selectedInvoices.reduce((s, i) => s + (i.receivingNow || 0), 0);
 
-    const watchDetails = form.watch("details") || [];
-    const totalDebit = watchDetails.reduce((sum, detail) => sum + (Number(detail.debit) || 0), 0);
-    const totalCredit = watchDetails.reduce((sum, detail) => sum + (Number(detail.credit) || 0), 0);
+    const duplicateToDebit = (fromIndex: number) => {
+        const fromRow = form.getValues(`details.${fromIndex}`);
+        const creditVal = Number(fromRow.credit) || 0;
+        
+        const targetIndex = fromIndex + 1;
+        const currentDetails = form.getValues("details") || [];
+        
+        if (targetIndex < currentDetails.length) {
+            form.setValue(`details.${targetIndex}.debit`, creditVal, { shouldValidate: true });
+            form.setValue(`details.${targetIndex}.credit`, 0, { shouldValidate: true });
+            form.setValue(`details.${targetIndex}.narration`, fromRow.narration || "", { shouldValidate: true });
+            form.setValue(`details.${targetIndex}.refBillNo`, fromRow.refBillNo || "", { shouldValidate: true });
+            form.setValue(`details.${targetIndex}.isTaxApplicable`, fromRow.isTaxApplicable ?? false, { shouldValidate: true });
+            if (fromRow.accountId) {
+                form.setValue(`details.${targetIndex}.accountId`, fromRow.accountId, { shouldValidate: true });
+            }
+            if (fromRow.tagAccountId) {
+                form.setValue(`details.${targetIndex}.tagAccountId`, fromRow.tagAccountId, { shouldValidate: true });
+            }
+            toast.success(`Copied details from Row ${fromIndex + 1} to Row ${targetIndex + 1} as Debit.`);
+        } else {
+            append({
+                accountId: fromRow.accountId || "",
+                tagAccountId: fromRow.tagAccountId || "",
+                debit: creditVal,
+                credit: 0,
+                narration: fromRow.narration || "",
+                refBillNo: fromRow.refBillNo || "",
+                isTaxApplicable: fromRow.isTaxApplicable ?? false
+            });
+            toast.success(`Duplicated Row ${fromIndex + 1} to a new Debit Row.`);
+        }
+    };
+
+    // Watch for changes in detail rows to auto-balance and calculate taxes
+    const watchDetailsString = watchDetails.map((d: any) => `${d.debit}-${d.credit}-${d.accountId}-${d.tagAccountId}-${d.isTaxApplicable}`).join(",");
+    useEffect(() => {
+        // Calculate total taxable amount (based on credits for RV)
+        const taxableAmount = watchDetails.reduce((sum: number, detail: any) => {
+            return sum + (detail.isTaxApplicable ? (Number(detail.credit) || 0) : 0);
+        }, 0);
+
+        let totalTaxAmount = 0;
+
+        // Auto-calculate taxes for any recognized tax rows
+        if (taxableAmount > 0 && tree.length > 0) {
+            watchDetails.forEach((detail: any, index: number) => {
+                if (detail.accountId && detail.tagAccountId) {
+                    const accountNode = findInTree(tree, detail.accountId);
+                    const tagNode = accountNode?.children?.find(c => c.id === detail.tagAccountId);
+
+                    if (accountNode?.code && tagNode?.code) {
+                        const calculatedTax = calculateTaxForAccount(accountNode.code, tagNode.code, taxableAmount);
+                        if (calculatedTax !== null) {
+                            const currentDebit = Number(detail.debit) || 0;
+                            if (currentDebit !== calculatedTax) {
+                                form.setValue(`details.${index}.debit`, calculatedTax, { shouldValidate: true });
+                                form.setValue(`details.${index}.credit`, 0, { shouldValidate: true });
+                            }
+                            totalTaxAmount += calculatedTax;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Find the first row with credit amount (customer row)
+        const customerRowIndex = watchDetails.findIndex((detail: any) => Number(detail.credit) > 0);
+        
+        // Find the second row with account selected but no credit and no tag (bank/company row)
+        const bankRowIndex = watchDetails.findIndex((detail: any, index: number) => 
+            index !== customerRowIndex && 
+            detail.accountId && 
+            Number(detail.credit) === 0 &&
+            !detail.tagAccountId
+        );
+        
+        // Auto-fill debit
+        if (customerRowIndex >= 0 && bankRowIndex >= 1) {
+            const customerCreditAmount = Number(watchDetails[customerRowIndex].credit);
+            const currentBankDebit = Number(watchDetails[bankRowIndex].debit) || 0;
+            
+            const expectedBankDebit = Math.max(0, customerCreditAmount - totalTaxAmount);
+            
+            if (customerCreditAmount > 0 && currentBankDebit !== expectedBankDebit) {
+                // Auto-fill the debit amount in the bank row
+                form.setValue(`details.${bankRowIndex}.debit`, expectedBankDebit, { shouldValidate: true });
+                form.setValue(`details.${bankRowIndex}.credit`, 0, { shouldValidate: true });
+            }
+        }
+    }, [watchDetailsString, tree, form]);
+
+    const totalDebit = watchDetails.reduce((sum: number, detail: any) => sum + (Number(detail.debit) || 0), 0);
+    const totalCredit = watchDetails.reduce((sum: number, detail: any) => sum + (Number(detail.credit) || 0), 0);
     const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01 && totalDebit > 0;
 
     const onSubmit: SubmitHandler<ReceiptVoucherFormValues> = async (values) => {
@@ -127,20 +326,22 @@ export function ReceiptVoucherForm({ accounts }: { accounts: ChartOfAccount[] })
 
             // Find debit account and amount from details
             const debitEntry = watchDetails.find(detail => Number(detail.debit) > 0);
-            if (!debitEntry || !debitEntry.accountId) {
-                toast.error('Please select a debit account (Bank/Cash account) and enter amount');
-                return;
-            }
+            const mainDebitAccountId = debitEntry?.accountId || "";
 
             const finalData = {
                 ...values,
-                debitAccountId: debitEntry.accountId,
-                debitAmount: totalDebit,
+                debitAccountId: mainDebitAccountId || values.debitAccountId,
+                debitAmount: totalDebit || values.debitAmount,
                 details: watchDetails
-                    .filter(detail => Number(detail.credit) > 0)
+                    .filter(detail => Number(detail.debit) > 0 || Number(detail.credit) > 0)
                     .map(detail => ({
                         accountId: detail.accountId,
-                        credit: Number(detail.credit)
+                        tagAccountId: detail.tagAccountId || undefined,
+                        debit: Number(detail.debit) || 0,
+                        credit: Number(detail.credit) || 0,
+                        narration: detail.narration || undefined,
+                        refBillNo: detail.refBillNo || undefined,
+                        isTaxApplicable: detail.isTaxApplicable ?? false,
                     })),
                 invoices: selectedInvoices.length > 0
                     ? selectedInvoices.map(i => ({ salesInvoiceId: i.salesInvoiceId, receivedAmount: i.receivingNow }))
@@ -173,13 +374,76 @@ export function ReceiptVoucherForm({ accounts }: { accounts: ChartOfAccount[] })
                 <CardTitle>Create {voucherType === "bank" ? "Bank" : "Cash"} Receipt Voucher</CardTitle>
                 <Tabs value={voucherType} onValueChange={(val) => form.setValue("type", val as "bank" | "cash")} className="w-[300px]">
                     <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="bank"><CreditCard className="h-4 w-4 mr-2" />Bank</TabsTrigger>
-                        <TabsTrigger value="cash"><Wallet className="h-4 w-4 mr-2" />Cash</TabsTrigger>
+                        <TabsTrigger value="bank" className="flex items-center gap-2">
+                            <CreditCard className="h-4 w-4" />
+                            Bank
+                        </TabsTrigger>
+                        <TabsTrigger value="cash" className="flex items-center gap-2">
+                            <Wallet className="h-4 w-4" />
+                            Cash
+                        </TabsTrigger>
                     </TabsList>
                 </Tabs>
             </CardHeader>
             <CardContent className="pt-6">
                 <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-8">
+
+                    {/* ── Advance Receipt toggle + guidance ── */}
+                    <div className="rounded-lg border border-dashed border-border p-4 space-y-3">
+                        <div className="flex items-center space-x-2">
+                            <Controller
+                                control={form.control}
+                                name="isAdvance"
+                                render={({ field }) => (
+                                    <Checkbox
+                                        id="isAdvance"
+                                        checked={field.value}
+                                        onCheckedChange={field.onChange}
+                                    />
+                                )}
+                            />
+                            <Label htmlFor="isAdvance" className="text-sm font-semibold leading-none cursor-pointer">
+                                Advance Receipt
+                                <span className="ml-2 font-normal text-muted-foreground">(receiving payment before a sales invoice is created)</span>
+                            </Label>
+                        </div>
+
+                        {form.watch("isAdvance") ? (
+                            <div className="rounded-md bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-3 text-xs space-y-1.5">
+                                <p className="font-semibold text-blue-800 dark:text-blue-300">✦ Advance Receipt — account heads to use:</p>
+                                <div className="grid grid-cols-2 gap-2 mt-1">
+                                    <div className="bg-white dark:bg-blue-950/40 rounded p-2 border border-blue-100 dark:border-blue-800">
+                                        <p className="font-bold text-blue-700 dark:text-blue-400">Row 1 — Credit</p>
+                                        <p className="text-blue-900 dark:text-blue-200 font-mono">Customer Advance Account / Payable</p>
+                                        <p className="text-muted-foreground mt-0.5">Records the liability of advance receipt</p>
+                                    </div>
+                                    <div className="bg-white dark:bg-blue-950/40 rounded p-2 border border-blue-100 dark:border-blue-800">
+                                        <p className="font-bold text-blue-700 dark:text-blue-400">Row 2 — Debit</p>
+                                        <p className="text-blue-900 dark:text-blue-200 font-mono">Bank / Cash account</p>
+                                        <p className="text-muted-foreground mt-0.5">Money entering your bank or cash</p>
+                                    </div>
+                                </div>
+                                <p className="text-muted-foreground pt-1">Leave invoices unchecked. This will be booked as a customer advance.</p>
+                            </div>
+                        ) : (
+                            <div className="rounded-md bg-muted/40 border border-border p-3 text-xs space-y-1.5">
+                                <p className="font-semibold text-foreground">✦ Regular Receipt — account heads to use:</p>
+                                <div className="grid grid-cols-2 gap-2 mt-1">
+                                    <div className="bg-background rounded p-2 border border-border">
+                                        <p className="font-bold">Row 1 — Credit</p>
+                                        <p className="font-mono text-muted-foreground">Accounts Receivable (A/R) / Customers</p>
+                                        <p className="text-muted-foreground mt-0.5">Clears the customer outstanding balance</p>
+                                    </div>
+                                    <div className="bg-background rounded p-2 border border-border">
+                                        <p className="font-bold">Row 2 — Debit</p>
+                                        <p className="font-mono text-muted-foreground">Bank / Cash account</p>
+                                        <p className="text-muted-foreground mt-0.5">The received amount entering bank or cash</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                         <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground uppercase font-semibold">RV No</Label>
@@ -202,7 +466,6 @@ export function ReceiptVoucherForm({ accounts }: { accounts: ChartOfAccount[] })
                             )} />
                         </div>
                     </div>
-
 
                     {voucherType === "bank" && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 rounded-lg border border-dashed border-primary/20">
@@ -319,14 +582,18 @@ export function ReceiptVoucherForm({ accounts }: { accounts: ChartOfAccount[] })
                         <div className="flex items-center justify-between border-b pb-2">
                             <div>
                                 <h2 className="text-xl font-bold text-gray-800 dark:text-foreground">{voucherType === "bank" ? "Bank" : "Cash"} Receipt Voucher Detail</h2>
-                                <p className="text-xs text-muted-foreground mt-0.5">Debit: <span className="font-mono font-semibold">Bank / Cash account</span> &nbsp;|&nbsp; Credit: <span className="font-mono font-semibold">A/R PARTIES</span></p>
+                                {form.watch("isAdvance") ? (
+                                    <p className="text-xs text-muted-foreground mt-0.5">Debit: <span className="font-mono font-semibold">Bank / Cash account</span> &nbsp;|&nbsp; Credit: <span className="font-mono font-semibold">Customer Advance Account</span></p>
+                                ) : (
+                                    <p className="text-xs text-muted-foreground mt-0.5">Debit: <span className="font-mono font-semibold">Bank / Cash account</span> &nbsp;|&nbsp; Credit: <span className="font-mono font-semibold">A/R PARTIES</span></p>
+                                )}
                             </div>
                             <div className="flex items-center gap-2">
                                 <Button
                                     type="button"
                                     variant="secondary"
                                     size="sm"
-                                    onClick={() => append({ accountId: "", debit: 0, credit: 0 })}
+                                    onClick={() => append({ accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false })}
                                 >
                                     <Plus className="h-4 w-4 mr-2" />
                                     Add More RV Rows
@@ -346,19 +613,19 @@ export function ReceiptVoucherForm({ accounts }: { accounts: ChartOfAccount[] })
                                 </thead>
                                 <tbody className="divide-y divide-gray-200">
                                     {fields.map((field, index) => (
-                                        <tr key={field.id} className="hover:bg-gray-50/50 dark:hover:bg-muted/50">
+                                        <tr key={field.id} className="hover:bg-gray-50/50 dark:hover:bg-muted/50 align-top">
                                             <td className="px-4 py-3">
                                                 <Controller
                                                     control={form.control}
                                                     name={`details.${index}.accountId`}
                                                     render={({ field }) => (
-                                                        <Autocomplete
-                                                            options={accounts.map((acc) => ({
-                                                                value: acc.id,
-                                                                label: `${acc.code} - ${acc.name}`,
-                                                            }))}
+                                                        <ChartOfAccountSelect
                                                             value={field.value}
-                                                            onValueChange={field.onChange}
+                                                            onValueChange={(val) => {
+                                                                field.onChange(val);
+                                                                const t = getSharedTree();
+                                                                if (t.length > 0) setTree([...t]);
+                                                            }}
                                                             placeholder="Select Account"
                                                             disabled={isPending}
                                                             className="h-10 border-gray-300 dark:border-input"
@@ -370,6 +637,60 @@ export function ReceiptVoucherForm({ accounts }: { accounts: ChartOfAccount[] })
                                                         {form.formState.errors.details[index].accountId?.message}
                                                     </p>
                                                 )}
+                                                {(rowChildren[index]?.length ?? 0) > 0 && (
+                                                    <div className="mt-1.5">
+                                                        <Controller
+                                                            control={form.control}
+                                                            name={`details.${index}.tagAccountId`}
+                                                            render={({ field }) => (
+                                                                <TagAccountSelect
+                                                                    children={rowChildren[index]}
+                                                                    value={field.value ?? ""}
+                                                                    onValueChange={field.onChange}
+                                                                    disabled={isPending}
+                                                                />
+                                                            )}
+                                                        />
+                                                    </div>
+                                                )}
+                                                <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-12 gap-2 border-t pt-2 border-gray-100 dark:border-muted/20">
+                                                    <div className="sm:col-span-6">
+                                                        <Input
+                                                            placeholder="Line Narration (optional)"
+                                                            {...form.register(`details.${index}.narration`)}
+                                                            disabled={isPending}
+                                                            className="h-8 text-xs border-gray-300 dark:border-input"
+                                                        />
+                                                    </div>
+                                                    <div className="sm:col-span-3">
+                                                        <Input
+                                                            placeholder="Ref / Bill#"
+                                                            {...form.register(`details.${index}.refBillNo`)}
+                                                            disabled={isPending}
+                                                            className="h-8 text-xs border-gray-300 dark:border-input"
+                                                        />
+                                                    </div>
+                                                    <div className="sm:col-span-3 flex items-center gap-2 pl-1 select-none">
+                                                        <Controller
+                                                            control={form.control}
+                                                            name={`details.${index}.isTaxApplicable`}
+                                                            render={({ field }) => (
+                                                                <Checkbox
+                                                                    id={`details.${index}.isTaxApplicable`}
+                                                                    checked={field.value ?? false}
+                                                                    onCheckedChange={field.onChange}
+                                                                    disabled={isPending}
+                                                                />
+                                                            )}
+                                                        />
+                                                        <Label
+                                                            htmlFor={`details.${index}.isTaxApplicable`}
+                                                            className="text-xs text-muted-foreground cursor-pointer font-medium"
+                                                        >
+                                                            Taxable
+                                                        </Label>
+                                                    </div>
+                                                </div>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <Input
@@ -406,20 +727,35 @@ export function ReceiptVoucherForm({ accounts }: { accounts: ChartOfAccount[] })
                                                 />
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                {fields.length > 2 ? (
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        onClick={() => remove(index)}
-                                                        disabled={isPending}
-                                                        className="rounded-full"
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
-                                                ) : (
-                                                    <span className="text-gray-300">---</span>
-                                                )}
+                                                <div className="flex items-center justify-center gap-1">
+                                                    {Number(watchDetails[index]?.credit) > 0 && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            title="Duplicate to Debit Row"
+                                                            onClick={() => duplicateToDebit(index)}
+                                                            disabled={isPending}
+                                                            className="rounded-full text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                                                        >
+                                                            <Copy className="h-4 w-4" />
+                                                        </Button>
+                                                    )}
+                                                    {fields.length > 2 ? (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            onClick={() => remove(index)}
+                                                            disabled={isPending}
+                                                            className="rounded-full"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    ) : (
+                                                        <span className="text-gray-300">---</span>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}

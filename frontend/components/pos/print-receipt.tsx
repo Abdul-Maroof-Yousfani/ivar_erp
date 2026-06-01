@@ -165,9 +165,10 @@ export function PrintReceipt({
         (user ? `${user.firstName} ${user.lastName}`.trim() : "");
 
     // ── Normalise items ───────────────────────────────────────────────
-    const items: any[] = propCartItems?.length
-        ? propCartItems
-        : (order?.items ?? []).map((oi: any) => ({
+    // Always prefer order.items (from database) over propCartItems (from cart)
+    // because order.items has the final calculated values after all discounts
+    const items: any[] = (order?.items && order.items.length > 0)
+        ? (order.items).map((oi: any) => ({
             id:              oi.id,
             name:            oi.item?.description || oi.item?.sku || "Item",
             sku:             oi.item?.sku   || "",
@@ -179,11 +180,23 @@ export function PrintReceipt({
             discountAmount:  Number(oi.discountAmount  ?? 0),
             taxPercent:      Number(oi.taxPercent  ?? 0),
             taxAmount:       Number(oi.taxAmount   ?? 0),
-        }));
+        }))
+        : (propCartItems ?? []);
 
     // ── Totals ────────────────────────────────────────────────────────
-    const subtotal = Number(order?.subtotal ?? 0) || items.reduce((s, i) => s + i.price * i.quantity, 0);
-    const totalTax = Number(order?.taxAmount ?? 0) || items.reduce((s, i) => s + (i.taxAmount ?? 0), 0);
+    // Subtotal should be sum of WOST (not retail price × quantity)
+    // Always calculate from items, don't trust backend subtotal
+    const subtotal = items.reduce((s, i) => {
+        const taxDivisor = 1 + ((i.taxPercent ?? 0) / 100);
+        const wostPerUnit = i.price / taxDivisor;
+        return s + (wostPerUnit * i.quantity);
+    }, 0);
+    
+    // Always calculate totalTax from items (don't trust backend taxAmount)
+    const totalTax = items.reduce((s, i) => {
+        const itemTax = Number(i.taxAmount ?? 0);
+        return s + itemTax;
+    }, 0);
 
     const itemDiscountsRaw = items.reduce((s, i) => s + (i.discountAmount ?? 0), 0);
     const orderDiscount    = Number(order?.globalDiscountAmount ?? 0);
@@ -195,14 +208,16 @@ export function PrintReceipt({
     const totalDiscount   = (suppressItemDiscounts ? 0 : itemDiscountsRaw) + orderDiscount;
     const valueForSales   = subtotal - totalDiscount;
     const grandTotal      = Number(order?.grandTotal ?? 0) || (valueForSales + totalTax);
-    const fbrPosFee       = Number(order?.fbrPosFee ?? 0);
+    const fbrPosFee       = Number(order?.fbrPosFee ?? 0) || 1; // Default to 1 if not set
     const finalGrandTotal = grandTotal + fbrPosFee;
     const changeAmount    = Number(order?.changeAmount ?? 0);
     const totalPaid       = tenders.reduce((s, t) => s + t.amount, 0);
 
-    // Alliance distribution for display
-    const allianceDiscPerItem = suppressItemDiscounts && items.length > 0 ? Math.floor(orderDiscount / items.length) : 0;
-    const allianceRemainder = suppressItemDiscounts && items.length > 0 ? (orderDiscount - (allianceDiscPerItem * items.length)) : 0;
+    // Alliance distribution for display - proportional to item value
+    const calculateProportionalDiscount = (itemValue: number, totalValue: number, totalDiscount: number): number => {
+        if (totalValue === 0) return 0;
+        return Math.round((totalDiscount * itemValue) / totalValue);
+    };
 
     const orderDiscountLabel = (() => {
         if (discountMode === "promo")    return `Promo: ${selectedPromo?.code    ?? order?.promo?.code    ?? ""}`;
@@ -223,7 +238,7 @@ export function PrintReceipt({
         terminalName, cashierName, order, items, subtotal, totalTax, orderDiscount,
         totalDiscount, valueForSales, grandTotal, fbrPosFee, finalGrandTotal,
         changeAmount, totalPaid, tenders, orderDiscountLabel, fbrVerifyUrl, settings,
-        suppressItemDiscounts, allianceDiscPerItem, allianceRemainder, creditVouchers,
+        suppressItemDiscounts, creditVouchers,
     };
 
     return (
@@ -325,8 +340,6 @@ interface ReceiptBodyProps {
     fbrVerifyUrl: string;
     settings: PosSettings;
     suppressItemDiscounts: boolean;
-    allianceDiscPerItem: number;
-    allianceRemainder: number;
     creditVouchers?: { code: string; faceValue: number; expiresAt: Date | null }[];
 }
 
@@ -335,8 +348,26 @@ function ReceiptBody({
     terminalName, cashierName, order, items, subtotal, totalTax, orderDiscount,
     totalDiscount, valueForSales, grandTotal, fbrPosFee, finalGrandTotal,
     changeAmount, totalPaid, tenders, orderDiscountLabel, fbrVerifyUrl, settings,
-    suppressItemDiscounts, allianceDiscPerItem, allianceRemainder, creditVouchers,
+    suppressItemDiscounts, creditVouchers,
 }: ReceiptBodyProps) {
+
+    // Calculate total WOST value for proportional discount
+    const totalWostValue = items.reduce((sum, item) => {
+        const taxPct = item.taxPercent ?? 0;
+        const taxDivisor = 1 + (taxPct / 100);
+        // Retail price is item.price (not adding tax)
+        const retailPrice = item.price;
+        const wostPerUnit = retailPrice / taxDivisor;
+        return sum + (wostPerUnit * item.quantity);
+    }, 0);
+
+    // Proportional discount calculation for alliance/coupon
+    const calculateProportionalDiscount = (itemValue: number, totalValue: number, totalDiscount: number): number => {
+        if (totalValue === 0) return 0;
+        const proportionalDisc = Math.round((totalDiscount * itemValue) / totalValue);
+        // Safety: discount cannot exceed item value
+        return Math.min(proportionalDisc, itemValue);
+    };
 
     const Row = ({ label, value, bold = false, indent = false }: {
         label: string; value: string; bold?: boolean; indent?: boolean;
@@ -369,7 +400,7 @@ function ReceiptBody({
             {!isGiftReceipt ? (
                 <div className="text-center space-y-0.5">
                     <p className="font-bold text-sm tracking-widest uppercase">Sales Tax Invoice</p>
-                    <p className="font-black text-2xl tracking-wider">*{fmt(finalGrandTotal)}*</p>
+                    <p className="font-black text-2xl tracking-wider">*{order?.orderNumber ?? ""}*</p>
                 </div>
             ) : (
                 <div className="text-center">
@@ -415,27 +446,42 @@ function ReceiptBody({
 
             {/* ── Item lines ── */}
             {items.map((item: any, idx: number) => {
-                const wostPerUnit  = item.price;
-                const rawDisc      = item.discountAmount  ?? 0;
+                const taxPct       = item.taxPercent ?? 0;
+                const taxDivisor   = 1 + (taxPct / 100); // e.g., 1.18 for 18%, 1.25 for 25%
                 
-                // If alliance suppressed item discount, we show the alliance share instead
+                // Step 1: Retail price is the unit price (item.price)
+                const retailPrice  = item.price;
+                
+                // Step 2: WOST = Retail / (1 + tax%) - this removes the tax to get the base price
+                const wostPerUnit  = retailPrice / taxDivisor;
+                const totalWost    = wostPerUnit * item.quantity;
+                
+                // Step 3: Discount % from item (use override if present)
+                const itemDiscPct  = item.overrideDiscountPercent ?? item.discountPercent ?? 0;
+                // Discount Amount = Total WOST × Discount %
+                const rawDisc      = Math.round(totalWost * (itemDiscPct / 100));
+                
+                // If alliance/coupon suppressed item discount, calculate proportional discount
                 let disc = suppressItemDiscounts ? 0 : rawDisc;
                 let displayDisc = disc;
-                let displayDiscPct = suppressItemDiscounts ? 0 : (item.discountPercent ?? 0);
+                let displayDiscPct = suppressItemDiscounts ? 0 : itemDiscPct;
                 
                 if (suppressItemDiscounts) {
-                    displayDisc = allianceDiscPerItem + (idx < allianceRemainder ? 1 : 0);
-                    displayDiscPct = Math.round((displayDisc / (wostPerUnit * item.quantity)) * 100 * 100) / 100;
+                    // Proportional discount: (orderDiscount × itemWOST) / totalWOST
+                    displayDisc = calculateProportionalDiscount(totalWost, totalWostValue, orderDiscount);
+                    displayDiscPct = totalWost > 0 ? Math.round((displayDisc / totalWost) * 100 * 100) / 100 : 0;
                 }
 
-                const discPct      = displayDiscPct;
-                const tax          = item.taxAmount  ?? 0;
-                const taxPct       = item.taxPercent ?? 0;
-                const taxPerUnit   = item.quantity > 0 ? tax / item.quantity : 0;
-                const retailPrice  = wostPerUnit + taxPerUnit;
-                const totalWost    = wostPerUnit * item.quantity;
+                // Step 4: Amount after Discount
                 const amtAfterDisc = totalWost - (suppressItemDiscounts ? displayDisc : disc);
-                const uniqueNo     = item.sku || item.upc || "—";
+                
+                // Step 5: Tax = Amount after Discount × tax%
+                const tax = Math.round(amtAfterDisc * (taxPct / 100));
+                
+                // Step 6: Value Including Tax
+                const valueIncludingTax = amtAfterDisc + tax;
+                
+                const uniqueNo = item.sku || item.upc || "—";
 
                 return (
                     <div key={item.id ?? idx} className="pb-2 border-b border-dashed last:border-0">
@@ -466,7 +512,7 @@ function ReceiptBody({
 
                         {!isGiftReceipt && (
                             <div className="mt-1 space-y-0.5 text-[10px]">
-                                {!suppressItemDiscounts && <Row label="Discount %" value={`${discPct}%`} />}
+                                {!suppressItemDiscounts && <Row label="Discount %" value={`${displayDiscPct}%`} />}
                                 <Row label={suppressItemDiscounts ? "Alliance Disc" : "Discount Amount"} value={displayDisc > 0 ? fmt(displayDisc) : "—"} />
                                 <Row label="Amount after Discount"  value={fmt(amtAfterDisc)} />
                                 <Row label="Sales Tax Rate"         value={`${taxPct}%`} />
@@ -475,8 +521,8 @@ function ReceiptBody({
                                     className="rpt-fbr-row flex justify-between font-bold text-[10px] border-t border-dashed pt-0.5 mt-0.5"
                                     style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold" }}
                                 >
-                                    <span>Total Value Excl. Sales Tax</span>
-                                    <span>{fmt(amtAfterDisc)}</span>
+                                    <span>Value Including Sales Tax</span>
+                                    <span>{fmt(valueIncludingTax)}</span>
                                 </div>
                             </div>
                         )}
@@ -489,12 +535,9 @@ function ReceiptBody({
             {/* ── Summary totals ── */}
             {!isGiftReceipt ? (
                 <div className="space-y-0.5 text-[11px]">
-                    <Row label={`Subtotal (${items.length})`} value={fmt(subtotal)} />
+                    <Row label={`Total Value Excluding Sales Tax (${items.length})`} value={fmt(subtotal)} />
                     <Row label="Total Discount"  value={totalDiscount > 0 ? fmt(totalDiscount) : "—"} />
-                    {orderDiscount > 0 && (
-                        <Row label={orderDiscountLabel} value={`−${fmt(orderDiscount)}`} indent />
-                    )}
-                    <Row label={`Total Value Excl. Sales Tax (${items.length})`} value={fmt(valueForSales)} />
+                    <Row label="Value for Sales" value={fmt(valueForSales)} />
                     {settings.receiptShowTax && (
                         <Row label="Total Sales Tax" value={fmt(totalTax)} />
                     )}
@@ -502,18 +545,16 @@ function ReceiptBody({
                         className="rpt-flex flex justify-between font-bold text-[11px] border-t pt-0.5 mt-0.5"
                         style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold" }}
                     >
-                        <span>Total Value Incl. Sales Tax</span>
-                        <span>{fmt(grandTotal)}</span>
+                        <span>Total Value Including Sales Tax</span>
+                        <span>{fmt(valueForSales + totalTax)}</span>
                     </div>
-                    {fbrPosFee > 0 && (
-                        <Row label="FBR POS Fee" value={fmt(fbrPosFee)} />
-                    )}
+                    <Row label="FBR POS Fee" value={fmt(fbrPosFee)} />
                     <div
                         className="rpt-flex flex justify-between font-black text-sm border-t pt-0.5 mt-0.5"
                         style={{ display: "flex", justifyContent: "space-between", fontWeight: "900" }}
                     >
                         <span>Grand Total</span>
-                        <span>{fmt(finalGrandTotal)}</span>
+                        <span>{fmt(valueForSales + totalTax + fbrPosFee)}</span>
                     </div>
                 </div>
             ) : (
@@ -610,12 +651,14 @@ function ReceiptBody({
 
             {/* ── Terms & Conditions ── */}
             <div className="text-[10px] space-y-0.5">
-                <p className="font-bold text-[11px]">TERMS &amp; CONDITIONS OF SALE</p>
-                <p>No Refund.</p>
-                <p>Exchanges on unused products within 10 days only from the outlet where purchased.</p>
-                <p>Claim will not be accepted without Sales Tax Invoice.</p>
-                <p>Sales and promotional items are strictly non-exchangeable.</p>
-                <p>Item purchases at full price which go on sale will be exchanged at the marked down price.</p>
+                <p className="font-bold text-[11px]">TERMS &amp; CONDITIONS</p>
+                <p>• Damaged / defective items must be reported within 4 days of purchase</p>
+                <p>• Exchanges are only accepted within 7 days of purchase</p>
+                <p>• Refunds only eligible only on manufacturing defects</p>
+                <p>• Used, washed, altered, or worn items are not eligible for exchanges</p>
+                <p>• Tags must be intact for any exchange</p>
+                <p>• One exchange per order only (exchanged item can not be exchanged again)</p>
+                <p>• Sale items are non-returnable &amp; non-exchangeable (unless defected)</p>
             </div>
 
             <Separator />

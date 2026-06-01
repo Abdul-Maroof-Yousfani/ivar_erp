@@ -21,7 +21,7 @@ import {
     ArrowLeft, Loader2, Tag, TicketPercent, Handshake, CheckCircle2,
     XCircle, Search, ShoppingCart, Printer, Trash2, Plus, Percent,
     BadgeDollarSign, CreditCard, Banknote, Wallet, Building2, Ticket,
-    ChevronDown, ChevronUp, BookOpen, PauseCircle, UserRound,
+    ChevronDown, ChevronUp, BookOpen, PauseCircle, UserRound, Receipt,
 } from "lucide-react";
 import type { CartItem } from "@/components/pos/new-sale/cart-table";
 import { cn, getCookie, formatCurrency } from "@/lib/utils";
@@ -40,7 +40,7 @@ interface PromoConfig {
 }
 interface AllianceConfig {
     id: string; partnerName: string; code: string;
-    discountPercent: number; description?: string;
+    discountPercent: number; maxDiscount?: number; description?: string;
     /** BIN prefixes (4–8 digits) that qualify for this alliance */
     binNumbers: string[];
 }
@@ -246,6 +246,14 @@ export default function CheckoutPage() {
             setTenderMethod(settings.defaultPaymentMethod);
         }
     }, [settings.defaultPaymentMethod]);
+    
+    // Force card payment when alliance is selected
+    useEffect(() => {
+        if (discountMode === "alliance" && selectedAlliance) {
+            setTenderMethod("card");
+        }
+    }, [discountMode, selectedAlliance]);
+    
     const [tenderAmount, setTenderAmount] = useState<number>(0);
     const [tenderCardLast4, setTenderCardLast4] = useState("");
     const [tenderSlip, setTenderSlip] = useState("");
@@ -254,6 +262,8 @@ export default function CheckoutPage() {
     const [isGiftReceipt, setIsGiftReceipt] = useState(false);
     // When isGiftReceipt is true and sale completes, we show both receipts sequentially
     const [showGiftReceiptAfterSales, setShowGiftReceiptAfterSales] = useState(false);
+    // Receipt preview state
+    const [showReceiptPreview, setShowReceiptPreview] = useState(false);
 
     // ── Voucher tender state ───────────────────────────────────────────
     const [voucherCode, setVoucherCode] = useState("");
@@ -279,8 +289,38 @@ export default function CheckoutPage() {
         const raw = sessionStorage.getItem("pos_cart");
         if (!raw) { router.push("/pos/new-sale"); return; }
         const items: CartItem[] = JSON.parse(raw);
-        setCartItems(items);
-        setPromoScopedItems(new Set(items.map((i) => i.id)));
+        
+        // Recalculate all items with correct WOST-based formula
+        const recalculatedItems = items.map(item => {
+            // Step 1: Retail price
+            const retailPrice = item.price;
+            
+            // Step 2: Calculate WOST
+            const taxDivisor = 1 + (item.taxPercent / 100);
+            const wostPerUnit = retailPrice / taxDivisor;
+            const totalWost = wostPerUnit * item.quantity;
+            
+            // Step 3: Apply discount on WOST
+            const discountPercent = item.overrideDiscountPercent ?? item.discountPercent;
+            const discountAmount = Math.round(totalWost * (discountPercent / 100));
+            const afterDiscount = totalWost - discountAmount;
+            
+            // Step 4: Calculate tax on discounted amount
+            const taxAmount = Math.round(afterDiscount * (item.taxPercent / 100));
+            
+            // Step 5: Total
+            const total = afterDiscount + taxAmount;
+            
+            return {
+                ...item,
+                discountAmount,
+                taxAmount,
+                total
+            };
+        });
+        
+        setCartItems(recalculatedItems);
+        setPromoScopedItems(new Set(recalculatedItems.map((i) => i.id)));
         // Restore hold order ID if resuming from hold
         const holdId = sessionStorage.getItem("pos_hold_order_id");
         if (holdId) setHoldOrderId(holdId);
@@ -311,9 +351,23 @@ export default function CheckoutPage() {
 
 
     // ─── Derived totals ────────────────────────────────────────────────
-    const subtotal = cartItems.reduce((acc, i) => acc + i.price * i.quantity, 0);
-    const itemDiscounts = cartItems.reduce((acc, i) => acc + i.discountAmount, 0);
-    const itemTax = cartItems.reduce((acc, i) => acc + i.taxAmount, 0);
+    // Calculate subtotal as sum of WOST (Value Without Sales Tax) for all items
+    const subtotal = cartItems.reduce((acc, i) => {
+        const taxDivisor = 1 + (i.taxPercent / 100);
+        const wostPerUnit = i.price / taxDivisor;
+        return acc + (wostPerUnit * i.quantity);
+    }, 0);
+    
+    // Recalculate item discounts from WOST (not using stored i.discountAmount)
+    const itemDiscounts = cartItems.reduce((acc, i) => {
+        const taxDivisor = 1 + (i.taxPercent / 100);
+        const wostPerUnit = i.price / taxDivisor;
+        const totalWost = wostPerUnit * i.quantity;
+        const discountPercent = i.overrideDiscountPercent ?? i.discountPercent;
+        const discountAmount = Math.round(totalWost * (discountPercent / 100));
+        return acc + discountAmount;
+    }, 0);
+    
     const subtotalAfterItems = subtotal - itemDiscounts;
 
     let orderDiscount = 0;
@@ -322,12 +376,17 @@ export default function CheckoutPage() {
     let finalItemDiscounts = itemDiscounts;
 
     if (discountMode === "alliance" && selectedAlliance) {
-        // Alliance discount: use maxDiscount as fixed amount if exists, otherwise use percentage
+        // Alliance discount applies on the pre-tax subtotal (excl. item-level discounts).
+        // If maxDiscount is set it acts as a fixed cap; otherwise use the percentage.
         let allianceDiscount = 0;
+        const allianceBase = subtotalAfterItems; // pre-tax, after item discounts
         if (selectedAlliance.maxDiscount) {
-            allianceDiscount = Number(selectedAlliance.maxDiscount);
+            allianceDiscount = Math.min(
+                Math.round(allianceBase * (Number(selectedAlliance.discountPercent) / 100)),
+                Number(selectedAlliance.maxDiscount)
+            );
         } else {
-            allianceDiscount = Math.round(subtotal * (Number(selectedAlliance.discountPercent) / 100));
+            allianceDiscount = Math.round(allianceBase * (Number(selectedAlliance.discountPercent) / 100));
         }
 
         // Alliance wins when it's >= item discounts (equal → alliance preferred)
@@ -359,10 +418,73 @@ export default function CheckoutPage() {
     }
 
     const totalDiscount = finalItemDiscounts + orderDiscount;
+    
+    // Recalculate item tax based on whether alliance/coupon is applied
+    // When alliance/coupon is applied, tax is calculated on (WOST - alliance share)
+    // Otherwise, tax is calculated on (WOST - item discount)
+    const isOrderDiscountApplied = (discountMode === "alliance" || discountMode === "coupon") && orderDiscount > 0;
+    
+    let itemTax = 0;
+    if (isOrderDiscountApplied) {
+        // Calculate alliance/coupon share per item first
+        const base = subtotal > 0 ? subtotal : 1;
+        cartItems.forEach((i) => {
+            const taxDivisor = 1 + (i.taxPercent / 100);
+            const wostPerUnit = i.price / taxDivisor;
+            const totalWost = wostPerUnit * i.quantity;
+            // Proportional share of order discount
+            const share = Math.round(orderDiscount * totalWost / base);
+            const afterDiscount = totalWost - share;
+            const taxAmount = Math.round(afterDiscount * (i.taxPercent / 100));
+            itemTax += taxAmount;
+        });
+    } else {
+        // Use item-level discounts
+        itemTax = cartItems.reduce((acc, i) => {
+            const taxDivisor = 1 + (i.taxPercent / 100);
+            const wostPerUnit = i.price / taxDivisor;
+            const totalWost = wostPerUnit * i.quantity;
+            const discountPercent = i.overrideDiscountPercent ?? i.discountPercent;
+            const discountAmount = Math.round(totalWost * (discountPercent / 100));
+            const afterDiscount = totalWost - discountAmount;
+            const taxAmount = Math.round(afterDiscount * (i.taxPercent / 100));
+            return acc + taxAmount;
+        }, 0);
+    }
 
-    // Alliance distribution for display
-    const allianceDiscPerItem = (discountMode === "alliance" && orderDiscount > 0 && cartItems.length > 0) ? Math.floor(orderDiscount / cartItems.length) : 0;
-    const allianceRemainder = (discountMode === "alliance" && orderDiscount > 0 && cartItems.length > 0) ? (orderDiscount - (allianceDiscPerItem * cartItems.length)) : 0;
+    // Alliance/Coupon distribution for display — proportional by item WOST value
+    // Each item gets: floor(orderDiscount × itemWOST / totalWOST)
+    // Remainder (from flooring) is distributed 1 unit at a time to the highest-value items.
+    const allianceSharePerItem: number[] = [];
+    if ((discountMode === "alliance" || discountMode === "coupon") && orderDiscount > 0 && cartItems.length > 0) {
+        const base = subtotal > 0 ? subtotal : 1; // Use total WOST as base
+        let distributed = 0;
+        const rawShares = cartItems.map(item => {
+            // Calculate item's WOST
+            const taxDivisor = 1 + (item.taxPercent / 100);
+            const wostPerUnit = item.price / taxDivisor;
+            const itemWost = wostPerUnit * item.quantity;
+            const share = Math.floor(orderDiscount * itemWost / base);
+            distributed += share;
+            return share;
+        });
+        let remainder = orderDiscount - distributed;
+        // Sort indices by descending WOST value to give remainder to biggest items first
+        const sortedIdx = cartItems
+            .map((item, i) => {
+                const taxDivisor = 1 + (item.taxPercent / 100);
+                const wostPerUnit = item.price / taxDivisor;
+                return { i, v: wostPerUnit * item.quantity };
+            })
+            .sort((a, b) => b.v - a.v)
+            .map(x => x.i);
+        for (let k = 0; k < remainder; k++) {
+            rawShares[sortedIdx[k % sortedIdx.length]]++;
+        }
+        allianceSharePerItem.push(...rawShares);
+    } else {
+        cartItems.forEach(() => allianceSharePerItem.push(0));
+    }
     const grandTotal = Math.max(0, subtotal - totalDiscount + itemTax);
     const totalPaid = tenders.reduce((a, t) => a + t.amount, 0);
     const balanceDue = Math.max(0, grandTotal - totalPaid);
@@ -529,6 +651,7 @@ export default function CheckoutPage() {
                 quantity: item.quantity,
                 unitPrice: item.price,
                 discountPercent: item.discountPercent,
+                overrideDiscountPercent: item.overrideDiscountPercent,
                 taxPercent: item.taxPercent,
                 promoDiscountAmount: (discountMode === "promo" && selectedPromo && !promoScopeAll && promoScopedItems.has(item.id))
                     ? Math.round(calcPromoDiscount(selectedPromo, item.total) / (promoScopedItems.size || 1))
@@ -600,6 +723,7 @@ export default function CheckoutPage() {
                 quantity: item.quantity,
                 unitPrice: item.price,
                 discountPercent: item.discountPercent,
+                overrideDiscountPercent: item.overrideDiscountPercent,
                 taxPercent: item.taxPercent,
                 promoDiscountAmount: (discountMode === "promo" && selectedPromo && !promoScopeAll && promoScopedItems.has(item.id))
                     ? Math.round(calcPromoDiscount(selectedPromo, item.total) / (promoScopedItems.size || 1))
@@ -862,42 +986,70 @@ export default function CheckoutPage() {
                         <ScrollArea className="flex-1">
                             <div className="divide-y">
                                 {cartItems.map((item, idx) => {
-                                    const isAllianceApplied = discountMode === "alliance" && orderDiscount > 0;
-                                    const allianceShare = isAllianceApplied ? (allianceDiscPerItem + (idx < allianceRemainder ? 1 : 0)) : 0;
+                                    const isOrderDiscountApplied = (discountMode === "alliance" || discountMode === "coupon") && orderDiscount > 0;
+                                    const orderDiscountShare = isOrderDiscountApplied ? allianceSharePerItem[idx] : 0;
+                                    
+                                    // Calculate breakdown for display (same as receipt)
+                                    const retailPrice = item.price;
+                                    const taxDivisor = 1 + (item.taxPercent / 100);
+                                    const wostPerUnit = retailPrice / taxDivisor;
+                                    const totalWost = wostPerUnit * item.quantity;
+                                    
+                                    // When alliance/coupon is applied, item discounts are suppressed
+                                    const showItemDiscount = !isOrderDiscountApplied && (item.overrideDiscountPercent ?? item.discountPercent) > 0;
+                                    const discountPercent = item.overrideDiscountPercent ?? item.discountPercent;
+                                    const calculatedDiscount = showItemDiscount ? Math.round(totalWost * (discountPercent / 100)) : 0;
+                                    
+                                    // Apply either order discount share or item discount
+                                    const finalDiscount = isOrderDiscountApplied ? orderDiscountShare : calculatedDiscount;
+                                    const afterDiscount = totalWost - finalDiscount;
+                                    
+                                    // Recalculate tax from discounted amount
+                                    const calculatedTax = Math.round(afterDiscount * (item.taxPercent / 100));
+                                    const calculatedTotal = afterDiscount + calculatedTax;
                                     
                                     return (
                                         <div key={item.id} className="flex items-start gap-3 px-4 py-3">
                                             <div className="flex-1 min-w-0">
                                                 <p className="font-medium text-sm truncate">{item.name}</p>
                                                 <p className="text-xs text-muted-foreground">{item.sku} · {item.brand}</p>
-                                            </div>
-                                            <div className="text-right text-sm shrink-0 space-y-0.5">
-                                                <p className="font-mono text-muted-foreground text-xs">
-                                                    {item.quantity} × {fmtCurrency(item.price)}
-                                                </p>
-                                                {/* Show Alliance share if applied, otherwise show item discount if exists */}
-                                                {isAllianceApplied ? (
-                                                    <p className="text-xs text-primary font-mono font-semibold">
-                                                        Alliance Disc −{fmtCurrency(allianceShare)}
-                                                    </p>
-                                                ) : (
-                                                    item.discountPercent > 0 && (
-                                                        <p className="text-xs text-destructive font-mono">
-                                                            Disc {item.discountPercent}% −{fmtCurrency(item.discountAmount)}
-                                                        </p>
-                                                    )
-                                                )}
-                                                {item.taxPercent > 0 && (
-                                                    <p className="text-xs text-amber-600 dark:text-amber-400 font-mono">
-                                                        Tax {item.taxPercent}% +{fmtCurrency(item.taxAmount)}
-                                                    </p>
-                                                )}
-                                                <p className="font-semibold font-mono">
-                                                    {isAllianceApplied 
-                                                        ? fmtCurrency(item.price * item.quantity + item.taxAmount - allianceShare)
-                                                        : fmtCurrency(item.total)
-                                                    }
-                                                </p>
+                                                
+                                                {/* Detailed Breakdown */}
+                                                <div className="mt-2 space-y-0.5 text-xs text-muted-foreground font-mono">
+                                                    <div className="flex justify-between">
+                                                        <span>Retail:</span>
+                                                        <span>{item.quantity} × {fmtCurrency(retailPrice)} = {fmtCurrency(retailPrice * item.quantity)}</span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span>WOST:</span>
+                                                        <span>{fmtCurrency(wostPerUnit)} × {item.quantity} = {fmtCurrency(totalWost)}</span>
+                                                    </div>
+                                                    {finalDiscount > 0 && (
+                                                        <div className="flex justify-between text-destructive">
+                                                            <span>
+                                                                Discount {isOrderDiscountApplied 
+                                                                    ? `(${discountMode === 'alliance' ? 'Alliance' : 'Coupon'})`
+                                                                    : `${discountPercent}%`
+                                                                }:
+                                                            </span>
+                                                            <span>−{fmtCurrency(finalDiscount)}</span>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex justify-between">
+                                                        <span>After Discount:</span>
+                                                        <span>{fmtCurrency(afterDiscount)}</span>
+                                                    </div>
+                                                    {item.taxPercent > 0 && (
+                                                        <div className="flex justify-between text-amber-600 dark:text-amber-400">
+                                                            <span>Tax {item.taxPercent}%:</span>
+                                                            <span>+{fmtCurrency(calculatedTax)}</span>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex justify-between font-semibold text-foreground border-t pt-0.5 mt-0.5">
+                                                        <span>Total:</span>
+                                                        <span>{fmtCurrency(calculatedTotal)}</span>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     );
@@ -1126,10 +1278,14 @@ export default function CheckoutPage() {
                                                 )}
                                                 {filteredAlliances.map((a) => {
                                                     let disc = 0;
+                                                    const allianceBase = subtotalAfterItems;
                                                     if (a.maxDiscount) {
-                                                        disc = Number(a.maxDiscount);
+                                                        disc = Math.min(
+                                                            Math.round(allianceBase * (Number(a.discountPercent) / 100)),
+                                                            Number(a.maxDiscount)
+                                                        );
                                                     } else {
-                                                        disc = Math.round(subtotal * (Number(a.discountPercent) / 100));
+                                                        disc = Math.round(allianceBase * (Number(a.discountPercent) / 100));
                                                     }
                                                     const isSelected = selectedAlliance?.id === a.id && discountMode === "alliance";
                                                     const disabled = discountMode !== "none" && !isSelected;
@@ -1330,8 +1486,17 @@ export default function CheckoutPage() {
                                 {/* Tender type + amount */}
                                 <div className="space-y-2">
                                     <div>
-                                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">Tender Type</Label>
-                                        <Select value={tenderMethod} onValueChange={setTenderMethod}>
+                                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                                            Tender Type
+                                            {discountMode === "alliance" && selectedAlliance && (
+                                                <span className="ml-2 text-xs text-primary font-normal">(Card payment required for alliance)</span>
+                                            )}
+                                        </Label>
+                                        <Select 
+                                            value={tenderMethod} 
+                                            onValueChange={setTenderMethod}
+                                            disabled={discountMode === "alliance" && selectedAlliance}
+                                        >
                                             <SelectTrigger className="mt-1">
                                                 <SelectValue />
                                             </SelectTrigger>
@@ -1478,16 +1643,18 @@ export default function CheckoutPage() {
                                     </div>
                                 )}
 
-                                {/* Balance due */}
-                                <div className={cn(
-                                    "flex items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold",
-                                    balanceDue <= 0 ? "bg-green-500/10 text-green-600" : "bg-destructive/10 text-destructive"
-                                )}>
-                                    <span>{balanceDue <= 0 ? (changeAmount > 0 ? "Change" : "Balance Paid ✓") : "Balance Due"}</span>
-                                    <span className="font-mono">
-                                        {balanceDue <= 0 && changeAmount > 0 ? fmtCurrency(changeAmount) : fmtCurrency(balanceDue)}
-                                    </span>
-                                </div>
+                                {/* Balance due - hide when fully paid with no change */}
+                                {!(balanceDue <= 0 && changeAmount === 0) && (
+                                    <div className={cn(
+                                        "flex items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold",
+                                        balanceDue <= 0 ? "bg-green-500/10 text-green-600" : "bg-destructive/10 text-destructive"
+                                    )}>
+                                        <span>{balanceDue <= 0 ? (changeAmount > 0 ? "Change" : "Balance Paid ✓") : "Balance Due"}</span>
+                                        <span className="font-mono">
+                                            {balanceDue <= 0 && changeAmount > 0 ? fmtCurrency(changeAmount) : fmtCurrency(balanceDue)}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -1541,6 +1708,19 @@ export default function CheckoutPage() {
                                 </Button>
                             )}
                             
+                            {/* Preview Receipt Button - Only show when balance is paid */}
+                            {balanceDue === 0 && cartItems.length > 0 && (
+                                <Button
+                                    variant="outline"
+                                    size="lg"
+                                    className="h-14 font-bold gap-2 rounded-xl border-purple-300 text-purple-600 hover:bg-purple-50 hover:text-purple-700"
+                                    onClick={() => setShowReceiptPreview(true)}
+                                    disabled={isSubmitting}
+                                >
+                                    <Receipt className="h-5 w-5" /> Preview Receipt
+                                </Button>
+                            )}
+                            
                             <Button
                                 size="lg"
                                 className="h-14 flex-1 text-base font-bold gap-2 rounded-xl"
@@ -1558,6 +1738,35 @@ export default function CheckoutPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Receipt Preview Dialog - Shows preview before completing sale */}
+            {showReceiptPreview && (
+                <PrintReceipt
+                    order={{
+                        orderNumber: "PREVIEW",
+                        createdAt: new Date().toISOString(),
+                        subtotal,
+                        taxAmount: itemTax,
+                        globalDiscountAmount: orderDiscount,
+                        grandTotal,
+                        fbrPosFee: 1,
+                        changeAmount,
+                        isGiftReceipt: false,
+                        promo: selectedPromo ? { code: selectedPromo.code } : undefined,
+                        coupon: appliedCoupon ? { code: appliedCoupon.code } : undefined,
+                        alliance: selectedAlliance ? { code: selectedAlliance.code } : undefined,
+                        cashierName: cashiers.find((c: any) => c.userId === selectedCashierId)?.name || "",
+                    }}
+                    cartItems={cartItems}
+                    tenders={tenders.length > 0 ? tenders : [{ method: "cash", amount: grandTotal }]}
+                    discountMode={discountMode}
+                    selectedPromo={selectedPromo}
+                    appliedCoupon={appliedCoupon}
+                    selectedAlliance={selectedAlliance}
+                    settings={settings}
+                    onClose={() => setShowReceiptPreview(false)}
+                />
+            )}
 
             {/* Show receipt dialog upon completion */}
             {completedOrder && !showGiftReceiptAfterSales && (

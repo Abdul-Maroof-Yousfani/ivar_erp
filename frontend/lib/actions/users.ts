@@ -11,10 +11,20 @@ export interface User {
   status: string;
   isDashboardEnabled?: boolean;
   roleId?: string;
+  roleExpiresAt?: string | null;
   role?: {
     id: string;
     name: string;
   };
+  userPermissions?: {
+    id: string;
+    permissionId: string;
+    isAllowed: boolean;
+    expiresAt: string | null;
+    permission?: {
+      name: string;
+    };
+  }[];
   employeeId?: string;
   employee?: {
     id: string;
@@ -118,5 +128,66 @@ export async function verifyPassword(password: string): Promise<{ status: boolea
     return res.data;
   } catch (error) {
     return { status: false, message: "Failed to verify password" };
+  }
+}
+
+export async function resetUserPassword(userId: string, newPassword: string) {
+  try {
+    const res = await authFetch(`/auth/users/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ userId, newPassword }),
+    });
+    if (!res.ok) {
+      const error = res.data;
+      return { status: false, message: error?.message || "Failed to reset password" };
+    }
+    revalidatePath("/hr/employee/user-account");
+    return { status: true, message: "Password reset successfully" };
+  } catch (error) {
+    return { status: false, message: "Failed to reset password" };
+  }
+}
+
+export async function updateUserPermissionsAndRoleExpiry(
+  userId: string,
+  roleId: string | null,
+  roleExpiresAt: string | null,
+  userPermissions: { permissionId: string; isAllowed: boolean; expiresAt: string | null }[]
+) {
+  try {
+    const res = await authFetch(`/auth/users/update`, {
+      method: "POST",
+      body: JSON.stringify({
+        id: userId,
+        data: {
+          roleId,
+          roleExpiresAt,
+          userPermissions
+        }
+      }),
+    });
+    if (!res.ok) {
+      const error = res.data;
+      return { status: false, message: error.message || "Failed to update permissions" };
+    }
+    revalidatePath("/hr/employee/user-account");
+    return { status: true, message: "Permissions updated successfully" };
+  } catch (error) {
+    return { status: false, message: "Failed to update permissions" };
+  }
+}
+export async function verifyManager(emailOrId: string, password: string): Promise<{ status: boolean; message: string; data?: { userId: string; email: string } }> {
+  try {
+    const res = await authFetch(`/auth/verify-manager`, {
+      method: "POST",
+      body: JSON.stringify({ emailOrId, password }),
+    });
+    if (!res.ok) {
+      const error = res.data;
+      return { status: false, message: error?.message || "Failed to verify manager credentials" };
+    }
+    return res.data;
+  } catch (error) {
+    return { status: false, message: "Failed to verify manager credentials" };
   }
 }

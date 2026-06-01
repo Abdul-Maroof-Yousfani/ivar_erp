@@ -258,32 +258,35 @@ export default function PurchaseInvoiceListPage() {
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
-                            <PermissionGuard
-                              permissions="erp.procurement.pi.delete"
-                              fallback={null}
-                            >
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-red-600 hover:text-red-800"
-                                onClick={async () => {
-                                  if (!window.confirm("Delete this invoice?"))
-                                    return;
-                                  try {
-                                    await deletePurchaseInvoice(invoice.id);
-                                    toast.success("Invoice deleted");
-                                    fetchInvoices();
-                                  } catch (error: any) {
-                                    toast.error(
-                                      error.message ||
-                                        "Failed to delete invoice",
-                                    );
-                                  }
-                                }}
+                            {/* Only show delete button for DRAFT invoices */}
+                            {invoice.status === "DRAFT" && (
+                              <PermissionGuard
+                                permissions="erp.procurement.pi.delete"
+                                fallback={null}
                               >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </PermissionGuard>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-red-600 hover:text-red-800"
+                                  onClick={async () => {
+                                    if (!window.confirm("Delete this invoice?"))
+                                      return;
+                                    try {
+                                      await deletePurchaseInvoice(invoice.id);
+                                      toast.success("Invoice deleted");
+                                      fetchInvoices();
+                                    } catch (error: any) {
+                                      toast.error(
+                                        error.message ||
+                                          "Failed to delete invoice",
+                                      );
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </PermissionGuard>
+                            )}
                           </div>
                         </td>
                       </tr>

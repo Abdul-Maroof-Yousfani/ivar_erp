@@ -161,6 +161,191 @@ export function HeaderNotifications() {
     return null;
   }, []);
 
+  const handleNotificationSelect = useCallback(async (n: NotificationItem) => {
+    await handleMarkRead(n.id);
+
+    // Generic binary-file download helper
+    const triggerDownload = async (url: string, filename: string) => {
+      const response = await fetch(url, { credentials: "include" });
+      if (response.ok) {
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(objectUrl);
+      } else {
+        console.error(`Download failed with status: ${response.status}`);
+      }
+    };
+
+    // item-export.ready
+    if (n.actionType === "item-export.ready" && n.actionPayload) {
+      try {
+        const payload = typeof n.actionPayload === "string"
+          ? JSON.parse(n.actionPayload)
+          : n.actionPayload;
+        const jobId = payload?.jobId;
+        if (jobId) {
+          const base = getApiBaseUrl();
+          await triggerDownload(
+            `${base}/finance/items/export/${jobId}/download`,
+            `items-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          );
+        }
+      } catch (e) {
+        console.error("Item export download failed:", e);
+      }
+      return;
+    }
+
+    // merchant-export.ready
+    if (n.actionType === "merchant-export.ready" && n.actionPayload) {
+      try {
+        const payload = typeof n.actionPayload === "string"
+          ? JSON.parse(n.actionPayload)
+          : n.actionPayload;
+        const jobId = payload?.jobId;
+        if (jobId) {
+          const base = getApiBaseUrl();
+          await triggerDownload(
+            `${base}/pos-config/merchants/export/${jobId}/download`,
+            `merchants-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          );
+        }
+      } catch (e) {
+        console.error("Merchant export download failed:", e);
+      }
+      return;
+    }
+
+    // employee-export.ready
+    if (n.actionType === "employee-export.ready" && n.actionPayload) {
+      try {
+        const payload = typeof n.actionPayload === "string"
+          ? JSON.parse(n.actionPayload)
+          : n.actionPayload;
+        const jobId = payload?.jobId;
+        if (jobId) {
+          const base = getApiBaseUrl();
+          await triggerDownload(
+            `${base}/employees/export/${jobId}/download`,
+            `employees-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          );
+        }
+      } catch (e) {
+        console.error("Employee export download failed:", e);
+      }
+      return;
+    }
+
+    // chart-of-account-export.ready
+    if (n.actionType === "chart-of-account-export.ready" && n.actionPayload) {
+      try {
+        const payload = typeof n.actionPayload === "string"
+          ? JSON.parse(n.actionPayload)
+          : n.actionPayload;
+        const jobId = payload?.jobId;
+        if (jobId) {
+          const base = getApiBaseUrl();
+          await triggerDownload(
+            `${base}/finance/chart-of-accounts/export/${jobId}/download`,
+            `chart-of-accounts-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          );
+        }
+      } catch (e) {
+        console.error("Chart of accounts export download failed:", e);
+      }
+      return;
+    }
+
+    // supplier-export.ready
+    if (n.actionType === "supplier-export.ready" && n.actionPayload) {
+      try {
+        const payload = typeof n.actionPayload === "string"
+          ? JSON.parse(n.actionPayload)
+          : n.actionPayload;
+        const jobId = payload?.jobId;
+        if (jobId) {
+          const base = getApiBaseUrl();
+          await triggerDownload(
+            `${base}/finance/suppliers/export/${jobId}/download`,
+            `suppliers-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          );
+        }
+      } catch (e) {
+        console.error("Supplier export download failed:", e);
+      }
+      return;
+    }
+
+    // customer-export.ready
+    if (n.actionType === "customer-export.ready" && n.actionPayload) {
+      try {
+        const payload = typeof n.actionPayload === "string"
+          ? JSON.parse(n.actionPayload)
+          : n.actionPayload;
+        const jobId = payload?.jobId;
+        if (jobId) {
+          const base = getApiBaseUrl();
+          await triggerDownload(
+            `${base}/customers/export/${jobId}/download`,
+            `customers-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          );
+        }
+      } catch (e) {
+        console.error("Customer export download failed:", e);
+      }
+      return;
+    }
+
+    // trial-balance-export.ready
+    if (n.actionType === "trial-balance-export.ready" && n.actionPayload) {
+      try {
+        const payload = typeof n.actionPayload === "string"
+          ? JSON.parse(n.actionPayload)
+          : n.actionPayload;
+        const jobId = payload?.jobId;
+        if (jobId) {
+          const base = getApiBaseUrl();
+          await triggerDownload(
+            `${base}/finance/reports/trial-balance/export/${jobId}/download`,
+            `trial-balance-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          );
+        }
+      } catch (e) {
+        console.error("Trial Balance export download failed:", e);
+      }
+      return;
+    }
+
+    // general-ledger-export.ready
+    if (n.actionType === "general-ledger-export.ready" && n.actionPayload) {
+      try {
+        const payload = typeof n.actionPayload === "string"
+          ? JSON.parse(n.actionPayload)
+          : n.actionPayload;
+        const jobId = payload?.jobId;
+        if (jobId) {
+          const base = getApiBaseUrl();
+          await triggerDownload(
+            `${base}/finance/reports/general-ledger/export/${jobId}/download`,
+            `general-ledger-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          );
+        }
+      } catch (e) {
+        console.error("General Ledger export download failed:", e);
+      }
+      return;
+    }
+
+    const route = getActionRoute(n);
+    if (route) router.push(route);
+  }, [handleMarkRead, getActionRoute, router]);
+
   const badgeText = unreadCount > 99 ? "99+" : String(unreadCount);
 
   if (!user) return null;
@@ -188,15 +373,13 @@ export function HeaderNotifications() {
             </DropdownMenuItem>
           ) : (
             items.map((n) => {
-              const route = getActionRoute(n);
               const isUnread = n.status === "unread";
               return (
                 <DropdownMenuItem
                   key={n.id}
                   className="flex flex-col items-start gap-1"
                   onSelect={async () => {
-                    await handleMarkRead(n.id);
-                    if (route) router.push(route);
+                    await handleNotificationSelect(n);
                   }}
                 >
                   <div className="flex w-full items-center justify-between gap-2">

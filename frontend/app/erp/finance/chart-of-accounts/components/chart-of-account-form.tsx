@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { createChartOfAccount, updateChartOfAccount, ChartOfAccount } from "@/lib/actions/chart-of-account";
 import { useState } from "react";
+import { ChartOfAccountSelect } from "@/components/ui/chart-of-account-select";
 
 const formSchema = z.object({
   code: z.string().min(1, "Code is required"),
@@ -85,9 +86,6 @@ export function ChartOfAccountForm({ initialData, accounts }: ChartOfAccountForm
       setLoading(false);
     }
   }
-
-  // Filter out self from parent options if editing
-  const parentOptions = accounts.filter((acc) => !initialData || acc.id !== initialData.id);
 
   return (
     <Form {...form}>
@@ -149,24 +147,18 @@ export function ChartOfAccountForm({ initialData, accounts }: ChartOfAccountForm
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Parent Account</FormLabel>
-                <Select 
-                    onValueChange={field.onChange} 
-                    defaultValue={field.value || "none"}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select parent account (optional)" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {parentOptions.map((acc) => (
-                      <SelectItem key={acc.id} value={acc.id}>
-                        {acc.code} - {acc.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <FormControl>
+                  <ChartOfAccountSelect
+                    value={field.value === "none" || !field.value ? "" : field.value}
+                    onValueChange={(val) => {
+                      field.onChange(val === "" ? "none" : val);
+                    }}
+                    placeholder="Select parent account (optional)"
+                    disabled={loading}
+                    groupsOnly={true}
+                    excludeAccountId={initialData?.id}
+                  />
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )}

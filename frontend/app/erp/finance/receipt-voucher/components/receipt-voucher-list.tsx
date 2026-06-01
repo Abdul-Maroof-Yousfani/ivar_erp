@@ -12,7 +12,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Printer, Download, Plus, CreditCard, Wallet } from "lucide-react";
+import { Printer, Download, Plus, CreditCard, Wallet, Eye } from "lucide-react";
 import { ChartOfAccount } from "@/lib/actions/chart-of-account";
 import { ReceiptVoucher } from "@/lib/actions/receipt-voucher";
 import { cn } from "@/lib/utils";
@@ -55,7 +55,15 @@ export function ReceiptVoucherList({
         {
             accessorKey: "rvNo",
             header: "R.V. No.",
-            cell: ({ row }) => <span className="font-mono font-bold text-slate-800 dark:text-foreground">{row.original.rvNo}</span>
+            cell: ({ row }) => (
+                <Link
+                    href={`/erp/finance/receipt-voucher/${row.original.id}`}
+                    className="font-mono font-medium text-primary hover:underline"
+                    transitionTypes={["nav-forward"]}
+                >
+                    {row.original.rvNo}
+                </Link>
+            )
         },
         {
             accessorKey: "rvDate",
@@ -74,35 +82,77 @@ export function ReceiptVoucherList({
         },
         {
             id: "details",
-            header: "Debit/Credit",
-            cell: ({ row }) => (
-                <div className="space-y-1 min-w-[200px]">
-                    <div className="flex justify-between text-[11px] font-bold border-b border-slate-200 pb-1 mb-1">
-                        <span className="text-slate-500">DR:</span>
-                        <span className="text-slate-800 ml-1">{row.original.debitAccountName}</span>
-                        <span className="text-slate-800 ml-auto">{row.original.debitAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            header: "Debit / Credit",
+            cell: ({ row }) => {
+                const debitLines  = row.original.details.filter(d => Number(d.debit)  > 0);
+                const creditLines = row.original.details.filter(d => Number(d.credit) > 0);
+                return (
+                    <div className="space-y-0.5 min-w-[200px]">
+                        {/* Debit lines — from details if present, else fallback to header */}
+                        {debitLines.length > 0
+                            ? debitLines.map((d, di) => (
+                                <div key={`dr-${di}`} className="flex justify-between text-xs gap-3">
+                                    <span className="text-blue-600 font-medium truncate max-w-[150px]">
+                                        {d.accountCode ? `${d.accountCode} ` : ""}{d.accountName}
+                                    </span>
+                                    <span className="font-bold tabular-nums shrink-0">
+                                        {Number(d.debit).toLocaleString("en-PK", { minimumFractionDigits: 2 })}
+                                    </span>
+                                </div>
+                            ))
+                            : (
+                                <div className="flex justify-between text-xs font-medium gap-3">
+                                    <span className="text-blue-600 truncate max-w-[150px]">
+                                        {row.original.debitAccountName}
+                                    </span>
+                                    <span className="font-bold tabular-nums shrink-0">
+                                        {row.original.debitAmount.toLocaleString("en-PK", { minimumFractionDigits: 2 })}
+                                    </span>
+                                </div>
+                            )
+                        }
+                        {/* Divider */}
+                        <div className="border-t border-dashed border-border my-0.5" />
+                        {/* Credit lines */}
+                        {creditLines.map((d, ci) => (
+                            <div key={`cr-${ci}`} className="flex justify-between text-xs gap-3 opacity-70 italic">
+                                <span className="text-green-600 truncate max-w-[150px]">
+                                    (Cr: {d.accountCode ? `${d.accountCode} ` : ""}{d.accountName})
+                                </span>
+                                <span className="tabular-nums shrink-0">
+                                    {Number(d.credit).toLocaleString("en-PK", { minimumFractionDigits: 2 })}
+                                </span>
+                            </div>
+                        ))}
                     </div>
-                    {row.original.details.map((d, di) => (
-                        <div key={di} className="flex justify-between text-[11px]">
-                            <span className="text-green-600">CR:</span>
-                            <span className="text-slate-700 ml-1">{d.accountName}</span>
-                            <span className="font-bold text-slate-700 ml-auto">{d.credit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                        </div>
-                    ))}
-                </div>
-            )
+                );
+            }
         },
         {
             accessorKey: "status",
             header: "Status",
             cell: ({ row }) => (
                 <span className={cn(
-                    "px-3 py-1 rounded-md text-[10px] uppercase font-bold",
-                    row.original.status === "approved" ? "bg-[#22C55E] text-white" :
-                        row.original.status === "pending" ? "bg-[#EAB308] text-white" : "bg-[#EF4444] text-white"
+                    "px-3 py-1 rounded-md text-[10px] uppercase font-bold text-white",
+                    row.original.status === "approved" ? "bg-green-500" :
+                        row.original.status === "pending" ? "bg-yellow-500" : "bg-red-500"
                 )}>
                     {row.original.status}
                 </span>
+            )
+        },
+        {
+            id: "actions",
+            header: "",
+            cell: ({ row }) => (
+                <Link
+                    href={`/erp/finance/receipt-voucher/${row.original.id}`}
+                    transitionTypes={["nav-forward"]}
+                >
+                    <Button variant="ghost" size="icon" className="h-7 w-7">
+                        <Eye className="h-3.5 w-3.5" />
+                    </Button>
+                </Link>
             )
         }
     ], []);
@@ -231,8 +281,6 @@ export function ReceiptVoucherList({
                             data={filteredData}
                             searchFields={[{ key: "rvNo", label: "RV Number" }, { key: "description", label: "Description" }]}
                             tableId="receipt-voucher-list"
-                            onRowEdit={(item) => console.log("Edit", item)}
-                            onRowDelete={(item) => console.log("Delete", item)}
                         />
                     </CardContent>
                 </Card>

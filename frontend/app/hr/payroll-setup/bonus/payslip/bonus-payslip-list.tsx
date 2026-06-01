@@ -328,7 +328,7 @@ export function BonusPayslipList({ initialBonuses = [], employees = [] }: BonusP
             <div class="print-date">Printed On: ${printDate}</div>
             
             <div class="header">
-              <div class="company-name">Ivar HR System</div>
+              <div class="company-name">IVAR HR System</div>
               <div class="payslip-title">BONUS PAYSLIP</div>
             </div>
 
@@ -507,7 +507,7 @@ export function BonusPayslipList({ initialBonuses = [], employees = [] }: BonusP
                 {/* Header */}
                 <div className="text-center mb-10 pb-8 border-b-4 border-blue-900">
                   <div className="text-3xl font-extrabold uppercase tracking-wider text-blue-900 mb-3">
-                    Ivar HR System
+                    IVAR HR System
                   </div>
                   <div className="text-xl font-bold text-blue-900 mt-4 tracking-wide">
                     BONUS PAYSLIP

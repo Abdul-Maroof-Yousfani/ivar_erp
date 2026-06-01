@@ -27,12 +27,23 @@ function computeLineItem(
     isStockInTransit = false,
     defaultTaxPercent = 0,
 ): CartItem {
+    // Step 1: Retail price is the unit price
     const price = Number(product.unitPrice) || 0;
-    const subtotal = price * quantity;
-    const discountAmount = Math.round(subtotal * (discountPercent / 100) * 100) / 100;
-    const afterDiscount = subtotal - discountAmount;
+    
+    // Step 2: Calculate WOST (Value Without Sales Tax)
     const taxPercent = Number(product.taxRate1) || defaultTaxPercent;
-    const taxAmount = Math.round(afterDiscount * (taxPercent / 100) * 100) / 100;
+    const taxDivisor = 1 + (taxPercent / 100);
+    const wostPerUnit = price / taxDivisor;
+    const totalWost = wostPerUnit * quantity;
+    
+    // Step 3: Apply discount on WOST
+    const discountAmount = Math.round(totalWost * (discountPercent / 100));
+    const afterDiscount = totalWost - discountAmount;
+    
+    // Step 4: Calculate tax on discounted amount
+    const taxAmount = Math.round(afterDiscount * (taxPercent / 100));
+    
+    // Step 5: Total = discounted WOST + tax
     const total = afterDiscount + taxAmount;
 
     return {
@@ -99,6 +110,7 @@ export default function NewSalePage() {
     // ─── Auto-focus search on mount + handle resume from holds page ─
     useEffect(() => {
         searchInputRef.current?.focus();
+        
         // Check if we're resuming from the holds page
         const resumeCart = sessionStorage.getItem("pos_resume_cart");
         if (resumeCart) {
@@ -109,6 +121,17 @@ export default function NewSalePage() {
                 toast.success("Hold order resumed");
             } catch { /* ignore */ }
         }
+        
+        // Check if we're coming back from checkout (cart should be preserved)
+        const checkoutCart = sessionStorage.getItem("pos_cart");
+        if (checkoutCart && !resumeCart) {
+            try {
+                const items = JSON.parse(checkoutCart);
+                setCartItems(items);
+                // Don't remove pos_cart here - let checkout remove it after successful order
+            } catch { /* ignore */ }
+        }
+        
         // Auto-open hold orders panel if navigated from history with ?showHolds=1
         if (searchParams.get("showHolds") === "1") {
             loadHoldOrders();
@@ -335,27 +358,74 @@ export default function NewSalePage() {
                     toast.error(`Only ${item.stockQty} units available in stock`);
                     return item;
                 }
-                const subtotal = item.price * quantity;
-                const discountAmount = Math.round(subtotal * (item.discountPercent / 100) * 100) / 100;
-                const afterDiscount = subtotal - discountAmount;
-                const taxAmount = Math.round(afterDiscount * (item.taxPercent / 100) * 100) / 100;
+                
+                // Step 1: Retail price is item.price
+                const retailPrice = item.price;
+                
+                // Step 2: Calculate WOST (Value Without Sales Tax)
+                const taxDivisor = 1 + (item.taxPercent / 100);
+                const wostPerUnit = retailPrice / taxDivisor;
+                const totalWost = wostPerUnit * quantity;
+                
+                // Step 3: Apply discount on WOST
+                const discountAmount = Math.round(totalWost * (item.discountPercent / 100));
+                const afterDiscount = totalWost - discountAmount;
+                
+                // Step 4: Calculate tax on discounted amount
+                const taxAmount = Math.round(afterDiscount * (item.taxPercent / 100));
+                
+                // Step 5: Total = discounted WOST + tax
                 const total = afterDiscount + taxAmount;
+                
                 return { ...item, quantity, discountAmount, taxAmount, total };
             })
         );
     }, []);
 
-    const handleDiscountChange = useCallback((id: string, discountPercent: number) => {
-        const clamped = Math.min(100, Math.max(0, discountPercent));
+    const handleDiscountChange = useCallback((id: string, newDiscountPercent: number) => {
+        const clamped = Math.min(100, Math.max(0, newDiscountPercent));
         setCartItems((prev) =>
             prev.map((item) => {
                 if (item.id !== id) return item;
-                const subtotal = item.price * item.quantity;
-                const discountAmount = Math.round(subtotal * (clamped / 100) * 100) / 100;
-                const afterDiscount = subtotal - discountAmount;
-                const taxAmount = Math.round(afterDiscount * (item.taxPercent / 100) * 100) / 100;
+                
+                const originalDiscount = item.discountPercent;
+                
+                // Determine if this is an override
+                let overrideDiscountPercent = item.overrideDiscountPercent;
+                
+                if (clamped !== originalDiscount) {
+                    // New discount is different from original, set override
+                    overrideDiscountPercent = clamped;
+                } else {
+                    // New discount matches original, clear override
+                    overrideDiscountPercent = null;
+                }
+                
+                // Step 1: Retail price is item.price
+                const retailPrice = item.price;
+                
+                // Step 2: Calculate WOST (Value Without Sales Tax)
+                const taxDivisor = 1 + (item.taxPercent / 100);
+                const wostPerUnit = retailPrice / taxDivisor;
+                const totalWost = wostPerUnit * item.quantity;
+                
+                // Step 3: Apply discount on WOST
+                const discountAmount = Math.round(totalWost * (clamped / 100));
+                const afterDiscount = totalWost - discountAmount;
+                
+                // Step 4: Calculate tax on discounted amount
+                const taxAmount = Math.round(afterDiscount * (item.taxPercent / 100));
+                
+                // Step 5: Total = discounted WOST + tax
                 const total = afterDiscount + taxAmount;
-                return { ...item, discountPercent: clamped, discountAmount, taxAmount, total };
+                
+                return { 
+                    ...item, 
+                    overrideDiscountPercent,
+                    discountAmount, 
+                    taxAmount, 
+                    total 
+                };
             })
         );
     }, []);

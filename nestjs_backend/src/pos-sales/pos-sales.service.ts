@@ -136,7 +136,7 @@ export class PosSalesService implements OnModuleInit {
 
                 // ── Resolve default warehouse ───────────────────────────
                 const warehouse = await tx.warehouse.findFirst({
-                    where: { isActive: true },
+                    where: { isActive: true, isDeleted: false },
                 });
                 if (!warehouse) throw new Error('No active warehouse found');
 
@@ -164,11 +164,22 @@ export class PosSalesService implements OnModuleInit {
 
                 // ── Calculate line items ─────────────────────────────────
                 itemsData = dto.items.map((lineItem) => {
-                    const subtotal = lineItem.unitPrice * lineItem.quantity;
-                    const discPct = lineItem.discountPercent || 0;
-                    const discAmt = Math.round(subtotal * (discPct / 100) * 100) / 100;
-                    const afterDisc = subtotal - discAmt;
+                    const retailPrice = lineItem.unitPrice;
                     const taxPct = lineItem.taxPercent || 0;
+                    const taxDivisor = 1 + (taxPct / 100);
+                    
+                    // Calculate WOST (Value excluding tax) from Retail Price
+                    // WOST = Retail / (1 + tax%)
+                    const wostPerUnit = retailPrice / taxDivisor;
+                    const totalWost = Math.round(wostPerUnit * lineItem.quantity * 100) / 100;
+                    
+                    // Apply discount on WOST (not on Retail Price)
+                    // Use overrideDiscountPercent if available, otherwise use discountPercent
+                    const discPct = lineItem.overrideDiscountPercent ?? lineItem.discountPercent ?? 0;
+                    const discAmt = Math.round(totalWost * (discPct / 100) * 100) / 100;
+                    const afterDisc = totalWost - discAmt;
+                    
+                    // Calculate tax on amount after discount
                     const taxAmt = Math.round(afterDisc * (taxPct / 100) * 100) / 100;
 
                     const promoDisc = (promoItemIds === null || promoItemIds.has(lineItem.itemId))
@@ -189,9 +200,14 @@ export class PosSalesService implements OnModuleInit {
                     };
                 });
 
-                const subtotal = itemsData.reduce((acc, i) => acc + i.unitPrice * i.quantity, 0);
+                // Calculate subtotal as sum of WOST (not retail price)
+                const subtotal = itemsData.reduce((acc, i) => {
+                    const taxDivisor = 1 + (i.taxPercent / 100);
+                    const wostPerUnit = i.unitPrice / taxDivisor;
+                    return acc + (wostPerUnit * i.quantity);
+                }, 0);
                 const lineItemDiscount = itemsData.reduce((acc, i) => acc + i.discountAmount, 0);
-                const totalTax = itemsData.reduce((acc, i) => acc + i.taxAmount, 0);
+                const recalculatedTotalTax = itemsData.reduce((acc, i) => acc + i.taxAmount, 0);
                 const subtotalAfterItemDiscount = subtotal - lineItemDiscount;
 
                 // ── Calculate global discount with priority logic ──
@@ -213,7 +229,7 @@ export class PosSalesService implements OnModuleInit {
                 
                 // 2. Alliance discount (calculated on subtotal BEFORE item discounts)
                 if (dto.allianceId) {
-                    const alliance = await tx.allianceDiscount.findUnique({ where: { id: dto.allianceId } });
+                    const alliance = await tx.allianceDiscount.findFirst({ where: { id: dto.allianceId, isDeleted: false } });
                     if (alliance) {
                         if (alliance.maxDiscount) {
                             allianceDiscount = Number(alliance.maxDiscount);
@@ -225,7 +241,7 @@ export class PosSalesService implements OnModuleInit {
                 
                 // 3. Coupon discount
                 if (dto.couponId) {
-                    const coupon = await tx.couponCode.findUnique({ where: { id: dto.couponId } });
+                    const coupon = await tx.couponCode.findFirst({ where: { id: dto.couponId, isDeleted: false } });
                     if (coupon) {
                         if (coupon.discountType === 'percent') {
                             const disc = Math.round(subtotalAfterItemDiscount * (Number(coupon.discountValue) / 100) * 100) / 100;
@@ -261,11 +277,20 @@ export class PosSalesService implements OnModuleInit {
                                 disc += 1;
                                 remainder -= 1;
                             }
+                            
+                            // Recalculate tax based on WOST after discount
+                            const taxDivisor = 1 + (item.taxPercent / 100);
+                            const wostPerUnit = item.unitPrice / taxDivisor;
+                            const totalWost = Math.round(wostPerUnit * item.quantity * 100) / 100;
+                            const afterDisc = totalWost - disc;
+                            const recalculatedTax = Math.round(afterDisc * (item.taxPercent / 100) * 100) / 100;
+                            
                             return {
                                 ...item,
                                 discountPercent: Math.round((disc / lineSubtotal) * 100 * 100) / 100,
                                 discountAmount: disc,
-                                lineTotal: Math.round((lineSubtotal + item.taxAmount - disc) * 100) / 100
+                                taxAmount: recalculatedTax,
+                                lineTotal: Math.round((afterDisc + recalculatedTax) * 100) / 100
                             };
                         });
                         // Since it's distributed, we can set globalDiscAmt to 0 if we want it to ONLY show on items,
@@ -294,11 +319,20 @@ export class PosSalesService implements OnModuleInit {
                             disc += 1;
                             remainder -= 1;
                         }
+                        
+                        // Recalculate tax based on WOST after discount
+                        const taxDivisor = 1 + (item.taxPercent / 100);
+                        const wostPerUnit = item.unitPrice / taxDivisor;
+                        const totalWost = Math.round(wostPerUnit * item.quantity * 100) / 100;
+                        const afterDisc = totalWost - disc;
+                        const recalculatedTax = Math.round(afterDisc * (item.taxPercent / 100) * 100) / 100;
+                        
                         return {
                             ...item,
                             discountPercent: Math.round((disc / lineSubtotal) * 100 * 100) / 100,
                             discountAmount: disc,
-                            lineTotal: Math.round((lineSubtotal + item.taxAmount - disc) * 100) / 100
+                            taxAmount: recalculatedTax,
+                            lineTotal: Math.round((afterDisc + recalculatedTax) * 100) / 100
                         };
                     });
                 } else if (couponDiscount > 0) {
@@ -311,10 +345,24 @@ export class PosSalesService implements OnModuleInit {
                     appliedDiscountType = 'manual';
                 }
 
+                // Recalculate totalTax after alliance discount distribution (if applied)
+                const finalTotalTax = itemsData.reduce((acc, i) => acc + i.taxAmount, 0);
+                
                 // Recalculate total with the chosen discount
                 const totalDiscount = finalLineItemDiscount + globalDiscAmt;
-                const grandTotal = Math.max(0, Math.round((subtotal - totalDiscount + totalTax) * 100) / 100);
+                const fbrPosFee = 1; // FBR POS Fee
+                const grandTotal = Math.max(0, Math.round((subtotal - totalDiscount + finalTotalTax + fbrPosFee) * 100) / 100);
                 const changeAmount = Math.max(0, totalPaid - grandTotal);
+
+                // Debug logging
+                console.log('=== GRAND TOTAL CALCULATION ===');
+                console.log('Subtotal (WOST):', subtotal);
+                console.log('Total Discount:', totalDiscount);
+                console.log('Total Tax (Final):', finalTotalTax);
+                console.log('FBR POS Fee:', fbrPosFee);
+                console.log('Grand Total:', grandTotal);
+                console.log('Formula: subtotal - totalDiscount + finalTotalTax + fbrPosFee =', subtotal, '-', totalDiscount, '+', finalTotalTax, '+', fbrPosFee, '=', grandTotal);
+                console.log('===============================');
 
                 const notesParts: string[] = [];
                 if (dto.notes) notesParts.push(dto.notes);
@@ -367,7 +415,7 @@ export class PosSalesService implements OnModuleInit {
                         notes: notesParts.join(' | ') || undefined,
                         subtotal,
                         discountAmount: totalDiscount,
-                        taxAmount: totalTax,
+                        taxAmount: finalTotalTax,
                         grandTotal,
                         status: 'completed',
                         paymentStatus,
@@ -376,6 +424,7 @@ export class PosSalesService implements OnModuleInit {
                         promoId: dto.promoId,
                         couponId: dto.couponId,
                         allianceId: dto.allianceId,
+                        merchantId: dto.merchantId || undefined,
                         tenderType: isCreditSale && totalPaid === 0 ? 'credit_account' : paymentMethod,
                         cashAmount: cashAmount || undefined,
                         cardAmount: cardAmount || undefined,
@@ -390,6 +439,7 @@ export class PosSalesService implements OnModuleInit {
                         promo: { select: { name: true, code: true } },
                         coupon: { select: { code: true, description: true } },
                         alliance: { select: { partnerName: true, code: true, discountPercent: true, maxDiscount: true } },
+                        merchant: { select: { id: true, bankName: true, description: true, commissionRate: true, bankGlCode: true } },
                     },
                 });
 
@@ -719,6 +769,7 @@ export class PosSalesService implements OnModuleInit {
                     promo: { select: { name: true, code: true } },
                     coupon: { select: { code: true, description: true } },
                     alliance: { select: { partnerName: true, code: true, discountPercent: true, maxDiscount: true } },
+                    merchant: { select: { id: true, bankName: true, description: true, commissionRate: true, bankGlCode: true } },
                 },
             }),
             this.prisma.salesOrder.count({ where }),
@@ -858,6 +909,7 @@ export class PosSalesService implements OnModuleInit {
                 promo: { select: { name: true, code: true } },
                 coupon: { select: { code: true, description: true } },
                 alliance: { select: { partnerName: true, code: true, discountPercent: true, maxDiscount: true } },
+                merchant: { select: { id: true, bankName: true, description: true, commissionRate: true, bankGlCode: true } },
             },
         });
         if (!order) return { status: false, message: 'Order not found' };
@@ -906,7 +958,7 @@ export class PosSalesService implements OnModuleInit {
                 if (!order) throw new Error('Order not found');
                 if (order.status === 'voided') throw new Error('Order is already voided');
 
-                const warehouse = await tx.warehouse.findFirst({ where: { isActive: true } });
+                const warehouse = await tx.warehouse.findFirst({ where: { isActive: true, isDeleted: false } });
                 if (!warehouse) throw new Error('No active warehouse found');
 
                 // Determine effective location for return (where stock goes back)
@@ -971,23 +1023,23 @@ export class PosSalesService implements OnModuleInit {
                     const itemShare = lineTotal - itemCouponDeduction;
                     const originalPaidPerUnit = itemShare / qty;
 
-                    // Current item price — POS uses unitCost when set, otherwise unitPrice
+                    // Current item price — POS uses unitPrice from item setup
                     const currentItem = await tx.item.findUnique({
                         where: { id: returnItem.itemId },
-                        select: { unitPrice: true, unitCost: true },
+                        select: { unitPrice: true },
                     });
                     const baseCurrentPrice = currentItem
-                        ? (Number(currentItem.unitCost) > 0 ? Number(currentItem.unitCost) : Number(currentItem.unitPrice))
+                        ? Number(currentItem.unitPrice)
                         : originalPaidPerUnit;
 
                     // Apply the same tax rate that was charged at sale time
                     const taxPercent = Number(orderItem.taxPercent) || 0;
                     const currentPriceWithTax = baseCurrentPrice * (1 + taxPercent / 100);
 
-                    // Rule: refund = min(originalPaid, currentPriceWithTax)
-                    // i.e. if price dropped/discounted → refund current (lower) price
-                    //      if price rose               → refund original (lower) price
-                    const refundPerUnit = Math.min(originalPaidPerUnit, currentPriceWithTax);
+                    // Rule: ALWAYS refund the original paid price (what customer actually paid)
+                    // Customer gets full cash refund regardless of current stock price
+                    // Refund voucher is generated for record keeping only
+                    const refundPerUnit = originalPaidPerUnit;
                     totalRefundAmount += refundPerUnit * returnItem.quantity;
 
                     itemRefundDetails.push({
@@ -1253,15 +1305,14 @@ export class PosSalesService implements OnModuleInit {
                         ? (lineTotal / lineTotalsSum) * grandTotal / returnedQty
                         : lineTotal / returnedQty;
 
-                    // Current price logic (use unitCost if available)
+                    // Current price logic (use unitPrice from item setup)
                     const currentItem = oi.item;
-                    const baseCurrentPrice = Number((currentItem as any).unitCost || 0) > 0
-                        ? Number((currentItem as any).unitCost)
-                        : unitPrice;
+                    const baseCurrentPrice = Number((currentItem as any).unitPrice || 0);
                     const currentPriceWithTax = baseCurrentPrice * (1 + taxPercent / 100);
 
-                    // Refund rule: min(original, current)
-                    const refundPerUnit = Math.min(originalPaidPerUnit, currentPriceWithTax);
+                    // Rule: ALWAYS refund the original paid price (what customer actually paid)
+                    // Customer gets full cash refund regardless of current stock price
+                    const refundPerUnit = originalPaidPerUnit;
                     const priceAdjusted = currentPriceWithTax < originalPaidPerUnit;
 
                     return {
@@ -1331,7 +1382,7 @@ export class PosSalesService implements OnModuleInit {
 
                 // Resolve default warehouse
                 const warehouse = await tx.warehouse.findFirst({
-                    where: { isActive: true },
+                    where: { isActive: true, isDeleted: false },
                 });
                 if (!warehouse) throw new Error('No active warehouse found');
 
@@ -1461,7 +1512,7 @@ export class PosSalesService implements OnModuleInit {
                 if (!order) throw new Error('Order not found');
                 if (order.status === 'voided') throw new Error('Order is already voided');
 
-                const warehouse = await tx.warehouse.findFirst({ where: { isActive: true } });
+                const warehouse = await tx.warehouse.findFirst({ where: { isActive: true, isDeleted: false } });
                 if (!warehouse) throw new Error('No active warehouse found');
 
                 // ── Restore returned items ──────────────────────────────
@@ -1603,37 +1654,98 @@ export class PosSalesService implements OnModuleInit {
     // ─── Refund only (no stock movement) ─────────────────────────────
     async refundOnly(id: string, refundAmount: number, reason?: string, ctx?: { userId?: string; ipAddress?: string; userAgent?: string }) {
         try {
-            const order = await this.prisma.salesOrder.findUnique({ where: { id } });
+            const order = await this.prisma.salesOrder.findUnique({ 
+                where: { id },
+                include: {
+                    items: {
+                        include: {
+                            item: true
+                        }
+                    }
+                }
+            });
             if (!order) throw new Error('Order not found');
             if (order.status === 'voided') throw new Error('Order is already voided');
             if (refundAmount <= 0) throw new Error('Refund amount must be greater than 0');
             if (refundAmount > Number(order.grandTotal)) throw new Error('Refund amount exceeds order total');
 
-            // ── Generate Exchange Voucher for refund amount ──
-            let exchangeVoucher: any = null;
-            if (refundAmount > 0) {
-                const voucherResult = await this.voucherService.issueExchangeVoucher({
-                    faceValue: Math.round(refundAmount * 100) / 100,
-                    sourceOrderId: id,
-                    issuedByLocationId: order.locationId || '',
-                    issuedByUserId: ctx?.userId,
-                    customerId: order.customerId || undefined,
-                    expiresInDays: 30,
-                }, ctx);
+            // Use transaction to ensure inventory is restored atomically
+            const result = await this.prisma.$transaction(async (tx) => {
+                // Find active warehouse
+                const warehouse = await tx.warehouse.findFirst({ where: { isActive: true, isDeleted: false } });
+                if (!warehouse) throw new Error('No active warehouse found');
 
-                if (voucherResult.status && voucherResult.data) {
-                    exchangeVoucher = voucherResult.data;
+                const effectiveLocationId = order.locationId;
+
+                // ── Restore Inventory for ALL items ──
+                for (const orderItem of order.items) {
+                    if (!orderItem.itemId) continue;
+
+                    // Create stock ledger entry for refund
+                    await this.stockLedgerService.createEntry({
+                        itemId: orderItem.itemId,
+                        warehouseId: warehouse.id,
+                        locationId: effectiveLocationId,
+                        qty: orderItem.quantity,
+                        movementType: MovementType.INBOUND,
+                        referenceType: 'POS_REFUND',
+                        referenceId: id,
+                    }, tx);
+
+                    // Update or create inventory item
+                    const existing = await tx.inventoryItem.findFirst({
+                        where: { 
+                            itemId: orderItem.itemId, 
+                            locationId: effectiveLocationId, 
+                            status: 'AVAILABLE' 
+                        },
+                    });
+                    
+                    if (existing) {
+                        await tx.inventoryItem.update({
+                            where: { id: existing.id },
+                            data: { quantity: { increment: orderItem.quantity } },
+                        });
+                    } else {
+                        await tx.inventoryItem.create({
+                            data: {
+                                itemId: orderItem.itemId,
+                                locationId: effectiveLocationId,
+                                warehouseId: warehouse.id,
+                                quantity: orderItem.quantity,
+                                status: 'AVAILABLE',
+                            },
+                        });
+                    }
                 }
-            }
 
-            const updatedOrder = await this.prisma.salesOrder.update({
-                where: { id },
-                data: { 
-                    status: 'refunded', 
-                    notes: exchangeVoucher 
-                        ? `Exchange voucher ${exchangeVoucher.code} issued for Rs.${refundAmount}${reason ? `: ${reason}` : ''}`
-                        : (reason ? `Refund Rs.${refundAmount}: ${reason}` : `Refund Rs.${refundAmount}`)
-                },
+                // ── Generate REFUND Voucher (record-only, cash refunded to customer) ──
+                let refundVoucher: any = null;
+                if (refundAmount > 0) {
+                    const voucherResult = await this.voucherService.issueRefundVoucher({
+                        faceValue: Math.round(refundAmount * 100) / 100,
+                        sourceOrderId: id,
+                        issuedByLocationId: order.locationId || '',
+                        issuedByUserId: ctx?.userId,
+                        customerId: order.customerId || undefined,
+                    }, ctx);
+
+                    if (voucherResult.status && voucherResult.data) {
+                        refundVoucher = voucherResult.data;
+                    }
+                }
+
+                const updatedOrder = await tx.salesOrder.update({
+                    where: { id },
+                    data: { 
+                        status: 'refunded', 
+                        notes: refundVoucher 
+                            ? `Cash refunded Rs.${refundAmount} - Refund voucher ${refundVoucher.code} (Record only) - Inventory restored${reason ? `: ${reason}` : ''}`
+                            : (reason ? `Cash refund Rs.${refundAmount} - Inventory restored: ${reason}` : `Cash refund Rs.${refundAmount} - Inventory restored`)
+                    },
+                });
+
+                return { updatedOrder, refundVoucher };
             });
 
             runInBackground(
@@ -1644,10 +1756,10 @@ export class PosSalesService implements OnModuleInit {
                     module: 'pos-sales',
                     entity: 'SalesOrder',
                     entityId: id,
-                    description: exchangeVoucher 
-                        ? `Issued exchange voucher ${exchangeVoucher.code} for Rs.${refundAmount} for POS order ${id}`
-                        : `Processed refund of Rs.${refundAmount} for POS order ${id}`,
-                    newValues: JSON.stringify({ refundAmount, reason, voucherCode: exchangeVoucher?.code }),
+                    description: result.refundVoucher 
+                        ? `Cash refunded Rs.${refundAmount} - Refund voucher ${result.refundVoucher.code} issued for record - Inventory restored for POS order ${id}`
+                        : `Processed cash refund of Rs.${refundAmount} and restored inventory for POS order ${id}`,
+                    newValues: JSON.stringify({ refundAmount, reason, voucherCode: result.refundVoucher?.code }),
                     ipAddress: ctx?.ipAddress,
                     userAgent: ctx?.userAgent,
                     status: 'success',
@@ -1656,15 +1768,15 @@ export class PosSalesService implements OnModuleInit {
 
             return { 
                 status: true, 
-                data: updatedOrder, 
-                exchangeVoucher: exchangeVoucher ? {
-                    code: exchangeVoucher.code,
-                    faceValue: exchangeVoucher.faceValue,
-                    expiresAt: exchangeVoucher.expiresAt,
+                data: result.updatedOrder, 
+                refundVoucher: result.refundVoucher ? {
+                    code: result.refundVoucher.code,
+                    faceValue: result.refundVoucher.faceValue,
+                    voucherType: 'REFUND',
                 } : null,
-                message: exchangeVoucher 
-                    ? `Exchange voucher ${exchangeVoucher.code} issued for Rs.${refundAmount}`
-                    : `Refund of Rs.${refundAmount} processed`
+                message: result.refundVoucher 
+                    ? `Cash refunded Rs.${refundAmount} - Refund voucher ${result.refundVoucher.code} issued for record - Inventory restored`
+                    : `Cash refund of Rs.${refundAmount} processed and inventory restored`
             };
         } catch (error: any) {
             runInBackground(
@@ -1750,7 +1862,7 @@ export class PosSalesService implements OnModuleInit {
                 });
 
                 // ── Deduct stock immediately on hold ────────────────────
-                const warehouse = await tx.warehouse.findFirst({ where: { isActive: true } });
+                const warehouse = await tx.warehouse.findFirst({ where: { isActive: true, isDeleted: false } });
                 if (warehouse) {
                     for (const item of itemsData) {
                         await this.stockLedgerService.createEntry({
@@ -1881,7 +1993,7 @@ export class PosSalesService implements OnModuleInit {
                 if (order.status !== 'hold') throw new Error('Order is not on hold');
 
                 // Restore stock for each item
-                const warehouse = await tx.warehouse.findFirst({ where: { isActive: true } });
+                const warehouse = await tx.warehouse.findFirst({ where: { isActive: true, isDeleted: false } });
                 if (warehouse) {
                     for (const item of order.items) {
                         await this.stockLedgerService.createEntry({
@@ -1966,7 +2078,7 @@ export class PosSalesService implements OnModuleInit {
 
         if (expiredOrders.length === 0) return { status: true, cleared: 0 };
 
-        const warehouse = await this.prisma.warehouse.findFirst({ where: { isActive: true } });
+        const warehouse = await this.prisma.warehouse.findFirst({ where: { isActive: true, isDeleted: false } });
 
         for (const order of expiredOrders) {
             await this.prisma.$transaction(async (tx) => {
@@ -2048,9 +2160,8 @@ export class PosSalesService implements OnModuleInit {
 
         return items.map((item) => {
             const stockQty = stockMap.get(item.id) || 0;
-            const latestPrice = Number(item.unitCost || 0) > 0
-                ? Number(item.unitCost)
-                : Number(item.unitPrice || 0);
+            // Use unitPrice from item setup, not unitCost
+            const latestPrice = Number(item.unitPrice || 0);
 
             // ── Resolve effective discount respecting date validity ──────────
             // A discount is active if:
@@ -2082,7 +2193,6 @@ export class PosSalesService implements OnModuleInit {
                 barCode: item.barCode,
                 description: item.description,
                 unitPrice: latestPrice,
-                unitCost: Number(item.unitCost || 0),
                 taxRate1: Number(item.taxRate1 || 0),
                 taxRate2: Number(item.taxRate2 || 0),
                 // Raw discount fields

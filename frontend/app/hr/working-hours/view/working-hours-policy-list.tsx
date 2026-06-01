@@ -61,7 +61,6 @@ export function WorkingHoursPolicyList({
         policy.name.toLowerCase().includes(searchLower) ||
         policy.startWorkingHours?.toLowerCase().includes(searchLower) ||
         policy.endWorkingHours?.toLowerCase().includes(searchLower) ||
-        policy.overtimeStartsAt?.toLowerCase().includes(searchLower) ||
         policy.lateStartTime?.toLowerCase().includes(searchLower) ||
         policy.halfDayStartTime?.toLowerCase().includes(searchLower) ||
         policy.createdBy?.toLowerCase().includes(searchLower)
@@ -78,7 +77,7 @@ export function WorkingHoursPolicyList({
         <td>${policy.name}</td>
         <td>${policy.startWorkingHours || "N/A"}</td>
         <td>${policy.endWorkingHours || "N/A"}</td>
-        <td>${policy.overtimeStartsAt || "N/A"}</td>
+        <td>${policy.otStartsAt || "N/A"}</td>
         <td>${policy.lateStartTime || "N/A"}</td>
         <td>${policy.halfDayStartTime || "N/A"}</td>
         <td>${policy.createdBy || "N/A"}</td>
@@ -143,7 +142,7 @@ export function WorkingHoursPolicyList({
       policy.name,
       policy.startWorkingHours || "N/A",
       policy.endWorkingHours || "N/A",
-      policy.overtimeStartsAt || "N/A",
+      policy.otStartsAt || "N/A",
       policy.lateStartTime || "N/A",
       policy.halfDayStartTime || "N/A",
       policy.createdBy || "N/A",
@@ -224,7 +223,6 @@ export function WorkingHoursPolicyList({
               { key: "name", label: "Policy Name" },
               { key: "startWorkingHours", label: "Start Time" },
               { key: "endWorkingHours", label: "End Time" },
-              { key: "overtimeStartsAt", label: "OT Starts At" },
             ]}
             onMultiDelete={hasPermission("hr.working-hour-policy.delete") ? handleMultiDelete : undefined}
             tableId="working-hours-policy-list"

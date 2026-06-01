@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, startTransition } from "react";
+import { useState, useMemo, useEffect, startTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { addTransitionType } from "react";
 import { Button } from "@/components/ui/button";
@@ -153,12 +153,26 @@ export function HeaderMasterMenu() {
     }
 
     return {
-      POS: filteredMasterMenu.filter(item => item.environment === "POS" || item.environment === "BOTH"),
-      HRM: filteredMasterMenu.filter(item => item.environment === "HR"),
-      ERP: filteredMasterMenu.filter(item => item.environment === "ERP"),
+      POS: filteredMasterMenu.filter(item => item.module === "POS"),
+      HRM: filteredMasterMenu.filter(item => item.module === "HR"),
+      ERP: filteredMasterMenu.filter(item => item.module === "ERP"),
       isSearch: false
     };
   }, [search, filteredMasterMenu]);
+
+  const availableTabs = useMemo(() => {
+    const tabs: string[] = [];
+    if ((filteredMenu as any).POS?.length > 0) tabs.push("POS");
+    if ((filteredMenu as any).HRM?.length > 0) tabs.push("HRM");
+    if ((filteredMenu as any).ERP?.length > 0) tabs.push("ERP");
+    return tabs;
+  }, [filteredMenu]);
+
+  useEffect(() => {
+    if (availableTabs.length > 0 && !availableTabs.includes(activeTab)) {
+      setActiveTab(availableTabs[0]);
+    }
+  }, [availableTabs, activeTab]);
 
   const handleClick = (href: string, e: React.MouseEvent) => {
     // Let the browser handle Cmd/Ctrl+click and middle-click natively (new tab)

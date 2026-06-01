@@ -29,15 +29,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
-        const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
+        const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5001/api";
         const baseUrl = API_URL.replace(/\/api$/, "");
 
         const socket = io(baseUrl, {
-            transports: ["websocket"],
+            transports: ["websocket", "polling"],
             auth: {
                 token: document.cookie
                     .split("; ")
-                    .find((row) => row.startsWith("access_token="))
+                    .find((row) => row.startsWith("accessToken="))
                     ?.split("=")[1],
             },
         });

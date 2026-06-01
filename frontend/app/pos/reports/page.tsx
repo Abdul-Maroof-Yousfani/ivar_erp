@@ -541,7 +541,7 @@ export default function SalesReportPage() {
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="voided">Voided</SelectItem>
+                  <SelectItem value="voided">redeemed</SelectItem>
                   <SelectItem value="partially_returned">Partially Returned</SelectItem>
                   <SelectItem value="refunded">Refunded</SelectItem>
                   <SelectItem value="exchanged">Exchanged</SelectItem>

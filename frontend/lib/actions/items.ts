@@ -308,3 +308,50 @@ export async function bulkUpdateSalePrice(payload: BulkSalePricePayload) {
         return { status: false, message: "Failed to connect to server" };
     }
 }
+
+// ─── Export Items ─────────────────────────────────────────────────────────────
+
+export async function bulkSearchItems(barcodes: string[]) {
+    try {
+        const response = await authFetch("/finance/items/bulk-search", {
+            method: "POST",
+            body: JSON.stringify({ barcodes }),
+        });
+        return response.data ?? { status: false, data: [] };
+    } catch (error) {
+        console.error("Bulk search items error:", error);
+        return { status: false, data: [] };
+    }
+}
+
+export async function queueItemsExport(
+    search?: string,
+    sortBy?: string,
+    sortOrder?: "asc" | "desc",
+    filters?: {
+        brandIds?: string[];
+        categoryIds?: string[];
+        silhouetteIds?: string[];
+        genderIds?: string[];
+    },
+): Promise<{ status: boolean; data?: { jobId: string }; message?: string }> {
+    try {
+        const params = new URLSearchParams();
+        if (search) params.append("search", search);
+        if (sortBy) params.append("sortBy", sortBy);
+        if (sortOrder) params.append("sortOrder", sortOrder);
+        if (filters?.brandIds?.length) params.append("brandIds", filters.brandIds.join(","));
+        if (filters?.categoryIds?.length) params.append("categoryIds", filters.categoryIds.join(","));
+        if (filters?.silhouetteIds?.length) params.append("silhouetteIds", filters.silhouetteIds.join(","));
+        if (filters?.genderIds?.length) params.append("genderIds", filters.genderIds.join(","));
+        const qs = params.toString();
+
+        const response = await authFetch(`/finance/items/export${qs ? `?${qs}` : ""}`, {
+            method: "POST",
+        });
+        return response.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("Queue export error:", error);
+        return { status: false, message: "Failed to connect to server" };
+    }
+}

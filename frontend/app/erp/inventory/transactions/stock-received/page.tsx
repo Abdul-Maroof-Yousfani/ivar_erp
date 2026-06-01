@@ -25,7 +25,7 @@ export default async function StockLedgerPage() {
         const meta = result.meta;
 
         return (
-            <PermissionGuard permissions="erp.inventory.stock-received.read">
+            <PermissionGuard permissions="erp.inventory.stock-ledger.read">
                 <div className="flex-1 space-y-4 p-8 pt-6">
                     <div className="flex flex-col gap-3">
                         <div>

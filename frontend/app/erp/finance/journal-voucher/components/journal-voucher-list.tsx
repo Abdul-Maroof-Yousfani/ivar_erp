@@ -11,13 +11,14 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Printer, Download, Plus } from "lucide-react";
+import { Printer, Download, Plus, Eye, CheckCircle2 } from "lucide-react";
 import { ChartOfAccount } from "@/lib/actions/chart-of-account";
-import { JournalVoucher } from "@/lib/actions/journal-voucher";
+import { JournalVoucher, updateJournalVoucher } from "@/lib/actions/journal-voucher";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { Card, CardHeader, CardTitle, CardContent, CardAction } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import Link from "next/link";
+import { toast } from "sonner";
 
 import DataTable from "@/components/common/data-table";
 import { ColumnDef } from "@tanstack/react-table";
@@ -50,11 +51,33 @@ export function JournalVoucherList({
         setVouchers(initialData.sort((a, b) => new Date(b.jvDate).getTime() - new Date(a.jvDate).getTime()));
     }, [initialData]);
 
+    const handleApprove = async (id: string) => {
+        try {
+            const res = await updateJournalVoucher(id, { status: "approved" });
+            if (res.status) {
+                toast.success("Journal Voucher approved successfully");
+                setVouchers(prev => prev.map(v => v.id === id ? { ...v, status: "approved" as const } : v));
+            } else {
+                toast.error(res.message || "Failed to approve voucher");
+            }
+        } catch {
+            toast.error("An unexpected error occurred");
+        }
+    };
+
     const columns = useMemo<ColumnDef<JournalVoucher>[]>(() => [
         {
             accessorKey: "jvNo",
             header: "J.V. No.",
-            cell: ({ row }) => <span className="font-semibold">{row.original.jvNo}</span>
+            cell: ({ row }) => (
+                <Link
+                    href={`/erp/finance/journal-voucher/${row.original.id}`}
+                    className="font-mono font-semibold text-primary hover:underline"
+                    transitionTypes={["nav-forward"]}
+                >
+                    {row.original.jvNo}
+                </Link>
+            )
         },
         {
             accessorKey: "jvDate",
@@ -63,17 +86,29 @@ export function JournalVoucherList({
         },
         {
             id: "details",
-            header: "Debit/Credit",
+            header: "Debit/Credit Details",
             cell: ({ row }) => (
-                <div className="space-y-1 min-w-[300px]">
+                <div className="space-y-1 min-w-[320px]">
                     {row.original.details.map((detail, idx) => (
-                        <div key={idx} className="flex justify-between gap-4 items-center">
+                        <div key={idx} className="flex justify-between gap-4 items-start text-xs border-b border-dashed border-gray-100 dark:border-muted/30 pb-0.5 last:border-0">
                             <span className="flex-1">
-                                <span className="font-bold mr-2 text-gray-700 dark:text-muted-foreground">{detail.debit > 0 ? "Dr =" : "Cr ="}</span>
-                                <span className="uppercase text-gray-600 dark:text-gray-400 truncate max-w-[200px] inline-block">{detail.accountName || "Account"}</span>
+                                <span className={cn(
+                                    "font-bold mr-1.5",
+                                    detail.debit > 0 ? "text-blue-600" : "text-green-600"
+                                )}>
+                                    {detail.debit > 0 ? "Dr" : "Cr"}
+                                </span>
+                                <span className="uppercase text-gray-700 dark:text-gray-300 font-medium">
+                                    {detail.accountCode ? `${detail.accountCode} - ` : ""}{detail.accountName || "Account"}
+                                </span>
+                                {detail.tagAccountCode && (
+                                    <span className="text-[10px] text-muted-foreground ml-1.5 italic bg-muted px-1 py-0.2 rounded">
+                                        Tag: {detail.tagAccountCode}
+                                    </span>
+                                )}
                             </span>
-                            <span className="font-bold text-gray-800 dark:text-foreground">
-                                {(detail.debit || detail.credit).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            <span className="font-mono font-bold text-gray-800 dark:text-foreground shrink-0 pl-2">
+                                {(detail.debit || detail.credit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
                         </div>
                     ))}
@@ -85,14 +120,42 @@ export function JournalVoucherList({
             header: "Voucher Status",
             cell: ({ row }) => (
                 <span className={cn(
-                    "font-bold",
-                    row.original.status === 'approved' ? "text-green-600" : "text-yellow-600"
+                    "px-2 py-0.5 rounded text-[10px] uppercase font-bold text-white",
+                    row.original.status === 'approved' ? "bg-green-500" :
+                    row.original.status === 'pending' ? "bg-yellow-500" : "bg-red-500"
                 )}>
-                    {row.original.status === 'approved' ? "Approved" : "Pending"}
+                    {row.original.status}
                 </span>
             )
+        },
+        {
+            id: "actions",
+            header: "Actions",
+            cell: ({ row }) => (
+                <div className="flex items-center gap-1.5">
+                    <Link
+                        href={`/erp/finance/journal-voucher/${row.original.id}`}
+                        transitionTypes={["nav-forward"]}
+                    >
+                        <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted" title="View Details">
+                            <Eye className="h-4 w-4 text-primary" />
+                        </Button>
+                    </Link>
+                    {row.original.status === 'pending' && permissions?.canApprove && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleApprove(row.original.id)}
+                            className="h-8 w-8 hover:bg-green-50 dark:hover:bg-green-950/20 text-green-600"
+                            title="Approve Voucher"
+                        >
+                            <CheckCircle2 className="h-4 w-4" />
+                        </Button>
+                    )}
+                </div>
+            )
         }
-    ], []);
+    ], [permissions]);
 
     // Filter logic for DataTable data
     const filteredVouchers = useMemo(() => {

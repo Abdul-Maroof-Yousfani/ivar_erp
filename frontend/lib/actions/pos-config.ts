@@ -284,3 +284,30 @@ export async function deactivateAlliance(id: string): Promise<{ status: boolean;
         return { status: false, message: 'Failed to deactivate alliance discount' };
     }
 }
+
+// ══════════════════════════════════════════════════════════════
+//  Merchants Exporter
+// ══════════════════════════════════════════════════════════════
+
+export async function queueMerchantsExport(filters: {
+    search?: string;
+    locationId?: string;
+    bankName?: string;
+    isActive?: boolean;
+}): Promise<{ status: boolean; message: string; data?: { jobId: string } }> {
+    try {
+        const queryParams = new URLSearchParams();
+        if (filters.search) queryParams.append('search', filters.search);
+        if (filters.locationId) queryParams.append('locationId', filters.locationId);
+        if (filters.bankName) queryParams.append('bankName', filters.bankName);
+        if (filters.isActive !== undefined) queryParams.append('isActive', String(filters.isActive));
+
+        const res = await authFetch(`/pos-config/merchants/export?${queryParams.toString()}`, {
+            method: 'POST',
+        });
+        return res.data;
+    } catch {
+        return { status: false, message: 'Failed to queue merchant background export' };
+    }
+}
+

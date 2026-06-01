@@ -18,7 +18,7 @@ export function ImpersonationBanner({ employeeName }: ImpersonationBannerProps) 
         setStopping(true);
         try {
             const apiBase =
-                process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
+                process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5001/api";
 
             const res = await fetch(`${apiBase}/auth/stop-impersonating`, {
                 method: "POST",

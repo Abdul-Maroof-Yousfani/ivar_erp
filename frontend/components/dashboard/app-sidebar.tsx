@@ -8,16 +8,7 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
@@ -32,20 +23,261 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronRight, ShieldCheck, Settings, LogOut, Building2 } from "lucide-react";
+import { ChevronRight, Search, Database, X } from "lucide-react";
 import {
   MenuItem,
   menuData,
+  masterMenuData,
   filterMenuByPermissions,
 } from "./sidebar-menu-data";
 import { cn } from "@/lib/utils";
 import { getCurrentSubdomain } from "@/lib/navigation";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useEnvironment } from "@/components/providers/environment-provider";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "../ui/button";
 
-// Normalize path by stripping subdomain prefix for comparison
+import {
+  SidebarGroup,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+} from "@/components/ui/sidebar";
+
+// ─── Flatten masterMenuData into navigable entries ────────────────────────────
+interface MasterEntry {
+  title: string;
+  href: string;
+  module?: "HR" | "ERP" | "POS";
+}
+
+function flattenMasterEntries(items: MenuItem[]): MasterEntry[] {
+  const seen = new Set<string>();
+  const entries: MasterEntry[] = [];
+  for (const item of items) {
+    let href: string | undefined;
+    if (item.href) {
+      href = item.href;
+    } else if (item.children) {
+      const viewChild =
+        item.children.find((c) => c.title === "View" || c.title === "List") ??
+        item.children[0];
+      href = viewChild?.href;
+    }
+    if (href && !seen.has(href)) {
+      seen.add(href);
+      entries.push({ title: item.title, href, module: item.module });
+    }
+  }
+  return entries.sort((a, b) => a.title.localeCompare(b.title));
+}
+
+// ─── Module badge config ──────────────────────────────────────────────────────
+const MODULE_BADGE: Record<string, { label: string; className: string }> = {
+  HR: { label: "HR", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+  ERP: { label: "ERP", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
+  POS: { label: "POS", className: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300" },
+};
+
+// ─── Master sidebar: inline search + flat list ────────────────────────────────
+function MasterSidebarContent({
+  accessibleItems,
+  pathname,
+}: {
+  accessibleItems: MenuItem[];
+  pathname: string;
+}) {
+  const { state } = useSidebar();
+  const [search, setSearch] = React.useState("");
+  const [popoverOpen, setPopoverOpen] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const allEntries = React.useMemo(
+    () => flattenMasterEntries(accessibleItems),
+    [accessibleItems],
+  );
+
+  const filtered = React.useMemo(() => {
+    if (!search.trim()) return allEntries;
+    const q = search.trim().toLowerCase();
+    return allEntries.filter((e) => e.title.toLowerCase().includes(q));
+  }, [allEntries, search]);
+
+  // ── Collapsed icon mode: show a search icon that opens a popover ──
+  if (state === "collapsed") {
+    return (
+      <SidebarContent className="items-center pt-2">
+        <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+          <PopoverTrigger asChild>
+            <button
+              className="flex items-center justify-center w-8 h-8 rounded-md hover:bg-sidebar-accent transition-colors"
+              title="Search master modules"
+            >
+              <Search className="h-4 w-4 text-sidebar-foreground/70" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent
+            side="right"
+            align="start"
+            sideOffset={8}
+            className="w-64 p-0"
+            onOpenAutoFocus={(e) => {
+              e.preventDefault();
+              setTimeout(() => inputRef.current?.focus(), 50);
+            }}
+          >
+            <MasterSearchPanel
+              entries={allEntries}
+              onNavigate={() => setPopoverOpen(false)}
+              inputRef={inputRef}
+              pathname={pathname}
+            />
+          </PopoverContent>
+        </Popover>
+      </SidebarContent>
+    );
+  }
+
+  // ── Expanded mode: inline search + scrollable flat list ──
+  return (
+    <SidebarContent className="px-0">
+      {/* Search input */}
+      <div className="px-3 pt-3 pb-2 border-b border-sidebar-border/40">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search modules..."
+            className={cn(
+              "w-full h-8 pl-8 pr-7 rounded-md text-xs bg-sidebar-accent/40 border border-sidebar-border/50",
+              "placeholder:text-muted-foreground/60 text-sidebar-foreground",
+              "focus:outline-none focus:ring-1 focus:ring-ring/40 focus:bg-sidebar-accent/60",
+              "transition-colors",
+            )}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-muted-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+        <p className="text-[10px] text-muted-foreground/50 mt-1.5 px-0.5">
+          {filtered.length} of {allEntries.length} modules
+        </p>
+      </div>
+
+      {/* Results */}
+      <ScrollArea className="flex-1" showShadows>
+        <div className="px-2 py-2 space-y-0.5">
+          {filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <Database className="h-6 w-6 text-muted-foreground/20 mb-2" />
+              <p className="text-xs text-muted-foreground/50">No modules found</p>
+            </div>
+          ) : (
+            filtered.map((entry) => {
+              const isActive = pathname === entry.href || pathname.startsWith(entry.href + "/");
+              return (
+                <Link
+                  key={entry.href}
+                  href={entry.href}
+                  // @ts-ignore
+                  transitionTypes={["nav-forward"]}
+                  className={cn(
+                    "flex items-center justify-between gap-2 w-full px-2.5 py-1.5 rounded-md text-xs",
+                    "transition-colors duration-100 group",
+                    isActive
+                      ? "bg-sidebar-accent font-semibold text-sidebar-foreground"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                  )}
+                >
+                  <span className="truncate">{entry.title}</span>
+                  {isActive && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                  )}
+                </Link>
+              );
+            })
+          )}
+        </div>
+      </ScrollArea>
+    </SidebarContent>
+  );
+}
+
+// ── Reusable search panel used in the collapsed popover ──
+function MasterSearchPanel({
+  entries,
+  onNavigate,
+  inputRef,
+  pathname,
+}: {
+  entries: MasterEntry[];
+  onNavigate: () => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  pathname: string;
+}) {
+  const [search, setSearch] = React.useState("");
+
+  const filtered = React.useMemo(() => {
+    if (!search.trim()) return entries;
+    const q = search.trim().toLowerCase();
+    return entries.filter((e) => e.title.toLowerCase().includes(q));
+  }, [entries, search]);
+
+  return (
+    <div className="flex flex-col max-h-80">
+      <div className="p-2 border-b">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search modules..."
+            className="w-full h-8 pl-8 pr-3 rounded-md text-xs bg-muted/50 border border-border/50 placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring/40"
+          />
+        </div>
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="p-1.5 space-y-0.5">
+          {filtered.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">No modules found</p>
+          ) : (
+            filtered.map((entry) => {
+              const isActive = pathname === entry.href || pathname.startsWith(entry.href + "/");
+              return (
+                <Link
+                  key={entry.href}
+                  href={entry.href}
+                  // @ts-ignore
+                  transitionTypes={["nav-forward"]}
+                  onClick={onNavigate}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs transition-colors",
+                    isActive
+                      ? "bg-accent font-semibold"
+                      : "hover:bg-accent/60",
+                  )}
+                >
+                  <span className="truncate">{entry.title}</span>
+                </Link>
+              );
+            })
+          )}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
 function normalizePathForComparison(
   path: string,
   currentSubdomain: string | null,
@@ -366,6 +598,20 @@ export function AppSidebar({
   const { environment, setEnvironment } = useEnvironment();
 
   const { filteredMenu, hasHRAccess, hasERPAccess } = React.useMemo(() => {
+    // In MASTER environment, use masterMenuData and show all accessible items
+    if (environment === "MASTER") {
+      const permissionFiltered = filterMenuByPermissions(masterMenuData, {
+        hasAnyPermission,
+        hasAllPermissions,
+        isAdmin,
+      });
+      return {
+        filteredMenu: permissionFiltered,
+        hasHRAccess: false,
+        hasERPAccess: false,
+      };
+    }
+
     // First filter by permissions
     const permissionFiltered = filterMenuByPermissions(menuData, {
       hasAnyPermission,
@@ -407,6 +653,7 @@ export function AppSidebar({
 
   const logoLabel = React.useMemo(() => {
     if (environment === "ADMIN") return "Admin Panel";
+    if (environment === "MASTER") return "Master Data";
     if (hasHRAccess && hasERPAccess) return "Dashboard";
     if (hasHRAccess) return "HR";
     if (hasERPAccess) return "ERP";
@@ -427,97 +674,43 @@ export function AppSidebar({
                 height={30}
                 className="object-contain"
               />
-              </div>
+            </div>
             <div className="flex flex-col group-data-[collapsible=icon]:hidden transition-opacity duration-200">
               <span className="font-bold text-base leading-tight text-sidebar-foreground">
-                Ivar
+                IVAR
               </span>
               <span className="text-xs text-sidebar-foreground/60 font-medium">
-                {logoLabel} 
+                {logoLabel}
               </span>
-            </div> 
+            </div>
           </div>
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-2 ">
+      {/* ── MASTER: inline search panel instead of a long menu tree ── */}
+      {environment === "MASTER" ? (
+        <MasterSidebarContent
+          accessibleItems={filteredMenu}
+          pathname={pathname}
+        />
+      ) : (
+        <SidebarContent className="px-2">
+          <ScrollArea className="-mx-2 px-2" showShadows>
+            <SidebarGroup>
+              <SidebarMenu className="space-y-1">
+                {filteredMenu.map((item) => (
+                  <MenuItemComponent
+                    key={item.title}
+                    item={item}
+                    pathname={pathname}
+                  />
+                ))}
+              </SidebarMenu>
+            </SidebarGroup>
+          </ScrollArea>
+        </SidebarContent>
+      )}
 
-        {/* <div className="group-data-[collapsible=icon]:hidden mt-2">
-          {environment === "ADMIN" ? (
-            <div className="flex flex-col gap-2 p-3 bg-linear-to-br from-primary/10 via-primary/5 to-transparent rounded-xl border border-primary/20 shadow-sm relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-2 opacity-10">
-                <ShieldCheck className="w-12 h-12 rotate-12" />
-              </div>
-
-              <div className="flex items-center gap-2 text-primary relative z-10">
-                <div className="p-1.5 bg-primary/10 rounded-lg">
-                  <ShieldCheck className="h-4 w-4" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="font-bold text-xs tracking-wide leading-none">ADMIN PANEL</span>
-                  <span className="text-[10px] text-muted-foreground font-medium mt-0.5">Super User Access</span>
-                </div>
-              </div>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setEnvironment("HR");
-                  router.push("/hr");
-                }}
-                className="w-full justify-start h-7 px-2 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 hover:border-destructive/20 border border-transparent transition-colors mt-1 relative z-10"
-              >
-                <LogOut className="mr-2 h-3.5 w-3.5" color="red" />
-                Exit Admin Mode
-              </Button>
-            </div>
-          ) : (
-            <>
-              {((hasHRAccess ? 1 : 0) + (hasERPAccess ? 1 : 0)) > 1 && (
-                <Tabs
-                  defaultValue={environment}
-                  value={environment}
-                  onValueChange={(v) => {
-                    setEnvironment(v as any);
-                    if (v === "HR") router.push("/hr");
-                    if (v === "ERP") router.push("/erp");
-                  }}
-                  className="w-full"
-                  variant="card"
-                >
-                  <TabsList className="grid w-full h-8 grid-cols-2">
-                    {hasHRAccess && (
-                      <TabsTrigger value="HR" className="text-xs">
-                        HR
-                      </TabsTrigger>
-                    )}
-                    {hasERPAccess && (
-                      <TabsTrigger value="ERP" className="text-xs">
-                        ERP
-                      </TabsTrigger>
-                    )}
-                  </TabsList>
-                </Tabs>
-              )}
-            </>
-          )}
-        </div> */}
-
-        <ScrollArea className="-mx-2 px-2" showShadows>
-          <SidebarGroup>
-            <SidebarMenu className="space-y-1">
-              {filteredMenu.map((item) => (
-                <MenuItemComponent
-                  key={item.title}
-                  item={item}
-                  pathname={pathname}
-                />
-              ))}
-            </SidebarMenu>
-          </SidebarGroup>
-        </ScrollArea>
-      </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border/50 px-4 py-3">
         <div className="flex items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center">
           <div className="flex items-center gap-2 group-data-[collapsible=icon]:hidden transition-opacity duration-200">

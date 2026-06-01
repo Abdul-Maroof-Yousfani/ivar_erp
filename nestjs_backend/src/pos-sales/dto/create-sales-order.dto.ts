@@ -35,6 +35,13 @@ export class SalesOrderItemDto {
     @Max(100)
     discountPercent?: number;
 
+    @ApiPropertyOptional({ description: 'Manager override discount percentage (0-50)', default: null })
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Max(50)
+    overrideDiscountPercent?: number;
+
     @ApiPropertyOptional({ description: 'Tax percentage', default: 0 })
     @IsOptional()
     @IsNumber()
@@ -247,10 +254,16 @@ export class CreateSalesOrderDto {
     @ValidateNested({ each: true })
     @Type(() => VoucherRedemptionDto)
     voucherRedemptions?: VoucherRedemptionDto[];
+
     @ApiPropertyOptional({ description: 'ID of the cashier/employee who performed the sale' })
     @IsOptional()
     @IsString()
     cashierUserId?: string;
+
+    @ApiPropertyOptional({ description: 'Merchant config ID (bank/acquirer used for card payment)' })
+    @IsOptional()
+    @IsString()
+    merchantId?: string;
 
     @ApiProperty({ type: [SalesOrderItemDto] })
     @IsArray()

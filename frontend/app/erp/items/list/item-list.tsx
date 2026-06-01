@@ -4,12 +4,13 @@ import { useState, useEffect, useCallback } from "react";
 import { ColumnDef, PaginationState, SortingState } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Upload, Loader2, Eye, Edit, Trash2, Sparkles, Filter, X, ChevronRight, Search } from "lucide-react";
+import { Plus, Upload, Loader2, Eye, Edit, Trash2, Sparkles, Filter, X, ChevronRight, Search, Download } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { deleteItem, getItems } from "@/lib/actions/items";
+import { deleteItem, getItems, queueItemsExport } from "@/lib/actions/items";
 import { BulkUploadModal } from "@/components/items/bulk-upload-modal";
+import { ItemUpdateBulkUploadModal } from "@/components/items/item-update-bulk-upload-modal";
 import { useUploadProgress } from "@/hooks/use-upload-progress";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import DataTable from "@/components/common/data-table";
@@ -44,6 +45,7 @@ interface Item {
     isActive: boolean;
     brand?: { name: string } | null;
     category?: { name: string } | null;
+    division?: { name: string } | null;
 }
 
 // ─── Filter Sheet ─────────────────────────────────────────────────────────────
@@ -245,6 +247,11 @@ function useItemColumns(onDelete: (id: string) => void, canUpdate: boolean, canD
             cell: ({ row }) => row.original.category?.name ?? <span className="text-muted-foreground">—</span>,
         },
         {
+            accessorKey: "division",
+            header: "Division",
+            cell: ({ row }) => row.original.division?.name ?? <span className="text-muted-foreground">—</span>,
+        },
+        {
             accessorKey: "unitPrice",
             header: "Price",
             cell: ({ row }) => (
@@ -293,7 +300,8 @@ function useItemColumns(onDelete: (id: string) => void, canUpdate: boolean, canD
                                     </Link>
                                 </DropdownMenuItem>
                             )}
-                            {canDelete && (
+                            {/* DISABLED: Items cannot be deleted to maintain data integrity */}
+                            {/* {canDelete && (
                                 <>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
@@ -303,7 +311,7 @@ function useItemColumns(onDelete: (id: string) => void, canUpdate: boolean, canD
                                         <Trash2 className="mr-2 h-4 w-4" /> Delete
                                     </DropdownMenuItem>
                                 </>
-                            )}
+                            )} */}
                         </DropdownMenuContent>
                     </DropdownMenu>
                 );
@@ -336,7 +344,8 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
 
     const canCreate = hasPermission("erp.item.create");
     const canUpdate = hasPermission("erp.item.update");
-    const canDelete = hasPermission("erp.item.delete");
+    // DISABLED: Items cannot be deleted to maintain data integrity
+    const canDelete = false; // hasPermission("erp.item.delete");
     const canBulkUpload = hasPermission("erp.item.bulk-upload");
 
     // ── State ──────────────────────────────────────────────────────────────
@@ -350,7 +359,10 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
     const [search, setSearch] = useState("");
     const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
     const [activeUploadId, setActiveUploadId] = useState<string | null>(null);
+    const [isBulkUpdateOpen, setIsBulkUpdateOpen] = useState(false);
+    const [activeUpdateUploadId, setActiveUpdateUploadId] = useState<string | null>(null);
     const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
 
     // ── Filter state ───────────────────────────────────────────────────────
     const [brands, setBrands] = useState<any[]>([]);
@@ -374,6 +386,8 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
     useEffect(() => {
         const stored = localStorage.getItem("active_item_upload_id");
         if (stored) setActiveUploadId(stored);
+        const storedUpdate = localStorage.getItem("active_item_update_upload_id");
+        if (storedUpdate) setActiveUpdateUploadId(storedUpdate);
     }, []);
 
     // ── Load master data for filters ───────────────────────────────────────
@@ -400,7 +414,17 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
         }
     };
 
+    const handleUpdateUploadIdChange = (id: string | null) => {
+        setActiveUpdateUploadId(id);
+        if (id) {
+            localStorage.setItem("active_item_update_upload_id", id);
+        } else {
+            localStorage.removeItem("active_item_update_upload_id");
+        }
+    };
+
     const { data: uploadProgress } = useUploadProgress(activeUploadId);
+    const { data: updateProgress } = useUploadProgress(activeUpdateUploadId, 'item-update');
 
     // Note: don't auto-clear on error — a transient network failure shouldn't
     // wipe the active upload ID. The user can manually dismiss via the modal.
@@ -464,23 +488,27 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
     }, [search, sortColumn, sortDir, appliedFilters]);
 
     // ── Delete handler ─────────────────────────────────────────────────────
-    const handleDelete = useCallback(
-        async (id: string) => {
-            if (!confirm("Are you sure you want to delete this item?")) return;
-            try {
-                const result = await deleteItem(id);
-                if (result.status) {
-                    toast.success("Item deleted successfully");
-                    queryClient.invalidateQueries({ queryKey: ["items"] });
-                } else {
-                    toast.error(result.message || "Failed to delete item");
-                }
-            } catch {
-                toast.error("An unexpected error occurred");
-            }
-        },
-        [queryClient],
-    );
+    // DISABLED: Items cannot be deleted to maintain data integrity
+    // const handleDelete = useCallback(
+    //     async (id: string) => {
+    //         if (!confirm("Are you sure you want to delete this item?")) return;
+    //         try {
+    //             const result = await deleteItem(id);
+    //             if (result.status) {
+    //                 toast.success("Item deleted successfully");
+    //                 queryClient.invalidateQueries({ queryKey: ["items"] });
+    //             } else {
+    //                 toast.error(result.message || "Failed to delete item");
+    //             }
+    //         } catch {
+    //             toast.error("An unexpected error occurred");
+    //         }
+    //     },
+    //     [queryClient],
+    // );
+    const handleDelete = useCallback(() => {
+        // Delete functionality disabled
+    }, []);
 
     // ── Filter handlers ────────────────────────────────────────────────────
     const handleApplyFilters = (filters: AppliedFilters) => {
@@ -495,6 +523,36 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
         setPendingGenderIds([]);
         setAppliedFilters({ brandIds: [], categoryIds: [], silhouetteIds: [], genderIds: [] });
     };
+
+    // ── Export handler ─────────────────────────────────────────────────────
+    const handleExport = useCallback(async () => {
+        if (isExporting) return;
+        setIsExporting(true);
+        try {
+            const result = await queueItemsExport(
+                search || undefined,
+                sortColumn,
+                sortDir,
+                {
+                    brandIds: appliedFilters.brandIds.length ? appliedFilters.brandIds : undefined,
+                    categoryIds: appliedFilters.categoryIds.length ? appliedFilters.categoryIds : undefined,
+                    silhouetteIds: appliedFilters.silhouetteIds.length ? appliedFilters.silhouetteIds : undefined,
+                    genderIds: appliedFilters.genderIds.length ? appliedFilters.genderIds : undefined,
+                },
+            );
+            if (result.status) {
+                toast.success("Export queued — you'll get a notification when your file is ready to download.", {
+                    duration: 6000,
+                });
+            } else {
+                toast.error(result.message || "Failed to queue export");
+            }
+        } catch (err: any) {
+            toast.error(err?.message || "Export failed. Please try again.");
+        } finally {
+            setIsExporting(false);
+        }
+    }, [isExporting, search, sortColumn, sortDir, appliedFilters]);
 
     // ── Filter slot (injected into DataTable toolbar) ──────────────────────
     const filterSlot = (
@@ -558,6 +616,36 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
                     </p>
                 </div>
                 <div className="flex gap-2">
+                    {/* Background update upload progress button */}
+                    {activeUpdateUploadId && !isBulkUpdateOpen && (
+                        <Button
+                            variant={updateProgress?.status === 'failed' ? 'destructive' : updateProgress?.status === 'completed' ? 'default' : 'outline'}
+                            className={`border-primary text-primary relative overflow-hidden min-w-[180px] ${updateProgress?.status === 'failed' ? 'text-primary-foreground! bg-destructive!' : updateProgress?.status === 'completed' ? 'text-primary-foreground! bg-primary!' : ''}`}
+                            onClick={() => setIsBulkUpdateOpen(true)}
+                        >
+                            <div
+                                className={`absolute inset-0 bg-primary/10 transition-all duration-500`}
+                                style={{ width: `${updateProgress?.progress ?? 0}%` }}
+                            />
+                            <div className="relative flex items-center gap-2">
+                                {(updateProgress?.status === "validating" || updateProgress?.status === "processing" || updateProgress?.status === "pending") && (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                )}
+                                <span className="font-bold">
+                                    {updateProgress?.status === "failed"
+                                        ? "Update Failed"
+                                        : updateProgress?.status === "completed"
+                                            ? "Update Complete"
+                                            : updateProgress?.status === "validated"
+                                                ? "Val. Complete"
+                                                : updateProgress?.status === "validating"
+                                                    ? "Validating"
+                                                    : "Updating"}
+                                    {["failed", "completed", "validated"].includes(updateProgress?.status || "") ? "" : ` ${updateProgress?.progress ?? 0}%`}
+                                </span>
+                            </div>
+                        </Button>
+                    )}
                     {/* Background upload progress button */}
                     {activeUploadId && !isBulkUploadOpen && (
                         <Button
@@ -588,9 +676,35 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
                             </div>
                         </Button>
                     )}
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="outline"
+                                onClick={handleExport}
+                                disabled={isExporting || meta.total === 0}
+                                className="border-emerald-500/40 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+                            >
+                                {isExporting ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Download className="mr-2 h-4 w-4" />
+                                )}
+                                {isExporting ? "Exporting…" : "Export"}
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            Export {activeFilterCount > 0 || search ? "filtered" : "all"} items to Excel
+                            {meta.total > 0 && ` (${meta.total.toLocaleString()} rows)`} — runs in background, notifies when ready
+                        </TooltipContent>
+                    </Tooltip>
                     {canBulkUpload && (
                         <Button variant="outline" onClick={() => setIsBulkUploadOpen(true)}>
                             <Upload className="mr-2 h-4 w-4" /> Bulk Upload
+                        </Button>
+                    )}
+                    {canUpdate && (
+                        <Button variant="outline" onClick={() => setIsBulkUpdateOpen(true)}>
+                            <Upload className="mr-2 h-4 w-4" /> Bulk Update Prices
                         </Button>
                     )}
                     <Button variant="outline" onClick={() => setIsBarcodeModalOpen(true)} disabled={items.length === 0}>
@@ -623,6 +737,7 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
                         { key: "description", label: "Description" },
                         { key: "brand", label: "Brand" },
                         { key: "category", label: "Category" },
+                        { key: "division", label: "Division" },
                     ]}
                     filterSlot={filterSlot}
                     /* ── Server-side controls ── */
@@ -652,6 +767,18 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
                     queryClient.invalidateQueries({ queryKey: ["items"] });
                     toast.success("Item list refreshed");
                     handleUploadIdChange(null);
+                }}
+            />
+
+            <ItemUpdateBulkUploadModal
+                open={isBulkUpdateOpen}
+                onOpenChange={setIsBulkUpdateOpen}
+                uploadId={activeUpdateUploadId}
+                onUploadIdChange={handleUpdateUploadIdChange}
+                onSuccess={() => {
+                    queryClient.invalidateQueries({ queryKey: ["items"] });
+                    toast.success("Item list refreshed");
+                    handleUpdateUploadIdChange(null);
                 }}
             />
 

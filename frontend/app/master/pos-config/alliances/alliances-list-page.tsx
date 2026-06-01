@@ -14,9 +14,10 @@ import {
     AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
     AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Info, PowerOff } from "lucide-react";
+import { Loader2, Info, PowerOff, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { AllianceDiscount, deactivateAlliance } from "@/lib/actions/pos-config";
+import { AllianceBulkUploadModal } from "@/components/master/alliance-bulk-upload-modal";
 
 interface Props { alliances: AllianceDiscount[] }
 
@@ -25,6 +26,8 @@ export function AlliancesListPage({ alliances }: Props) {
     const { hasPermission } = useAuth();
     const [isPending, startTransition] = useTransition();
     const [deactivateId, setDeactivateId] = useState<string | null>(null);
+    const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
+    const [bulkUploadId, setBulkUploadId] = useState<string | null>(null);
 
     const canCreate = hasPermission("master.alliance.create");
     const canUpdate = hasPermission("master.alliance.update");
@@ -107,6 +110,20 @@ export function AlliancesListPage({ alliances }: Props) {
                 </AlertDescription>
             </Alert>
 
+            {canCreate && (
+                <div className="flex justify-end">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setBulkUploadOpen(true)}
+                        className="gap-2 font-semibold"
+                    >
+                        <Upload className="h-4 w-4" />
+                        Bulk Import
+                    </Button>
+                </div>
+            )}
+
             <DataTable
                 columns={columns}
                 data={alliances}
@@ -149,6 +166,14 @@ export function AlliancesListPage({ alliances }: Props) {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            <AllianceBulkUploadModal
+                open={bulkUploadOpen}
+                onOpenChange={setBulkUploadOpen}
+                uploadId={bulkUploadId}
+                onUploadIdChange={setBulkUploadId}
+                onSuccess={() => router.refresh()}
+            />
         </div>
     );
 }

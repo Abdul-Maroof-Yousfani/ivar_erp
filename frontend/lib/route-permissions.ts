@@ -9,6 +9,7 @@ export const routePermissions: Record<string, string[]> = {
   // ERP - Finance & Accounts
   "/erp/finance/chart-of-accounts": ["erp.finance.chart-of-account.read"],
   "/erp/finance/chart-of-accounts/create": ["erp.finance.chart-of-account.create"],
+  "/erp/finance/chart-of-accounts/edit": ["erp.finance.chart-of-account.update"],
   "/erp/finance/journal-voucher": ["erp.finance.journal-voucher.read"],
   "/erp/finance/journal-voucher/list": ["erp.finance.journal-voucher.read"],
   "/erp/finance/journal-voucher/create": ["erp.finance.journal-voucher.create"],

@@ -300,7 +300,7 @@ export default function DesktopLoginPage() {
         </div>
       </div>
       <div className="text-center space-y-1">
-        <p className="font-semibold text-foreground">Ivar POS</p>
+        <p className="font-semibold text-foreground">IVAR POS</p>
         <p className="text-sm text-muted-foreground">Verifying your session...</p>
       </div>
     </div>
@@ -529,7 +529,7 @@ export default function DesktopLoginPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-3 max-w-[280px] mx-auto">
-        {[1,2,3,4,5,6,7,8,9].map((n) => (
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
           <Button key={n} variant="outline"
             className="h-14 text-2xl font-medium border-muted-foreground/20 hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all active:scale-95"
             onClick={() => pin.length < 4 && setPin(pin + n)}>{n}</Button>

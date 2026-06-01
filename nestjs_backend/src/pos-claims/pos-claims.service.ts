@@ -6,13 +6,28 @@ import { MovementType } from '@prisma/client';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { runInBackground } from '../common/utils/run-in-background.util';
 import { StockMovementService } from '../warehouse/stock-movement.service';
+import { StockLedgerService } from '../warehouse/stock-ledger/stock-ledger.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PrismaMasterService } from '../database/prisma-master.service';
+
 @Injectable()
 export class PosClaimsService {
     constructor(
     private prisma: PrismaService,
     private activityLogs: ActivityLogsService,
     private stockMovementService: StockMovementService,
+    private stockLedgerService: StockLedgerService,
+    private notifications: NotificationsService,
+    private prismaMaster: PrismaMasterService,
   ) { }
+
+    private async getCurrentItemRate(tx: any, itemId: string): Promise<number> {
+        const item = await tx.item.findUnique({
+            where: { id: itemId },
+            select: { unitCost: true },
+        });
+        return Number(item?.unitCost || 0);
+    }
 
     private async generateClaimNumber(): Promise<string> {
         const today = new Date();
@@ -80,6 +95,21 @@ export class PosClaimsService {
                 }),
             );
 
+            // 🔔 Notify PLM users about new claim submission
+            runInBackground(
+                'Notify PLM - New Claim',
+                this.notifyPLMUsers({
+                    title: 'New Claim Submitted',
+                    message: `Claim ${claim.claimNumber} submitted for order ${order.orderNumber}. Amount: Rs. ${claimedAmount.toLocaleString()}`,
+                    category: 'claims',
+                    priority: 'normal',
+                    actionType: 'view_claim',
+                    actionPayload: { claimId: claim.id, claimNumber: claim.claimNumber },
+                    entityType: 'PosClaim',
+                    entityId: claim.id,
+                })
+            );
+
             return { status: true, data: claim, message: `Claim ${claimNumber} submitted successfully` };
         } catch (error: any) {
             runInBackground(
@@ -132,6 +162,17 @@ export class PosClaimsService {
                     include: {
                         item: { select: { description: true, sku: true, barCode: true } },
                     },
+                },
+                voucher: {
+                    select: {
+                        id: true,
+                        code: true,
+                        voucherType: true,
+                        faceValue: true,
+                        expiresAt: true,
+                        isActive: true,
+                        isRedeemed: true,
+                    }
                 },
             },
         });
@@ -294,26 +335,50 @@ export class PosClaimsService {
                     if (posLocation) {
                         console.log('✅ POS location found, proceeding with transfer...');
                         
-                        // Get warehouse ID - either from location or find the first active warehouse
-                        let warehouseId = posLocation.warehouseId;
+                        // ⚡ CLAIM SPECIFIC: Always send to PLM Warehouse (WH-PLM-002)
+                        console.log('🎯 Claim Return: Finding PLM Warehouse...');
+                        const plmWarehouse = await tx.warehouse.findFirst({
+                            where: { 
+                                code: 'WH-PLM-002',
+                                isActive: true 
+                            },
+                            select: { id: true, name: true, code: true }
+                        });
                         
-                        if (!warehouseId) {
-                            console.log('⚠️ POS location has no warehouseId, finding first active warehouse...');
-                            const warehouse = await tx.warehouse.findFirst({
+                        if (!plmWarehouse) {
+                            console.log('❌ PLM Warehouse (WH-PLM-002) not found!');
+                            throw new BadRequestException('PLM Warehouse not found for claim return. Please contact admin.');
+                        }
+                        
+                        const plmWarehouseId = plmWarehouse.id;
+                        console.log('✅ Using PLM Warehouse:', {
+                            name: plmWarehouse.name,
+                            code: plmWarehouse.code,
+                            id: plmWarehouseId
+                        });
+                        
+                        // Get POS location's original warehouse (for stock validation)
+                        let posWarehouseId = posLocation.warehouseId;
+                        if (!posWarehouseId) {
+                            console.log('⚠️ POS location has no warehouse, using first active warehouse...');
+                            const defaultWarehouse = await tx.warehouse.findFirst({
                                 where: { isActive: true },
                                 select: { id: true, name: true }
                             });
-                            
-                            if (warehouse) {
-                                warehouseId = warehouse.id;
-                                console.log('✅ Using warehouse:', warehouse.name);
+                            if (defaultWarehouse) {
+                                posWarehouseId = defaultWarehouse.id;
+                                console.log('✅ Using default warehouse:', defaultWarehouse.name);
                             } else {
-                                console.log('❌ No active warehouse found!');
-                                throw new BadRequestException('No active warehouse found for claim return');
+                                throw new BadRequestException('No warehouse found for POS location');
                             }
                         }
-                            // Create automatic transfer request from POS location to Warehouse location
-                            // Note: POS inventory will be updated when this transfer request is processed
+                        
+                        console.log('📍 Warehouse IDs:', {
+                            posWarehouse: posWarehouseId,
+                            plmWarehouse: plmWarehouseId
+                        });
+                        
+                        // Create automatic transfer request from POS location to PLM Warehouse
                         const today = new Date();
                         const prefix = `TR-CLM-${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
                         const lastTR = await tx.transferRequest.findFirst({
@@ -328,11 +393,11 @@ export class PosClaimsService {
                             data: {
                                 requestNo: transferRequestNo,
                                 fromLocationId: posLocation.id,
-                                fromWarehouseId: warehouseId,
-                                toWarehouseId: warehouseId, // Same warehouse
-                                transferType: 'OUTLET_TO_WAREHOUSE',
-                                status: 'COMPLETED', // Auto-complete for claim returns
-                                notes: `Auto-generated from approved claim ${claim.claimNumber} for order ${salesOrder.orderNumber}. Items returned to warehouse-level inventory.`,
+                                fromWarehouseId: posWarehouseId, // POS location's warehouse
+                                toWarehouseId: plmWarehouseId,   // PLM Warehouse
+                                transferType: 'CLAIM_TO_PLM',    // Special type for claims
+                                status: 'PENDING', // ⚡ Changed to PENDING (requires PLM acknowledgment)
+                                notes: `Auto-generated from approved claim ${claim.claimNumber} for order ${salesOrder.orderNumber}. Awaiting PLM acknowledgment before inventory update.`,
                                 createdById: reviewedBy || null,
                                 items: {
                                     create: approvedItems.map(item => ({
@@ -345,37 +410,15 @@ export class PosClaimsService {
                         
                         console.log('✅ Transfer request created:', {
                             id: transferRequest.id,
-                            requestNo: transferRequest.requestNo
+                            requestNo: transferRequest.requestNo,
+                            status: 'PENDING - Awaiting PLM acknowledgment'
                         });
 
-                        // Use the same stock movement service that handles warehouse-to-outlet transfers
-                        // This ensures consistency with existing transfer logic
-                        console.log('🔄 Executing stock movements using StockMovementService...');
+                        // ⚡ DO NOT update inventory yet - wait for PLM acknowledgment
+                        console.log('⏳ Inventory update deferred until PLM acknowledges receipt');
                         
-                        for (const item of approvedItems) {
-                            console.log('🔄 Processing item:', {
-                                itemId: item.itemId,
-                                sku: item.sku,
-                                approvedQty: item.approvedQty,
-                                fromLocationId: posLocation.id,
-                                toWarehouseId: warehouseId
-                            });
-
-                            // Execute outlet-to-warehouse transfer using the same service
-                            // that handles warehouse-to-outlet transfers
-                            await this.stockMovementService.executeMovement({
-                                itemId: item.itemId,
-                                fromLocationId: posLocation.id,
-                                toWarehouseId: warehouseId,
-                                quantity: item.approvedQty,
-                                type: 'RETURN_TRANSFER',
-                                referenceType: 'CLAIM_RETURN',
-                                referenceId: transferRequest.id,
-                                userId: reviewedBy || undefined,
-                            });
-                            
-                            console.log('✅ Stock movement completed for item:', item.sku);
-                        }
+                        // Note: Inventory will be updated when PLM acknowledges the transfer
+                        // via the acknowledgeClaim endpoint
 
                         // Link transfer request to claim
                         await tx.posClaim.update({
@@ -384,6 +427,66 @@ export class PosClaimsService {
                         });
                         
                         console.log('✅ Transfer request linked to claim');
+
+                        // ── Generate EXCHANGE voucher for approved claim ──
+                        console.log('🎫 Generating exchange voucher for approved claim...');
+                        
+                        // Calculate total approved amount
+                        const totalApprovedAmount = approvedItems.reduce((sum, item) => {
+                            return sum + (item.approvedQty * Number(claim.items.find(ci => ci.itemId === item.itemId)?.unitPaidPrice || 0));
+                        }, 0);
+                        
+                        // Generate voucher code
+                        const voucherCode = `EXC-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+                        const voucherExpiresAt = new Date();
+                        voucherExpiresAt.setDate(voucherExpiresAt.getDate() + 30); // 30 days expiry
+                        
+                        const exchangeVoucher = await tx.voucher.create({
+                            data: {
+                                code: voucherCode,
+                                voucherType: 'EXCHANGE',
+                                faceValue: totalApprovedAmount,
+                                description: `Exchange voucher for approved claim ${claim.claimNumber}`,
+                                customerId: salesOrder.customerId || null,
+                                requireCustomerMatch: false,
+                                issuedByLocationId: salesOrder.locationId,
+                                issuedByUserId: reviewedBy || null,
+                                sourceOrderId: salesOrder.id,
+                                expiresAt: voucherExpiresAt,
+                                isActive: true,
+                                isRedeemed: false,
+                                locations: {
+                                    create: {
+                                        locationId: salesOrder.locationId || ''
+                                    }
+                                },
+                                transactions: {
+                                    create: {
+                                        action: 'ISSUED',
+                                        amountUsed: 0,
+                                        locationId: salesOrder.locationId,
+                                        notes: `Issued for approved claim ${claim.claimNumber}`,
+                                    }
+                                }
+                            }
+                        });
+                        
+                        console.log('✅ Exchange voucher created:', {
+                            code: voucherCode,
+                            amount: totalApprovedAmount,
+                            expiresAt: voucherExpiresAt
+                        });
+                        
+                        // Link voucher to claim
+                        await tx.posClaim.update({
+                            where: { id },
+                            data: { 
+                                transferRequestId: transferRequest.id,
+                                voucherId: exchangeVoucher.id  // Link voucher
+                            }
+                        });
+                        
+                        console.log('✅ Voucher linked to claim');
 
                         // Log transfer request creation
                         runInBackground(
@@ -412,6 +515,9 @@ export class PosClaimsService {
                         approvedItemsLength: approvedItems.length
                     });
                 }
+            }, {
+                maxWait: 10000, // 10 seconds max wait
+                timeout: 15000, // 15 seconds timeout
             });
 
             const updated = await this.findOne(id);
@@ -431,6 +537,41 @@ export class PosClaimsService {
                     status: 'success',
                 }),
             );
+
+            // 🔔 Notify POS location about claim decision
+            if (anyApproved) {
+                if (claim.salesOrder.locationId) {
+                    runInBackground(
+                        'Notify POS - Claim Approved',
+                        this.notifyLocationUsers(claim.salesOrder.locationId, {
+                            title: '✅ Claim Approved',
+                            message: `Claim ${claim.claimNumber} has been approved. Amount: Rs. ${totalApproved.toLocaleString()}. Exchange voucher generated.`,
+                            category: 'claims',
+                            priority: 'high',
+                            actionType: 'view_claim',
+                            actionPayload: { claimId: claim.id, claimNumber: claim.claimNumber },
+                            entityType: 'PosClaim',
+                            entityId: claim.id,
+                        })
+                    );
+                }
+            } else {
+                if (claim.salesOrder.locationId) {
+                    runInBackground(
+                        'Notify POS - Claim Rejected',
+                        this.notifyLocationUsers(claim.salesOrder.locationId, {
+                            title: '❌ Claim Rejected',
+                            message: `Claim ${claim.claimNumber} has been rejected. No amount approved.`,
+                            category: 'claims',
+                            priority: 'high',
+                            actionType: 'view_claim',
+                            actionPayload: { claimId: claim.id, claimNumber: claim.claimNumber },
+                            entityType: 'PosClaim',
+                            entityId: claim.id,
+                        })
+                    );
+                }
+            }
 
             return { status: true, data: updated.data, message: `Claim decision submitted${anyApproved ? '. Transfer completed automatically - inventory updated.' : ''}` };
         } catch (error: any) {
@@ -499,6 +640,177 @@ export class PosClaimsService {
                 }),
             );
             throw error;
+        }
+    }
+
+    async rejectClaim(id: string, dto: { rejectionReason: string; notes?: string }, rejectedBy?: string, ctx?: { userId?: string; ipAddress?: string; userAgent?: string }) {
+        try {
+            const claim = await this.prisma.posClaim.findUnique({
+                where: { id },
+                include: { items: true, salesOrder: true }
+            });
+            
+            if (!claim) throw new NotFoundException('Claim not found');
+            
+            if (!['SUBMITTED', 'UNDER_REVIEW'].includes(claim.status)) {
+                throw new BadRequestException(`Cannot reject claim in status: ${claim.status}`);
+            }
+
+            // Update claim and all items to REJECTED
+            await this.prisma.$transaction(async (tx) => {
+                // Update all claim items to REJECTED
+                await tx.posClaimItem.updateMany({
+                    where: { claimId: id },
+                    data: {
+                        itemStatus: 'REJECTED',
+                        approvedQty: 0,
+                        approvedAmount: 0,
+                        reviewNotes: dto.rejectionReason
+                    }
+                });
+
+                // Update claim to REJECTED
+                await tx.posClaim.update({
+                    where: { id },
+                    data: {
+                        status: 'REJECTED',
+                        approvedAmount: 0,
+                        reviewNotes: dto.notes || dto.rejectionReason,
+                        reviewedAt: new Date(),
+                        reviewedBy: rejectedBy || null,
+                    }
+                });
+            });
+
+            const updated = await this.findOne(id);
+
+            runInBackground(
+                'Reject POS Claim',
+                this.activityLogs.log({
+                    userId: ctx?.userId,
+                    action: 'update',
+                    module: 'pos-claims',
+                    entity: 'PosClaim',
+                    entityId: id,
+                    description: `Rejected POS claim ${claim.claimNumber}. Reason: ${dto.rejectionReason}`,
+                    newValues: JSON.stringify(dto),
+                    ipAddress: ctx?.ipAddress,
+                    userAgent: ctx?.userAgent,
+                    status: 'success',
+                }),
+            );
+
+            // 🔔 Notify POS location about rejection
+            if (claim.salesOrder.locationId) {
+                runInBackground(
+                    'Notify POS - Claim Rejected',
+                    this.notifyLocationUsers(claim.salesOrder.locationId, {
+                        title: '❌ Claim Rejected',
+                        message: `Claim ${claim.claimNumber} has been rejected. Reason: ${dto.rejectionReason}. Product ready for pickup.`,
+                        category: 'claims',
+                        priority: 'high',
+                        actionType: 'view_claim',
+                        actionPayload: { claimId: claim.id, claimNumber: claim.claimNumber },
+                        entityType: 'PosClaim',
+                        entityId: claim.id,
+                    })
+                );
+            }
+
+            return { 
+                status: true, 
+                data: updated.data, 
+                message: 'Claim rejected successfully. No inventory changes made.' 
+            };
+        } catch (error: any) {
+            runInBackground(
+                'Reject POS Claim (Failure)',
+                this.activityLogs.log({
+                    userId: ctx?.userId,
+                    action: 'update',
+                    module: 'pos-claims',
+                    entity: 'PosClaim',
+                    entityId: id,
+                    description: `Failed to reject POS claim`,
+                    errorMessage: error?.message,
+                    newValues: JSON.stringify(dto),
+                    ipAddress: ctx?.ipAddress,
+                    userAgent: ctx?.userAgent,
+                    status: 'failure',
+                }),
+            );
+            throw error;
+        }
+    }
+
+    // 🔔 Helper: Notify all PLM users (ERP users with claims permission)
+    private async notifyPLMUsers(notificationData: {
+        title: string;
+        message: string;
+        category: string;
+        priority: 'low' | 'normal' | 'high' | 'urgent';
+        actionType?: string;
+        actionPayload?: any;
+        entityType?: string;
+        entityId?: string;
+    }) {
+        try {
+            // Get all users with ERP claims permission
+            const plmUsers = await this.prismaMaster.user.findMany({
+                where: {
+                    role: {
+                        permissions: {
+                            some: {
+                                permission: {
+                                    name: 'erp.claims.read'
+                                }
+                            }
+                        }
+                    }
+                },
+                select: { id: true }
+            });
+
+            // Send notification to each PLM user
+            for (const user of plmUsers) {
+                await this.notifications.create({
+                    userId: user.id,
+                    ...notificationData,
+                });
+            }
+        } catch (error) {
+            console.error('Failed to notify PLM users:', error);
+        }
+    }
+
+    // 🔔 Helper: Notify users at specific location (POS users)
+    private async notifyLocationUsers(locationId: string, notificationData: {
+        title: string;
+        message: string;
+        category: string;
+        priority: 'low' | 'normal' | 'high' | 'urgent';
+        actionType?: string;
+        actionPayload?: any;
+        entityType?: string;
+        entityId?: string;
+    }) {
+        try {
+            // Get all users assigned to this location
+            const locationUsers = await this.prismaMaster.user.findMany({
+                // @ts-ignore
+                where: { terminal: { locationId: locationId } },
+                select: { id: true }
+            });
+
+            // Send notification to each location user
+            for (const user of locationUsers) {
+                await this.notifications.create({
+                    userId: user.id,
+                    ...notificationData,
+                });
+            }
+        } catch (error) {
+            console.error('Failed to notify location users:', error);
         }
     }
 }

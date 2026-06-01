@@ -9,6 +9,7 @@ import { getRoutePermissions } from "@/lib/route-permissions";
 import { useAuth } from "@/components/providers/auth-provider";
 import { PosSwitchUser } from "@/components/pos/pos-switch-user";
 import { LocationGuard } from "@/components/pos/location-guard";
+import { ShiftGuard } from "@/components/pos/shift-guard";
 import { PageTransition } from "@/components/layouts/page-transition";
 import { TitleUpdater } from "@/components/common/title-updater";
 
@@ -51,7 +52,9 @@ export default function PosLayoutClient({
             <DashboardLayout>
                 <TitleUpdater section="POS" />
                 <LocationGuard>
-                    {vt(children)}
+                    <ShiftGuard>
+                        {vt(children)}
+                    </ShiftGuard>
                 </LocationGuard>
             </DashboardLayout>
         );
@@ -64,7 +67,9 @@ export default function PosLayoutClient({
                 <TitleUpdater section="POS" />
                 <PermissionGuard permissions={requiredPermissions}>
                     <LocationGuard>
-                        {vt(children)}
+                        <ShiftGuard>
+                            {vt(children)}
+                        </ShiftGuard>
                     </LocationGuard>
                 </PermissionGuard>
             </DashboardLayout>
@@ -76,7 +81,9 @@ export default function PosLayoutClient({
         <DashboardLayout>
             <TitleUpdater section="POS" />
             <LocationGuard>
-                {vt(children)}
+                <ShiftGuard>
+                    {vt(children)}
+                </ShiftGuard>
             </LocationGuard>
         </DashboardLayout>
     );

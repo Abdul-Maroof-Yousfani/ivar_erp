@@ -10,6 +10,7 @@ import { Grn } from '@/lib/api';
 import { getGrn } from '@/lib/actions/grn';
 import { ArrowLeft } from 'lucide-react';
 import { PermissionGuard } from '@/components/auth/permission-guard';
+import Link from 'next/link';
 
 export default function GrnDetailPage() {
   const router = useRouter();

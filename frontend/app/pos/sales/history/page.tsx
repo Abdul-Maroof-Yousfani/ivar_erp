@@ -23,8 +23,7 @@ import {
     Printer, Eye, ShoppingCart, Wallet, Calendar as CalendarIcon,
     PauseCircle, RotateCcw, Clock, Pencil, Plus, Trash2, Loader2,
     Banknote, CreditCard, Building2, Ticket, BookOpen, FileText,
-    CheckCircle2,
-    XCircle,
+    CheckCircle2, XCircle, Upload,
 } from "lucide-react";
 
 import DataTable from "@/components/common/data-table";
@@ -32,6 +31,8 @@ import { DateRangePicker, DateRange } from "@/components/ui/date-range-picker";
 import { PrintReceipt } from "@/components/pos/print-receipt";
 import { PrintReturnReceipt } from "@/components/pos/print-return-receipt";
 import { PrintClaimReceipt } from "@/components/pos/print-claim-receipt";
+import { SalesHistoryBulkUploadModal } from "@/components/pos/sales-history-bulk-upload-modal";
+import { useUploadProgress } from "@/hooks/use-upload-progress";
 import { cn, getCookie } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -392,6 +393,13 @@ export default function SalesHistoryPage() {
     const canPrint = hasPermission('pos.sales.history.print');
     const canUpdateTender = hasPermission('pos.sales.history.update-tender');
     const canResumeHold = hasPermission('pos.hold.resume');
+    const canImport = hasPermission('pos.sales.history.import');
+
+    // ── Bulk-upload state ──────────────────────────────────────────────
+    const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
+    const [activeUploadId,   setActiveUploadId]   = useState<string | null>(null);
+    const { data: uploadProgress } = useUploadProgress(activeUploadId, 'sales-history');
+
     const [orders, setOrders] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [rowCount, setRowCount] = useState(0);
@@ -437,6 +445,11 @@ export default function SalesHistoryPage() {
 
     useEffect(() => { setPagination(p => ({ ...p, pageIndex: 0 })); }, [search, dateRange]);
     useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+    // Refresh table when a bulk import finishes
+    useEffect(() => {
+        if (uploadProgress?.status === 'completed') fetchOrders();
+    }, [uploadProgress?.status]);
 
     // Debug: Log orders when they update
     useEffect(() => {
@@ -733,6 +746,52 @@ export default function SalesHistoryPage() {
                             placeholder="Filter by date"
                         />
                     </div>
+                    {/* ── Floating import progress button ── */}
+                    {activeUploadId && !isBulkUploadOpen && (
+                        <Button
+                            variant={
+                                uploadProgress?.status === 'failed'    ? 'destructive' :
+                                uploadProgress?.status === 'completed' ? 'default'     : 'outline'
+                            }
+                            className={`border-primary text-primary relative overflow-hidden min-w-48 ${
+                                uploadProgress?.status === 'failed'    ? 'text-destructive-foreground! bg-destructive!' :
+                                uploadProgress?.status === 'completed' ? 'text-primary-foreground! bg-primary!'        : ''
+                            }`}
+                            onClick={() => setIsBulkUploadOpen(true)}
+                        >
+                            <div
+                                className="absolute inset-0 bg-primary/10 transition-all duration-500"
+                                style={{ width: `${uploadProgress?.progress ?? 0}%` }}
+                            />
+                            <div className="relative flex items-center gap-2">
+                                {(uploadProgress?.status === 'validating' ||
+                                  uploadProgress?.status === 'processing' ||
+                                  uploadProgress?.status === 'pending') && (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                )}
+                                <span className="font-bold">
+                                    {uploadProgress?.status === 'failed'    ? 'Import Failed'       :
+                                     uploadProgress?.status === 'completed' ? 'Import Complete'     :
+                                     uploadProgress?.status === 'validated' ? 'Validation Complete' :
+                                     uploadProgress?.status === 'validating'? 'Validating'          :
+                                                                              'Importing'}
+                                    {!['failed', 'completed', 'validated'].includes(uploadProgress?.status || '')
+                                        ? ` ${uploadProgress?.progress ?? 0}%` : ''}
+                                </span>
+                            </div>
+                        </Button>
+                    )}
+                    {/* ── Import History button ── */}
+                    {canImport && (
+                        <Button
+                            variant="outline"
+                            onClick={() => setIsBulkUploadOpen(true)}
+                            className="gap-2"
+                        >
+                            <Upload className="h-4 w-4" />
+                            Import History
+                        </Button>
+                    )}
                     <Button
                         variant="outline"
                         onClick={() => {
@@ -1145,6 +1204,15 @@ export default function SalesHistoryPage() {
                     }}
                 />
             )}
+
+            {/* ── Sales History Bulk Import Modal ── */}
+            <SalesHistoryBulkUploadModal
+                open={isBulkUploadOpen}
+                onOpenChange={setIsBulkUploadOpen}
+                uploadId={activeUploadId}
+                onUploadIdChange={setActiveUploadId}
+                onSuccess={fetchOrders}
+            />
         </div>
     );
 }

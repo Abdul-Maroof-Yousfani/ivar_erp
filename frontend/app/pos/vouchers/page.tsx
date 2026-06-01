@@ -26,7 +26,7 @@ import { Separator } from "@/components/ui/separator";
 import {
     Gift, RefreshCw, CreditCard, Building2, MapPin,
     Plus, Copy, XCircle, CheckCircle2, Ticket, Layers,
-    Download, ChevronDown,
+    Download, ChevronDown, Printer,
 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -36,6 +36,7 @@ import type { Voucher, VoucherType } from "@/lib/actions/vouchers";
 import { getLocations } from "@/lib/actions/location";
 import type { Location } from "@/lib/actions/location";
 import { LocationMultiSelect } from "@/app/master/pos-config/_components/location-multi-select";
+import { PrintVoucherReceipt } from "@/components/pos/print-voucher-receipt";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -45,12 +46,14 @@ const VOUCHER_TYPES: { value: VoucherType; label: string; icon: React.ElementTyp
     { value: "CREDIT",      label: "Credit",      icon: CreditCard,color: "text-violet-600"  },
     { value: "CORPORATE",   label: "Corporate",   icon: Building2, color: "text-amber-600"   },
     { value: "OUTLET_GIFT", label: "Outlet Gift", icon: MapPin,    color: "text-rose-600"    },
+    { value: "REFUND",      label: "Refund",      icon: Ticket,    color: "text-red-600"     },
 ];
 
-// Types available for manual issuance (EXCHANGE is system-only)
-const ISSUABLE_TYPES = VOUCHER_TYPES.filter(t => t.value !== "EXCHANGE");
+// Types available for manual issuance (EXCHANGE and REFUND are system-only)
+const ISSUABLE_TYPES = VOUCHER_TYPES.filter(t => t.value !== "EXCHANGE" && t.value !== "REFUND");
 
 function voucherStatus(v: Voucher) {
+    if (v.voucherType === "REFUND") return { label: "Cash Refunded", cls: "bg-red-500/10 text-red-700 border-red-300" };
     if (!v.isActive)  return { label: "Voided",   cls: "bg-muted text-muted-foreground border-border" };
     if (v.isRedeemed) return { label: "Redeemed", cls: "bg-blue-500/10 text-blue-700 border-blue-300" };
     if (v.expiresAt && new Date(v.expiresAt) < new Date())
@@ -102,6 +105,9 @@ export default function PosVouchersPage() {
 
     // ── Void confirm ─────────────────────────────────────────────
     const [voidId, setVoidId] = useState<string | null>(null);
+
+    // ── Print voucher receipt ────────────────────────────────────
+    const [printVoucher, setPrintVoucher] = useState<Voucher | null>(null);
 
     // ── Data ─────────────────────────────────────────────────────
     const fetchVouchers = useCallback(async () => {
@@ -317,13 +323,28 @@ export default function PosVouchersPage() {
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell>
-                                                    {v.isActive && !v.isRedeemed && canVoid && (
-                                                        <Button variant="ghost" size="icon"
-                                                            className="h-7 w-7 rounded-full text-muted-foreground hover:text-destructive"
-                                                            onClick={() => setVoidId(v.id)}>
-                                                            <XCircle className="w-3.5 h-3.5" />
+                                                    <div className="flex items-center gap-1">
+                                                        {/* Print button - always visible */}
+                                                        <Button 
+                                                            variant="ghost" 
+                                                            size="icon"
+                                                            className="h-7 w-7 rounded-full text-muted-foreground hover:text-primary"
+                                                            onClick={() => setPrintVoucher(v)}
+                                                            title="Print voucher receipt"
+                                                        >
+                                                            <Printer className="w-3.5 h-3.5" />
                                                         </Button>
-                                                    )}
+                                                        
+                                                        {/* Void button - only for active vouchers */}
+                                                        {v.isActive && !v.isRedeemed && canVoid && (
+                                                            <Button variant="ghost" size="icon"
+                                                                className="h-7 w-7 rounded-full text-muted-foreground hover:text-destructive"
+                                                                onClick={() => setVoidId(v.id)}
+                                                                title="Void voucher">
+                                                                <XCircle className="w-3.5 h-3.5" />
+                                                            </Button>
+                                                        )}
+                                                    </div>
                                                 </TableCell>
                                             </TableRow>
                                         );
@@ -608,6 +629,51 @@ export default function PosVouchersPage() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {/* ── Issued Voucher Success Dialog ──────────────────────── */}
+            {issuedVoucher && (
+                <Dialog open onOpenChange={() => setIssuedVoucher(null)}>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                                Voucher Issued Successfully
+                            </DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                            <div className="text-center space-y-2 p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200">
+                                <p className="text-sm text-muted-foreground">Voucher Code</p>
+                                <div className="flex items-center justify-center gap-2">
+                                    <p className="font-mono font-black text-2xl text-emerald-700">{issuedVoucher.code}</p>
+                                    <button onClick={() => copyCode(issuedVoucher.code)}
+                                        className="text-emerald-600 hover:text-emerald-700">
+                                        <Copy className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <p className="text-sm font-semibold">{formatCurrency(Number(issuedVoucher.faceValue))}</p>
+                            </div>
+                        </div>
+                        <DialogFooter className="gap-2">
+                            <Button variant="outline" onClick={() => setIssuedVoucher(null)}>Close</Button>
+                            <Button onClick={() => {
+                                setPrintVoucher(issuedVoucher);
+                                setIssuedVoucher(null);
+                            }} className="gap-2">
+                                <Printer className="w-4 h-4" /> Print Receipt
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
+
+            {/* ── Print Voucher Receipt ───────────────────────────────── */}
+            {printVoucher && (
+                <PrintVoucherReceipt
+                    voucher={printVoucher}
+                    autoPrint={false}
+                    onClose={() => setPrintVoucher(null)}
+                />
+            )}
         </div>
     );
 }

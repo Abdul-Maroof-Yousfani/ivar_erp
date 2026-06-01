@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useCallback, useTransition } from "react";
+import { useState, useCallback, useTransition, useEffect } from "react";
 import { StockLedgerEntry, MovementType } from "@/lib/api";
 import { getStockLedger } from "@/lib/actions/stock-ledger";
 import { ColumnDef, PaginationState } from "@tanstack/react-table";
 import DataTable from "@/components/common/data-table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import {
     ArrowDownCircle,
@@ -15,9 +16,13 @@ import {
     ExternalLink,
     TrendingDown,
     TrendingUp,
+    Upload,
+    Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { StockBulkUploadModal } from "@/components/inventory/stock-bulk-upload-modal";
+import { useUploadProgress } from "@/hooks/use-upload-progress";
 
 // ─── Reference type → navigable route ────────────────────────────────
 function getReferenceHref(referenceType: string, referenceId: string): string | null {
@@ -100,12 +105,12 @@ const columns: ColumnDef<StockLedgerEntry>[] = [
         header: "Item",
         accessorFn: (row) => row.item?.sku ?? row.itemId,
         cell: ({ row }) => (
-            <div className="flex flex-col min-w-[140px]">
+            <div className="flex flex-col min-w-35">
                 <span className="font-semibold text-sm font-mono">
                     {row.original.item?.sku || row.original.itemId}
                 </span>
                 {row.original.item?.description && (
-                    <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                    <span className="text-xs text-muted-foreground truncate max-w-50">
                         {row.original.item.description}
                     </span>
                 )}
@@ -127,7 +132,6 @@ const columns: ColumnDef<StockLedgerEntry>[] = [
                     <span className="text-sm font-medium">
                         {row.original.warehouse?.name || row.original.warehouseId}
                     </span>
-                    {/* Show outlet/location name if present */}
                     {locationName && (
                         <span className="text-xs text-blue-500 dark:text-blue-400 font-medium flex items-center gap-1">
                             <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-400" />
@@ -182,7 +186,6 @@ const columns: ColumnDef<StockLedgerEntry>[] = [
                         {meta.icon}
                         {meta.label}
                     </Badge>
-                    {/* For transfers, show explicit IN / OUT pill */}
                     {["TRANSFER_REQUEST", "RETURN_REQUEST", "OUTLET_TRANSFER_IN", "OUTLET_TRANSFER_OUT"].includes(row.original.referenceType) && (
                         <span className={cn(
                             "text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded",
@@ -260,7 +263,6 @@ const columns: ColumnDef<StockLedgerEntry>[] = [
         header: "Source",
         cell: ({ row }) => {
             const refType = row.original.referenceType;
-            // Human-friendly labels
             const labels: Record<string, string> = {
                 GRN: "GRN",
                 POS_SALE: "POS Sale",
@@ -279,6 +281,7 @@ const columns: ColumnDef<StockLedgerEntry>[] = [
                 PURCHASE_RETURN_LC: "Purchase Return",
                 PURCHASE_RETURN_GRN: "Purchase Return",
                 PURCHASE_RETURN: "Purchase Return",
+                BULK_STOCK_UPLOAD: "Bulk Upload",
             };
             return (
                 <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded whitespace-nowrap">
@@ -337,12 +340,29 @@ const REFERENCE_TYPE_OPTIONS = [
     { label: "Opening Balance", value: "OPENING_BALANCE" },
     { label: "Delivery Challan", value: "DELIVERY_CHALLAN" },
     { label: "Purchase Return", value: "PURCHASE_RETURN" },
+    { label: "Bulk Upload", value: "BULK_STOCK_UPLOAD" },
 ];
 
+// ─── Background progress button label ────────────────────────────────
+function getProgressLabel(status: string | undefined, progress: number): string {
+    switch (status) {
+        case "failed":     return "Upload Failed";
+        case "completed":  return "Upload Complete";
+        case "validated":  return "Validation Complete";
+        case "validating": return `Validating ${progress}%`;
+        case "processing": return `Importing ${progress}%`;
+        case "pending":    return "Starting...";
+        default:           return `Uploading ${progress}%`;
+    }
+}
+
+// ─── Main Component ───────────────────────────────────────────────────
 interface StockReceivedListProps {
     initialEntries: StockLedgerEntry[];
     initialMeta?: { total: number; page: number; limit: number; totalPages: number };
 }
+
+const STORAGE_KEY = "active_stock_upload_id";
 
 export function StockReceivedList({ initialEntries, initialMeta }: StockReceivedListProps) {
     const [entries, setEntries] = useState<StockLedgerEntry[]>(initialEntries);
@@ -354,6 +374,34 @@ export function StockReceivedList({ initialEntries, initialMeta }: StockReceived
     const [activeMovementType, setActiveMovementType] = useState<string>("");
     const [activeReferenceType, setActiveReferenceType] = useState<string>("");
 
+    // ── Bulk upload state ─────────────────────────────────────────────
+    const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
+    const [activeUploadId, setActiveUploadId] = useState<string | null>(null);
+
+    // Restore persisted upload ID on mount
+    useEffect(() => {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) setActiveUploadId(stored);
+    }, []);
+
+    const handleUploadIdChange = (id: string | null) => {
+        setActiveUploadId(id);
+        if (id) {
+            localStorage.setItem(STORAGE_KEY, id);
+        } else {
+            localStorage.removeItem(STORAGE_KEY);
+        }
+    };
+
+    const { data: uploadProgress } = useUploadProgress(activeUploadId, "stock");
+
+    const isUploadActive = Boolean(
+        activeUploadId &&
+        uploadProgress?.status &&
+        !["completed", "failed", "cancelled"].includes(uploadProgress.status)
+    );
+
+    // ── Ledger fetch ──────────────────────────────────────────────────
     const fetchPage = useCallback(
         (pagination: PaginationState, movementType?: string, referenceType?: string) => {
             startTransition(async () => {
@@ -373,6 +421,7 @@ export function StockReceivedList({ initialEntries, initialMeta }: StockReceived
                 }
             });
         },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         []
     );
 
@@ -386,7 +435,7 @@ export function StockReceivedList({ initialEntries, initialMeta }: StockReceived
     const handleFilterChange = useCallback(
         (key: string, value: string) => {
             const newMovement = key === "movementType" ? value : activeMovementType;
-            const newRefType = key === "referenceType" ? value : activeReferenceType;
+            const newRefType  = key === "referenceType" ? value : activeReferenceType;
 
             if (key === "movementType") setActiveMovementType(value);
             if (key === "referenceType") setActiveReferenceType(value);
@@ -396,45 +445,116 @@ export function StockReceivedList({ initialEntries, initialMeta }: StockReceived
         [activeMovementType, activeReferenceType, meta.limit, fetchPage]
     );
 
+    // ── Toolbar slot injected into DataTable ──────────────────────────
+    const toolbarSlot = (
+        <div className="flex items-center gap-2">
+            {/* Background progress pill — visible when modal is closed but job is running */}
+            {activeUploadId && !isBulkUploadOpen && (
+                <Button
+                    variant={
+                        uploadProgress?.status === "failed"
+                            ? "destructive"
+                            : uploadProgress?.status === "completed"
+                            ? "default"
+                            : "outline"
+                    }
+                    className={cn(
+                        "relative overflow-hidden min-w-47.5",
+                        uploadProgress?.status !== "failed" &&
+                        uploadProgress?.status !== "completed" &&
+                        "border-primary text-primary"
+                    )}
+                    onClick={() => setIsBulkUploadOpen(true)}
+                >
+                    {/* Animated fill bar */}
+                    <div
+                        className="absolute inset-0 bg-primary/10 transition-all duration-500"
+                        style={{ width: `${uploadProgress?.progress ?? 0}%` }}
+                    />
+                    <div className="relative flex items-center gap-2">
+                        {isUploadActive && <Loader2 className="h-4 w-4 animate-spin" />}
+                        <span className="font-bold">
+                            {getProgressLabel(uploadProgress?.status, uploadProgress?.progress ?? 0)}
+                        </span>
+                    </div>
+                </Button>
+            )}
+
+            {/* Primary bulk upload button */}
+            <Button
+                variant="outline"
+                onClick={() => setIsBulkUploadOpen(true)}
+                className="gap-2"
+            >
+                <Upload className="h-4 w-4" />
+                Bulk Upload
+            </Button>
+        </div>
+    );
+
     return (
-        <DataTable
-            tableId="stock-ledger"
-            title="Stock Ledger"
-            columns={columns}
-            data={entries}
-            isLoading={isPending}
-            rowClassName={(row) => {
-                const qty = Number(row.qty);
-                const isTransferType = ["TRANSFER_REQUEST", "RETURN_REQUEST", "OUTLET_TRANSFER_IN", "OUTLET_TRANSFER_OUT"].includes(row.referenceType);
-                if (isTransferType) {
-                    return qty >= 0
-                        ? "border-l-4 border-l-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
-                        : "border-l-4 border-l-red-400 bg-red-50/40 dark:bg-red-950/20";
-                }
-                const meta = MOVEMENT_META[row.movementType];
-                return meta?.rowClass ?? "";
-            }}
-            searchFields={[
-                { key: "sku", label: "SKU" },
-                { key: "referenceType", label: "Ref. Type" },
-            ]}
-            filters={[
-                {
-                    key: "movementType",
-                    label: "Movement",
-                    options: MOVEMENT_FILTER_OPTIONS,
-                },
-                {
-                    key: "referenceType",
-                    label: "Source",
-                    options: REFERENCE_TYPE_OPTIONS,
-                },
-            ]}
-            onFilterChange={handleFilterChange}
-            manualPagination
-            rowCount={meta.total}
-            pageCount={meta.totalPages}
-            onPaginationChange={handlePaginationChange}
-        />
+        <>
+            <DataTable
+                tableId="stock-ledger"
+                title="Stock Ledger"
+                columns={columns}
+                data={entries}
+                isLoading={isPending}
+                rowClassName={(row) => {
+                    const qty = Number(row.qty);
+                    const isTransferType = [
+                        "TRANSFER_REQUEST",
+                        "RETURN_REQUEST",
+                        "OUTLET_TRANSFER_IN",
+                        "OUTLET_TRANSFER_OUT",
+                    ].includes(row.referenceType);
+                    if (isTransferType) {
+                        return qty >= 0
+                            ? "border-l-4 border-l-emerald-400 bg-emerald-50/40 dark:bg-emerald-950/20"
+                            : "border-l-4 border-l-red-400 bg-red-50/40 dark:bg-red-950/20";
+                    }
+                    const moveMeta = MOVEMENT_META[row.movementType];
+                    return moveMeta?.rowClass ?? "";
+                }}
+                searchFields={[
+                    { key: "sku", label: "SKU" },
+                    { key: "referenceType", label: "Ref. Type" },
+                ]}
+                filters={[
+                    {
+                        key: "movementType",
+                        label: "Movement",
+                        options: MOVEMENT_FILTER_OPTIONS,
+                    },
+                    {
+                        key: "referenceType",
+                        label: "Source",
+                        options: REFERENCE_TYPE_OPTIONS,
+                    },
+                ]}
+                filterSlot={toolbarSlot}
+                onFilterChange={handleFilterChange}
+                manualPagination
+                rowCount={meta.total}
+                pageCount={meta.totalPages}
+                onPaginationChange={handlePaginationChange}
+            />
+
+            <StockBulkUploadModal
+                open={isBulkUploadOpen}
+                onOpenChange={setIsBulkUploadOpen}
+                uploadId={activeUploadId}
+                onUploadIdChange={handleUploadIdChange}
+                onSuccess={() => {
+                    // Refresh the first page of the ledger after a successful import
+                    fetchPage(
+                        { pageIndex: 0, pageSize: meta.limit },
+                        activeMovementType,
+                        activeReferenceType,
+                    );
+                    handleUploadIdChange(null);
+                }}
+            />
+        </>
     );
 }

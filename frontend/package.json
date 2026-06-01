@@ -52,6 +52,7 @@
     "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
     "js-cookie": "^3.0.5",
+    "jsbarcode": "^3.12.3",
     "jspdf": "^3.0.4",
     "lexical": "^0.39.0",
     "lucide-react": "^0.555.0",

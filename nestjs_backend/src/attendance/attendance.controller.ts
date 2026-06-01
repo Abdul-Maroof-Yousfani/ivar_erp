@@ -96,6 +96,24 @@ export class AttendanceController {
     });
   }
 
+  @Get('attendances/monthly-summary')
+  @Permissions('hr.attendance.summary')
+  @ApiOperation({ summary: 'Get monthly attendance summary for an employee' })
+  @ApiQuery({ name: 'employeeId', required: true })
+  @ApiQuery({ name: 'dateFrom', required: false })
+  @ApiQuery({ name: 'dateTo', required: false })
+  async getMonthlySummary(
+    @Query('employeeId') employeeId: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.service.getMonthlySummary({
+      employeeId,
+      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+      dateTo: dateTo ? new Date(dateTo) : undefined,
+    });
+  }
+
   @Get('attendances/import-template')
   @Permissions('hr.attendance.view')
   @ApiOperation({ summary: 'Download attendance import template' })
@@ -129,6 +147,28 @@ export class AttendanceController {
   @ApiOperation({ summary: 'Create attendance for date range' })
   async createForDateRange(@Body() body: any, @Req() req: any) {
     return this.service.createForDateRange(body, {
+      userId: req.user?.userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+  }
+
+  @Post('attendances/check-in')
+  @Permissions('hr.attendance.create')
+  @ApiOperation({ summary: 'Check in attendance' })
+  async checkIn(@Body() body: any, @Req() req: any) {
+    return this.service.checkIn(body, {
+      userId: req.user?.userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+  }
+
+  @Post('attendances/check-out')
+  @Permissions('hr.attendance.update')
+  @ApiOperation({ summary: 'Check out attendance' })
+  async checkOut(@Body() body: any, @Req() req: any) {
+    return this.service.checkOut(body, {
       userId: req.user?.userId,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
