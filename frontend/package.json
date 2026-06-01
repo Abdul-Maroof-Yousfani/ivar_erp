@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3001",
+    "dev": "next dev -p 3002",
     "build": "next build",
-    "start": "next start  -p 3001",
+    "start": "next start  -p 3002",
     "lint": "eslint"
   },
   "dependencies": {
@@ -52,6 +52,7 @@
     "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
     "js-cookie": "^3.0.5",
+    "jsbarcode": "^3.12.3",
     "jspdf": "^3.0.4",
     "lexical": "^0.39.0",
     "lucide-react": "^0.555.0",

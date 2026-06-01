@@ -65,7 +65,7 @@ function getBaseDomain(host: string): string {
 function getSubdomain(host: string): string | null {
   const hostWithoutPort = getHostWithoutPort(host);
 
-  // Handle localhost subdomains (e.g., "hr.localhost" or "hr.localhost:3001")
+  // Handle localhost subdomains (e.g., "hr.localhost" or "hr.localhost:3002")
   if (
     hostWithoutPort.includes("localhost") ||
     hostWithoutPort.includes("127.0.0.1")

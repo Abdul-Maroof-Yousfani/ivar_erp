@@ -104,13 +104,13 @@ export function EmployeeUserList({
     const now = new Date();
     const diffMs = target.getTime() - now.getTime();
     if (diffMs < 0) return "already expired";
-    
+
     const diffMins = Math.floor(diffMs / 60000);
     if (diffMins < 60) return `in ${diffMins} min${diffMins > 1 ? 's' : ''}`;
-    
+
     const diffHours = Math.floor(diffMins / 60);
     if (diffHours < 24) return `in ${diffHours} hr${diffHours > 1 ? 's' : ''}`;
-    
+
     const diffDays = Math.floor(diffHours / 24);
     return `in ${diffDays} day${diffDays > 1 ? 's' : ''}`;
   };
@@ -260,9 +260,9 @@ export function EmployeeUserList({
     }
 
     setPermissionsTargetRow(row);
-    
-    const roleExpiry = matchedUser.roleExpiresAt 
-      ? new Date(matchedUser.roleExpiresAt).toISOString().slice(0, 16) 
+
+    const roleExpiry = matchedUser.roleExpiresAt
+      ? new Date(matchedUser.roleExpiresAt).toISOString().slice(0, 16)
       : "";
     setTargetUserRoleExpiresAt(roleExpiry);
 
@@ -314,7 +314,7 @@ export function EmployeeUserList({
       setImpersonatePendingId(row.employeeId);
 
       const apiBase =
-        process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
+        process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5001/api";
 
       const res = await fetch(`${apiBase}/auth/impersonate-by-employee`, {
         method: "POST",
@@ -330,7 +330,7 @@ export function EmployeeUserList({
       if (!res.ok || !payload.status) {
         toast.error(
           payload.message ||
-            "Failed to open dashboard. Make sure user account & dashboard access exist.",
+          "Failed to open dashboard. Make sure user account & dashboard access exist.",
         );
         return;
       }
@@ -468,9 +468,9 @@ export function EmployeeUserList({
   ];
 
   const erpMasterModules = [
-    "master.brand", "master.division", "master.channel-class", "master.color", 
+    "master.brand", "master.division", "master.channel-class", "master.color",
     "master.gender", "master.size", "master.silhouette", "master.tax-rate",
-    "master.item-class", "master.item-subclass", "master.old-season", "master.season", 
+    "master.item-class", "master.item-subclass", "master.old-season", "master.season",
     "master.segment", "master.hs-code", "master.category", "master.sub-category", "master.uom"
   ];
 
@@ -481,16 +481,16 @@ export function EmployeeUserList({
   const getCategory = (module: string): "HR" | "Master" | "ERP" | "POS" => {
     if (module.startsWith("pos.")) return "POS";
 
-    if (erpMasterModules.includes(module) || posMasterModules.includes(module) || module.startsWith("master.") || 
-        ["country", "state", "city", "location", "bank", "equipment", 
-         "allowance-head", "deduction-head", "salary-breakup", "tax-slab", 
-         "bonus-type", "loan-type", "leave-type", "leaves-policy", "eobi", "provident-fund",
-         "approval-setting", "rebate-nature", "role"].includes(module)) {
+    if (erpMasterModules.includes(module) || posMasterModules.includes(module) || module.startsWith("master.") ||
+      ["country", "state", "city", "location", "bank", "equipment",
+        "allowance-head", "deduction-head", "salary-breakup", "tax-slab",
+        "bonus-type", "loan-type", "leave-type", "leaves-policy", "eobi", "provident-fund",
+        "approval-setting", "rebate-nature", "role"].includes(module)) {
       return "Master";
     }
-    
+
     if (module.startsWith("erp.")) return "ERP";
-    
+
     return "HR";
   };
 
@@ -670,16 +670,15 @@ export function EmployeeUserList({
                   Role Assignment
                 </h4>
                 {targetUserRoleExpiresAt && (
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    getRelativeTimeDesc(targetUserRoleExpiresAt) === 'already expired'
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${getRelativeTimeDesc(targetUserRoleExpiresAt) === 'already expired'
                       ? 'bg-destructive/10 text-destructive'
                       : 'bg-amber-500/10 text-amber-600'
-                  }`}>
+                    }`}>
                     {getRelativeTimeDesc(targetUserRoleExpiresAt) === 'already expired' ? 'Expired' : `Expires ${getRelativeTimeDesc(targetUserRoleExpiresAt)}`}
                   </span>
                 )}
               </div>
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground/60">Assigned Role</span>
@@ -827,11 +826,10 @@ export function EmployeeUserList({
                                       delete newOverrides[perm.id];
                                       setOverrides(newOverrides);
                                     }}
-                                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 ${
-                                      val === "default"
+                                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 ${val === "default"
                                         ? "bg-background text-foreground shadow-sm"
                                         : "bg-transparent text-muted-foreground/70 hover:text-foreground"
-                                    }`}
+                                      }`}
                                   >
                                     Default
                                   </button>
@@ -846,11 +844,10 @@ export function EmployeeUserList({
                                         }
                                       });
                                     }}
-                                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 flex items-center gap-1 ${
-                                      val === "allow"
+                                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 flex items-center gap-1 ${val === "allow"
                                         ? "bg-emerald-500 text-white shadow-sm font-semibold"
                                         : "bg-transparent text-muted-foreground/70 hover:text-emerald-500"
-                                    }`}
+                                      }`}
                                   >
                                     <ShieldCheck className="h-3 w-3" />
                                     Allow
@@ -866,11 +863,10 @@ export function EmployeeUserList({
                                         }
                                       });
                                     }}
-                                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 flex items-center gap-1 ${
-                                      val === "deny"
+                                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 flex items-center gap-1 ${val === "deny"
                                         ? "bg-destructive text-white shadow-sm font-semibold"
                                         : "bg-transparent text-muted-foreground/70 hover:text-destructive"
-                                    }`}
+                                      }`}
                                   >
                                     <ShieldX className="h-3 w-3" />
                                     Deny
@@ -901,11 +897,10 @@ export function EmployeeUserList({
                                     }}
                                   />
                                   {override.expiresAt && (
-                                    <span className={`text-[9px] font-semibold ml-auto px-1.5 py-0.5 rounded ${
-                                      getRelativeTimeDesc(override.expiresAt) === 'already expired'
+                                    <span className={`text-[9px] font-semibold ml-auto px-1.5 py-0.5 rounded ${getRelativeTimeDesc(override.expiresAt) === 'already expired'
                                         ? 'bg-destructive/15 text-destructive'
                                         : 'bg-violet-500/15 text-violet-600'
-                                    }`}>
+                                      }`}>
                                       {getRelativeTimeDesc(override.expiresAt) === 'already expired' ? 'Expired' : `Expires ${getRelativeTimeDesc(override.expiresAt)}`}
                                     </span>
                                   )}

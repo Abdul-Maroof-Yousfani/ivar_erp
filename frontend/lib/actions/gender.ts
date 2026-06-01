@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { authFetch } from "@/lib/auth";
 
-const API_BASE = process.env.API_URL || "http://localhost:5000/api";
+const API_BASE = process.env.API_URL || "http://localhost:5001/api";
 
 export interface Gender {
     id: string;

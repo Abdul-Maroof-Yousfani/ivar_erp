@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, startTransition, addTransitionType } from "react";
+import { useState, useEffect, useRef, startTransition, addTransitionType } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -51,8 +51,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PermissionGuard } from "@/components/auth/permission-guard";
 import { QRCodeSVG } from "qrcode.react";
 import {
-    generateBarcode, encodeCode128, BARCODE_PATTERNS, type BarcodePattern,
+    generateBarcode, BARCODE_PATTERNS, type BarcodePattern,
 } from "@/lib/barcode";
+import JsBarcode from "jsbarcode";
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
     DropdownMenuSeparator, DropdownMenuLabel,
@@ -113,25 +114,31 @@ const STEPS = ["Basic & Pricing", "Classification", "Attributes", "Review & Gene
 // ─── Inline barcode preview (used in form + success screen) ──────────────────
 
 function SvgBarcodePreview({ value, height = 32 }: { value: string; height?: number }) {
-    const bits = encodeCode128(value.toUpperCase());
-    const mw = 1.2;
-    const totalWidth = bits.length * mw;
-    const bars: { x: number; w: number }[] = [];
-    let x = 0, i = 0;
-    while (i < bits.length) {
-        const bit = bits[i];
-        let run = 0;
-        while (i + run < bits.length && bits[i + run] === bit) run++;
-        if (bit === "1") bars.push({ x, w: run * mw });
-        x += run * mw;
-        i += run;
-    }
+    const svgRef = useRef<SVGSVGElement>(null);
+
+    useEffect(() => {
+        if (svgRef.current) {
+            try {
+                JsBarcode(svgRef.current, value, {
+                    format: "CODE128",
+                    width: 1.2,
+                    height: height,
+                    displayValue: false,
+                    margin: 8,
+                    background: "#ffffff",
+                    lineColor: "#000000",
+                });
+            } catch (e) {
+                console.error("Barcode preview rendering error:", e);
+            }
+        }
+    }, [value, height]);
+
     return (
-        <svg viewBox={`0 0 ${totalWidth} ${height}`} height={height} style={{ display: "block", maxWidth: "100%" }}>
-            {bars.map((b, idx) => (
-                <rect key={idx} x={b.x} y={0} width={b.w} height={height} fill="black" />
-            ))}
-        </svg>
+        <svg
+            ref={svgRef}
+            style={{ display: "block", maxWidth: "100%", height: "auto" }}
+        />
     );
 }
 

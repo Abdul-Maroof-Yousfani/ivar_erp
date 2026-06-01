@@ -4,7 +4,7 @@ import { authFetch } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 
-const API_BASE = process.env.API_URL || "http://localhost:5000/api";
+const API_BASE = process.env.API_URL || "http://localhost:5001/api";
 
 export interface AuthResponse {
   status: boolean;
