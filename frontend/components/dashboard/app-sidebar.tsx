@@ -668,7 +668,7 @@ export function AppSidebar({
           <div className="flex items-center gap-3 px-2 justify-center group-data-[collapsible=icon]:justify-center">
             <div className="flex items-center justify-center size-10 aspect-square rounded-xl bg-white text-primary shadow-sm group-data-[collapsible=icon]:rounded-lg transition-all duration-200">
               <Image
-                src={"/image.png"}
+                src={"/image-v2.png"}
                 alt="Logo"
                 width={30}
                 height={30}

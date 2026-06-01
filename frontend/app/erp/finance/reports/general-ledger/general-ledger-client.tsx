@@ -682,7 +682,7 @@ export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }
           {/* Header */}
           <div className="flex justify-between mb-6 gap-4 items-start border-b pb-4 border-gray-300">
             <div className="w-[20%] flex flex-col items-start justify-center">
-              <img src="/image.png" alt="Logo" className="w-28 object-contain" />
+              <img src="/image-v2.png" alt="Logo" className="w-28 object-contain" />
             </div>
             
             <div className="w-[50%] flex flex-col justify-center text-center">
