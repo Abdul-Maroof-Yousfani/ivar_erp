@@ -60,17 +60,37 @@ case $DEPLOY_MODE in
 esac
 
 header "Updating: $DEPLOY_NAME"
-
 # 1. Monorepo Git Pull (Optional)
 if confirm "Do you want to pull the latest code from git?"; then
-    info "Fetching latest commits and submodules..."
-    git pull || { error "Git pull failed! Please resolve conflicts before running the script again."; exit 1; }
-    git submodule update --init --recursive || warn "Submodule update failed. Continuing..."
-    success "Codebase updated successfully!"
+    info "Fetching latest commits..."
+    if git pull; then
+        git submodule update --init --recursive || warn "Submodule update failed. Continuing..."
+        success "Codebase updated successfully!"
+    else
+        warn "Git pull failed (likely due to uncommitted local changes)."
+        if confirm "Do you want to FORCE pull? (Warning: This will overwrite uncommitted local changes to other files, but we will preserve this script)"; then
+            info "Backing up this script..."
+            cp rebuild-container.sh /tmp/rebuild-container.sh.bak 2>/dev/null || cp rebuild-container.sh ./rebuild-container.sh.bak
+            
+            info "Running git fetch and hard reset..."
+            git fetch --all
+            CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+            git reset --hard "origin/$CURRENT_BRANCH"
+            git submodule update --init --recursive
+            
+            info "Restoring this script..."
+            mv /tmp/rebuild-container.sh.bak rebuild-container.sh 2>/dev/null || mv ./rebuild-container.sh.bak rebuild-container.sh
+            chmod +x rebuild-container.sh
+            
+            success "Force pulled and synchronized successfully!"
+        else
+            error "Git pull aborted. Please resolve conflicts or commit your changes before continuing."
+            exit 1
+        fi
+    fi
 else
     info "Skipping git pull."
 fi
-
 # ==========================================
 # PM2 UPDATE FLOW
 # ==========================================
