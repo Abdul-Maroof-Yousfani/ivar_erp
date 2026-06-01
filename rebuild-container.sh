@@ -64,7 +64,6 @@ header "Updating: $DEPLOY_NAME"
 if confirm "Do you want to pull the latest code from git?"; then
     info "Fetching latest commits..."
     if git pull; then
-        git submodule update --init --recursive || warn "Submodule update failed. Continuing..."
         success "Codebase updated successfully!"
     else
         warn "Git pull failed (likely due to uncommitted local changes)."
@@ -76,7 +75,6 @@ if confirm "Do you want to pull the latest code from git?"; then
             git fetch --all
             CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
             git reset --hard "origin/$CURRENT_BRANCH"
-            git submodule update --init --recursive
             
             info "Restoring this script..."
             mv /tmp/rebuild-container.sh.bak rebuild-container.sh 2>/dev/null || mv ./rebuild-container.sh.bak rebuild-container.sh
