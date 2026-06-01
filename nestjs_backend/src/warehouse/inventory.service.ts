@@ -98,6 +98,8 @@ export class InventoryService {
           ? [
               { sku: { contains: query, mode: 'insensitive' } },
               { description: { contains: query, mode: 'insensitive' } },
+              { barCode: { contains: query, mode: 'insensitive' } },
+              { itemId: { contains: query, mode: 'insensitive' } },
             ]
           : undefined,
         isActive: true,
