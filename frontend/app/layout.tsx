@@ -30,7 +30,7 @@ const fontMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SPL",
+  title: "IVAR",
   description: "Powered by Innovative Network",
 };
 

@@ -563,6 +563,7 @@ export const menuData: MenuItem[] = [
       "erp.finance.journal-voucher.read",
       "erp.finance.payment-voucher.read",
       "erp.finance.receipt-voucher.read",
+      "erp.finance.account-config.read",
     ],
     children: [
       {
@@ -585,6 +586,11 @@ export const menuData: MenuItem[] = [
         title: "Opening Balance",
         href: "/erp/finance/opening-balance",
         permissions: ["erp.finance.chart-of-account.update"],
+      },
+      {
+        title: "Account Configuration",
+        href: "/erp/finance/account-configuration",
+        permissions: ["erp.finance.account-config.update"],
       },
       {
         title: "Journal Voucher",
