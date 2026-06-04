@@ -168,8 +168,11 @@ export default function StockTransferPage() {
     }, []);
 
     // Barcode Resolution handler
+    const normalizeScannerValue = (value: string) => value.trim().replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+
     const handleBarcodeResolve = async (barcode: string) => {
-        if (!barcode.trim()) return;
+        const normalizedBarcode = normalizeScannerValue(barcode);
+        if (!normalizedBarcode) return;
         if (!selectedWarehouseId) {
             if (soundEnabled) playScanErrorBuzz();
             toast.error('Please select a warehouse first.');
@@ -185,14 +188,14 @@ export default function StockTransferPage() {
                 }
             }
 
-            const res = await inventoryApi.search(barcode.trim(), selectedWarehouseId, searchLocationId, appliedFilters);
+            const res = await inventoryApi.search(normalizedBarcode, selectedWarehouseId, searchLocationId, appliedFilters);
             if (!res.status || !res.data || res.data.length === 0) {
                 if (soundEnabled) playScanErrorBuzz();
                 toast.error(`No item found for barcode/SKU: "${barcode}"`);
                 return;
             }
 
-            const cleanedBarcode = barcode.trim().toLowerCase();
+            const cleanedBarcode = normalizedBarcode.toLowerCase();
             let matchedItem = res.data.find((item: any) => 
                 (item.barCode && item.barCode.toLowerCase() === cleanedBarcode) ||
                 (item.sku && item.sku.toLowerCase() === cleanedBarcode) ||

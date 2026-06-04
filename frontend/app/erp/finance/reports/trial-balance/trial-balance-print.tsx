@@ -28,7 +28,7 @@ export function TrialBalancePrint({ data, reportType, includeTagAccounts }: Tria
       <div className="flex justify-between items-start mb-8 pb-4 border-b border-black">
         {/* Company Logo Section */}
         <div className="w-[25%] flex flex-col justify-center">
-          <img src="/image.png" alt="Company Logo" className="w-32 object-contain error-fallback" onError={(e) => {
+          <img src="/image-v2.png" alt="Company Logo" className="w-32 object-contain error-fallback" onError={(e) => {
             // Fallback text if logo is not found
             (e.target as HTMLElement).style.display = 'none';
           }} />

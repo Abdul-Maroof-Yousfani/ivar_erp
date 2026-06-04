@@ -944,7 +944,8 @@ export const inventoryApi = {
       genderIds?: string[];
     }
   ) => {
-    const params = new URLSearchParams({ q: query });
+    const normalizedQuery = query.trim().replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+    const params = new URLSearchParams({ q: normalizedQuery });
     if (warehouseId) params.append('warehouseId', warehouseId);
     if (locationId) params.append('locationId', locationId);
     if (filters?.brandIds?.length) params.append('brandIds', filters.brandIds.join(','));

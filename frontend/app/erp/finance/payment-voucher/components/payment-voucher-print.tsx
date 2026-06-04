@@ -46,7 +46,7 @@ export function PaymentVoucherPrint({ voucher }: { voucher: PaymentVoucher }) {
       <div className="flex justify-between mb-6 gap-4 items-start">
         {/* Logo */}
         <div className="w-[20%] flex flex-col items-start justify-center">
-           <img src="/image.png" alt="Logo" className="w-32 object-contain" />
+           <img src="/image-v2.png" alt="Logo" className="w-32 object-contain" />
         </div>
         
         {/* Title */}
