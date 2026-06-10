@@ -196,25 +196,30 @@ export class StockLedgerService {
       const operation = async (transaction: Prisma.TransactionClient) => {
         // Concurrency Safe Negative Stock Check for OUTBOUND
         if (quantity.isNegative()) {
-          const currentStock = await transaction.stockLedger.aggregate({
-            where: {
-              itemId,
-              warehouseId,
-              // If locationId is provided, check location-specific stock (outlet)
-              // Otherwise check warehouse-wide stock
-              ...(locationId ? { locationId } : { locationId: null }),
-            },
-            _sum: {
-              qty: true,
-            },
-          });
+          // Allow negative stock for warehouse to outlet transfer
+          const isWarehouseToOutletTransfer = referenceType === 'TRANSFER_REQUEST' && !locationId;
 
-          const totalStock = currentStock._sum.qty || new Prisma.Decimal(0);
+          if (!isWarehouseToOutletTransfer) {
+            const currentStock = await transaction.stockLedger.aggregate({
+              where: {
+                itemId,
+                warehouseId,
+                // If locationId is provided, check location-specific stock (outlet)
+                // Otherwise check warehouse-wide stock
+                ...(locationId ? { locationId } : { locationId: null }),
+              },
+              _sum: {
+                qty: true,
+              },
+            });
 
-          if (totalStock.plus(quantity).isNegative()) {
-            throw new BadRequestException(
-              `Insufficient stock for item ${itemId} in warehouse ${warehouseId}. Current: ${totalStock}, Requested: ${quantity.abs()}`,
-            );
+            const totalStock = currentStock._sum.qty || new Prisma.Decimal(0);
+
+            if (totalStock.plus(quantity).isNegative()) {
+              throw new BadRequestException(
+                `Insufficient stock for item ${itemId} in warehouse ${warehouseId}. Current: ${totalStock}, Requested: ${quantity.abs()}`,
+              );
+            }
           }
         }
 

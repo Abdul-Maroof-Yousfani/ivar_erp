@@ -229,7 +229,7 @@ export default function StockTransferPage() {
             if (existingIndex > -1) {
                 if (autoIncrement) {
                     const newQty = selectedItems[existingIndex].quantity + bulkQty;
-                    if (newQty > itemData.availableStock) {
+                    if (newQty > itemData.availableStock && transferMode !== 'WAREHOUSE_TO_OUTLET') {
                         toast.warning(`Quantity exceeds available stock (${itemData.availableStock})`);
                     }
                     setSelectedItems(prev => prev.map((item, idx) => 
@@ -248,7 +248,7 @@ export default function StockTransferPage() {
                     });
                 }
             } else {
-                if (bulkQty > itemData.availableStock) {
+                if (bulkQty > itemData.availableStock && transferMode !== 'WAREHOUSE_TO_OUTLET') {
                     toast.warning(`Quantity exceeds available stock (${itemData.availableStock})`);
                 }
                 setSelectedItems(prev => [...prev, {
@@ -452,7 +452,7 @@ export default function StockTransferPage() {
                 return;
             }
 
-            if (bulkQty > itemData.availableStock) {
+            if (bulkQty > itemData.availableStock && transferMode !== 'WAREHOUSE_TO_OUTLET') {
                 toast.warning(`Quantity exceeds available stock (${itemData.availableStock})`);
             }
 
@@ -501,7 +501,7 @@ export default function StockTransferPage() {
         }
 
         const hasInsufficientStock = selectedItems.some(item => item.quantity > item.availableStock);
-        if (hasInsufficientStock) {
+        if (hasInsufficientStock && transferMode !== 'WAREHOUSE_TO_OUTLET') {
             toast.error('One or more items have insufficient stock for this transfer');
             return;
         }
