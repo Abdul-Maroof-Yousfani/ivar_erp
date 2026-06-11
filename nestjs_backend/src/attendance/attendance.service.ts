@@ -18,6 +18,269 @@ export class AttendanceService {
     dateTo?: Date;
     status?: string;
   }) {
+    // If employeeId and date range are provided, generate a merged daily calendar
+    if (filters?.employeeId && filters?.dateFrom && filters?.dateTo) {
+      // Fetch employee details
+      const employee = await this.prisma.employee.findUnique({
+        where: { id: filters.employeeId },
+        select: {
+          id: true,
+          employeeId: true,
+          employeeName: true,
+          workingHoursPolicyId: true,
+          joiningDate: true,
+        },
+      });
+
+      if (employee) {
+        const fromDate = new Date(filters.dateFrom);
+        fromDate.setUTCHours(0, 0, 0, 0);
+        const toDate = new Date(filters.dateTo);
+        toDate.setUTCHours(23, 59, 59, 999);
+
+        // Fetch raw attendance records
+        const attendances = await this.prisma.attendance.findMany({
+          where: {
+            employeeId: employee.id,
+            date: {
+              gte: fromDate,
+              lte: toDate,
+            },
+          },
+          include: {
+            employee: {
+              select: {
+                id: true,
+                employeeId: true,
+                employeeName: true,
+                departmentId: true,
+                subDepartmentId: true,
+                workingHoursPolicyId: true,
+              },
+            },
+          },
+        });
+
+        // Fetch holidays in the date range
+        const holidays = await this.prisma.holiday.findMany({
+          where: { status: 'active' },
+        });
+
+        // Fetch approved leaves for this employee in the range
+        const approvedLeaves = await this.prisma.leaveApplication.findMany({
+          where: {
+            employeeId: employee.id,
+            status: 'approved',
+            fromDate: { lte: toDate },
+            toDate: { gte: fromDate },
+          },
+        });
+
+        // Fetch policy assignments and policy details
+        const policyAssignments =
+          await this.prisma.workingHoursPolicyAssignment.findMany({
+            where: {
+              employeeId: employee.id,
+              startDate: { lte: toDate },
+              endDate: { gte: fromDate },
+            },
+          });
+
+        const policyIds = [
+          ...new Set([
+            employee.workingHoursPolicyId,
+            ...policyAssignments.map((a) => a.workingHoursPolicyId),
+          ]),
+        ].filter(Boolean) as string[];
+
+        const policies = await this.prisma.workingHoursPolicy.findMany({
+          where: { id: { in: policyIds } },
+        });
+
+        const policiesMap = new Map(policies.map((p) => [p.id, p]));
+
+        const getPolicyForDateInMemory = (date: Date) => {
+          const assignment = policyAssignments.find((a) => {
+            const start = new Date(a.startDate);
+            const end = new Date(a.endDate);
+            start.setHours(0, 0, 0, 0);
+            end.setHours(23, 59, 59, 999);
+            return date >= start && date <= end;
+          });
+          const policyId =
+            assignment?.workingHoursPolicyId || employee.workingHoursPolicyId;
+          return policyId ? policiesMap.get(policyId) : null;
+        };
+
+        const isDayOff = (date: Date, policy: any): boolean => {
+          const dayNames = [
+            'sunday',
+            'monday',
+            'tuesday',
+            'wednesday',
+            'thursday',
+            'friday',
+            'saturday',
+          ];
+          const dayName = dayNames[date.getDay()];
+
+          let isOff = date.getDay() === 0 || date.getDay() === 6; // default Sat/Sun
+          if (policy) {
+            isOff = policy.isDefault
+              ? dayName === 'saturday' || dayName === 'sunday'
+              : false;
+            if (
+              policy.dayOverrides &&
+              typeof policy.dayOverrides === 'object'
+            ) {
+              const overrides = policy.dayOverrides as any;
+              if (overrides[dayName]?.enabled) {
+                isOff = false; // It is overrides to a working day
+              }
+            }
+          }
+          return isOff;
+        };
+
+        // Create a map of attendance by normalized date for O(1) lookup
+        const attendanceMap = new Map<string, (typeof attendances)[0]>();
+        attendances.forEach((att) => {
+          const attDate = new Date(att.date);
+          const dateKey = `${attDate.getUTCFullYear()}-${String(attDate.getUTCMonth() + 1).padStart(2, '0')}-${String(attDate.getUTCDate()).padStart(2, '0')}`;
+          attendanceMap.set(dateKey, att);
+        });
+
+        const mergedRecords: any[] = [];
+        const currentDate = new Date(fromDate);
+
+        while (currentDate <= toDate) {
+          const dateKey = `${currentDate.getUTCFullYear()}-${String(currentDate.getUTCMonth() + 1).padStart(2, '0')}-${String(currentDate.getUTCDate()).padStart(2, '0')}`;
+
+          // Check if employee had joined yet
+          if (employee.joiningDate) {
+            const jd = new Date(employee.joiningDate);
+            const joiningDateKey = `${jd.getUTCFullYear()}-${String(jd.getUTCMonth() + 1).padStart(2, '0')}-${String(jd.getUTCDate()).padStart(2, '0')}`;
+            if (dateKey < joiningDateKey) {
+              mergedRecords.push({
+                id: null,
+                employeeId: employee.id,
+                date: new Date(currentDate),
+                status: 'not-joined',
+                isRemote: false,
+                checkIn: null,
+                checkOut: null,
+                notes: 'Not Joined Yet',
+                employee: {
+                  id: employee.id,
+                  employeeId: employee.employeeId,
+                  employeeName: employee.employeeName,
+                },
+              });
+              currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+              continue;
+            }
+          }
+
+          const existingAtt = attendanceMap.get(dateKey);
+
+          if (existingAtt) {
+            mergedRecords.push(existingAtt);
+          } else {
+            let virtualStatus = 'absent';
+            let notes: null | string = null;
+
+            // 1. Check for approved leave
+            const leave = approvedLeaves.find((l) => {
+              const leaveStart = new Date(l.fromDate);
+              leaveStart.setHours(0, 0, 0, 0);
+              const leaveEnd = new Date(l.toDate);
+              leaveEnd.setHours(23, 59, 59, 999);
+              return currentDate >= leaveStart && currentDate <= leaveEnd;
+            });
+
+            if (leave) {
+              virtualStatus = 'leave';
+              notes = leave.reasonForLeave || 'Approved Leave';
+            } else {
+              // 2. Check for holiday
+              const isHoliday = holidays.some((holiday) => {
+                const holidayStart = new Date(
+                  new Date(holiday.dateFrom).getTime() + 12 * 60 * 60 * 1000,
+                )
+                  .toISOString()
+                  .split('T')[0];
+                const holidayEnd = new Date(
+                  new Date(holiday.dateTo).getTime() + 12 * 60 * 60 * 1000,
+                )
+                  .toISOString()
+                  .split('T')[0];
+                const checkDate = currentDate.toISOString().split('T')[0];
+                return checkDate >= holidayStart && checkDate <= holidayEnd;
+              });
+
+              if (isHoliday) {
+                virtualStatus = 'holiday';
+                const matchingHoliday = holidays.find((holiday) => {
+                  const holidayStart = new Date(
+                    new Date(holiday.dateFrom).getTime() + 12 * 60 * 60 * 1000,
+                  )
+                    .toISOString()
+                    .split('T')[0];
+                  const holidayEnd = new Date(
+                    new Date(holiday.dateTo).getTime() + 12 * 60 * 60 * 1000,
+                  )
+                    .toISOString()
+                    .split('T')[0];
+                  const checkDate = currentDate.toISOString().split('T')[0];
+                  return checkDate >= holidayStart && checkDate <= holidayEnd;
+                });
+                notes = matchingHoliday ? matchingHoliday.name : 'Holiday';
+              } else {
+                // 3. Check for weekend/weekly-off
+                const policy = getPolicyForDateInMemory(currentDate);
+                if (isDayOff(currentDate, policy)) {
+                  virtualStatus = 'weekly-off';
+                }
+              }
+            }
+
+            mergedRecords.push({
+              id: null,
+              employeeId: employee.id,
+              date: new Date(currentDate),
+              status: virtualStatus,
+              isRemote: false,
+              checkIn: null,
+              checkOut: null,
+              notes: notes,
+              employee: {
+                id: employee.id,
+                employeeId: employee.employeeId,
+                employeeName: employee.employeeName,
+              },
+            });
+          }
+
+          currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+        }
+
+        // Apply status filter if provided
+        let filteredRecords = mergedRecords;
+        if (filters.status) {
+          filteredRecords = mergedRecords.filter(
+            (r) => r.status.toLowerCase() === filters.status!.toLowerCase(),
+          );
+        }
+
+        // Sort descending by date
+        filteredRecords.sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+        );
+
+        return { status: true, data: filteredRecords };
+      }
+    }
+
     const where: any = {};
     if (filters?.employeeId) where.employeeId = filters.employeeId;
     if (filters?.dateFrom || filters?.dateTo) {
@@ -45,7 +308,7 @@ export class AttendanceService {
     });
     return { status: true, data: attendances };
   }
-
+  
   async get(id: string) {
     const attendance = await this.prisma.attendance.findUnique({
       where: { id },
