@@ -82,15 +82,8 @@ export class TransferRequestService {
             for (const item of data.items) {
                 let availableQty = 0;
                 if (transferType === 'WAREHOUSE_TO_OUTLET') {
-                    const stock = await this.prisma.inventoryItem.findFirst({
-                        where: {
-                            warehouseId: data.fromWarehouseId,
-                            locationId: null, // Ensure we check warehouse main stock
-                            itemId: item.itemId,
-                            status: 'AVAILABLE'
-                        }
-                    });
-                    availableQty = stock ? Number(stock.quantity) : 0;
+                    // Allow negative stock transfer for warehouse-to-outlet, skip check
+                    continue;
                 } else {
                     const stock = await this.prisma.inventoryItem.findFirst({
                         where: {
