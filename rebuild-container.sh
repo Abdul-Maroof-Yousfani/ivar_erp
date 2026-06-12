@@ -130,9 +130,9 @@ if [ "$DEPLOY_MODE" -eq 1 ]; then
         fi
         if confirm "Apply Prisma generate?"; then
             info "Running prisma:master:generate..."
-            bun run prisma:master:generate --accept-data-loss || { error "Master DB push failed!"; exit 1; }
+            bun run prisma:master:generate|| { error "Master generate failed!"; exit 1; }
             info "Running prisma:tenant:generate..."
-            bun run prisma:tenant:generate || { error "Tenant DB generate failed!"; exit 1; }
+            bun run prisma:tenant:generate || { error "Tenant generate failed!"; exit 1; }
             success "prisma generate successfully."
         fi
 
