@@ -128,6 +128,13 @@ if [ "$DEPLOY_MODE" -eq 1 ]; then
             bun run prisma:tenant:push || { error "Tenant DB push failed!"; exit 1; }
             success "Database schemas pushed successfully."
         fi
+        if confirm "Apply Prisma generate?"; then
+            info "Running prisma:master:generate..."
+            bun run prisma:master:generate --accept-data-loss || { error "Master DB push failed!"; exit 1; }
+            info "Running prisma:tenant:generate..."
+            bun run prisma:tenant:generate || { error "Tenant DB generate failed!"; exit 1; }
+            success "prisma generate successfully."
+        fi
 
         if confirm "Build backend?"; then
             info "Building backend..."
