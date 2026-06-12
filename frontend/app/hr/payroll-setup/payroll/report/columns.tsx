@@ -61,6 +61,26 @@ const formatCurrency = (amount: number) => {
 
 export const columns: ColumnDef<PayrollReportRow>[] = [
     {
+        accessorKey: "payroll",
+        header: "Month/Year",
+        cell: ({ row }) => (
+            <div className="text-sm font-medium">
+                {(() => {
+                    const month = row.original.payroll?.month;
+                    const year = row.original.payroll?.year;
+                    if (!month || !year) return "—";
+                    
+                    const monthNames = [
+                        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+                    ];
+                    const monthIndex = parseInt(month) - 1;
+                    return `${monthNames[monthIndex] || month} ${year}`;
+                })()}
+            </div>
+        ),
+    },
+    {
         header: "S.No",
         cell: ({ row }) => row.index + 1,
     },
@@ -162,7 +182,7 @@ export const columns: ColumnDef<PayrollReportRow>[] = [
         header: "Tax",
         cell: ({ row }) => {
             const tax = row.original.taxBreakup;
-            const annualTax = (tax?.monthlyTax || 0) * 12;
+            const annualTax = (tax?.fixedAmountTax || 0) + (tax?.percentageTax || 0);
             return (
                 <div className="text-[10px] space-y-0.5 min-w-[160px]">
                     <div className="flex justify-between items-center gap-2">

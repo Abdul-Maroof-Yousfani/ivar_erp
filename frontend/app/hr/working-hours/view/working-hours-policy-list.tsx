@@ -77,7 +77,6 @@ export function WorkingHoursPolicyList({
         <td>${policy.name}</td>
         <td>${policy.startWorkingHours || "N/A"}</td>
         <td>${policy.endWorkingHours || "N/A"}</td>
-        <td>${policy.otStartsAt || "N/A"}</td>
         <td>${policy.lateStartTime || "N/A"}</td>
         <td>${policy.halfDayStartTime || "N/A"}</td>
         <td>${policy.createdBy || "N/A"}</td>
@@ -106,7 +105,6 @@ export function WorkingHoursPolicyList({
                 <th>Policy Name</th>
                 <th>Start Time</th>
                 <th>End Time</th>
-                <th>OT Starts At</th>
                 <th>Late Time</th>
                 <th>Half Day Time</th>
                 <th>Created By</th>
@@ -131,7 +129,6 @@ export function WorkingHoursPolicyList({
       "Policy Name",
       "Start Time",
       "End Time",
-      "OT Starts At",
       "Late Time",
       "Half Day Time",
       "Created By",
@@ -142,7 +139,6 @@ export function WorkingHoursPolicyList({
       policy.name,
       policy.startWorkingHours || "N/A",
       policy.endWorkingHours || "N/A",
-      policy.otStartsAt || "N/A",
       policy.lateStartTime || "N/A",
       policy.halfDayStartTime || "N/A",
       policy.createdBy || "N/A",

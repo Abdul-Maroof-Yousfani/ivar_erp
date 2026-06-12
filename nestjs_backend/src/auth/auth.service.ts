@@ -64,8 +64,13 @@ export class AuthService {
     try {
       // Step 1: Find user
       this.logger.debug(`[LOGIN] Step 1: Looking up user: ${email}`);
-      const user = await this.prismaMaster.user.findUnique({
-        where: { email },
+      const user = await this.prismaMaster.user.findFirst({
+        where: {
+          OR: [
+            { email },
+            { employeeId: email }
+          ]
+        },
         include: { role: true },
       });
 
@@ -1182,6 +1187,7 @@ export class AuthService {
             id: terminal.id,
             code: terminal.terminalCode,
             name: terminal.name,
+            isParent: terminal.isParent,
             location: terminal.location
               ? {
                   id: terminal.location.id,
@@ -1534,9 +1540,24 @@ export class AuthService {
   }
 
   async createUser(data: any) {
-    const existingUser = await this.prismaMaster.user.findUnique({
-      where: { email: data.email },
-    });
+    // Only look up by email if one was provided — passing undefined to a unique-field
+    // where clause throws PrismaClientValidationError.
+    let existingUser: any = null;
+    if (data.email) {
+      existingUser = await this.prismaMaster.user.findUnique({
+        where: { email: data.email },
+      });
+    }
+
+    // Also check if a user already exists for this employeeId code to avoid duplicates
+    if (!existingUser && data.employeeId) {
+      existingUser = await this.prismaMaster.user.findUnique({
+        where: { employeeId: data.employeeId },
+      });
+      if (existingUser) {
+        return { status: false, message: 'User account already exists for this employee' };
+      }
+    }
 
     if (existingUser) {
       if (data.password) {
@@ -1546,7 +1567,7 @@ export class AuthService {
         );
 
         const updatedUser = await this.prismaMaster.user.update({
-          where: { email: data.email },
+          where: { id: existingUser.id },
           data: {
             password: hashedPassword,
             ...(data.employeeId ? { employeeId: data.employeeId } : {}),
@@ -1557,10 +1578,11 @@ export class AuthService {
         });
 
         // Sync to employee record in tenant DB if present
+        // data.employeeId is the alphanumeric code (e.g. EMP-001) — query by employeeId, not id
         if (data.employeeId && this.prisma) {
           try {
             await this.prisma.employee.update({
-              where: { id: data.employeeId },
+              where: { employeeId: data.employeeId },
               data: { userId: updatedUser.id },
             });
           } catch (e) {
@@ -1594,10 +1616,11 @@ export class AuthService {
     });
 
     // Sync to employee record in tenant DB if present
+    // data.employeeId is the alphanumeric code (e.g. EMP-001) — query by employeeId, not id
     if (data.employeeId && this.prisma) {
       try {
         await this.prisma.employee.update({
-          where: { id: data.employeeId },
+          where: { employeeId: data.employeeId },
           data: { userId: user.id },
         });
       } catch (e) {
@@ -1609,6 +1632,7 @@ export class AuthService {
 
     return { status: true, data: user, message: 'User created successfully' };
   }
+
 
   async updateUser(id: string, data: any) {
     const { userPermissions, ...userData } = data;
@@ -1643,10 +1667,11 @@ export class AuthService {
     }
 
     // Sync to employee record in tenant DB if employee link is being established/changed
+    // data.employeeId is the alphanumeric code (e.g. EMP-001) — query by employeeId, not id
     if (data.employeeId && this.prisma) {
       try {
         await this.prisma.employee.update({
-          where: { id: data.employeeId },
+          where: { employeeId: data.employeeId },
           data: { userId: user.id },
         });
       } catch (e) {
@@ -1919,7 +1944,7 @@ export class AuthService {
     return {
       status: true,
       message: 'Manager verified successfully',
-      data: { userId: user.id, email: user.email },
+      data: { userId: user.id, email: user.email || '' },
     };
   }
 
@@ -2174,6 +2199,16 @@ export class AuthService {
 
     // ── 3. Link to POS session if one is active ───────────────────────────────
     if (context.posSessionId) {
+      const activeSession = await this.prisma.posSession.findUnique({
+        where: { id: context.posSessionId },
+      });
+      if (activeSession && activeSession.userId && activeSession.userId !== user.id) {
+        return {
+          status: false,
+          message: 'Cannot switch cashier profiles while a POS session is active. Please close the active shift first.',
+        };
+      }
+
       await this.prisma.posSession.update({
         where: { id: context.posSessionId },
         data: { userId: user.id },
@@ -2358,6 +2393,12 @@ export class AuthService {
           },
         });
       } else {
+        if (posSession.userId && posSession.userId !== user.id) {
+          return {
+            status: false,
+            message: 'Cannot switch cashier profiles while a POS session is active. Please close the active shift first.',
+          };
+        }
         await this.prisma.posSession.update({
           where: { id: posSession.id },
           data: { userId: user.id },

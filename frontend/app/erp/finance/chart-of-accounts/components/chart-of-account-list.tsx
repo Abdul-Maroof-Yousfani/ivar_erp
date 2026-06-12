@@ -13,7 +13,7 @@ import { useUploadProgress } from "@/hooks/use-upload-progress";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/auth-provider";
 import Link from "next/link";
-import DataTable from "@/components/common/data-table";
+import DataTable, { HighlightText } from "@/components/common/data-table";
 import { ColumnDef } from "@tanstack/react-table";
 import {
   DropdownMenu,
@@ -80,9 +80,145 @@ function buildTree(flat: ChartOfAccount[]): ChartOfAccount[] {
   return roots;
 }
 
+// Helper to find all ancestors of an account
+function findAncestors(account: ChartOfAccount, allAccounts: ChartOfAccount[]): ChartOfAccount[] {
+  const ancestors: ChartOfAccount[] = [];
+  let current = account;
+  let safetyCounter = 0;
+  while (current.parentId && safetyCounter < 100) {
+    const parent = allAccounts.find((a) => a.id === current.parentId);
+    if (!parent) break;
+    ancestors.push(parent);
+    current = parent;
+    safetyCounter++;
+  }
+  return ancestors;
+}
+
+// Generate tags for chart of accounts based on their place in the hierarchy
+function getAccountTags(account: ChartOfAccount, allAccounts: ChartOfAccount[]): string[] {
+  const tags: string[] = [];
+
+  // Group vs Ledger
+  if (account.isGroup) {
+    tags.push("Group");
+  } else {
+    tags.push("Ledger");
+  }
+
+  const ancestors = findAncestors(account, allAccounts);
+  const ancestorNames = ancestors.map((a) => a.name.toUpperCase());
+  const ancestorCodes = ancestors.map((a) => a.code);
+  const selfName = account.name.toUpperCase();
+  const selfCode = account.code;
+
+  if (account.isGroup) {
+    // Classification for groups (Control Accounts)
+    if (
+      selfName.includes("DEBTOR") ||
+      selfName.includes("RECEIVABLE") ||
+      selfName.includes("CUSTOMER") ||
+      selfName.includes("A/R PARTIES")
+    ) {
+      tags.push("Customer Control");
+    } else if (
+      selfName.includes("CREDITOR") ||
+      selfName.includes("PAYABLE") ||
+      selfName.includes("SUPPLIER") ||
+      selfName.includes("A/P PARTIES") ||
+      selfCode.startsWith("12030001")
+    ) {
+      tags.push("Supplier Control");
+    } else if (
+      selfName.includes("BANK") ||
+      selfName.includes("CASH")
+    ) {
+      tags.push("Cash/Bank Control");
+    } else if (
+      selfName.includes("TAX") ||
+      selfName.includes("DUTY")
+    ) {
+      tags.push("Tax Control");
+    } else if (
+      selfName.includes("EMPLOYEE") ||
+      selfName.includes("SALARY") ||
+      selfName.includes("STAFF")
+    ) {
+      tags.push("Employee Control");
+    } else if (
+      selfName.includes("LOCATION") ||
+      selfName.includes("OUTLET") ||
+      selfName.includes("STORE") ||
+      selfName.includes("WAREHOUSE")
+    ) {
+      tags.push("Location Control");
+    }
+  } else {
+    // Classification for ledger accounts
+    const belongsTo = (namePattern: string, codePrefix?: string) => {
+      return (
+        ancestorNames.some((name) => name.includes(namePattern)) ||
+        (codePrefix && ancestorCodes.some((code) => code.startsWith(codePrefix))) ||
+        (codePrefix && selfCode.startsWith(codePrefix))
+      );
+    };
+
+    if (
+      belongsTo("DEBTOR") ||
+      belongsTo("RECEIVABLE") ||
+      belongsTo("CUSTOMER") ||
+      belongsTo("A/R PARTIES") ||
+      selfCode.startsWith("3102")
+    ) {
+      tags.push("Customer");
+    } else if (
+      belongsTo("CREDITOR") ||
+      belongsTo("PAYABLE") ||
+      belongsTo("SUPPLIER") ||
+      belongsTo("A/P PARTIES") ||
+      selfCode.startsWith("1201") ||
+      selfCode.startsWith("12030001")
+    ) {
+      tags.push("Supplier");
+    } else if (belongsTo("BANK") || selfCode.startsWith("3104") || selfCode.startsWith("3105")) {
+      tags.push("Bank");
+    } else if (belongsTo("CASH") || selfCode.startsWith("3106")) {
+      tags.push("Cash");
+    } else if (belongsTo("TAX") || belongsTo("DUTY") || selfCode.startsWith("1204") || selfCode.startsWith("1206")) {
+      tags.push("Tax");
+    } else if (
+      belongsTo("EMPLOYEE") ||
+      belongsTo("SALARY") ||
+      belongsTo("STAFF") ||
+      selfCode.startsWith("12030002") ||
+      selfCode.startsWith("12030003") ||
+      selfCode.startsWith("3103")
+    ) {
+      tags.push("Employee");
+    } else if (belongsTo("LOCATION") || belongsTo("OUTLET") || belongsTo("STORE") || belongsTo("WAREHOUSE")) {
+      tags.push("Location");
+    }
+  }
+
+  return tags;
+}
+
 export function ChartOfAccountList({ initialData }: ChartOfAccountListProps) {
   const router = useRouter();
   const { hasPermission, isAdmin } = useAuth();
+
+  React.useEffect(() => {
+    console.log("INITIAL DATA TOTAL:", initialData.length);
+    const apParties = initialData.find(a => a.code === "12030001");
+    if (apParties) {
+      const children = initialData.filter(a => a.parentId === apParties.id);
+      console.log("AP PARTIES FOUND:", apParties);
+      console.log("AP PARTIES CHILDREN COUNT:", children.length);
+      console.log("AP PARTIES CHILDREN:", children.map(c => `${c.code} - ${c.name}`));
+    } else {
+      console.log("AP PARTIES NOT FOUND IN INITIAL DATA!");
+    }
+  }, [initialData]);
 
   const canCreate = hasPermission("erp.finance.chart-of-account.create");
   const canEdit   = hasPermission("erp.finance.chart-of-account.update");
@@ -109,13 +245,102 @@ export function ChartOfAccountList({ initialData }: ChartOfAccountListProps) {
   const tree = React.useMemo(() => buildTree(initialData), [initialData]);
   const allFlatData = React.useMemo(() => flattenTree(tree), [tree]);
 
-  // Filter out collapsed children
+  // Search state
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [preSearchCollapsedIds, setPreSearchCollapsedIds] = React.useState<Set<string> | null>(null);
+
+  // Save/restore collapse state and auto-expand ancestors on search
+  React.useEffect(() => {
+    if (searchQuery.trim()) {
+      // If we weren't searching before, save the current collapsed state
+      if (preSearchCollapsedIds === null) {
+        setPreSearchCollapsedIds(new Set(collapsedIds));
+      }
+
+      // Find all matches and their ancestors to expand them
+      const query = searchQuery.toLowerCase().trim();
+      const ancestorsToExpand = new Set<string>();
+
+      allFlatData.forEach(item => {
+        const tags = getAccountTags(item, initialData);
+        const matches =
+          item.name.toLowerCase().includes(query) ||
+          item.code.toLowerCase().includes(query) ||
+          tags.some(t => t.toLowerCase().includes(query));
+
+        if (matches) {
+          item.parentPath.forEach(parentId => {
+            ancestorsToExpand.add(parentId);
+          });
+        }
+      });
+
+      // Update collapsedIds: remove any ancestor that we want to expand
+      setCollapsedIds(prev => {
+        const next = new Set(prev);
+        ancestorsToExpand.forEach(id => {
+          next.delete(id);
+        });
+        return next;
+      });
+    } else {
+      // Search cleared: restore pre-search collapsed state
+      if (preSearchCollapsedIds !== null) {
+        setCollapsedIds(preSearchCollapsedIds);
+        setPreSearchCollapsedIds(null);
+      }
+    }
+  }, [searchQuery, allFlatData, initialData]);
+
+  // Filter out collapsed children or filter by search query with parent preservation
   const flatData = React.useMemo(() => {
+    if (!searchQuery.trim()) {
+      return allFlatData.filter(item => {
+        // Check if any parent in the path is collapsed
+        return !item.parentPath.some(parentId => collapsedIds.has(parentId));
+      });
+    }
+
+    const query = searchQuery.toLowerCase().trim();
+
+    // 1. Identify which node IDs match the query (including matching tags)
+    const matchedIds = new Set<string>();
+    allFlatData.forEach(item => {
+      const tags = getAccountTags(item, initialData);
+      if (
+        item.name.toLowerCase().includes(query) ||
+        item.code.toLowerCase().includes(query) ||
+        tags.some(t => t.toLowerCase().includes(query))
+      ) {
+        matchedIds.add(item.id);
+      }
+    });
+
+    // 1.5 Include all descendant accounts of any matched node
+    const finalMatchedIds = new Set<string>(matchedIds);
+    allFlatData.forEach(item => {
+      if (item.parentPath.some(parentId => matchedIds.has(parentId))) {
+        finalMatchedIds.add(item.id);
+      }
+    });
+
+    // 2. Identify all node IDs that should be visible (matches + their ancestors)
+    const visibleIds = new Set<string>();
+    allFlatData.forEach(item => {
+      if (finalMatchedIds.has(item.id)) {
+        visibleIds.add(item.id);
+        item.parentPath.forEach(parentId => {
+          visibleIds.add(parentId);
+        });
+      }
+    });
+
+    // 3. Keep only visible nodes AND respect the current collapse state
     return allFlatData.filter(item => {
-      // Check if any parent in the path is collapsed
+      if (!visibleIds.has(item.id)) return false;
       return !item.parentPath.some(parentId => collapsedIds.has(parentId));
     });
-  }, [allFlatData, collapsedIds]);
+  }, [allFlatData, collapsedIds, searchQuery, initialData]);
 
   // ── Delete dialog state ──────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = React.useState<ChartOfAccount | null>(null);
@@ -271,7 +496,7 @@ export function ChartOfAccountList({ initialData }: ChartOfAccountListProps) {
             )}
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs text-muted-foreground/70">
-                {account.code}
+                <HighlightText text={account.code} />
               </span>
               <span
                 className={cn(
@@ -281,7 +506,7 @@ export function ChartOfAccountList({ initialData }: ChartOfAccountListProps) {
                     : "text-muted-foreground"
                 )}
               >
-                {account.name}
+                <HighlightText text={account.name} />
               </span>
             </div>
           </div>
@@ -292,8 +517,49 @@ export function ChartOfAccountList({ initialData }: ChartOfAccountListProps) {
       accessorKey: "code",
       header: "Code",
       cell: ({ row }) => (
-        <span className="font-mono text-xs">{row.getValue("code")}</span>
+        <span className="font-mono text-xs">
+          <HighlightText text={row.getValue("code")} />
+        </span>
       ),
+    },
+    {
+      id: "tags",
+      header: "Tags",
+      cell: ({ row }) => {
+        const account = row.original;
+        const tags = getAccountTags(account, initialData);
+        return (
+          <div className="flex flex-wrap gap-1">
+            {tags.map((tag) => {
+              let badgeClass = "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-900/50 dark:text-slate-400";
+              if (tag === "Group") {
+                badgeClass = "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800/30";
+              } else if (tag === "Ledger") {
+                badgeClass = "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-950/30 dark:text-slate-400 dark:border-slate-800/30";
+              } else if (tag.includes("Customer")) {
+                badgeClass = "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400 dark:border-purple-800/30";
+              } else if (tag.includes("Supplier")) {
+                badgeClass = "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800/30";
+              } else if (tag.includes("Bank")) {
+                badgeClass = "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/30 dark:text-sky-400 dark:border-sky-800/30";
+              } else if (tag.includes("Cash")) {
+                badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800/30";
+              } else if (tag.includes("Tax")) {
+                badgeClass = "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800/30";
+              } else if (tag.includes("Employee")) {
+                badgeClass = "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-800/30";
+              } else if (tag.includes("Location")) {
+                badgeClass = "bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/30 dark:text-teal-400 dark:border-teal-800/30";
+              }
+              return (
+                <Badge key={tag} variant="outline" className={cn("text-[10px] font-medium px-1.5 py-0.5", badgeClass)}>
+                  {tag}
+                </Badge>
+              );
+            })}
+          </div>
+        );
+      }
     },
     {
       accessorKey: "type",
@@ -456,10 +722,13 @@ export function ChartOfAccountList({ initialData }: ChartOfAccountListProps) {
         searchFields={[
           { key: "name", label: "Name or Code" },
         ]}
+        manualFiltering={true}
+        onSearchChange={setSearchQuery}
         canBulkEdit={false}
         canBulkDelete={false}
         canRowEdit={false}
         canRowDelete={false}
+        initialPageSize={1000}
       />
 
       {/* ── Bulk Upload Modal ── */}

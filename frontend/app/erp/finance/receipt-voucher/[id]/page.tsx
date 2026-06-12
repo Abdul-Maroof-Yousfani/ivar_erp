@@ -2,7 +2,7 @@
 
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
-import { getReceiptVoucher, ReceiptVoucher } from "@/lib/actions/receipt-voucher";
+import { getReceiptVoucher, updateReceiptVoucherStatus, ReceiptVoucher } from "@/lib/actions/receipt-voucher";
 import { ReceiptVoucherPrint, numberToWords } from "../components/receipt-voucher-print";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +49,25 @@ export default function ReceiptVoucherDetailPage({
   const { id } = use(params);
   const [voucher, setVoucher] = useState<ReceiptVoucher | null>(null);
   const [loading, setLoading] = useState(true);
+  const [actionPending, setActionPending] = useState(false);
+
+  const handleUpdateStatus = async (newStatus: "approved" | "rejected") => {
+    if (!voucher) return;
+    try {
+      setActionPending(true);
+      const res = await updateReceiptVoucherStatus(voucher.id, newStatus);
+      if (res.status) {
+        toast.success(`Receipt Voucher ${newStatus} successfully`);
+        setVoucher((prev) => prev ? { ...prev, status: newStatus } : null);
+      } else {
+        toast.error(res.message || `Failed to update status to ${newStatus}`);
+      }
+    } catch {
+      toast.error("An unexpected error occurred");
+    } finally {
+      setActionPending(false);
+    }
+  };
 
   useEffect(() => {
     getReceiptVoucher(id).then((res) => {
@@ -102,18 +121,36 @@ export default function ReceiptVoucherDetailPage({
       {/* ── Print styles ── */}
       <style jsx global>{`
         @media print {
-          body { visibility: hidden; }
-          #rv-print-section {
+          body {
+            visibility: hidden;
+            background: white;
+          }
+          #rv-print-section, #rv-print-section * {
             visibility: visible;
-            position: fixed;
-            top: 0; left: 0;
-            width: 100vw;
-            margin: 0; padding: 0;
+          }
+          #rv-print-section {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            margin: 0;
+            padding: 0;
             background: white;
             z-index: 9999;
           }
-          #rv-print-section * { visibility: visible; }
-          @page { margin: 0; size: A4 portrait; }
+          tr {
+            page-break-inside: avoid;
+          }
+          thead {
+            display: table-header-group;
+          }
+          tfoot {
+            display: table-footer-group;
+          }
+          @page {
+            margin: 10mm;
+            size: A4 portrait;
+          }
           header, nav, footer, aside { display: none !important; }
         }
       `}</style>
@@ -144,10 +181,37 @@ export default function ReceiptVoucherDetailPage({
               <p className="text-sm text-muted-foreground font-mono mt-0.5">{voucher.rvNo}</p>
             </div>
           </div>
-          <Button onClick={() => window.print()} size="sm">
-            <Printer className="h-4 w-4 mr-2" />
-            Print Voucher
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => window.print()} size="sm" variant="outline">
+              <Printer className="h-4 w-4 mr-2" />
+              Print Voucher
+            </Button>
+            {voucher.status === "pending" && (
+              <>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/erp/finance/receipt-voucher/${voucher.id}/edit`}>
+                    Edit Voucher
+                  </Link>
+                </Button>
+                <Button
+                  onClick={() => handleUpdateStatus("approved")}
+                  size="sm"
+                  disabled={actionPending}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  Approve
+                </Button>
+                <Button
+                  onClick={() => handleUpdateStatus("rejected")}
+                  size="sm"
+                  variant="destructive"
+                  disabled={actionPending}
+                >
+                  Reject
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* ── Meta info card ── */}

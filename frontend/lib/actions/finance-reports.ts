@@ -48,6 +48,11 @@ export interface GeneralLedgerRow {
   description?: string | null;
   transactionDate: string;
   createdAt: string;
+  tagAccount?: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
 }
 
 export interface GeneralLedgerResult {

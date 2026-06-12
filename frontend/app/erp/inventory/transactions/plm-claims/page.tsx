@@ -28,6 +28,8 @@ interface TransferRequest {
         item: {
             sku: string;
             description: string;
+            color?: { name: string } | null;
+            size?: { name: string } | null;
         };
     }>;
     claim?: {
@@ -168,6 +170,21 @@ export default function PLMClaimsPage() {
                                 <div>
                                     <p className="text-sm font-medium">{item.item.sku}</p>
                                     <p className="text-xs text-muted-foreground">{item.item.description}</p>
+                                    {(item.item.color?.name || item.item.size?.name) && (
+                                        <div className="flex gap-2 mt-1 text-xs text-muted-foreground">
+                                            {item.item.color?.name && (
+                                                <span>
+                                                    Color: <span className="font-medium text-foreground">{item.item.color.name}</span>
+                                                </span>
+                                            )}
+                                            {item.item.color?.name && item.item.size?.name && <span>•</span>}
+                                            {item.item.size?.name && (
+                                                <span>
+                                                    Size: <span className="font-medium text-foreground">{item.item.size.name}</span>
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                                 <Badge variant="outline" className="font-semibold">
                                     Qty: {item.quantity}

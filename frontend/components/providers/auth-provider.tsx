@@ -63,6 +63,7 @@ export interface User {
     id: string;
     code: string;
     name: string;
+    isParent?: boolean;
     location?: {
       id: string;
       code: string;

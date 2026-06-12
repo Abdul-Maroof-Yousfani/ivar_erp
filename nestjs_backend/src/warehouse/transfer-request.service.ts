@@ -82,8 +82,15 @@ export class TransferRequestService {
             for (const item of data.items) {
                 let availableQty = 0;
                 if (transferType === 'WAREHOUSE_TO_OUTLET') {
-                    // Allow negative stock transfer for warehouse-to-outlet, skip check
-                    continue;
+                    const stock = await this.prisma.inventoryItem.findFirst({
+                        where: {
+                            warehouseId: data.fromWarehouseId,
+                            locationId: null, // Ensure we check warehouse main stock
+                            itemId: item.itemId,
+                            status: 'AVAILABLE'
+                        }
+                    });
+                    availableQty = stock ? Number(stock.quantity) : 0;
                 } else {
                     const stock = await this.prisma.inventoryItem.findFirst({
                         where: {
@@ -160,16 +167,22 @@ export class TransferRequestService {
         }
     }
 
-    async getRequests(warehouseId?: string, status?: string) {
+    async getRequests(warehouseId?: string, status?: string, id?: string) {
         const requests = await this.prisma.transferRequest.findMany({
             where: {
+                ...(id ? { id } : {}),
                 ...(warehouseId ? { fromWarehouseId: warehouseId } : {}),
                 ...(status ? { status } : {}),
             },
             include: {
                 items: {
                     include: {
-                        item: true
+                        item: {
+                            include: {
+                                color: true,
+                                size: true
+                            }
+                        }
                     }
                 },
                 fromWarehouse: { select: { name: true, code: true } },
@@ -193,7 +206,12 @@ export class TransferRequestService {
             include: {
                 items: {
                     include: {
-                        item: true
+                        item: {
+                            include: {
+                                color: true,
+                                size: true
+                            }
+                        }
                     }
                 },
             },
@@ -213,7 +231,12 @@ export class TransferRequestService {
             include: {
                 items: {
                     include: {
-                        item: true
+                        item: {
+                            include: {
+                                color: true,
+                                size: true
+                            }
+                        }
                     }
                 },
             },
@@ -236,7 +259,12 @@ export class TransferRequestService {
             include: {
                 items: {
                     include: {
-                        item: true
+                        item: {
+                            include: {
+                                color: true,
+                                size: true
+                            }
+                        }
                     }
                 },
             },
@@ -257,7 +285,12 @@ export class TransferRequestService {
             include: {
                 items: {
                     include: {
-                        item: true
+                        item: {
+                            include: {
+                                color: true,
+                                size: true
+                            }
+                        }
                     }
                 },
             },
@@ -739,19 +772,95 @@ export class TransferRequestService {
                 itemCount: request.items.length
             });
 
-            return this.prisma.$transaction(async (tx) => {
+             return this.prisma.$transaction(async (tx) => {
                 const plmWarehouseId = request.toWarehouseId!;
-
+ 
+                // Fetch claim to link it
+                const claim = await tx.posClaim.findFirst({
+                    where: { transferRequestId: id },
+                    select: { id: true }
+                });
+ 
                 // Process each item: Add to PLM warehouse inventory
                 for (const item of request.items) {
                     console.log('📦 [PLM Acknowledgment] Processing item:', {
                         itemId: item.itemId,
                         quantity: item.quantity
                     });
-
+ 
                     const itemRate = await this.getCurrentItemRate(tx, item.itemId);
+ 
+                    // 1. POS Claim Return (Inbound to POS Outlet Location)
+                    // 2. Outlet Transfer Out (Outbound from POS Outlet Location)
+                    if (request.fromLocationId && request.fromWarehouseId) {
+                        // Inbound Entry
+                        await this.stockLedgerService.createEntry({
+                            itemId: item.itemId,
+                            warehouseId: request.fromWarehouseId,
+                            locationId: request.fromLocationId,
+                            qty: Number(item.quantity),
+                            movementType: 'INBOUND',
+                            referenceType: 'POS_CLAIM_APPROVED',
+                            referenceId: claim?.id || request.id,
+                            rate: itemRate,
+                        }, tx);
+ 
+                        // Increment POS location inventory
+                        const posStock = await tx.inventoryItem.findFirst({
+                            where: {
+                                itemId: item.itemId,
+                                locationId: request.fromLocationId,
+                                status: 'AVAILABLE'
+                            }
+                        });
+ 
+                        if (posStock) {
+                            await tx.inventoryItem.update({
+                                where: { id: posStock.id },
+                                data: { quantity: { increment: Number(item.quantity) } }
+                            });
+                        } else {
+                            await tx.inventoryItem.create({
+                                data: {
+                                    itemId: item.itemId,
+                                    warehouseId: request.fromWarehouseId,
+                                    locationId: request.fromLocationId,
+                                    quantity: Number(item.quantity),
+                                    status: 'AVAILABLE'
+                                }
+                            });
+                        }
+ 
+                        // Outbound Entry
+                        await this.stockLedgerService.createEntry({
+                            itemId: item.itemId,
+                            warehouseId: request.fromWarehouseId,
+                            locationId: request.fromLocationId,
+                            qty: -Number(item.quantity),
+                            movementType: 'OUTBOUND',
+                            referenceType: 'OUTLET_TRANSFER_OUT',
+                            referenceId: request.id,
+                            rate: itemRate,
+                        }, tx);
+ 
+                        // Decrement POS location inventory
+                        const posStockUpdated = await tx.inventoryItem.findFirst({
+                            where: {
+                                itemId: item.itemId,
+                                locationId: request.fromLocationId,
+                                status: 'AVAILABLE'
+                            }
+                        });
+ 
+                        if (posStockUpdated) {
+                            await tx.inventoryItem.update({
+                                where: { id: posStockUpdated.id },
+                                data: { quantity: { decrement: Number(item.quantity) } }
+                            });
+                        }
+                    }
 
-                    // 1. Create stock ledger entry: Customer → PLM (direct transfer)
+                    // 2. Create stock ledger entry: Customer → PLM (direct transfer)
                     await this.stockLedgerService.createEntry({
                         itemId: item.itemId,
                         warehouseId: plmWarehouseId,
@@ -763,7 +872,7 @@ export class TransferRequestService {
                         rate: itemRate,
                     }, tx);
 
-                    console.log('✅ [PLM Acknowledgment] Stock ledger entry created');
+                    console.log('✅ [PLM Acknowledgment] Stock ledger entries created');
 
                     // 2. Add item to PLM warehouse inventory
                     const plmStock = await tx.inventoryItem.findFirst({

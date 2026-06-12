@@ -27,6 +27,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface LocationListProps {
   initialLocations: Location[];
@@ -45,6 +52,8 @@ export function LocationList({
   const showAddAction = hasPermission("master.location.create");
   const canBulkEdit = hasPermission("master.location.update");
   const canBulkDelete = hasPermission("master.location.delete");
+  // Filter: 'all' | 'online' | 'offline'
+  const [onlineFilter, setOnlineFilter] = useState<'all' | 'online' | 'offline'>('all');
 
   const handleToggle = () => {
     startTransition(() => {
@@ -100,11 +109,17 @@ export function LocationList({
     });
   };
 
-  // Transform data to include string id for DataTable
-  const data: LocationRow[] = initialLocations.map((loc) => ({
+  // Transform data to include string id for DataTable, then apply online filter
+  const allData: LocationRow[] = initialLocations.map((loc) => ({
     ...loc,
     id: loc.id.toString(),
   }));
+
+  const data: LocationRow[] = allData.filter((loc) => {
+    if (onlineFilter === 'online') return loc.isOnline === true;
+    if (onlineFilter === 'offline') return loc.isOnline === false;
+    return true;
+  });
 
   return (
     <div className="space-y-6">
@@ -115,13 +130,42 @@ export function LocationList({
         </p>
       </div>
 
+      {/* Online / Offline filter */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-muted-foreground">Outlet Status:</span>
+        <Select value={onlineFilter} onValueChange={(v) => setOnlineFilter(v as any)}>
+          <SelectTrigger className="h-8 w-[130px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Outlets</SelectItem>
+            <SelectItem value="online">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-green-500" />
+                Online
+              </span>
+            </SelectItem>
+            <SelectItem value="offline">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-gray-400" />
+                Offline
+              </span>
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <DataTable<LocationRow>
         columns={columns}
         data={data}
         actionText={showAddAction ? "Add Location" : undefined}
         toggleAction={showAddAction ? handleToggle : undefined}
         newItemId={newItemId}
-        searchFields={[{ key: "name", label: "Name" }]}
+        searchFields={[
+          { key: "name", label: "Name" },
+          { key: "code", label: "Code" },
+          { key: "city.name", label: "City" }
+        ]}
         onMultiDelete={handleMultiDelete}
         onBulkEdit={handleBulkEdit}
         canBulkEdit={canBulkEdit}

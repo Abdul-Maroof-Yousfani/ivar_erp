@@ -265,6 +265,8 @@ export default function OrderDetailsPage() {
                                 <TableHeader className="bg-muted/40">
                                     <TableRow>
                                         <TableHead className="text-xs font-bold uppercase text-muted-foreground px-4">Item</TableHead>
+                                        <TableHead className="text-center text-xs font-bold uppercase text-muted-foreground w-24">Size</TableHead>
+                                        <TableHead className="text-center text-xs font-bold uppercase text-muted-foreground w-24">Color</TableHead>
                                         <TableHead className="text-center text-xs font-bold uppercase text-muted-foreground w-20">Qty</TableHead>
                                         {(order.status === 'returned' || order.status === 'partially_returned') && (
                                             <>
@@ -293,7 +295,9 @@ export default function OrderDetailsPage() {
                                                 <TableCell className="px-4 py-3">
                                                     <div className="flex items-start gap-2">
                                                         <div className="flex-1">
-                                                            <p className="font-bold text-sm">{item.item?.description}</p>
+                                                            <p className="font-bold text-sm">
+                                                                {item.item?.description}
+                                                            </p>
                                                             <p className="text-xs text-muted-foreground font-mono">{item.item?.sku}</p>
                                                         </div>
                                                         {isPartiallyReturned && (
@@ -307,6 +311,12 @@ export default function OrderDetailsPage() {
                                                             </Badge>
                                                         )}
                                                     </div>
+                                                </TableCell>
+                                                <TableCell className="text-center">
+                                                    <span className="inline-block px-2 py-0.5 rounded text-sm font-bold bg-muted/50">{item.item?.size?.name || "—"}</span>
+                                                </TableCell>
+                                                <TableCell className="text-center">
+                                                    <span className="inline-block px-2 py-0.5 rounded text-sm font-bold bg-muted/50">{item.item?.color?.name || "—"}</span>
                                                 </TableCell>
                                                 <TableCell className="text-center">
                                                     <span className="inline-block px-2 py-0.5 rounded text-sm font-bold bg-muted/50">{orderedQty}</span>
@@ -483,6 +493,7 @@ export default function OrderDetailsPage() {
                 <PrintReceipt
                     order={{ ...order, isGiftReceipt: false }}
                     tenders={order.tenders || []}
+                    creditVouchers={order.creditVouchers}
                     onClose={() => setShowPrint(false)}
                 />
             )}
@@ -491,6 +502,7 @@ export default function OrderDetailsPage() {
                 <PrintReceipt
                     order={{ ...order, isGiftReceipt: true }}
                     tenders={order.tenders || []}
+                    creditVouchers={order.creditVouchers}
                     onClose={() => setShowGiftPrint(false)}
                 />
             )}
@@ -498,6 +510,7 @@ export default function OrderDetailsPage() {
             {showReturnPrint && order && (
                 <PrintReturnReceipt
                     returnRef={order.orderNumber}
+                    isAlliance={!!order.alliance}
                     originalOrders={[{ orderNumber: order.orderNumber, grandTotal: Number(order.grandTotal) }]}
                     returnedLines={(returnDetails?.items ?? []).map((item: any) => ({
                         name: item.item?.description || "Unknown Item",

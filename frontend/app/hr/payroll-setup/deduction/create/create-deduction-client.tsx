@@ -30,13 +30,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { MonthYearPicker } from "@/components/ui/month-year-picker";
-import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { useEmployeeDropdown } from "@/hooks/use-employee-dropdown";
 import { toast } from "sonner";
 import { Loader2, Search, Plus, Trash2 } from "lucide-react";
-import {
-  getEmployeesForDropdown,
-  type EmployeeDropdownOption,
-} from "@/lib/actions/employee";
 import {
   getSubDepartmentsByDepartment,
   type Department,
@@ -60,19 +57,16 @@ interface EmployeeDeductionItem {
 
 interface CreateDeductionClientProps {
   initialDepartments: Department[];
-  initialEmployees: EmployeeDropdownOption[];
   initialDeductionHeads: DeductionHead[];
 }
 
 export function CreateDeductionClient({
   initialDepartments,
-  initialEmployees,
   initialDeductionHeads,
 }: CreateDeductionClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [departments] = useState<Department[]>(initialDepartments);
-  const [employees] = useState<EmployeeDropdownOption[]>(initialEmployees);
   const [deductionHeads] = useState<DeductionHead[]>(initialDeductionHeads);
   const [subDepartments, setSubDepartments] = useState<SubDepartment[]>([]);
   const [loadingSubDepartments, setLoadingSubDepartments] = useState(false);
@@ -89,6 +83,12 @@ export function CreateDeductionClient({
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [employeeDeductions, setEmployeeDeductions] = useState<EmployeeDeductionItem[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
+
+  const { getEmployee, isInitialLoading, multiSelectProps } = useEmployeeDropdown({
+    departmentId: formData.department,
+    subDepartmentId: formData.subDepartment,
+    selectedIds: selectedEmployeeIds,
+  });
 
   // Fetch sub-departments when department changes
   useEffect(() => {
@@ -117,17 +117,6 @@ export function CreateDeductionClient({
     fetchSubDepartments();
   }, [formData.department]);
 
-  // Filter employees based on department and sub-department
-  const filteredEmployees = employees.filter((emp) => {
-    if (formData.department && formData.department !== "all") {
-      if (emp.departmentId !== formData.department) return false;
-    }
-    if (formData.subDepartment && formData.subDepartment !== "all") {
-      if (emp.subDepartmentId !== formData.subDepartment) return false;
-    }
-    return true;
-  });
-
   const handleDepartmentChange = (departmentId: string) => {
     setFormData((prev) => ({
       ...prev,
@@ -148,13 +137,6 @@ export function CreateDeductionClient({
     // Remove deductions for employees that are no longer selected
     setEmployeeDeductions(employeeDeductions.filter((item) => selectedIds.includes(item.employeeId)));
   };
-
-  // Prepare employee options for MultiSelect
-  const employeeOptions: MultiSelectOption[] = filteredEmployees.map((emp) => ({
-    value: emp.id,
-    label: emp.employeeName,
-    description: `${emp.employeeId}${emp.departmentName ? ` • ${emp.departmentName}` : ""}`,
-  }));
 
   const handleSearch = () => {
     if (!formData.deductionAmount || !formData.deductionType) {
@@ -194,7 +176,7 @@ export function CreateDeductionClient({
     // Create deduction items for all selected employees and months
     const newDeductions: EmployeeDeductionItem[] = [];
     selectedEmployeeIds.forEach((empId) => {
-      const employee = employees.find((e) => e.id === empId);
+      const employee = getEmployee(empId);
       selectedMonths.forEach((monthYear, monthIndex) => {
         newDeductions.push({
           id: `${empId}-${formData.deductionType}-${monthYear}-${Date.now()}-${monthIndex}`,
@@ -373,16 +355,25 @@ export function CreateDeductionClient({
                 <Label htmlFor="employee">
                   Employee <span className="text-destructive">*</span>
                 </Label>
-                <MultiSelect
-                  options={employeeOptions}
-                  value={selectedEmployeeIds}
-                  onValueChange={handleEmployeeSelectionChange}
-                  placeholder="Select employee(s)"
-                  searchPlaceholder="Search employees..."
-                  emptyMessage="No employees found"
-                  disabled={isPending}
-                  maxDisplayedItems={2}
-                />
+                {isInitialLoading ? (
+                  <div className="h-10 bg-muted rounded-md animate-pulse" />
+                ) : (
+                  <MultiSelect
+                    options={multiSelectProps.options}
+                    value={selectedEmployeeIds}
+                    onValueChange={handleEmployeeSelectionChange}
+                    onSearch={multiSelectProps.onSearch}
+                    onLoadMore={multiSelectProps.onLoadMore}
+                    hasMore={multiSelectProps.hasMore}
+                    isLoading={multiSelectProps.isLoading}
+                    placeholder="Select employee(s)"
+                    searchPlaceholder="Search by name or employee ID..."
+                    emptyMessage={multiSelectProps.isLoading ? "Loading employees..." : "No employees found"}
+                    disabled={isPending}
+                    maxDisplayedItems={2}
+                    showSelectAll={false}
+                  />
+                )}
               </div>
             </div>
 

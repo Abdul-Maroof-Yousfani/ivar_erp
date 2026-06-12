@@ -167,6 +167,7 @@ export const routePermissions: Record<string, string[]> = {
   "/master/old-season": ["master.old-season.read"],
   "/master/old-season/add": ["master.old-season.create"],
   "/master/old-season/list": ["master.old-season.read"],
+  "/master/pos-config/merchants": ["master.merchant.read"],
   "/master/pos-config": ["master.promo.read", "master.coupon.read", "master.alliance.read"],
 
 

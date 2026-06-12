@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Trash2, Loader2, CreditCard, Wallet, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { createReceiptVoucher, getAllCustomers, getPendingInvoicesByCustomer } from "@/lib/actions/receipt-voucher";
+import { createReceiptVoucher, updateReceiptVoucher, getAllCustomers, getPendingInvoicesByCustomer, type ReceiptVoucher } from "@/lib/actions/receipt-voucher";
 import { ChartOfAccount } from "@/lib/actions/chart-of-account";
 import { ChartOfAccountSelect, getSharedTree } from "@/components/ui/chart-of-account-select";
 import { cn } from "@/lib/utils";
@@ -98,7 +98,7 @@ type InvoiceReceiptEntry = {
     receivingNow: number;
 };
 
-export function ReceiptVoucherForm() {
+export function ReceiptVoucherForm({ initialData }: { initialData?: any }) {
     const router = useRouter();
     const [isPending, setIsPending] = useState(false);
     const [customers, setCustomers] = useState<any[]>([]);
@@ -110,22 +110,32 @@ export function ReceiptVoucherForm() {
     const form = useForm<ReceiptVoucherFormValues>({
         resolver: zodResolver(receiptVoucherSchema) as any,
         defaultValues: {
-            type: "bank",
-            rvNo: "",
-            rvDate: new Date(),
-            refBillNo: "",
-            billDate: undefined,
-            chequeNo: "",
-            chequeDate: undefined,
-            description: "",
-            customerId: "",
-            isAdvance: false,
-            isTaxApplicable: false,
-            invoices: [],
-            details: [
-                { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
-                { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
-            ],
+            type: initialData?.type || "bank",
+            rvNo: initialData?.rvNo || "",
+            rvDate: initialData?.rvDate ? new Date(initialData.rvDate) : new Date(),
+            refBillNo: initialData?.refBillNo || "",
+            billDate: initialData?.billDate ? new Date(initialData.billDate) : undefined,
+            chequeNo: initialData?.chequeNo || "",
+            chequeDate: initialData?.chequeDate ? new Date(initialData.chequeDate) : undefined,
+            description: initialData?.description || "",
+            customerId: initialData?.customerId || "",
+            isAdvance: initialData?.isAdvance ?? false,
+            isTaxApplicable: initialData?.isTaxApplicable ?? false,
+            invoices: initialData?.invoices || [],
+            details: initialData?.details
+                ? initialData.details.map((d: any) => ({
+                      accountId: d.accountId,
+                      tagAccountId: d.tagAccountId || "",
+                      debit: Math.round(Number(d.debit) || 0),
+                      credit: Math.round(Number(d.credit) || 0),
+                      narration: d.narration || "",
+                      refBillNo: d.refBillNo || "",
+                      isTaxApplicable: d.isTaxApplicable ?? false,
+                  }))
+                : [
+                      { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
+                      { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
+                  ],
         },
     });
 
@@ -156,6 +166,9 @@ export function ReceiptVoucherForm() {
         });
     }, [watchDetails.map((d: any) => d.accountId).join(",")]);
 
+    const prevDetailsRef = useRef<Array<{ accountId: string; tagAccountId: string }>>([]);
+    const prevTaxableAmountRef = useRef<number>(0);
+
     function findInTree(nodes: ChartOfAccount[], id: string): ChartOfAccount | undefined {
         for (const node of nodes) {
             if (node.id === id) return node;
@@ -170,10 +183,11 @@ export function ReceiptVoucherForm() {
     }, [watchDetails.map((d: any) => d.accountId).join(","), tree]);
 
     useEffect(() => {
+        if (initialData) return;
         const prefix = voucherType === "bank" ? "BRV" : "CRV";
         const datePart = `${new Date().getFullYear().toString().slice(-2)}${(new Date().getMonth() + 1).toString().padStart(2, '0')}`;
         form.setValue("rvNo", `${prefix}${datePart}${Math.floor(1000 + Math.random() * 9000)}`);
-    }, [voucherType, form]);
+    }, [voucherType, form, initialData]);
 
     useEffect(() => {
         getAllCustomers().then(r => {
@@ -182,18 +196,50 @@ export function ReceiptVoucherForm() {
         });
     }, []);
 
+    // Load selected invoices from initialData
+    useEffect(() => {
+        if (initialData && initialData.invoices && Array.isArray(initialData.invoices)) {
+            const mappedInvoices = initialData.invoices.map((inv: any) => {
+                const si = inv.salesInvoice || {};
+                return {
+                    salesInvoiceId: inv.salesInvoiceId,
+                    invoiceNo: si.invoiceNo || "",
+                    grandTotal: Number(si.grandTotal) || 0,
+                    paidAmount: Number(si.paidAmount) || 0,
+                    balanceAmount: Number(si.balanceAmount) || 0,
+                    receivingNow: Number(inv.receivedAmount) || 0,
+                };
+            });
+            setSelectedInvoices(mappedInvoices);
+        }
+    }, [initialData]);
+
     const selectedCustomerId = form.watch("customerId");
     useEffect(() => {
         if (selectedCustomerId) {
             getPendingInvoicesByCustomer(selectedCustomerId).then(r => {
-                const invoicesWithBalance = (r.status ? r.data : []).filter((inv: any) => Number(inv.balanceAmount) > 0);
-                setPendingInvoices(invoicesWithBalance);
+                let list = (r.status ? r.data : []).filter((inv: any) => Number(inv.balanceAmount) > 0);
+                if (initialData?.invoices && Array.isArray(initialData.invoices)) {
+                    initialData.invoices.forEach((inv: any) => {
+                        if (!list.find((x: any) => x.id === inv.salesInvoiceId)) {
+                            const si = inv.salesInvoice || {};
+                            list.push({
+                                id: inv.salesInvoiceId,
+                                invoiceNo: si.invoiceNo || "",
+                                grandTotal: Number(si.grandTotal) || 0,
+                                paidAmount: Number(si.paidAmount) || 0,
+                                balanceAmount: Number(si.balanceAmount) || 0,
+                            });
+                        }
+                    });
+                }
+                setPendingInvoices(list);
             });
         } else {
             setPendingInvoices([]);
             setSelectedInvoices([]);
         }
-    }, [selectedCustomerId]);
+    }, [selectedCustomerId, initialData]);
 
     const toggleInvoice = (invoice: any) => {
         setSelectedInvoices(prev => {
@@ -218,7 +264,7 @@ export function ReceiptVoucherForm() {
 
     const duplicateToDebit = (fromIndex: number) => {
         const fromRow = form.getValues(`details.${fromIndex}`);
-        const creditVal = Number(fromRow.credit) || 0;
+        const creditVal = Math.round(Number(fromRow.credit) || 0);
         
         const targetIndex = fromIndex + 1;
         const currentDetails = form.getValues("details") || [];
@@ -251,54 +297,88 @@ export function ReceiptVoucherForm() {
     };
 
     // Watch for changes in detail rows to auto-balance and calculate taxes
-    const watchDetailsString = watchDetails.map((d: any) => `${d.debit}-${d.credit}-${d.accountId}-${d.tagAccountId}-${d.isTaxApplicable}`).join(",");
+    const watchDetailsString = watchDetails.map((d: any) => `${d.credit}-${d.accountId}-${d.tagAccountId}-${d.isTaxApplicable}`).join(",");
     useEffect(() => {
         // Calculate total taxable amount (based on credits for RV)
         const taxableAmount = watchDetails.reduce((sum: number, detail: any) => {
-            return sum + (detail.isTaxApplicable ? (Number(detail.credit) || 0) : 0);
+            return sum + (detail.isTaxApplicable ? Math.round(Number(detail.credit) || 0) : 0);
         }, 0);
 
         let totalTaxAmount = 0;
 
+        const prevTaxableAmount = prevTaxableAmountRef.current;
+        const prevDetails = prevDetailsRef.current;
+        const taxableAmountChanged = taxableAmount !== prevTaxableAmount;
+
         // Auto-calculate taxes for any recognized tax rows
-        if (taxableAmount > 0 && tree.length > 0) {
+        if (tree.length > 0) {
             watchDetails.forEach((detail: any, index: number) => {
+                const prev = prevDetails[index] || { accountId: "", tagAccountId: "" };
+                const triggerChanged = 
+                    detail.accountId !== prev.accountId || 
+                    detail.tagAccountId !== prev.tagAccountId ||
+                    taxableAmountChanged;
+
                 if (detail.accountId && detail.tagAccountId) {
                     const accountNode = findInTree(tree, detail.accountId);
                     const tagNode = accountNode?.children?.find(c => c.id === detail.tagAccountId);
 
                     if (accountNode?.code && tagNode?.code) {
-                        const calculatedTax = calculateTaxForAccount(accountNode.code, tagNode.code, taxableAmount);
-                        if (calculatedTax !== null) {
-                            const currentDebit = Number(detail.debit) || 0;
-                            if (currentDebit !== calculatedTax) {
-                                form.setValue(`details.${index}.debit`, calculatedTax, { shouldValidate: true });
-                                form.setValue(`details.${index}.credit`, 0, { shouldValidate: true });
+                        if (taxableAmount > 0) {
+                            const calculatedTax = calculateTaxForAccount(accountNode.code, tagNode.code, taxableAmount);
+                            if (calculatedTax !== null) {
+                                const roundedTax = Math.round(calculatedTax);
+                                if (triggerChanged) {
+                                    form.setValue(`details.${index}.debit`, roundedTax, { shouldValidate: true });
+                                    form.setValue(`details.${index}.credit`, 0, { shouldValidate: true });
+                                    totalTaxAmount += roundedTax;
+                                } else {
+                                    // Use user's manual entry (subtracting any credit to get net debit impact)
+                                    totalTaxAmount += Math.round(Number(detail.debit) || 0) - Math.round(Number(detail.credit) || 0);
+                                }
                             }
-                            totalTaxAmount += calculatedTax;
+                        } else {
+                            if (triggerChanged) {
+                                form.setValue(`details.${index}.debit`, 0, { shouldValidate: true });
+                            } else {
+                                totalTaxAmount += Math.round(Number(detail.debit) || 0) - Math.round(Number(detail.credit) || 0);
+                            }
                         }
                     }
                 }
+
+                // Update the ref for this row
+                prevDetails[index] = {
+                    accountId: detail.accountId || "",
+                    tagAccountId: detail.tagAccountId || "",
+                };
             });
+
+            // Clean up extra rows in the ref if any were deleted
+            if (prevDetailsRef.current.length > watchDetails.length) {
+                prevDetailsRef.current = prevDetailsRef.current.slice(0, watchDetails.length);
+            }
+            // Update the global taxable amount ref
+            prevTaxableAmountRef.current = taxableAmount;
         }
 
         // Find the first row with credit amount (customer row)
-        const customerRowIndex = watchDetails.findIndex((detail: any) => Number(detail.credit) > 0);
+        const customerRowIndex = watchDetails.findIndex((detail: any) => Math.round(Number(detail.credit) || 0) > 0);
         
         // Find the second row with account selected but no credit and no tag (bank/company row)
         const bankRowIndex = watchDetails.findIndex((detail: any, index: number) => 
             index !== customerRowIndex && 
             detail.accountId && 
-            Number(detail.credit) === 0 &&
+            Math.round(Number(detail.credit) || 0) === 0 &&
             !detail.tagAccountId
         );
         
         // Auto-fill debit
         if (customerRowIndex >= 0 && bankRowIndex >= 1) {
-            const customerCreditAmount = Number(watchDetails[customerRowIndex].credit);
-            const currentBankDebit = Number(watchDetails[bankRowIndex].debit) || 0;
+            const customerCreditAmount = Math.round(Number(watchDetails[customerRowIndex].credit) || 0);
+            const currentBankDebit = Math.round(Number(watchDetails[bankRowIndex].debit) || 0);
             
-            const expectedBankDebit = Math.max(0, customerCreditAmount - totalTaxAmount);
+            const expectedBankDebit = Math.round(Math.max(0, customerCreditAmount - totalTaxAmount));
             
             if (customerCreditAmount > 0 && currentBankDebit !== expectedBankDebit) {
                 // Auto-fill the debit amount in the bank row
@@ -311,6 +391,107 @@ export function ReceiptVoucherForm() {
     const totalDebit = watchDetails.reduce((sum: number, detail: any) => sum + (Number(detail.debit) || 0), 0);
     const totalCredit = watchDetails.reduce((sum: number, detail: any) => sum + (Number(detail.credit) || 0), 0);
     const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01 && totalDebit > 0;
+
+    // Auto-save draft logic (multiple drafts keyed by rvNo)
+    const watchAllFields = form.watch();
+    const voucherNo = watchAllFields.rvNo;
+    useEffect(() => {
+        if (initialData || !voucherNo) return;
+        const draftData = {
+            formValues: watchAllFields,
+            selectedInvoices,
+        };
+        const timeout = setTimeout(() => {
+            const draftsJson = localStorage.getItem("receipt-voucher-drafts") || "{}";
+            try {
+                const drafts = JSON.parse(draftsJson);
+                drafts[voucherNo] = {
+                    voucherNo,
+                    updatedAt: new Date().toISOString(),
+                    ...draftData,
+                };
+                localStorage.setItem("receipt-voucher-drafts", JSON.stringify(drafts));
+            } catch (e) {
+                console.error("Error saving draft", e);
+            }
+        }, 1000);
+        return () => clearTimeout(timeout);
+    }, [watchAllFields, voucherNo, selectedInvoices, initialData]);
+
+    // Restore draft logic
+    useEffect(() => {
+        if (initialData) return;
+
+        // Check if there's a specific draftId query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlDraftId = urlParams.get("draftId");
+
+        const draftsJson = localStorage.getItem("receipt-voucher-drafts");
+        if (!draftsJson) return;
+
+        try {
+            const drafts = JSON.parse(draftsJson);
+
+            if (urlDraftId) {
+                const draft = drafts[urlDraftId];
+                if (draft && draft.formValues) {
+                    if (draft.formValues.rvDate) draft.formValues.rvDate = new Date(draft.formValues.rvDate);
+                    if (draft.formValues.billDate) draft.formValues.billDate = new Date(draft.formValues.billDate);
+                    if (draft.formValues.chequeDate) draft.formValues.chequeDate = new Date(draft.formValues.chequeDate);
+                    form.reset(draft.formValues);
+                    if (draft.selectedInvoices) setSelectedInvoices(draft.selectedInvoices);
+                    toast.success(`Restored draft: ${urlDraftId}`);
+                }
+            } else {
+                const draftKeys = Object.keys(drafts);
+                if (draftKeys.length === 1) {
+                    const singleKey = draftKeys[0];
+                    const draft = drafts[singleKey];
+                    const hasFormDetails = draft.formValues?.details?.some((d: { accountId?: string; debit?: number; credit?: number }) => d.accountId || (d.debit ?? 0) > 0 || (d.credit ?? 0) > 0);
+                    const hasInvoices = draft.selectedInvoices?.length > 0;
+                    const hasDescriptionOrCustomer = draft.formValues?.description || draft.formValues?.customerId;
+
+                    if (hasFormDetails || hasInvoices || hasDescriptionOrCustomer) {
+                        toast(`You have an unsaved draft (${singleKey}).`, {
+                            action: {
+                                label: "Restore",
+                                onClick: () => {
+                                    if (draft.formValues) {
+                                        if (draft.formValues.rvDate) draft.formValues.rvDate = new Date(draft.formValues.rvDate);
+                                        if (draft.formValues.billDate) draft.formValues.billDate = new Date(draft.formValues.billDate);
+                                        if (draft.formValues.chequeDate) draft.formValues.chequeDate = new Date(draft.formValues.chequeDate);
+                                        form.reset(draft.formValues);
+                                    }
+                                    if (draft.selectedInvoices) setSelectedInvoices(draft.selectedInvoices);
+                                    toast.success("Draft restored!");
+                                }
+                            },
+                            cancel: {
+                                label: "Discard",
+                                onClick: () => {
+                                    delete drafts[singleKey];
+                                    localStorage.setItem("receipt-voucher-drafts", JSON.stringify(drafts));
+                                }
+                            },
+                            duration: 15000,
+                        });
+                    }
+                } else if (draftKeys.length > 1) {
+                    toast(`You have ${draftKeys.length} pending drafts.`, {
+                        action: {
+                            label: "View Drafts",
+                            onClick: () => {
+                                router.push("/erp/finance/receipt-voucher/list");
+                            }
+                        },
+                        duration: 15000,
+                    });
+                }
+            }
+        } catch (e) {
+            console.error("Failed to parse drafts", e);
+        }
+    }, [initialData, form, router]);
 
     const onSubmit: SubmitHandler<ReceiptVoucherFormValues> = async (values) => {
         try {
@@ -333,12 +514,12 @@ export function ReceiptVoucherForm() {
                 debitAccountId: mainDebitAccountId || values.debitAccountId,
                 debitAmount: totalDebit || values.debitAmount,
                 details: watchDetails
-                    .filter(detail => Number(detail.debit) > 0 || Number(detail.credit) > 0)
+                    .filter(detail => Math.round(Number(detail.debit) || 0) > 0 || Math.round(Number(detail.credit) || 0) > 0)
                     .map(detail => ({
                         accountId: detail.accountId,
                         tagAccountId: detail.tagAccountId || undefined,
-                        debit: Number(detail.debit) || 0,
-                        credit: Number(detail.credit) || 0,
+                        debit: Math.round(Number(detail.debit) || 0),
+                        credit: Math.round(Number(detail.credit) || 0),
                         narration: detail.narration || undefined,
                         refBillNo: detail.refBillNo || undefined,
                         isTaxApplicable: detail.isTaxApplicable ?? false,
@@ -350,11 +531,23 @@ export function ReceiptVoucherForm() {
 
             console.log('Final data being sent:', finalData);
 
-            const result = await createReceiptVoucher(finalData);
+            const result = initialData
+                ? await updateReceiptVoucher(initialData.id, finalData)
+                : await createReceiptVoucher(finalData);
             
             console.log('API result:', result);
 
             if (result.status) {
+                if (!initialData && voucherNo) {
+                    const draftsJson = localStorage.getItem("receipt-voucher-drafts");
+                    if (draftsJson) {
+                        try {
+                            const drafts = JSON.parse(draftsJson);
+                            delete drafts[voucherNo];
+                            localStorage.setItem("receipt-voucher-drafts", JSON.stringify(drafts));
+                        } catch {}
+                    }
+                }
                 toast.success(result.message);
                 router.push("/erp/finance/receipt-voucher/list");
             } else {
@@ -371,7 +564,7 @@ export function ReceiptVoucherForm() {
     return (
         <Card className="w-full">
             <CardHeader className="border-b flex flex-row items-center justify-between">
-                <CardTitle>Create {voucherType === "bank" ? "Bank" : "Cash"} Receipt Voucher</CardTitle>
+                <CardTitle>{initialData ? "Edit Receipt Voucher" : `Create ${voucherType === "bank" ? "Bank" : "Cash"} Receipt Voucher`}</CardTitle>
                 <Tabs value={voucherType} onValueChange={(val) => form.setValue("type", val as "bank" | "cash")} className="w-[300px]">
                     <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="bank" className="flex items-center gap-2">
@@ -695,12 +888,17 @@ export function ReceiptVoucherForm() {
                                             <td className="px-4 py-3">
                                                 <Input
                                                     type="number"
-                                                    step="0.01"
+                                                    step="1"
                                                     placeholder="0"
                                                     {...form.register(`details.${index}.debit`, {
                                                         valueAsNumber: true,
                                                         onChange: (e) => {
-                                                            if (Number(e.target.value) > 0) {
+                                                            const rawVal = Number(e.target.value) || 0;
+                                                            const roundedVal = Math.round(rawVal);
+                                                            if (rawVal !== roundedVal) {
+                                                                form.setValue(`details.${index}.debit`, roundedVal, { shouldValidate: true });
+                                                            }
+                                                            if (roundedVal > 0) {
                                                                 form.setValue(`details.${index}.credit`, 0, { shouldValidate: true });
                                                             }
                                                         }
@@ -712,12 +910,17 @@ export function ReceiptVoucherForm() {
                                             <td className="px-4 py-3">
                                                 <Input
                                                     type="number"
-                                                    step="0.01"
+                                                    step="1"
                                                     placeholder="0"
                                                     {...form.register(`details.${index}.credit`, {
                                                         valueAsNumber: true,
                                                         onChange: (e) => {
-                                                            if (Number(e.target.value) > 0) {
+                                                            const rawVal = Number(e.target.value) || 0;
+                                                            const roundedVal = Math.round(rawVal);
+                                                            if (rawVal !== roundedVal) {
+                                                                form.setValue(`details.${index}.credit`, roundedVal, { shouldValidate: true });
+                                                            }
+                                                            if (roundedVal > 0) {
                                                                 form.setValue(`details.${index}.debit`, 0, { shouldValidate: true });
                                                             }
                                                         }
@@ -798,7 +1001,7 @@ export function ReceiptVoucherForm() {
                     <div className="flex justify-center pt-6 border-t">
                         <Button type="submit" disabled={isPending || !isBalanced}>
                             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Create Receipt Voucher
+                            {initialData ? "Update Receipt Voucher" : "Create Receipt Voucher"}
                         </Button>
                     </div>
                 </form>

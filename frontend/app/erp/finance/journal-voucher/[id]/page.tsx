@@ -118,18 +118,36 @@ export default function JournalVoucherDetailPage({
       {/* ── Print styles ── */}
       <style jsx global>{`
         @media print {
-          body { visibility: hidden; }
-          #jv-print-section {
+          body {
+            visibility: hidden;
+            background: white;
+          }
+          #jv-print-section, #jv-print-section * {
             visibility: visible;
-            position: fixed;
-            top: 0; left: 0;
-            width: 100vw;
-            margin: 0; padding: 0;
+          }
+          #jv-print-section {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            margin: 0;
+            padding: 0;
             background: white;
             z-index: 9999;
           }
-          #jv-print-section * { visibility: visible; }
-          @page { margin: 0; size: A4 portrait; }
+          tr {
+            page-break-inside: avoid;
+          }
+          thead {
+            display: table-header-group;
+          }
+          tfoot {
+            display: table-footer-group;
+          }
+          @page {
+            margin: 10mm;
+            size: A4 portrait;
+          }
           header, nav, footer, aside { display: none !important; }
         }
       `}</style>
@@ -163,6 +181,11 @@ export default function JournalVoucherDetailPage({
             </Button>
             {voucher.status === "pending" && (
               <>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/erp/finance/journal-voucher/${voucher.id}/edit`}>
+                    Edit Voucher
+                  </Link>
+                </Button>
                 <Button
                   onClick={() => handleUpdateStatus("approved")}
                   size="sm"

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Minus, Square, X, Maximize2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, COMPANY_NAME } from "@/lib/utils";
 import Image from "next/image";
 
 function getBridge() {
@@ -34,7 +34,7 @@ export function DesktopTitlebar() {
       <div className="flex items-center gap-2 px-3">
         <Image src="/logo.png" alt="POS" width={14} height={14} className="object-contain opacity-80" />
         <span className="text-[11px] font-semibold text-muted-foreground tracking-wide">
-          IVAR - POS
+          {COMPANY_NAME} - POS
         </span>
       </div>
 

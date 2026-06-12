@@ -438,6 +438,14 @@ export interface PurchaseOrder {
     contactNo?: string;
   };
   vendorQuotation?: VendorQuotation;
+  creatorName?: string | null;
+  checkerName?: string | null;
+  authorizerName?: string | null;
+  createdById?: string | null;
+  checkedById?: string | null;
+  checkedAt?: string | null;
+  authorizedById?: string | null;
+  authorizedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -557,6 +565,14 @@ export interface Grn {
     name: string;
   };
   createdAt: string;
+  creatorName?: string | null;
+  checkerName?: string | null;
+  authorizerName?: string | null;
+  createdById?: string | null;
+  checkedById?: string | null;
+  checkedAt?: string | null;
+  authorizedById?: string | null;
+  authorizedAt?: string | null;
 }
 
 export const grnApi = {
@@ -571,6 +587,11 @@ export const grnApi = {
     fetchApi<Grn>('/grn', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  updateStatus: (id: string, status: string) =>
+    fetchApi<Grn>(`/grn/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
     }),
 };
 
@@ -944,8 +965,7 @@ export const inventoryApi = {
       genderIds?: string[];
     }
   ) => {
-    const normalizedQuery = query.trim().replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
-    const params = new URLSearchParams({ q: normalizedQuery });
+    const params = new URLSearchParams({ q: query });
     if (warehouseId) params.append('warehouseId', warehouseId);
     if (locationId) params.append('locationId', locationId);
     if (filters?.brandIds?.length) params.append('brandIds', filters.brandIds.join(','));

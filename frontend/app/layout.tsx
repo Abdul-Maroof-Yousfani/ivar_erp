@@ -10,6 +10,7 @@ import { QueryProvider } from "@/components/providers/query-provider";
 import { DesktopProvider } from "@/components/desktop/desktop-provider";
 import { Toaster } from "sonner";
 import { cookies } from "next/headers";
+import { COMPANY_NAME } from "@/lib/utils";
 
 const fontSans = Plus_Jakarta_Sans({
   variable: "--font-sans",
@@ -30,7 +31,7 @@ const fontMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "IVAR",
+  title: COMPANY_NAME,
   description: "Powered by Innovative Network",
 };
 

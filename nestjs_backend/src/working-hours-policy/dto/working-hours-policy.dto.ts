@@ -25,11 +25,6 @@ export class CreateWorkingHoursPolicyDto {
   @IsString()
   endWorkingHours: string;
 
-  @ApiPropertyOptional({ example: '19:00' })
-  @IsOptional()
-  @IsString()
-  otStartsAt?: string;
-
   @ApiPropertyOptional({ example: 240 })
   @IsOptional()
   @IsInt()
@@ -154,11 +149,6 @@ export class UpdateWorkingHoursPolicyDto {
   @IsNotEmpty()
   @IsString()
   endWorkingHours: string;
-
-  @ApiPropertyOptional({ example: '19:00' })
-  @IsOptional()
-  @IsString()
-  otStartsAt?: string;
 
   @ApiPropertyOptional({ example: 240 })
   @IsOptional()

@@ -3,11 +3,12 @@ import { z } from "zod";
 export const paymentVoucherDetailSchema = z.object({
     accountId:       z.string().min(1, "Account is required"),
     tagAccountId:    z.string().optional(),
-    debit:           z.coerce.number().min(0).default(0),
-    credit:          z.coerce.number().min(0).default(0),
+    debit:           z.coerce.number().min(0).transform(v => Math.round(v)).default(0),
+    credit:          z.coerce.number().min(0).transform(v => Math.round(v)).default(0),
     narration:       z.string().optional(),   // per-line narration
     refBillNo:       z.string().optional(),   // per-line bill ref
     isTaxApplicable: z.boolean().optional(),  // per-line tax flag
+    taxableValue:    z.coerce.number().optional().default(0), // base value for calculation
 });
 
 export const paymentVoucherInvoiceSchema = z.object({
@@ -29,7 +30,7 @@ export const paymentVoucherSchema = z.object({
     chequeDate: z.date().optional(),
     // Optional fields (not required anymore)
     creditAccountId: z.string().optional(),
-    creditAmount: z.coerce.number().optional(),
+    creditAmount: z.coerce.number().transform(v => Math.round(v)).optional(),
     // Supplier and invoice linking
     supplierId: z.string().optional(),
     invoices: z.array(paymentVoucherInvoiceSchema).optional(),

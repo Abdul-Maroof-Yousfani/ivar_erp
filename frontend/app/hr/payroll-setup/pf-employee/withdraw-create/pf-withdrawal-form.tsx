@@ -6,12 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Autocomplete } from "@/components/ui/autocomplete";
+import { EmployeeSelect } from "@/components/employees/employee-select";
 import { toast } from "sonner";
 import { Printer, FileDown } from "lucide-react";
 import { getDepartments, getSubDepartmentsByDepartment } from "@/lib/actions/department";
-import { getEmployeesForDropdown } from "@/lib/actions/employee";
 import { createPFWithdrawal } from "@/lib/actions/pf-withdrawal";
 import { MonthYearPicker } from "@/components/ui/month-year-picker";
 
@@ -20,7 +19,6 @@ export function PFWithdrawalForm() {
     const [loading, setLoading] = useState(false);
     const [departments, setDepartments] = useState<any[]>([]);
     const [subDepartments, setSubDepartments] = useState<any[]>([]);
-    const [employees, setEmployees] = useState<any[]>([]);
 
     const [formData, setFormData] = useState({
         departmentId: "",
@@ -58,19 +56,6 @@ export function PFWithdrawalForm() {
         fetchSubDepartments();
     }, [formData.departmentId]);
 
-    // Fetch employees
-    useEffect(() => {
-        const fetchEmployees = async () => {
-            const result = await getEmployeesForDropdown();
-            if (result.status && result.data) {
-                // Filter employees with PF enabled
-                const pfEmployees = result.data.filter((emp: any) => emp.providentFund === true);
-                setEmployees(pfEmployees);
-            }
-        };
-        fetchEmployees();
-    }, []);
-
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
@@ -82,7 +67,6 @@ export function PFWithdrawalForm() {
         setLoading(true);
 
         try {
-            // Parse month and year from monthYear (format: YYYY-MM)
             const [year, month] = formData.monthYear.split("-");
 
             const result = await createPFWithdrawal({
@@ -154,7 +138,7 @@ export function PFWithdrawalForm() {
                                 }))}
                                 value={formData.subDepartmentId}
                                 onValueChange={(value) =>
-                                    setFormData({ ...formData, subDepartmentId: value })
+                                    setFormData({ ...formData, subDepartmentId: value, employeeId: "" })
                                 }
                                 placeholder={formData.departmentId ? "Select Sub Department" : "No Record Found"}
                                 searchPlaceholder="Search sub department..."
@@ -167,21 +151,17 @@ export function PFWithdrawalForm() {
                             <Label htmlFor="employee">
                                 Employee <span className="text-destructive">*</span>
                             </Label>
-                            <Autocomplete
-                                options={employees
-                                    .filter((emp: any) =>
-                                        !formData.departmentId || emp.departmentId === formData.departmentId
-                                    )
-                                    .map((emp: any) => ({
-                                        value: emp.id,
-                                        label: `${emp.employeeId} -- ${emp.employeeName}`,
-                                    }))}
+                            <EmployeeSelect
                                 value={formData.employeeId}
                                 onValueChange={(value) =>
                                     setFormData({ ...formData, employeeId: value })
                                 }
+                                departmentId={formData.departmentId}
+                                subDepartmentId={formData.subDepartmentId}
+                                providentFundOnly
                                 placeholder="Select Employee"
                                 searchPlaceholder="Search employee..."
+                                emptyMessage="No PF-enabled employees found"
                             />
                         </div>
                     </div>
@@ -201,25 +181,28 @@ export function PFWithdrawalForm() {
                                 onChange={(e) =>
                                     setFormData({ ...formData, withdrawalAmount: e.target.value })
                                 }
-                                required
                             />
                         </div>
 
-                        {/* Month Year */}
+                        {/* Month-Year */}
                         <div className="space-y-2">
                             <Label htmlFor="monthYear">
-                                Month Year <span className="text-destructive">*</span>
+                                Month-Year <span className="text-destructive">*</span>
                             </Label>
                             <MonthYearPicker
                                 value={formData.monthYear}
                                 onChange={(value) =>
-                                    setFormData({ ...formData, monthYear: value as string })
+                                    setFormData({
+                                        ...formData,
+                                        monthYear: Array.isArray(value) ? value[0] || "" : value,
+                                    })
                                 }
+                                placeholder="Select month and year"
                             />
                         </div>
                     </div>
 
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-4">
                         <Button type="submit" disabled={loading}>
                             {loading ? "Submitting..." : "Submit"}
                         </Button>

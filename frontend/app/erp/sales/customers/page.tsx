@@ -85,8 +85,9 @@ export default function CustomersPage() {
       });
       setIsCreateOpen(false);
       loadCustomers();
-    } catch (error) {
-      toast.error("Failed to create customer");
+    } catch (error: any) {
+      const errMsg = error?.message || "Failed to create customer";
+      toast.error(errMsg);
       console.error(error);
     }
   };

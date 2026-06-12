@@ -161,7 +161,8 @@ function ShiftDetailModal({ shift, open, onOpenChange, onPrint }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ShiftsPage() {
     const router = useRouter();
-    const { hasPermission } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const isParentTerminal = user?.terminal ? user.terminal.isParent : true;
     const canOpen = hasPermission('pos.shift.open');
     const canClose = hasPermission('pos.shift.close');
 
@@ -270,7 +271,7 @@ export default function ShiftsPage() {
             });
             if (res.ok) {
                 setCloseSummary({
-                    id: res.data?.session?.id || sessionData?.id,
+                    id: res.data?.session?.id || sessionData?.session?.id || sessionData?.id,
                     expected: sessionData?.metrics?.expectedCash ?? 0,
                     actual: Number(actualCash),
                     variance: res.data?.variance ?? 0,
@@ -337,18 +338,25 @@ export default function ShiftsPage() {
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="font-semibold text-lg">Shift not started</p>
-                                <p className="text-sm text-muted-foreground">Open the shift to start accepting cash sales</p>
+                                <p className="text-sm text-muted-foreground">
+                                    {!isParentTerminal 
+                                        ? "This is a Child Terminal. Shifts must be opened on the Parent Terminal." 
+                                        : "Open the shift to start accepting cash sales"
+                                    }
+                                </p>
                             </div>
-                            <Button onClick={() => {
-                                if (!canOpen) {
-                                    toast.error("You do not have permission to open a shift. Please contact your manager.");
-                                    return;
-                                }
-                                setFloatAmount(""); setFloatNote(""); setShowOpenModal(true);
-                            }}
-                                className="rounded-full px-8">
-                                Open Shift
-                            </Button>
+                            {isParentTerminal && (
+                                <Button onClick={() => {
+                                    if (!canOpen) {
+                                        toast.error("You do not have permission to open a shift. Please contact your manager.");
+                                        return;
+                                    }
+                                    setFloatAmount(""); setFloatNote(""); setShowOpenModal(true);
+                                }}
+                                    className="rounded-full px-8">
+                                    Open Shift
+                                </Button>
+                            )}
                         </div>
                     ) : (
                         <div>
@@ -370,27 +378,33 @@ export default function ShiftsPage() {
                                 <Button
                                     variant="outline"
                                     onClick={() => {
-                                        setPrintSessionId(sessionData?.id);
+                                        setPrintSessionId(sessionData?.session?.id || sessionData?.id);
                                         setShowPrintModal(true);
                                     }}
                                     className="rounded-full px-6 gap-1.5"
                                 >
                                     <Printer className="w-4 h-4" />
-                                    Print X-Report
+                                    Reconciliation Report
                                 </Button>
                                 <Button variant="outline" onClick={() => router.push("/pos/new-sale")} className="rounded-full px-6">
                                     Continue Selling
                                 </Button>
-                                <Button onClick={() => {
-                                    if (!canClose) {
-                                        toast.error("You do not have permission to close a shift. Please contact your manager.");
-                                        return;
-                                    }
-                                    setActualCash(""); setCloseNote(""); setShowCloseModal(true);
-                                }}
-                                    className="rounded-full px-8 bg-slate-800 hover:bg-slate-900 text-white">
-                                    Close Shift
-                                </Button>
+                                {!isParentTerminal ? (
+                                    <Badge variant="outline" className="bg-blue-500/10 text-blue-700 border-blue-200 py-1.5 px-4 rounded-full text-xs font-semibold shrink-0">
+                                        Shift managed by Parent Terminal
+                                    </Badge>
+                                ) : (
+                                    <Button onClick={() => {
+                                        if (!canClose) {
+                                            toast.error("You do not have permission to close a shift. Please contact your manager.");
+                                            return;
+                                        }
+                                        setActualCash(""); setCloseNote(""); setShowCloseModal(true);
+                                    }}
+                                        className="rounded-full px-8 bg-slate-800 hover:bg-slate-900 text-white shrink-0">
+                                        Close Shift
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     )}

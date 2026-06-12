@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Printer, Search, Wallet, Calendar, User } from "lucide-react";
 import { type Allowance } from "@/lib/actions/allowance";
-import { type EmployeeDropdownOption } from "@/lib/actions/employee";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
@@ -17,11 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Autocomplete } from "@/components/ui/autocomplete";
+import { EmployeeSelect } from "@/components/employees/employee-select";
+import { COMPANY_NAME } from "@/lib/utils";
 
 interface AllowancePayslipListProps {
   initialAllowances?: Allowance[];
-  employees?: EmployeeDropdownOption[];
 }
 
 interface AllowancePayslipData {
@@ -51,13 +50,10 @@ const formatMonthYear = (monthYear: string) => {
   return `${monthNames[monthIndex] || month} ${year}`;
 };
 
-export function AllowancePayslipList({ initialAllowances = [], employees = [] }: AllowancePayslipListProps) {
+export function AllowancePayslipList({ initialAllowances = [] }: AllowancePayslipListProps) {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [monthYear, setMonthYear] = useState<string>("");
   const [showPayslip, setShowPayslip] = useState(false);
-
-  // Get selected employee
-  const selectedEmployee = employees.find((e) => e.id === selectedEmployeeId);
 
   // Generate payslip data
   const payslipData = useMemo(() => {
@@ -328,7 +324,7 @@ export function AllowancePayslipList({ initialAllowances = [], employees = [] }:
             <div class="print-date">Printed On: ${printDate}</div>
             
             <div class="header">
-              <div class="company-name">IVAR HR System</div>
+              <div class="company-name">${COMPANY_NAME} HR System</div>
               <div class="payslip-title">ALLOWANCE PAYSLIP</div>
             </div>
 
@@ -452,14 +448,7 @@ export function AllowancePayslipList({ initialAllowances = [], employees = [] }:
                   <User className="h-4 w-4" />
                   Select Employee <span className="text-destructive">*</span>
                 </Label>
-                <Autocomplete
-                  options={[
-                    { value: "", label: "Select Employee" },
-                    ...employees.map((emp) => ({
-                      value: emp.id,
-                      label: `${emp.employeeName} (${emp.employeeId})`,
-                    })),
-                  ]}
+                <EmployeeSelect
                   value={selectedEmployeeId}
                   onValueChange={(value) => {
                     setSelectedEmployeeId(value || "");
@@ -507,7 +496,7 @@ export function AllowancePayslipList({ initialAllowances = [], employees = [] }:
                 {/* Header */}
                 <div className="text-center mb-10 pb-8 border-b-4 border-blue-900">
                   <div className="text-3xl font-extrabold uppercase tracking-wider text-blue-900 mb-3">
-                    IVAR HR System
+                    {COMPANY_NAME} HR System
                   </div>
                   <div className="text-xl font-bold text-blue-900 mt-4 tracking-wide">
                     ALLOWANCE PAYSLIP

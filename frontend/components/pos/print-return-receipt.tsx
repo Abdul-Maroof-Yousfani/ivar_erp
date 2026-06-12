@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -11,6 +12,7 @@ import { Printer, RotateCcw, Loader2 } from "lucide-react";
 import type { PosSettings } from "@/hooks/use-pos-settings";
 import { POS_SETTINGS_DEFAULTS } from "@/hooks/use-pos-settings";
 import { useAuth } from "@/components/providers/auth-provider";
+import { printThermal } from "@/lib/utils/print";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -26,6 +28,10 @@ function fmt(val: number) {
     return val.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
+function fmtDec(val: number) {
+    return Math.round(val).toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
 function fmtDate(dateStr?: string | null): string {
     const d = dateStr ? new Date(dateStr) : new Date();
     return [
@@ -35,12 +41,29 @@ function fmtDate(dateStr?: string | null): string {
     ].join("-");
 }
 
+function fmtExpiryDate(dateStr?: string | Date | null): string {
+    if (!dateStr) return "";
+    try {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return "";
+        try {
+            return d.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" });
+        } catch {
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            return `${String(d.getDate()).padStart(2, "0")}-${months[d.getMonth()]}-${d.getFullYear()}`;
+        }
+    } catch {
+        return "";
+    }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ReturnReceiptLine {
     name: string;
     sku: string;
     size?: string;
+    color?: string;
     brand?: string;
     returnQty: number;
     paidPerUnit: number;
@@ -63,6 +86,8 @@ export interface ReturnReceiptLine {
 
 export interface PrintReturnReceiptProps {
     returnRef: string;
+    isRefund?: boolean;
+    isAlliance?: boolean;
     originalOrders: { orderNumber: string; grandTotal: number }[];
     returnedLines: ReturnReceiptLine[];
     refundTotal: number;
@@ -127,6 +152,8 @@ function ReturnReceiptSkeleton() {
 
 export function PrintReturnReceipt({
     returnRef,
+    isRefund,
+    isAlliance,
     originalOrders,
     returnedLines,
     refundTotal,
@@ -141,13 +168,18 @@ export function PrintReturnReceipt({
 }: PrintReturnReceiptProps) {
     const settings: PosSettings = { ...POS_SETTINGS_DEFAULTS, ...settingsOverride };
     const { user } = useAuth();
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     useEffect(() => {
         if (!isLoading && settings.receiptAutoPrint) {
-            const timer = setTimeout(() => window.print(), 400);
+            const timer = setTimeout(() => printThermal("return-print-root", settings), 400);
             return () => clearTimeout(timer);
         }
-    }, [isLoading, settings.receiptAutoPrint]);
+    }, [isLoading, settings.receiptAutoPrint, settings]);
 
     // ── Store info (same priority as sales receipt) ───────────────────
     const storeName =
@@ -166,32 +198,56 @@ export function PrintReturnReceipt({
     const cashierName = user ? `${user.firstName} ${user.lastName}`.trim() : "";
 
     const bodyProps: ReturnBodyProps = {
-        storeName, storeAddress, storePhone, storeNTN, storeSTRN, terminalName,
+        isRefund, storeName, storeAddress, storePhone, storeNTN, storeSTRN, terminalName,
         cashierName, returnRef, originalOrders, returnedLines, refundTotal,
         notes, discountNotes, returnedAt, paymentMethod, settings, exchangeVoucher,
+        isAlliance,
     };
 
     return (
         <>
             {/* ── Print styles — identical strategy to sales receipt ── */}
             <style>{`
+                /* Ensure print root and its descendants are rendered in solid black and white for standard/PDF rendering */
+                #return-print-root,
+                #return-print-root * {
+                    color: #000 !important;
+                    border-color: #000 !important;
+                }
+
                 @media print {
-                    body * { visibility: hidden !important; }
+                    body *:not(#return-print-root):not(#return-print-root *) {
+                        visibility: hidden !important;
+                        height: 0 !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        border: none !important;
+                    }
 
                     #return-print-root,
-                    #return-print-root * { visibility: visible !important; }
+                    #return-print-root * {
+                        visibility: visible !important;
+                        color: #000 !important;
+                        border-color: #000 !important;
+                    }
 
                     #return-print-root {
-                        position: fixed !important;
+                        position: absolute !important;
                         left: 0 !important;
                         top: 0 !important;
-                        width: 80mm !important;
-                        padding: 4mm 3mm !important;
+                        width: 72.1mm !important;
+                        padding: 2mm 1mm !important;
                         background: #fff !important;
                         color: #000 !important;
                         font-family: 'Courier New', Courier, monospace !important;
                         font-size: 9pt !important;
                         line-height: 1.35 !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+
+                    #return-print-root div[style*="gridTemplateColumns"] span:not(:first-child) {
+                        white-space: nowrap !important;
                     }
 
                     @page { margin: 0; size: 80mm auto; }
@@ -208,10 +264,10 @@ export function PrintReturnReceipt({
                                 ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                 : <RotateCcw className="h-4 w-4 text-destructive" />
                             }
-                            Return Receipt
+                            {isRefund ? "Refund Receipt" : "Return Receipt"}
                         </DialogTitle>
                         <p className="text-sm text-muted-foreground">
-                            {isLoading ? "Loading return details…" : "Review before printing."}
+                            {isLoading ? `Loading ${isRefund ? 'refund' : 'return'} details…` : "Review before printing."}
                         </p>
                     </DialogHeader>
 
@@ -221,7 +277,7 @@ export function PrintReturnReceipt({
 
                     <DialogFooter className="px-5 py-3 border-t shrink-0 gap-2">
                         <Button variant="outline" onClick={onClose} className="flex-1">Close</Button>
-                        <Button onClick={() => window.print()} className="flex-1 gap-2" disabled={isLoading}>
+                        <Button onClick={() => printThermal("return-print-root", settings)} className="flex-1 gap-2" disabled={isLoading}>
                             {isLoading
                                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Preparing…</>
                                 : <><Printer className="h-4 w-4" /> Print Return Receipt</>
@@ -232,14 +288,15 @@ export function PrintReturnReceipt({
             </Dialog>
 
             {/* ── Print target — off-screen, always rendered ── */}
-            {!isLoading && (
+            {!isLoading && mounted && createPortal(
                 <div
                     id="return-print-root"
-                    style={{ position: "fixed", left: "-9999px", top: 0, width: "80mm", pointerEvents: "none" }}
+                    style={{ position: "fixed", left: "-9999px", top: 0, width: "72.1mm", pointerEvents: "none" }}
                     aria-hidden="true"
                 >
                     <ReturnBody {...bodyProps} />
-                </div>
+                </div>,
+                document.body
             )}
         </>
     );
@@ -248,6 +305,8 @@ export function PrintReturnReceipt({
 // ── ReturnBody ────────────────────────────────────────────────────────────────
 
 interface ReturnBodyProps {
+    isRefund?: boolean;
+    isAlliance?: boolean;
     storeName: string;
     storeAddress: string;
     storePhone: string;
@@ -268,10 +327,11 @@ interface ReturnBodyProps {
 }
 
 function ReturnBody({
-    storeName, storeAddress, storePhone, storeNTN, storeSTRN, terminalName,
+    isRefund, isAlliance, storeName, storeAddress, storePhone, storeNTN, storeSTRN, terminalName,
     cashierName, returnRef, originalOrders, returnedLines, refundTotal,
     notes, discountNotes, returnedAt, paymentMethod, settings, exchangeVoucher,
 }: ReturnBodyProps) {
+    const isAllianceCase = isAlliance || discountNotes?.some(note => note.toLowerCase().includes("alliance"));
 
     const Row = ({ label, value, bold = false, indent = false }: {
         label: string; value: string; bold?: boolean; indent?: boolean;
@@ -288,7 +348,7 @@ function ReturnBody({
     const totalUnits = returnedLines.reduce((s, l) => s + l.returnQty, 0);
 
     return (
-        <div className="font-mono text-xs w-full max-w-95 mx-auto space-y-2">
+        <div className="font-mono text-xs w-full max-w-[72.1mm] mx-auto space-y-2">
 
             {/* ── Store Header ── */}
             <div className="text-center space-y-0.5">
@@ -304,15 +364,15 @@ function ReturnBody({
 
             {/* ── Return Invoice Title ── */}
             <div className="text-center space-y-0.5">
-                <p className="font-bold text-sm tracking-widest uppercase">Return Invoice</p>
-                <p className="font-black text-2xl tracking-wider">*{fmt(refundTotal)}*</p>
+                <p className="font-bold text-sm tracking-widest uppercase">{isRefund ? "Refund Invoice" : "Return Invoice"}</p>
+                <p className="font-black text-2xl tracking-wider">*{returnRef}*</p>
             </div>
 
             <Separator />
 
             {/* ── Receipt meta ── */}
             <div className="space-y-0.5 text-[11px]">
-                <Row label="Return Ref."  value={returnRef} bold />
+                <Row label={isRefund ? "Refund Ref." : "Return Ref."}  value={returnRef} bold />
                 <Row label="Date"         value={fmtDate(returnedAt)} />
                 {cashierName  && <Row label="Processed By" value={cashierName}  />}
                 {terminalName && <Row label="Terminal"     value={terminalName} />}
@@ -346,65 +406,82 @@ function ReturnBody({
             {/* ── Returned item lines ── */}
             {returnedLines.map((line, idx) => {
                 const qty          = line.returnQty;
-                const unitPrice    = line.unitPrice ?? line.paidPerUnit;
                 const taxPct       = line.taxPercent ?? 0;
                 const taxDivisor   = 1 + (taxPct / 100);
-                
-                // Calculate WOST from retail price
-                const retailPrice  = unitPrice;
-                const wostPerUnit  = retailPrice / taxDivisor;
-                const totalWost    = Math.round(wostPerUnit * qty * 100) / 100;
-                
-                // Discount
+
+                // Use unitPrice (original retail) as the base, showing the adjusted discount details below
+                const effectiveRetailPerUnit = line.unitPrice ?? line.paidPerUnit;
+                const originalRetailPerUnit = line.unitPrice ?? line.paidPerUnit;
+
+                // Calculate WOST from effective retail price
+                const wostPerUnit  = effectiveRetailPerUnit / taxDivisor;
+                const totalWost    = wostPerUnit * qty;
+
+                // Use the discount details (adjusted by backend for markdown)
                 const discPct      = line.discountPercent ?? 0;
-                const discAmt      = line.discountAmount  ?? 0;
+                const discAmt      = line.discountAmount ?? 0;
                 const afterDisc    = totalWost - discAmt;
-                
-                // Tax
+
+                // Tax on discounted WOST
                 const taxAmt       = line.taxAmount ?? 0;
-                
-                // Value including tax
+
+                // Value including tax = actual refund for this item
                 const valueIncludingTax = afterDisc + taxAmt;
-                
+
                 const uniqueNo = line.sku || "—";
 
                 return (
                     <div key={idx} className="pb-2 border-b border-dashed last:border-0">
                         {/* Item name — full width bold */}
-                        <p className="font-bold text-[11px] leading-tight mb-0.5">{line.name}</p>
+                        <p className="font-bold text-[11px] leading-tight mb-0.5">
+                            {line.name}
+                            {line.color && ` (Color: ${line.color})`}
+                        </p>
 
                         {/* Data row */}
                         <div
                             className="text-[11px]"
                             style={{ display: "grid", gridTemplateColumns: "2fr 0.5fr 0.5fr 0.8fr 0.8fr 0.8fr", gap: "0 4px" }}
                         >
-                            <span className="text-muted-foreground truncate">{uniqueNo}</span>
+                            <span className="text-zinc-955 truncate">{uniqueNo}</span>
                             <span style={{ textAlign: "center" }}>{line.size || "—"}</span>
                             <span style={{ textAlign: "center", fontWeight: "bold" }}>{qty}</span>
-                            <span style={{ textAlign: "right" }}>{fmt(retailPrice)}</span>
-                            <span style={{ textAlign: "right" }}>{fmt(wostPerUnit)}</span>
-                            <span style={{ textAlign: "right", fontWeight: "bold" }}>{fmt(totalWost)}</span>
+                            <span style={{ textAlign: "right" }}>
+                                {line.priceAdjusted && (
+                                    <span style={{ textDecoration: "line-through", opacity: 0.5, marginRight: "2px", fontSize: "9px" }}>
+                                        {fmtDec(originalRetailPerUnit)}
+                                    </span>
+                                )}
+                                {fmtDec(effectiveRetailPerUnit)}
+                            </span>
+                            <span style={{ textAlign: "right" }}>{fmtDec(wostPerUnit)}</span>
+                            <span style={{ textAlign: "right", fontWeight: "bold" }}>{fmtDec(totalWost)}</span>
                         </div>
 
                         {/* FBR-style breakdown */}
                         <div className="mt-1 space-y-0.5 text-[10px]">
-                            <Row label="Discount %" value={`${discPct}%`} />
-                            <Row label="Discount Amount" value={discAmt > 0 ? fmt(discAmt) : "—"} />
-                            <Row label="Amount after Discount" value={fmt(afterDisc)} />
+                            {!isAllianceCase && <Row label="Discount %" value={`${discPct}%`} />}
+                            <Row label={isAllianceCase ? "Alliance Disc" : "Discount Amount"} value={discAmt > 0 ? fmtDec(discAmt) : "—"} />
+                            <Row label="Amount after Discount" value={fmtDec(afterDisc)} />
                             <Row label="Sales Tax Rate" value={`${taxPct}%`} />
-                            <Row label="Sales Tax Amount" value={taxAmt > 0 ? fmt(taxAmt) : "—"} />
+                            <Row label="Sales Tax Amount" value={taxAmt > 0 ? fmtDec(taxAmt) : "—"} />
                             <div
                                 className="flex justify-between font-bold text-[10px] border-t border-dashed pt-0.5 mt-0.5"
                                 style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold" }}
                             >
                                 <span>Value Including Sales Tax</span>
-                                <span>{fmt(valueIncludingTax)}</span>
+                                <span>{fmtDec(valueIncludingTax)}</span>
                             </div>
+                            {line.priceAdjusted && (
+                                <p className="text-[9px] italic opacity-60 mt-0.5">
+                                    * Price adjusted: current price lower than original
+                                </p>
+                            )}
                         </div>
 
                         {/* Show source order if multi-order return */}
                         {originalOrders.length > 1 && (
-                            <p className="text-[10px] mt-0.5 text-muted-foreground">
+                            <p className="text-[10px] mt-0.5 text-zinc-950">
                                 From: {line.orderNumber}
                             </p>
                         )}
@@ -420,18 +497,18 @@ function ReturnBody({
                 {(() => {
                     const subtotal = returnedLines.reduce((s, line) => {
                         const qty = line.returnQty;
-                        const unitPrice = line.unitPrice ?? line.paidPerUnit;
                         const taxPct = line.taxPercent ?? 0;
                         const taxDivisor = 1 + (taxPct / 100);
-                        const wostPerUnit = unitPrice / taxDivisor;
+                        const effectiveRetail = line.unitPrice ?? line.paidPerUnit;
+                        const wostPerUnit = effectiveRetail / taxDivisor;
                         return s + (wostPerUnit * qty);
                     }, 0);
-                    
+
                     const totalDiscount = returnedLines.reduce((s, line) => s + (line.discountAmount ?? 0), 0);
-                    const valueForSales = subtotal - totalDiscount;
                     const totalTax = returnedLines.reduce((s, line) => s + (line.taxAmount ?? 0), 0);
-                    const totalValueIncludingTax = valueForSales + totalTax;
-                    
+                    const totalValueIncludingTax = returnedLines.reduce((s, line) => s + (line.refundAmount ?? 0), 0);
+                    const valueForSales = totalValueIncludingTax - totalTax;
+
                     return (
                         <>
                             <Row label={`Total Value Excluding Sales Tax (${returnedLines.length})`} value={fmt(Math.round(subtotal))} />
@@ -471,22 +548,20 @@ function ReturnBody({
             {exchangeVoucher && (
                 <>
                     <Separator />
-                    <div className="text-center space-y-1 border-2 border-dashed border-primary rounded-lg px-3 py-3 bg-primary/5">
-                        <p className="font-bold text-xs uppercase tracking-wide text-primary">Exchange Voucher Issued</p>
-                        <div className="bg-white border-2 border-primary rounded px-2 py-2">
-                            <p className="font-black text-2xl tracking-widest text-primary">{exchangeVoucher.code}</p>
+                    <div className="text-center space-y-1 border-2 border-dashed border-zinc-950 rounded-lg px-3 py-3 bg-zinc-50">
+                        <p className="font-bold text-xs uppercase tracking-wide text-zinc-900">Exchange Voucher Issued</p>
+                        <div className="bg-white border-2 border-zinc-955 rounded px-2 py-2">
+                            <p className="font-black text-2xl tracking-widest text-zinc-955">{exchangeVoucher.code}</p>
                         </div>
                         <div className="text-[10px] space-y-0.5 pt-1">
-                            <p className="font-semibold">Value: <span className="font-black text-base">Rs. {fmt(Number(exchangeVoucher.faceValue))}</span></p>
-                            <p className="text-muted-foreground">
-                                Expires: {new Date(exchangeVoucher.expiresAt).toLocaleDateString('en-PK', { 
-                                    day: '2-digit', 
-                                    month: 'short', 
-                                    year: 'numeric' 
-                                })}
-                            </p>
+                            <p className="font-semibold text-zinc-900">Value: <span className="font-black text-base text-zinc-955">Rs. {fmt(Number(exchangeVoucher.faceValue))}</span></p>
+                            {exchangeVoucher.expiresAt && fmtExpiryDate(exchangeVoucher.expiresAt) && (
+                                <p className="text-zinc-800">
+                                    Expires: {fmtExpiryDate(exchangeVoucher.expiresAt)}
+                                </p>
+                            )}
                         </div>
-                        <p className="text-[9px] text-muted-foreground pt-1 border-t border-dashed">
+                        <p className="text-[9px] text-zinc-800 pt-1 border-t border-dashed">
                             Present this voucher for your next purchase
                         </p>
                     </div>
@@ -502,7 +577,7 @@ function ReturnBody({
                         {discountNotes.map((note, i) => (
                             <p key={i} style={{ paddingLeft: "8px" }}>{note}</p>
                         ))}
-                        <p style={{ color: "gray", marginTop: "2px" }}>
+                        <p style={{ color: "black", marginTop: "2px" }}>
                             * Code restored and can be reused.
                         </p>
                     </div>
@@ -529,7 +604,7 @@ function ReturnBody({
             >
                 <div style={{ flexShrink: 0 }}>
                     <Image
-                        src="/fbr_logo.png"
+                        src={typeof window !== "undefined" ? `${window.location.origin}/fbr_logo.png` : "/fbr_logo.png"}
                         alt="FBR POS Invoicing System"
                         width={48}
                         height={48}
@@ -545,16 +620,14 @@ function ReturnBody({
 
             <Separator />
 
-            {/* ── Terms & Conditions ── */}
+            {/* ── Terms ── */}
             <div className="text-[10px] space-y-0.5">
-                <p className="font-bold text-[11px]">TERMS &amp; CONDITIONS</p>
-                <p>• Damaged / defective items must be reported within 4 days of purchase</p>
-                <p>• Exchanges are only accepted within 7 days of purchase</p>
-                <p>• Refunds only eligible only on manufacturing defects</p>
-                <p>• Used, washed, altered, or worn items are not eligible for exchanges</p>
-                <p>• Tags must be intact for any exchange</p>
-                <p>• One exchange per order only (exchanged item can not be exchanged again)</p>
-                <p>• Sale items are non-returnable &amp; non-exchangeable (unless defected)</p>
+                <p className="font-bold text-[11px]">TERMS &amp; CONDITIONS OF SALE</p>
+                <p>No Refund.</p>
+                <p>Exchanges on unused products within 10 days only from the outlet where purchased.</p>
+                <p>Claim will not be accepted without Sales Tax Invoice.</p>
+                <p>Sales and promotional items are strictly non-exchangeable.</p>
+                <p>Item purchases at full price which go on sale will be exchanged at the marked down price.</p>
             </div>
 
             <Separator />

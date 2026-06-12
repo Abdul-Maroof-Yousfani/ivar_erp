@@ -8,26 +8,46 @@ import { ColumnDef } from "@tanstack/react-table";
 import DataTable from "@/components/common/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
     AlertDialog, AlertDialogAction, AlertDialogCancel,
     AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
     AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Loader2, Info, PowerOff, Upload } from "lucide-react";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import { Loader2, Info, PowerOff, Upload, MapPin } from "lucide-react";
 import { toast } from "sonner";
-import { AllianceDiscount, deactivateAlliance } from "@/lib/actions/pos-config";
+import { AllianceDiscount, deactivateAlliance, bulkUpdateAllianceLocations } from "@/lib/actions/pos-config";
 import { AllianceBulkUploadModal } from "@/components/master/alliance-bulk-upload-modal";
+import { Location } from "@/lib/actions/location";
+import { LocationMultiSelect } from "../_components/location-multi-select";
 
-interface Props { alliances: AllianceDiscount[] }
+interface Props {
+    alliances: AllianceDiscount[];
+    locations: Location[];
+}
 
-export function AlliancesListPage({ alliances }: Props) {
+export function AlliancesListPage({ alliances, locations }: Props) {
     const router = useRouter();
     const { hasPermission } = useAuth();
     const [isPending, startTransition] = useTransition();
     const [deactivateId, setDeactivateId] = useState<string | null>(null);
     const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
     const [bulkUploadId, setBulkUploadId] = useState<string | null>(null);
+    
+    // Bulk edit state
+    const [selectedAlliances, setSelectedAlliances] = useState<AllianceDiscount[]>([]);
+    const [bulkLocationsOpen, setBulkLocationsOpen] = useState(false);
+    const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
+    const [tableKey, setTableKey] = useState(0);
 
     const canCreate = hasPermission("master.alliance.create");
     const canUpdate = hasPermission("master.alliance.update");
@@ -46,7 +66,53 @@ export function AlliancesListPage({ alliances }: Props) {
         });
     };
 
+    const handleBulkEdit = (items: AllianceDiscount[]) => {
+        setSelectedAlliances(items);
+        setSelectedLocationIds([]);
+        setBulkLocationsOpen(true);
+    };
+
+    const handleBulkLocationsSubmit = () => {
+        if (selectedAlliances.length === 0) return;
+        startTransition(async () => {
+            const allianceIds = selectedAlliances.map(a => a.id);
+            const result = await bulkUpdateAllianceLocations(allianceIds, selectedLocationIds);
+            if (result.status) {
+                toast.success(result.message || "Locations updated successfully");
+                setBulkLocationsOpen(false);
+                setSelectedAlliances([]);
+                setTableKey(prev => prev + 1); // Reset table selection
+                router.refresh();
+            } else {
+                toast.error(result.message || "Failed to update locations");
+            }
+        });
+    };
+
     const columns: ColumnDef<AllianceDiscount>[] = [
+        {
+            id: "select",
+            header: ({ table }) => (
+                <Checkbox
+                    checked={
+                        table.getIsAllPageRowsSelected() ||
+                        (table.getIsSomePageRowsSelected() && "indeterminate")
+                    }
+                    onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+                    aria-label="Select all"
+                />
+            ),
+            cell: ({ row }) => (
+                <Checkbox
+                    checked={row.getIsSelected()}
+                    onCheckedChange={(value) => row.toggleSelected(!!value)}
+                    aria-label="Select row"
+                />
+            ),
+            enableSorting: false,
+            enableHiding: false,
+            size: 28,
+        },
         { accessorKey: "partnerName", header: "Partner Name", cell: ({ row }) => <span className="font-medium">{row.original.partnerName}</span> },
         { accessorKey: "code", header: "Code", cell: ({ row }) => <Badge variant="outline">{row.original.code}</Badge> },
         { accessorKey: "discountPercent", header: "Discount %", cell: ({ row }) => <span className="font-mono">{row.original.discountPercent}%</span> },
@@ -125,6 +191,7 @@ export function AlliancesListPage({ alliances }: Props) {
             )}
 
             <DataTable
+                key={tableKey}
                 columns={columns}
                 data={alliances}
                 title="Alliance Discounts"
@@ -147,7 +214,8 @@ export function AlliancesListPage({ alliances }: Props) {
                     });
                 } : undefined}
                 canBulkDelete={false}
-                canBulkEdit={false}
+                canBulkEdit={canUpdate}
+                onBulkEdit={handleBulkEdit}
             />
 
             <AlertDialog open={!!deactivateId} onOpenChange={() => setDeactivateId(null)}>
@@ -166,6 +234,46 @@ export function AlliancesListPage({ alliances }: Props) {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {/* Bulk Locations Edit Modal */}
+            <Dialog open={bulkLocationsOpen} onOpenChange={setBulkLocationsOpen}>
+                <DialogContent className="max-w-xl">
+                    <DialogHeader className="flex flex-col items-center text-center">
+                        <div className="p-3 bg-primary/10 text-primary rounded-full mb-2">
+                            <MapPin className="h-6 w-6" />
+                        </div>
+                        <DialogTitle className="text-xl font-bold">Assign Locations</DialogTitle>
+                        <DialogDescription className="text-sm text-muted-foreground">
+                            Assign locations to the <span className="font-semibold text-foreground">{selectedAlliances.length}</span> selected alliance discount(s). This will override their current locations.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4">
+                        <LocationMultiSelect
+                            locations={locations}
+                            selected={selectedLocationIds}
+                            onChange={setSelectedLocationIds}
+                            disabled={isPending}
+                            maxHeight="300px"
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setBulkLocationsOpen(false)}
+                            disabled={isPending}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleBulkLocationsSubmit}
+                            disabled={isPending}
+                        >
+                            {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                            Assign Locations
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <AllianceBulkUploadModal
                 open={bulkUploadOpen}

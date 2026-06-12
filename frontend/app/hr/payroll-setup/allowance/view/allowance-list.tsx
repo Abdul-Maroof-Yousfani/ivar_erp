@@ -6,7 +6,6 @@ import { columns, type AllowanceRow } from "./columns";
 import { AllowanceFilters } from "./allowance-filters";
 import { Button } from "@/components/ui/button";
 import { Printer, Download, Plus } from "lucide-react";
-import { getEmployeesForDropdown, type EmployeeDropdownOption } from "@/lib/actions/employee";
 import { getDepartments, getSubDepartmentsByDepartment, type Department, type SubDepartment } from "@/lib/actions/department";
 import { getAllowanceHeads, type Allowance, type AllowanceHead } from "@/lib/actions/allowance";
 import { toast } from "sonner";
@@ -33,7 +32,6 @@ export function AllowanceList({ initialData = [] }: AllowanceListProps) {
   const router = useRouter();
   const { hasPermission } = useAuth();
   const canCreate = hasPermission("hr.allowance.create");
-  const [employees, setEmployees] = useState<EmployeeDropdownOption[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [subDepartments, setSubDepartments] = useState<SubDepartment[]>([]);
   const [allowanceHeads, setAllowanceHeads] = useState<AllowanceHead[]>([]);
@@ -153,25 +151,6 @@ export function AllowanceList({ initialData = [] }: AllowanceListProps) {
       }
     };
     fetchData();
-  }, []);
-
-  // Fetch employees on mount
-  useEffect(() => {
-    const fetchEmployees = async () => {
-      try {
-        const result = await getEmployeesForDropdown();
-        if (result.status && result.data) {
-          setEmployees(result.data);
-        } else {
-          setEmployees([]);
-        }
-      } catch (error) {
-        console.error("Error:", error);
-        setEmployees([]);
-      }
-    };
-
-    fetchEmployees();
   }, []);
 
   // Fetch sub-departments when department changes
@@ -302,7 +281,6 @@ export function AllowanceList({ initialData = [] }: AllowanceListProps) {
       <AllowanceFilters
         departments={departments}
         subDepartments={subDepartments}
-        employees={employees}
         allowanceHeads={allowanceHeads}
         loading={loading}
         loadingSubDepartments={loadingSubDepartments}

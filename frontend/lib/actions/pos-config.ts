@@ -285,6 +285,20 @@ export async function deactivateAlliance(id: string): Promise<{ status: boolean;
     }
 }
 
+export async function bulkUpdateAllianceLocations(allianceIds: string[], locationIds: string[]): Promise<{ status: boolean; message: string }> {
+    try {
+        const res = await authFetch(`/pos-config/alliances/bulk-locations`, {
+            method: 'PUT',
+            body: JSON.stringify({ allianceIds, locationIds }),
+        });
+        const result = res.data;
+        if (result.status) revalidatePath('/master/pos-config');
+        return result;
+    } catch {
+        return { status: false, message: 'Failed to bulk update alliance locations' };
+    }
+}
+
 // ══════════════════════════════════════════════════════════════
 //  Merchants Exporter
 // ══════════════════════════════════════════════════════════════

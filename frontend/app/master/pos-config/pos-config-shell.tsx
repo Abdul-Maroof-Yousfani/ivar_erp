@@ -12,6 +12,7 @@ const TABS = [
     { href: "/master/pos-config/coupons", label: "Coupons", icon: Ticket, permission: "master.coupon.read" },
     { href: "/master/pos-config/alliances", label: "Alliances", icon: Handshake, permission: "master.alliance.read" },
     { href: "/master/pos-config/vouchers", label: "Vouchers", icon: Gift, permission: "pos.voucher.view" },
+    { href: "/master/pos-config/merchants", label: "Merchants", icon: Gift, permission: "master.merchant.read" },
 ];
 
 // Routes that are "detail/form" pages — hide the tab bar on these
@@ -32,7 +33,7 @@ export function PosConfigShell({ children }: { children: ReactNode }) {
                 <>
                     <div>
                         <h2 className="text-2xl font-bold tracking-tight">POS Configuration</h2>
-                        <p className="text-muted-foreground">Manage promo campaigns, coupon codes, alliance discounts, and vouchers</p>
+                        <p className="text-muted-foreground">Manage promo campaigns, coupon codes, alliance discounts, vouchers and Merchants</p>
                     </div>
 
                     {/* Tab navigation */}

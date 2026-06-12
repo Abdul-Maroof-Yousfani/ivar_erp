@@ -10,7 +10,7 @@ export function getApiBaseUrl(): string {
 
   // Server-side: prefer internal API_URL (direct Docker/localhost connection, no nginx hop)
   if (isServer) {
-    return process.env.API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5001";
+    return process.env.API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
   }
 
   // Client-side: use NEXT_PUBLIC_API_BASE_URL if set (set this to https://auth.spl.inplsoftwares.com in prod)
@@ -21,10 +21,10 @@ export function getApiBaseUrl(): string {
   // Client-side dev: localtest.me subdomain support
   const hostname = window.location.hostname;
   if (hostname.includes("localtest.me")) {
-    return "http://api.localtest.me:5001";
+    return "http://api.localtest.me:5000";
   }
 
-  return "http://localhost:5001";
+  return "http://localhost:5000";
 }
 
 // Helper to get cookie domain
@@ -54,26 +54,26 @@ export const getCookieDomain = (host: string) => {
   if (parts.length >= 2) {
     // If it's a simple host like 'mysite.com', we want '.mysite.com'
     // If it's 'app.mysite.com', we also want '.mysite.com'
-    return "." + parts.slice(-2).join(".");
+  return "." + parts.slice(-2).join(".");
   }
 
   return undefined;
 };
 
 export function getCookie(name: string): string | null {
-  if (typeof document === 'undefined') return null;
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
-  return match ? decodeURIComponent(match[1]) : null;
+    if (typeof document === 'undefined') return null;
+    const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+    return match ? decodeURIComponent(match[1]) : null;
 }
 // Format currency
 export function formatCurrency(amount: number | string, currency = 'PKR'): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  if (isNaN(num)) return 'PKR 0.00';
+  if (isNaN(num)) return `${currency} 0`;
 
   const formatted = new Intl.NumberFormat('en-PK', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num);
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Math.round(num));
 
   return `${currency} ${formatted}`;
 }
@@ -82,10 +82,12 @@ export function formatCurrency(amount: number | string, currency = 'PKR'): strin
 export function formatDate(date: string | Date): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   if (isNaN(d.getTime())) return 'Invalid Date';
-
+  
   return new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
   }).format(d);
 }
+
+export const COMPANY_NAME = "Speed (Pvt.) Limited";

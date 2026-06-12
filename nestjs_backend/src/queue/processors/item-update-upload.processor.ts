@@ -32,14 +32,16 @@ export class ItemUpdateUploadProcessor extends BaseUploadProcessor<ItemUpdatePar
         progress: BaseUploadProgress,
         prisma: PrismaService,
     ): Promise<void> {
-        // 1. Extract non-empty barcodes
+        // 1. Extract non-empty barcodes and skus
         const barcodes = batch.map(r => r.data.barCode).filter(Boolean) as string[];
-        if (barcodes.length === 0) {
+        const skus = batch.map(r => r.data.sku).filter(Boolean) as string[];
+
+        if (barcodes.length === 0 && skus.length === 0) {
             for (const record of batch) {
                 progress.failedRecords++;
                 progress.errors.push({
                     row: record.row,
-                    reason: 'Barcode is required',
+                    reason: 'Either Barcode or SKU is required',
                     data: record.data,
                 });
                 progress.processedRecords++;
@@ -47,44 +49,71 @@ export class ItemUpdateUploadProcessor extends BaseUploadProcessor<ItemUpdatePar
             return;
         }
 
-        // 2. Fetch existing items in bulk by barcode
+        // 2. Fetch existing items in bulk by barcode and/or SKU
+        const orConditions: any[] = [];
+        if (barcodes.length > 0) orConditions.push({ barCode: { in: barcodes } });
+        if (skus.length > 0) orConditions.push({ sku: { in: skus } });
+
         const existingItems = await prisma.item.findMany({
-            where: { barCode: { in: barcodes } },
-            select: { id: true, barCode: true }
+            where: { OR: orConditions },
+            select: { id: true, barCode: true, sku: true }
         });
 
-        // Map trimmed barcodes to internal database item IDs
-        const barcodeToIdMap = new Map<string, string>();
+        // Map trimmed barcodes and SKUs to internal database items (arrays of items since SKU/barcode can match multiple items)
+        const barcodeToItemsMap = new Map<string, typeof existingItems>();
+        const skuToItemsMap = new Map<string, typeof existingItems>();
         for (const item of existingItems) {
             if (item.barCode) {
-                barcodeToIdMap.set(item.barCode.trim(), item.id);
+                const cleanBarcode = item.barCode.trim();
+                if (!barcodeToItemsMap.has(cleanBarcode)) {
+                    barcodeToItemsMap.set(cleanBarcode, []);
+                }
+                barcodeToItemsMap.get(cleanBarcode)!.push(item);
+            }
+            if (item.sku) {
+                const cleanSku = item.sku.trim();
+                if (!skuToItemsMap.has(cleanSku)) {
+                    skuToItemsMap.set(cleanSku, []);
+                }
+                skuToItemsMap.get(cleanSku)!.push(item);
             }
         }
 
         const validRecordsInBatch: { record: ItemUpdateParsedRecord, itemId: string, payload: any }[] = [];
 
         for (const record of batch) {
-            const { barCode, salePrice, fob, taxRate1, taxRate2 } = record.data;
+            const { barCode, sku, salePrice, fob, taxRate1, taxRate2 } = record.data;
 
-            if (!barCode) {
+            if (!barCode && !sku) {
                 progress.failedRecords++;
                 progress.errors.push({
                     row: record.row,
-                    reason: 'Barcode is required',
+                    reason: 'Either Barcode or SKU is required',
                     data: record.data,
                 });
                 progress.processedRecords++;
                 continue;
             }
 
-            const trimmedBarcode = barCode.trim();
-            const itemId = barcodeToIdMap.get(trimmedBarcode);
+            let matchedItems: typeof existingItems = [];
 
-            if (!itemId) {
+            // Prefer SKU Code if available
+            if (sku) {
+                const cleanSku = sku.trim();
+                matchedItems = skuToItemsMap.get(cleanSku) || [];
+            }
+
+            // Fallback to Barcode if SKU not found or not provided
+            if (matchedItems.length === 0 && barCode) {
+                const cleanBarcode = barCode.trim();
+                matchedItems = barcodeToItemsMap.get(cleanBarcode) || [];
+            }
+
+            if (matchedItems.length === 0) {
                 progress.failedRecords++;
                 progress.errors.push({
                     row: record.row,
-                    reason: `Barcode "${barCode}" not found in database`,
+                    reason: `Item with Barcode "${barCode || ''}" or SKU "${sku || ''}" not found in database`,
                     data: record.data,
                 });
                 progress.processedRecords++;
@@ -104,7 +133,9 @@ export class ItemUpdateUploadProcessor extends BaseUploadProcessor<ItemUpdatePar
                 continue;
             }
 
-            validRecordsInBatch.push({ record, itemId, payload });
+            for (const matchedItem of matchedItems) {
+                validRecordsInBatch.push({ record, itemId: matchedItem.id, payload });
+            }
             progress.processedRecords++;
         }
 
@@ -118,24 +149,40 @@ export class ItemUpdateUploadProcessor extends BaseUploadProcessor<ItemUpdatePar
                     })
                 );
                 await prisma.$transaction(transactionPromises);
-                progress.successRecords += validRecordsInBatch.length;
+                
+                // Since multiple updates can belong to the same CSV row, count unique rows successfully updated
+                const uniqueRowNumbers = new Set(validRecordsInBatch.map(x => x.record.row));
+                progress.successRecords += uniqueRowNumbers.size;
             } catch (error) {
                 this.logger.error(`Batch transaction update failed: ${error.message}. Retrying individually...`);
                 // Fallback to row-by-row updates for isolation of errors
+                // Group the valid item updates by their original CSV row
+                const rowsGrouped = new Map<number, typeof validRecordsInBatch>();
                 for (const item of validRecordsInBatch) {
+                    const row = item.record.row;
+                    if (!rowsGrouped.has(row)) {
+                        rowsGrouped.set(row, []);
+                    }
+                    rowsGrouped.get(row)!.push(item);
+                }
+
+                for (const [row, items] of rowsGrouped) {
                     try {
-                        await prisma.item.update({
-                            where: { id: item.itemId },
-                            data: item.payload,
-                        });
+                        const promises = items.map(item =>
+                            prisma.item.update({
+                                where: { id: item.itemId },
+                                data: item.payload,
+                            })
+                        );
+                        await prisma.$transaction(promises);
                         progress.successRecords++;
                     } catch (err) {
-                        this.logger.error(`Individual update failed for row ${item.record.row}: ${err.message}`);
+                        this.logger.error(`Individual update failed for row ${row}: ${err.message}`);
                         progress.failedRecords++;
                         progress.errors.push({
-                            row: item.record.row,
+                            row: row,
                             reason: `Update failed: ${err.message}`,
-                            data: item.record.data,
+                            data: items[0].record.data,
                         });
                     }
                 }

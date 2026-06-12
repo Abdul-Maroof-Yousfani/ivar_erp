@@ -13,7 +13,7 @@ import { Autocomplete } from "@/components/ui/autocomplete";
 import { Plus, Trash2, Loader2, CreditCard, Wallet, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { createPaymentVoucher, getPendingInvoicesBySupplier, getAllSuppliers, getVendorWithAccounts, getAdvancesBySupplier, getSupplierSummary } from "@/lib/actions/payment-voucher";
+import { createPaymentVoucher, updatePaymentVoucher, getPendingInvoicesBySupplier, getAllSuppliers, getVendorWithAccounts, getAdvancesBySupplier, getSupplierSummary, type PaymentVoucher } from "@/lib/actions/payment-voucher";
 import { ChartOfAccount } from "@/lib/actions/chart-of-account";
 import { ChartOfAccountSelect, getSharedTree } from "@/components/ui/chart-of-account-select";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -108,8 +108,9 @@ type AdvanceEntry = {
     applyingNow: number;
 };
 
-export function PaymentVoucherForm() {
+export function PaymentVoucherForm({ initialData }: { initialData?: any }) {
     const router = useRouter();
+    const isRestoring = useRef(false);
     const [isPending, setIsPending] = useState(false);
     const [suppliers, setSuppliers] = useState<any[]>([]);
     const [pendingInvoices, setPendingInvoices] = useState<any[]>([]);
@@ -124,24 +125,35 @@ export function PaymentVoucherForm() {
     const form = useForm<PaymentVoucherFormValues>({
         resolver: zodResolver(paymentVoucherSchema) as any,
         defaultValues: {
-            type: "bank",
-            isAdvance: false,
-            pvNo: "",
-            pvDate: new Date(),
-            refBillNo: "",
-            billDate: undefined,
-            chequeNo: "",
-            chequeDate: undefined,
-            creditAccountId: "",
-            creditAmount: 0,
-            supplierId: "",
-            invoices: [],
-            isTaxApplicable: false,
-            description: "",
-            details: [
-                { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
-                { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
-            ],
+            type: initialData?.type || "bank",
+            isAdvance: initialData?.isAdvance ?? false,
+            pvNo: initialData?.pvNo || "",
+            pvDate: initialData?.pvDate ? new Date(initialData.pvDate) : new Date(),
+            refBillNo: initialData?.refBillNo || "",
+            billDate: initialData?.billDate ? new Date(initialData.billDate) : undefined,
+            chequeNo: initialData?.chequeNo || "",
+            chequeDate: initialData?.chequeDate ? new Date(initialData.chequeDate) : undefined,
+            creditAccountId: initialData?.creditAccountId || "",
+            creditAmount: Number(initialData?.creditAmount) || 0,
+            supplierId: initialData?.supplierId || "",
+            invoices: initialData?.invoices || [],
+            isTaxApplicable: initialData?.isTaxApplicable ?? false,
+            description: initialData?.description || "",
+            details: initialData?.details
+                ? initialData.details.map((d: any) => ({
+                      accountId: d.accountId,
+                      tagAccountId: d.tagAccountId || "",
+                      debit: Math.round(Number(d.debit) || 0),
+                      credit: Math.round(Number(d.credit) || 0),
+                      narration: d.narration || "",
+                      refBillNo: d.refBillNo || "",
+                      isTaxApplicable: d.isTaxApplicable ?? false,
+                      taxableValue: Math.round(Number(d.taxableValue) || 0),
+                  }))
+                : [
+                      { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false, taxableValue: 0 },
+                      { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false, taxableValue: 0 },
+                  ],
         },
     });
 
@@ -176,6 +188,8 @@ export function PaymentVoucherForm() {
         });
     }, [watchDetails.map((d: any) => d.accountId).join(",")]);
 
+    const prevDetailsRef = useRef<Array<{ accountId: string; tagAccountId: string; taxableValue: number }>>([]);
+
     // Derive child accounts for each row from the cached tree
     function findInTree(nodes: ChartOfAccount[], id: string): ChartOfAccount | undefined {
         for (const node of nodes) {
@@ -207,23 +221,89 @@ export function PaymentVoucherForm() {
         loadSuppliers();
     }, []);
 
+    // Load selected invoices/advances from initialData
+    useEffect(() => {
+        if (initialData) {
+            if (initialData.invoices && Array.isArray(initialData.invoices)) {
+                const mappedInvoices = initialData.invoices.map((inv: any) => {
+                    const pi = inv.purchaseInvoice || {};
+                    return {
+                        purchaseInvoiceId: inv.purchaseInvoiceId,
+                        invoiceNumber: pi.invoiceNumber || "",
+                        totalAmount: Number(pi.totalAmount) || 0,
+                        paidAmount: Number(pi.paidAmount) || 0,
+                        remainingAmount: Number(pi.remainingAmount) || 0,
+                        payingNow: Number(inv.paidAmount) || 0,
+                    };
+                });
+                setSelectedInvoices(mappedInvoices);
+            }
+
+            if (initialData.advanceApplications && Array.isArray(initialData.advanceApplications)) {
+                const mappedAdvances = initialData.advanceApplications.map((app: any) => {
+                    const sa = app.sourceAdvance || {};
+                    return {
+                        pvId: app.sourceAdvanceId,
+                        pvNo: sa.pvNo || "",
+                        pvDate: sa.pvDate || "",
+                        totalAmount: Number(sa.creditAmount) || 0,
+                        availableAmount: Number(sa.creditAmount) - Number(sa.advanceApplied) + Number(app.appliedAmount),
+                        applyingNow: Number(app.appliedAmount) || 0,
+                    };
+                });
+                setSelectedAdvances(mappedAdvances);
+            }
+        }
+    }, [initialData]);
+
     // Auto-generate PV No based on type
     useEffect(() => {
+        if (initialData) return;
         const prefix = voucherType === "bank" ? "BPV" : "CPV";
         const datePart = `${new Date().getFullYear().toString().slice(-2)}${(new Date().getMonth() + 1).toString().padStart(2, '0')}`;
         const randomPart = Math.floor(1000 + Math.random() * 9000);
         form.setValue("pvNo", `${prefix}${datePart}${randomPart}`);
-    }, [voucherType, form]);
+    }, [voucherType, form, initialData]);
 
     // Load pending invoices + available advances when supplier changes
     const selectedSupplierId = form.watch("supplierId");
     useEffect(() => {
         if (selectedSupplierId) {
             getPendingInvoicesBySupplier(selectedSupplierId).then(result => {
-                setPendingInvoices(result.status ? result.data : []);
+                let list = result.status ? result.data : [];
+                if (initialData?.invoices && Array.isArray(initialData.invoices)) {
+                    initialData.invoices.forEach((inv: any) => {
+                        if (!list.find((x: any) => x.id === inv.purchaseInvoiceId)) {
+                            const pi = inv.purchaseInvoice || {};
+                            list.push({
+                                id: inv.purchaseInvoiceId,
+                                invoiceNumber: pi.invoiceNumber || "",
+                                totalAmount: Number(pi.totalAmount) || 0,
+                                paidAmount: Number(pi.paidAmount) || 0,
+                                remainingAmount: Number(pi.remainingAmount) || 0,
+                            });
+                        }
+                    });
+                }
+                setPendingInvoices(list);
             });
             getAdvancesBySupplier(selectedSupplierId).then(result => {
-                setAvailableAdvances(result.status ? result.data : []);
+                let list = result.status ? result.data : [];
+                if (initialData?.advanceApplications && Array.isArray(initialData.advanceApplications)) {
+                    initialData.advanceApplications.forEach((app: any) => {
+                        if (!list.find((x: any) => x.pvId === app.sourceAdvanceId)) {
+                            const sa = app.sourceAdvance || {};
+                            list.push({
+                                pvId: app.sourceAdvanceId,
+                                pvNo: sa.pvNo || "",
+                                pvDate: sa.pvDate || "",
+                                totalAmount: Number(sa.creditAmount) || 0,
+                                availableAmount: Number(sa.creditAmount) - Number(sa.advanceApplied),
+                            });
+                        }
+                    });
+                }
+                setAvailableAdvances(list);
             });
             getSupplierSummary(selectedSupplierId).then(result => {
                 setSupplierSummary(result.status ? result.data : null);
@@ -236,11 +316,13 @@ export function PaymentVoucherForm() {
             setSupplierSummary(null);
             form.setValue("creditAmount", 0);
         }
-    }, [selectedSupplierId, form]);
+    }, [selectedSupplierId, form, initialData]);
 
     // When supplier changes, fetch their linked chart of accounts and pre-fill debit rows
     useEffect(() => {
+        if (initialData) return;
         if (!selectedSupplierId) return;
+        if (isRestoring.current) return;
         getVendorWithAccounts(selectedSupplierId).then(res => {
             if (res.status && res.data?.chartOfAccounts?.length > 0) {
                 const linkedAccounts: { id: string }[] = res.data.chartOfAccounts;
@@ -254,13 +336,13 @@ export function PaymentVoucherForm() {
                             form.setValue(`details.${i}.debit`, 0);
                             form.setValue(`details.${i}.credit`, 0);
                         } else {
-                            append({ accountId: acc.id, debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false });
+                            append({ accountId: acc.id, debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false, taxableValue: 0 });
                         }
                     });
                 }
             }
         });
-    }, [selectedSupplierId, form, append]);
+    }, [selectedSupplierId, form, append, initialData]);
 
     // Toggle an invoice in/out of the selected list
     const toggleInvoice = (invoice: any) => {
@@ -303,7 +385,7 @@ export function PaymentVoucherForm() {
 
     const duplicateToCredit = (fromIndex: number) => {
         const fromRow = form.getValues(`details.${fromIndex}`);
-        const debitVal = Number(fromRow.debit) || 0;
+        const debitVal = Math.round(Number(fromRow.debit) || 0);
         
         const targetIndex = fromIndex + 1;
         const currentDetails = form.getValues("details") || [];
@@ -314,6 +396,7 @@ export function PaymentVoucherForm() {
             form.setValue(`details.${targetIndex}.narration`, fromRow.narration || "", { shouldValidate: true });
             form.setValue(`details.${targetIndex}.refBillNo`, fromRow.refBillNo || "", { shouldValidate: true });
             form.setValue(`details.${targetIndex}.isTaxApplicable`, fromRow.isTaxApplicable ?? false, { shouldValidate: true });
+            form.setValue(`details.${targetIndex}.taxableValue`, fromRow.taxableValue ?? 0, { shouldValidate: true });
             if (fromRow.accountId) {
                 form.setValue(`details.${targetIndex}.accountId`, fromRow.accountId, { shouldValidate: true });
             }
@@ -329,11 +412,126 @@ export function PaymentVoucherForm() {
                 credit: debitVal,
                 narration: fromRow.narration || "",
                 refBillNo: fromRow.refBillNo || "",
-                isTaxApplicable: fromRow.isTaxApplicable ?? false
+                isTaxApplicable: fromRow.isTaxApplicable ?? false,
+                taxableValue: fromRow.taxableValue ?? 0
             });
             toast.success(`Duplicated Row ${fromIndex + 1} to a new Credit Row.`);
         }
     };
+
+    // Auto-save draft logic (multiple drafts keyed by pvNo)
+    const watchAllFields = form.watch();
+    const voucherNo = watchAllFields.pvNo;
+    useEffect(() => {
+        if (initialData || !voucherNo) return;
+        const draftData = {
+            formValues: watchAllFields,
+            selectedInvoices,
+            selectedAdvances,
+        };
+        const timeout = setTimeout(() => {
+            const draftsJson = localStorage.getItem("payment-voucher-drafts") || "{}";
+            try {
+                const drafts = JSON.parse(draftsJson);
+                drafts[voucherNo] = {
+                    voucherNo,
+                    updatedAt: new Date().toISOString(),
+                    ...draftData,
+                };
+                localStorage.setItem("payment-voucher-drafts", JSON.stringify(drafts));
+            } catch (e) {
+                console.error("Error saving draft", e);
+            }
+        }, 1000);
+        return () => clearTimeout(timeout);
+    }, [watchAllFields, voucherNo, selectedInvoices, selectedAdvances, initialData]);
+
+    // Restore draft logic
+    useEffect(() => {
+        if (initialData) return;
+
+        // Check if there's a specific draftId query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlDraftId = urlParams.get("draftId");
+
+        const draftsJson = localStorage.getItem("payment-voucher-drafts");
+        if (!draftsJson) return;
+
+        try {
+            const drafts = JSON.parse(draftsJson);
+
+            if (urlDraftId) {
+                const draft = drafts[urlDraftId];
+                if (draft && draft.formValues) {
+                    isRestoring.current = true;
+                    if (draft.formValues.pvDate) draft.formValues.pvDate = new Date(draft.formValues.pvDate);
+                    if (draft.formValues.billDate) draft.formValues.billDate = new Date(draft.formValues.billDate);
+                    if (draft.formValues.chequeDate) draft.formValues.chequeDate = new Date(draft.formValues.chequeDate);
+                    form.reset(draft.formValues);
+                    if (draft.selectedInvoices) setSelectedInvoices(draft.selectedInvoices);
+                    if (draft.selectedAdvances) setSelectedAdvances(draft.selectedAdvances);
+                    
+                    setTimeout(() => {
+                        isRestoring.current = false;
+                    }, 300);
+                    toast.success(`Restored draft: ${urlDraftId}`);
+                }
+            } else {
+                const draftKeys = Object.keys(drafts);
+                if (draftKeys.length === 1) {
+                    const singleKey = draftKeys[0];
+                    const draft = drafts[singleKey];
+                    const hasFormDetails = draft.formValues?.details?.some((d: { accountId?: string; debit?: number; credit?: number }) => d.accountId || (d.debit ?? 0) > 0 || (d.credit ?? 0) > 0);
+                    const hasInvoicesOrAdvances = draft.selectedInvoices?.length > 0 || draft.selectedAdvances?.length > 0;
+                    const hasDescriptionOrSupplier = draft.formValues?.description || draft.formValues?.supplierId;
+
+                    if (hasFormDetails || hasInvoicesOrAdvances || hasDescriptionOrSupplier) {
+                        toast(`You have an unsaved draft (${singleKey}).`, {
+                            action: {
+                                label: "Restore",
+                                onClick: () => {
+                                    isRestoring.current = true;
+                                    if (draft.formValues) {
+                                        if (draft.formValues.pvDate) draft.formValues.pvDate = new Date(draft.formValues.pvDate);
+                                        if (draft.formValues.billDate) draft.formValues.billDate = new Date(draft.formValues.billDate);
+                                        if (draft.formValues.chequeDate) draft.formValues.chequeDate = new Date(draft.formValues.chequeDate);
+                                        form.reset(draft.formValues);
+                                    }
+                                    if (draft.selectedInvoices) setSelectedInvoices(draft.selectedInvoices);
+                                    if (draft.selectedAdvances) setSelectedAdvances(draft.selectedAdvances);
+                                    
+                                    setTimeout(() => {
+                                        isRestoring.current = false;
+                                    }, 300);
+                                    toast.success("Draft restored!");
+                                }
+                            },
+                            cancel: {
+                                label: "Discard",
+                                onClick: () => {
+                                    delete drafts[singleKey];
+                                    localStorage.setItem("payment-voucher-drafts", JSON.stringify(drafts));
+                                }
+                            },
+                            duration: 15000,
+                        });
+                    }
+                } else if (draftKeys.length > 1) {
+                    toast(`You have ${draftKeys.length} pending drafts.`, {
+                        action: {
+                            label: "View Drafts",
+                            onClick: () => {
+                                router.push("/finance/payment-voucher/list");
+                            }
+                        },
+                        duration: 15000,
+                    });
+                }
+            }
+        } catch (e) {
+            console.error("Failed to parse drafts", e);
+        }
+    }, [initialData, form, router]);
 
     const onSubmit: SubmitHandler<PaymentVoucherFormValues> = async (values) => {
         try {
@@ -355,6 +553,15 @@ export function PaymentVoucherForm() {
                 ...values,
                 creditAccountId: mainCreditAccountId || values.creditAccountId,
                 creditAmount: totalCredit || values.creditAmount,
+                details: values.details.map(detail => ({
+                    accountId: detail.accountId,
+                    tagAccountId: detail.tagAccountId || undefined,
+                    debit: Math.round(Number(detail.debit) || 0),
+                    credit: Math.round(Number(detail.credit) || 0),
+                    narration: detail.narration || undefined,
+                    refBillNo: detail.refBillNo || undefined,
+                    isTaxApplicable: detail.isTaxApplicable ?? false,
+                })),
                 invoices: selectedInvoices.length > 0
                     ? selectedInvoices.map(i => ({ purchaseInvoiceId: i.purchaseInvoiceId, paidAmount: i.payingNow }))
                     : undefined,
@@ -363,8 +570,20 @@ export function PaymentVoucherForm() {
                     : undefined,
             };
 
-            const result = await createPaymentVoucher(finalSubmitData);
+            const result = initialData
+                ? await updatePaymentVoucher(initialData.id, finalSubmitData)
+                : await createPaymentVoucher(finalSubmitData);
             if (result.status) {
+                if (!initialData && voucherNo) {
+                    const draftsJson = localStorage.getItem("payment-voucher-drafts");
+                    if (draftsJson) {
+                        try {
+                            const drafts = JSON.parse(draftsJson);
+                            delete drafts[voucherNo];
+                            localStorage.setItem("payment-voucher-drafts", JSON.stringify(drafts));
+                        } catch {}
+                    }
+                }
                 toast.success(result.message);
                 router.push("/finance/payment-voucher/list");
             } else {
@@ -378,54 +597,81 @@ export function PaymentVoucherForm() {
     };
 
     // Watch for changes in detail rows to auto-balance and calculate taxes
-    const watchDetailsString = watchDetails.map(d => `${d.debit}-${d.credit}-${d.accountId}-${d.tagAccountId}-${d.isTaxApplicable}`).join(",");
+    const watchDetailsString = watchDetails.map(d => `${d.debit}-${d.accountId}-${d.tagAccountId}-${d.isTaxApplicable}-${d.taxableValue}`).join(",");
     useEffect(() => {
-        // Calculate total taxable amount
-        const taxableAmount = watchDetails.reduce((sum, detail) => {
-            return sum + (detail.isTaxApplicable ? (Number(detail.debit) || 0) : 0);
-        }, 0);
-
         let totalTaxAmount = 0;
 
         // Auto-calculate taxes for any recognized tax rows
-        if (taxableAmount > 0 && tree.length > 0) {
+        if (tree.length > 0) {
             watchDetails.forEach((detail, index) => {
+                const prev = prevDetailsRef.current[index] || { accountId: "", tagAccountId: "", taxableValue: 0 };
+                const currentTaxableValue = Math.round(Number(detail.taxableValue) || 0);
+                
+                // Check if trigger fields changed for this row
+                const triggerChanged = 
+                    detail.accountId !== prev.accountId || 
+                    detail.tagAccountId !== prev.tagAccountId || 
+                    currentTaxableValue !== prev.taxableValue;
+
                 if (detail.accountId && detail.tagAccountId) {
                     const accountNode = findInTree(tree, detail.accountId);
                     const tagNode = accountNode?.children?.find(c => c.id === detail.tagAccountId);
 
                     if (accountNode?.code && tagNode?.code) {
-                        const calculatedTax = calculateTaxForAccount(accountNode.code, tagNode.code, taxableAmount);
-                        if (calculatedTax !== null) {
-                            const currentCredit = Number(detail.credit) || 0;
-                            if (currentCredit !== calculatedTax) {
-                                form.setValue(`details.${index}.credit`, calculatedTax, { shouldValidate: true });
-                                form.setValue(`details.${index}.debit`, 0, { shouldValidate: true });
+                        if (currentTaxableValue > 0) {
+                            const calculatedTax = calculateTaxForAccount(accountNode.code, tagNode.code, currentTaxableValue);
+                            if (calculatedTax !== null) {
+                                const roundedTax = Math.round(calculatedTax);
+                                if (triggerChanged) {
+                                    form.setValue(`details.${index}.credit`, roundedTax, { shouldValidate: true });
+                                    form.setValue(`details.${index}.debit`, 0, { shouldValidate: true });
+                                    totalTaxAmount += roundedTax;
+                                } else {
+                                    // Use user's manual entry (subtracting any debit to get net credit impact)
+                                    totalTaxAmount += Math.round(Number(detail.credit) || 0) - Math.round(Number(detail.debit) || 0);
+                                }
                             }
-                            totalTaxAmount += calculatedTax;
+                        } else {
+                            if (triggerChanged) {
+                                form.setValue(`details.${index}.credit`, 0, { shouldValidate: true });
+                            } else {
+                                totalTaxAmount += Math.round(Number(detail.credit) || 0) - Math.round(Number(detail.debit) || 0);
+                            }
                         }
                     }
                 }
+
+                // Update the ref for this row
+                prevDetailsRef.current[index] = {
+                    accountId: detail.accountId || "",
+                    tagAccountId: detail.tagAccountId || "",
+                    taxableValue: currentTaxableValue,
+                };
             });
+
+            // Clean up extra rows in the ref if any were deleted
+            if (prevDetailsRef.current.length > watchDetails.length) {
+                prevDetailsRef.current = prevDetailsRef.current.slice(0, watchDetails.length);
+            }
         }
 
         // Find the first row with debit amount (supplier row)
-        const supplierRowIndex = watchDetails.findIndex(detail => Number(detail.debit) > 0);
+        const supplierRowIndex = watchDetails.findIndex(detail => Math.round(Number(detail.debit) || 0) > 0);
         
         // Find the second row with account selected but no debit and no tag (bank/company row)
         const bankRowIndex = watchDetails.findIndex((detail, index) => 
             index !== supplierRowIndex && 
             detail.accountId && 
-            Number(detail.debit) === 0 &&
+            Math.round(Number(detail.debit) || 0) === 0 &&
             !detail.tagAccountId
         );
         
         // Auto-fill credit
         if (supplierRowIndex >= 0 && bankRowIndex >= 1) {
-            const supplierDebitAmount = Number(watchDetails[supplierRowIndex].debit);
-            const currentBankCredit = Number(watchDetails[bankRowIndex].credit) || 0;
+            const supplierDebitAmount = Math.round(Number(watchDetails[supplierRowIndex].debit) || 0);
+            const currentBankCredit = Math.round(Number(watchDetails[bankRowIndex].credit) || 0);
             
-            const expectedBankCredit = Math.max(0, supplierDebitAmount - totalTaxAmount);
+            const expectedBankCredit = Math.round(Math.max(0, supplierDebitAmount - totalTaxAmount));
             
             if (supplierDebitAmount > 0 && currentBankCredit !== expectedBankCredit) {
                 // Auto-fill the credit amount in the bank row
@@ -442,7 +688,7 @@ export function PaymentVoucherForm() {
     return (
         <Card className="w-full">
             <CardHeader className="border-b flex flex-row items-center justify-between">
-                <CardTitle>{voucherType === "bank" ? "Create Bank Payment Voucher Form" : "Create Cash Payment Voucher Form"}</CardTitle>
+                <CardTitle>{initialData ? "Edit Payment Voucher" : (voucherType === "bank" ? "Create Bank Payment Voucher Form" : "Create Cash Payment Voucher Form")}</CardTitle>
                 <Tabs value={voucherType} onValueChange={(val) => form.setValue("type", val as "bank" | "cash")} className="w-[300px]">
                     <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="bank" className="flex items-center gap-2">
@@ -828,7 +1074,7 @@ export function PaymentVoucherForm() {
                                     type="button"
                                     variant="secondary"
                                     size="sm"
-                                    onClick={() => append({ accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false })}
+                                    onClick={() => append({ accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false, taxableValue: 0 })}
                                 >
                                     <Plus className="h-4 w-4 mr-2" />
                                     Add More PV Rows
@@ -873,19 +1119,35 @@ export function PaymentVoucherForm() {
                                                     </p>
                                                 )}
                                                 {(rowChildren[index]?.length ?? 0) > 0 && (
-                                                    <div className="mt-1.5">
-                                                        <Controller
-                                                            control={form.control}
-                                                            name={`details.${index}.tagAccountId`}
-                                                            render={({ field }) => (
-                                                                <TagAccountSelect
-                                                                    children={rowChildren[index]}
-                                                                    value={field.value ?? ""}
-                                                                    onValueChange={field.onChange}
+                                                    <div className="mt-1.5 flex gap-2">
+                                                        <div className="flex-1">
+                                                            <Controller
+                                                                control={form.control}
+                                                                name={`details.${index}.tagAccountId`}
+                                                                render={({ field }) => (
+                                                                    <TagAccountSelect
+                                                                        children={rowChildren[index]}
+                                                                        value={field.value ?? ""}
+                                                                        onValueChange={field.onChange}
+                                                                        disabled={isPending}
+                                                                    />
+                                                                )}
+                                                            />
+                                                        </div>
+                                                        {watchDetails[index]?.tagAccountId && (
+                                                            <div className="w-[120px] shrink-0">
+                                                                <Input
+                                                                    type="number"
+                                                                    step="0.01"
+                                                                    placeholder="Taxable Value"
+                                                                    {...form.register(`details.${index}.taxableValue`, {
+                                                                        valueAsNumber: true,
+                                                                    })}
                                                                     disabled={isPending}
+                                                                    className="h-8 text-xs border-gray-300 dark:border-input"
                                                                 />
-                                                            )}
-                                                        />
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                                 <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-12 gap-2 border-t pt-2 border-gray-100 dark:border-muted/20">
@@ -930,12 +1192,17 @@ export function PaymentVoucherForm() {
                                             <td className="px-4 py-3">
                                                 <Input
                                                     type="number"
-                                                    step="0.01"
+                                                    step="1"
                                                     placeholder="0"
                                                     {...form.register(`details.${index}.debit`, {
                                                         valueAsNumber: true,
                                                         onChange: (e) => {
-                                                            if (Number(e.target.value) > 0) {
+                                                            const rawVal = Number(e.target.value) || 0;
+                                                            const roundedVal = Math.round(rawVal);
+                                                            if (rawVal !== roundedVal) {
+                                                                form.setValue(`details.${index}.debit`, roundedVal, { shouldValidate: true });
+                                                            }
+                                                            if (roundedVal > 0) {
                                                                 form.setValue(`details.${index}.credit`, 0, { shouldValidate: true });
                                                             }
                                                         }
@@ -947,12 +1214,17 @@ export function PaymentVoucherForm() {
                                             <td className="px-4 py-3">
                                                 <Input
                                                     type="number"
-                                                    step="0.01"
+                                                    step="1"
                                                     placeholder="0"
                                                     {...form.register(`details.${index}.credit`, {
                                                         valueAsNumber: true,
                                                         onChange: (e) => {
-                                                            if (Number(e.target.value) > 0) {
+                                                            const rawVal = Number(e.target.value) || 0;
+                                                            const roundedVal = Math.round(rawVal);
+                                                            if (rawVal !== roundedVal) {
+                                                                form.setValue(`details.${index}.credit`, roundedVal, { shouldValidate: true });
+                                                            }
+                                                            if (roundedVal > 0) {
                                                                 form.setValue(`details.${index}.debit`, 0, { shouldValidate: true });
                                                             }
                                                         }
@@ -1056,7 +1328,7 @@ export function PaymentVoucherForm() {
                             disabled={isPending || !isBalanced}
                         >
                             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Create Payment Voucher
+                            {initialData ? "Update Payment Voucher" : "Create Payment Voucher"}
                         </Button>
                     </div>
                 </form>

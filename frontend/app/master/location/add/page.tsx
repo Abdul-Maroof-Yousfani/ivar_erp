@@ -20,10 +20,11 @@ export default function AddLocationPage() {
     id: number;
     name: string;
     code: string;
+    shortCode: string;
     address: string;
     cityId: string;
   }
-  const [locations, setLocations] = useState<LocationState[]>([{ id: 1, name: "", code: "", address: "", cityId: "" }]);
+  const [locations, setLocations] = useState<LocationState[]>([{ id: 1, name: "", code: "", shortCode: "", address: "", cityId: "" }]);
   const [cities, setCities] = useState<City[]>([]);
 
   useEffect(() => {
@@ -37,7 +38,7 @@ export default function AddLocationPage() {
   }, []);
 
   const addRow = () => {
-    setLocations([...locations, { id: Date.now(), name: "", code: "", address: "", cityId: "" }]);
+    setLocations([...locations, { id: Date.now(), name: "", code: "", shortCode: "", address: "", cityId: "" }]);
   };
 
   const removeRow = (id: number) => {
@@ -64,6 +65,7 @@ export default function AddLocationPage() {
         validLocations.map((l) => ({
           name: l.name.trim(),
           code: l.code.trim(),
+          shortCode: l.shortCode.trim() || undefined,
           address: l.address.trim() || undefined,
           cityId: l.cityId || undefined,
         }))
@@ -107,8 +109,8 @@ export default function AddLocationPage() {
               <Label>Locations</Label>
               {locations.map((loc, index) => (
                 <div key={loc.id} className="space-y-3 p-4 border rounded-lg bg-muted/10 relative group">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5 order-1 md:order-0">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Location Name</Label>
                       <Input
                         placeholder={`Location ${index + 1} Name`}
@@ -118,12 +120,22 @@ export default function AddLocationPage() {
                         className="bg-background"
                       />
                     </div>
-                    <div className="space-y-1.5 order-2 md:order-0">
+                    <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">Location Code</Label>
                       <Input
                         placeholder="e.g. NYC-01"
                         value={loc.code}
                         onChange={(e) => updateLocation(loc.id, "code", e.target.value.toUpperCase())}
+                        disabled={isPending}
+                        className="bg-background"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Short Code (Optional)</Label>
+                      <Input
+                        placeholder="e.g. SSDMC"
+                        value={loc.shortCode}
+                        onChange={(e) => updateLocation(loc.id, "shortCode", e.target.value.toUpperCase())}
                         disabled={isPending}
                         className="bg-background"
                       />

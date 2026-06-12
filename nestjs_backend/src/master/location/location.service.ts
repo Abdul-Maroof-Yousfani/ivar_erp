@@ -5,6 +5,16 @@ import { PrismaService } from '../../database/prisma.service';
 import { runInBackground } from '../../common/utils/run-in-background.util';
 import { MasterDeleteGuardService } from '../../common/services/master-delete-guard.service';
 
+export function generateShortCode(name: string): string {
+  if (!name) return 'LOC';
+  return name
+    .split(/[\s\-_]+/)
+    .map((word) => word.replace(/[^a-zA-Z0-9]/g, ''))
+    .filter((word) => word.length > 0)
+    .map((word) => word[0].toUpperCase())
+    .join('');
+}
+
 @Injectable()
 export class LocationService {
   constructor(
@@ -75,7 +85,7 @@ export class LocationService {
   }
 
   async create(
-    body: { name: string; code?: string; address?: string; cityId?: string; status?: string; companyId?: string },
+    body: { name: string; code?: string; address?: string; cityId?: string; status?: string; companyId?: string; cashGLCode?: string; shortCode?: string },
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
@@ -88,6 +98,8 @@ export class LocationService {
           companyId: body.companyId,
           status: body.status ?? 'active',
           createdById: ctx.userId,
+          cashGLCode: body.cashGLCode || null,
+          shortCode: body.shortCode?.trim() || generateShortCode(body.name),
         },
       });
       const response = { status: true, data: created };
@@ -129,7 +141,7 @@ export class LocationService {
 
   async update(
     id: string,
-    body: { name: string; code?: string; address?: string; cityId?: string; status?: string; companyId?: string },
+    body: { name: string; code?: string; address?: string; cityId?: string; status?: string; companyId?: string; cashGLCode?: string; shortCode?: string },
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
@@ -154,6 +166,11 @@ export class LocationService {
               : existing?.cityId,
           companyId: body.companyId ?? existing?.companyId,
           status: body.status ?? existing?.status ?? 'active',
+          cashGLCode: body.cashGLCode !== undefined ? body.cashGLCode : existing?.cashGLCode,
+          shortCode:
+            body.shortCode !== undefined
+              ? body.shortCode?.trim() || generateShortCode(body.name ?? existing?.name ?? '')
+              : existing?.shortCode,
         },
       });
       const response = { status: true, data: updated };
@@ -195,6 +212,92 @@ export class LocationService {
         status: false,
         message:
           error instanceof Error ? error.message : 'Failed to update location',
+      };
+    }
+  }
+
+  async updateOtherInfo(
+    id: string,
+    body: {
+      phone?: string;
+      latitude?: number;
+      longitude?: number;
+      geoFenceEnabled?: boolean;
+      geoFenceRadius?: number;
+      ipWhitelist?: string;
+      ipWhitelistEnabled?: boolean;
+      fbrBposId?: string;
+      fbrBearerToken?: string;
+      fbrNtn?: string;
+      fbrSellerName?: string;
+      fbrEnabled?: boolean;
+    },
+    ctx: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    try {
+      const existing = await this.prisma.location.findFirst({
+        where: { id, isDeleted: false },
+      });
+      if (!existing) {
+        return { status: false, message: 'Location not found' };
+      }
+      
+      const updated = await this.prisma.location.update({
+        where: { id },
+        data: {
+          phone: body.phone !== undefined ? body.phone : existing.phone,
+          latitude: body.latitude !== undefined ? body.latitude : existing.latitude,
+          longitude: body.longitude !== undefined ? body.longitude : existing.longitude,
+          geoFenceEnabled: body.geoFenceEnabled !== undefined ? body.geoFenceEnabled : existing.geoFenceEnabled,
+          geoFenceRadius: body.geoFenceRadius !== undefined ? body.geoFenceRadius : existing.geoFenceRadius,
+          ipWhitelist: body.ipWhitelist !== undefined ? body.ipWhitelist : existing.ipWhitelist,
+          ipWhitelistEnabled: body.ipWhitelistEnabled !== undefined ? body.ipWhitelistEnabled : existing.ipWhitelistEnabled,
+          fbrBposId: body.fbrBposId !== undefined ? body.fbrBposId : existing.fbrBposId,
+          fbrBearerToken: body.fbrBearerToken !== undefined ? body.fbrBearerToken : existing.fbrBearerToken,
+          fbrNtn: body.fbrNtn !== undefined ? body.fbrNtn : existing.fbrNtn,
+          fbrSellerName: body.fbrSellerName !== undefined ? body.fbrSellerName : existing.fbrSellerName,
+          fbrEnabled: body.fbrEnabled !== undefined ? body.fbrEnabled : existing.fbrEnabled,
+        },
+      });
+
+      const response = { status: true, data: updated };
+      runInBackground(
+        'Update Location Other Info',
+        this.activityLogs.log({
+          userId: ctx.userId,
+          action: 'update',
+          module: 'locations',
+          entity: 'Location',
+          entityId: id,
+          description: `Updated other info for location ${updated.name}`,
+          oldValues: JSON.stringify(existing),
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
+      );
+      return response;
+    } catch (error: any) {
+      runInBackground(
+        'Update Location Other Info (Failure Log)',
+        this.activityLogs.log({
+          userId: ctx.userId,
+          action: 'update',
+          module: 'locations',
+          entity: 'Location',
+          entityId: id,
+          description: 'Failed to update other info for location',
+          errorMessage: error?.message,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
+      );
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : 'Failed to update location other info',
       };
     }
   }
@@ -260,6 +363,8 @@ export class LocationService {
       address?: string;
       cityId?: string;
       status?: string;
+      cashGLCode?: string;
+      shortCode?: string;
     }[],
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
@@ -274,6 +379,8 @@ export class LocationService {
           cityId: i.cityId?.trim() || null,
           status: i.status ?? 'active',
           createdById: ctx.userId,
+          cashGLCode: i.cashGLCode || null,
+          shortCode: i.shortCode?.trim() || generateShortCode(i.name),
         })),
         skipDuplicates: true,
       });
@@ -321,6 +428,8 @@ export class LocationService {
       address?: string;
       cityId?: string;
       status?: string;
+      cashGLCode?: string;
+      shortCode?: string;
     }[],
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
@@ -347,6 +456,11 @@ export class LocationService {
                 ? i.cityId?.trim() || null
                 : existing?.cityId,
             status: i.status ?? existing?.status ?? 'active',
+            cashGLCode: i.cashGLCode !== undefined ? i.cashGLCode : existing?.cashGLCode,
+            shortCode:
+              i.shortCode !== undefined
+                ? i.shortCode?.trim() || generateShortCode(i.name ?? existing?.name ?? '')
+                : existing?.shortCode,
           },
         });
       }
@@ -513,6 +627,52 @@ export class LocationService {
       return {
         status: false,
         message: error?.message || 'Failed to find nearest location',
+      };
+    }
+  }
+
+  /// Toggle the online/offline status for an outlet.
+  async updateOnlineStatus(
+    id: string,
+    isOnline: boolean,
+    ctx: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    try {
+      const existing = await this.prisma.location.findFirst({
+        where: { id, isDeleted: false },
+      });
+      if (!existing) return { status: false, message: 'Location not found' };
+
+      const updated = await this.prisma.location.update({
+        where: { id },
+        data: {
+          isOnline,
+          lastOnlineAt: isOnline ? new Date() : existing.lastOnlineAt,
+        },
+      });
+
+      const response = { status: true, data: updated };
+      runInBackground(
+        'Update Location Online Status',
+        this.activityLogs.log({
+          userId: ctx.userId,
+          action: 'update',
+          module: 'locations',
+          entity: 'Location',
+          entityId: id,
+          description: `Marked location ${existing.name} as ${isOnline ? 'online' : 'offline'}`,
+          oldValues: JSON.stringify({ isOnline: existing.isOnline }),
+          newValues: JSON.stringify({ isOnline }),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
+      );
+      return response;
+    } catch (error: any) {
+      return {
+        status: false,
+        message: error?.message || 'Failed to update online status',
       };
     }
   }

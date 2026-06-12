@@ -47,11 +47,11 @@ export async function getUsers(): Promise<{ status: boolean; data: User[]; messa
 }
 
 export async function createUser(data: {
-  email: string;
+  email?: string; // Optional: employees without official email can log in via employeeId code
   firstName: string;
   lastName: string;
   password?: string;
-  employeeId?: string;
+  employeeId?: string; // Alphanumeric code (e.g. EMP-001), stored in User.employeeId
   roleId?: string;
 }) {
   try {

@@ -39,7 +39,8 @@ export const masterMenuData: MenuItem[] = [
   // ── ERP ──────────────────────────────────────────────────────────────────────
   {
     title: "Brand",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.brand.read", "master.brand.create"],
     children: [
       { title: "Add", href: "/master/brand/add" },
@@ -48,7 +49,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Division",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.division.read", "master.division.create"],
     children: [
       { title: "Add", href: "/master/division/add" },
@@ -57,7 +59,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Gender",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.gender.read", "master.gender.create"],
     children: [
       { title: "Add", href: "/master/gender/add" },
@@ -66,7 +69,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Size",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.size.read", "master.size.create"],
     children: [
       { title: "Add", href: "/master/size/add" },
@@ -75,7 +79,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Silhouette",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.silhouette.read", "master.silhouette.create"],
     children: [
       { title: "Add", href: "/master/silhouette/add" },
@@ -84,7 +89,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Segment",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.segment.read", "master.segment.create"],
     children: [
       { title: "Add", href: "/master/segment/add" },
@@ -93,7 +99,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Item Class",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.item-class.read", "master.item-class.create"],
     children: [
       { title: "Add", href: "/master/class/add" },
@@ -102,7 +109,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Item Subclass",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.item-subclass.read", "master.item-subclass.create"],
     children: [
       { title: "Add", href: "/master/subclass/add" },
@@ -111,7 +119,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "HS Code",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.hs-code.read", "master.hs-code.create"],
     children: [
       { title: "Add", href: "/master/hs-code/add" },
@@ -120,7 +129,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Season",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.season.read", "master.season.create"],
     children: [
       { title: "Add", href: "/master/season/add" },
@@ -129,7 +139,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Old Season",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.old-season.read", "master.old-season.create"],
     children: [
       { title: "Add", href: "/master/old-season/add" },
@@ -138,7 +149,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Channel Class",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.channel-class.read", "master.channel-class.create"],
     children: [
       { title: "Add", href: "/master/channel-class/add" },
@@ -147,7 +159,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Color",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.color.read", "master.color.create"],
     children: [
       { title: "Add", href: "/master/color/add" },
@@ -156,7 +169,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Category",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.category.read", "master.category.create"],
     children: [
       { title: "Add", href: "/master/category/add" },
@@ -165,7 +179,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Sub Category",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.sub-category.read", "master.sub-category.create"],
     children: [
       { title: "Add", href: "/master/sub-category/add" },
@@ -174,7 +189,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Unit Of Measurement",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: [
       "master.unit-of-measurement.read",
       "master.unit-of-measurement.create",
@@ -186,7 +202,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Demand Type",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.demand-type.read", "master.demand-type.create"],
     children: [
       { title: "Add", href: "/master/demand-type/add" },
@@ -195,7 +212,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Warehouse",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.warehouse.read", "master.warehouse.create"],
     children: [
       { title: "Add", href: "/master/warehouse/add" },
@@ -204,7 +222,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Salesman",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.salesman.read", "master.salesman.create"],
     children: [
       { title: "Add", href: "/master/salesman/add" },
@@ -213,7 +232,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Cluster",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.cluster.read", "master.cluster.create"],
     children: [
       { title: "Add", href: "/master/cluster/add" },
@@ -222,7 +242,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Opening Inventory",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: [
       "master.opening-inventory.read",
       "master.opening-inventory.create",
@@ -234,7 +255,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Vendor Opening",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.vendor-opening.read", "master.vendor-opening.create"],
     children: [
       { title: "Add", href: "/master/vendor-opening/add" },
@@ -243,7 +265,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Tax Rate",
-    environment: "MASTER", module: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.tax-rate.read", "master.tax-rate.create"],
     children: [
       { title: "Add", href: "/master/tax-rate/add" },
@@ -254,7 +277,8 @@ export const masterMenuData: MenuItem[] = [
   // ── HR ───────────────────────────────────────────────────────────────────────
   {
     title: "Department",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.department.read", "master.department.create"],
     children: [
       { title: "Add", href: "/master/department/add" },
@@ -263,7 +287,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Sub Department",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.sub-department.read", "master.sub-department.create"],
     children: [
       { title: "Add", href: "/master/sub-department/add" },
@@ -272,7 +297,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Institute",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.institute.read", "master.institute.create"],
     children: [
       { title: "Add", href: "/master/institute/add" },
@@ -281,7 +307,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Designation",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.designation.read", "master.designation.create"],
     children: [
       { title: "Add", href: "/master/designation/add" },
@@ -290,7 +317,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Job Type",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.job-type.read", "master.job-type.create"],
     children: [
       { title: "Add", href: "/master/job-type/add" },
@@ -299,7 +327,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Marital Status",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.marital-status.read", "master.marital-status.create"],
     children: [
       { title: "Add", href: "/master/marital-status/add" },
@@ -308,7 +337,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Employee Grade",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.employee-grade.read", "master.employee-grade.create"],
     children: [
       { title: "Add", href: "/master/employee-grade/add" },
@@ -317,7 +347,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Employment Status",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: [
       "master.employee-status.read",
       "master.employee-status.create",
@@ -329,7 +360,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Qualification",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.qualification.read", "master.qualification.create"],
     children: [
       { title: "Add", href: "/master/qualification/add" },
@@ -338,7 +370,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "City",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.city.read", "master.city.create"],
     children: [
       { title: "Add", href: "/master/city/add" },
@@ -347,7 +380,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Location",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.location.read", "master.location.create"],
     children: [
       { title: "Add", href: "/master/location/add" },
@@ -356,7 +390,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Allocation",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.allocation.read", "master.allocation.create"],
     children: [
       { title: "Add", href: "/master/allocation/add" },
@@ -365,7 +400,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Loan Types",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.loan-type.read", "master.loan-type.create"],
     children: [
       { title: "Add", href: "/master/loan-types/add" },
@@ -374,7 +410,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Leave Types",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.leave-type.read", "master.leave-type.create"],
     children: [
       { title: "Add", href: "/master/leave-types/add" },
@@ -383,17 +420,22 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Leaves Policy",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.leaves-policy.read", "master.leaves-policy.create"],
     children: [
       { title: "Add", href: "/master/leaves-policy/add" },
       { title: "View", href: "/master/leaves-policy/list" },
-      { title: "Add Manual Leaves", href: "/master/leaves-policy/manual-leaves" },
+      {
+        title: "Add Manual Leaves",
+        href: "/master/leaves-policy/manual-leaves",
+      },
     ],
   },
   {
     title: "Equipment",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.equipment.read", "master.equipment.create"],
     children: [
       { title: "Add", href: "/master/equipment/add" },
@@ -402,7 +444,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Salary Breakup",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.salary-breakup.read", "master.salary-breakup.create"],
     children: [
       { title: "Add", href: "/master/salary-breakup/add" },
@@ -411,7 +454,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "EOBI",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.eobi.read", "master.eobi.create"],
     children: [
       { title: "Add", href: "/master/eobi/add" },
@@ -420,7 +464,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Social Security",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: [
       "master.social-security.read",
       "master.social-security.create",
@@ -432,7 +477,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Tax Slabs",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.tax-slab.read", "master.tax-slab.create"],
     children: [
       { title: "Add", href: "/master/tax-slabs/add" },
@@ -441,7 +487,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Provident Fund",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.provident-fund.read", "master.provident-fund.create"],
     children: [
       { title: "Add", href: "/master/provident-fund/add" },
@@ -450,7 +497,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Bonus Types",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.bonus-type.read", "master.bonus-type.create"],
     children: [
       { title: "Add", href: "/master/bonus-types/add" },
@@ -459,7 +507,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Allowance",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.allowance-head.read", "master.allowance-head.create"],
     children: [
       { title: "Add", href: "/master/allowance-head/add" },
@@ -468,7 +517,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Deduction",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.deduction-head.read", "master.deduction-head.create"],
     children: [
       { title: "Add", href: "/master/deduction-head/add" },
@@ -477,7 +527,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Bank",
-    environment: "MASTER", module: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.bank.read", "master.bank.create"],
     children: [
       { title: "Add", href: "/master/banks/add" },
@@ -488,46 +539,87 @@ export const masterMenuData: MenuItem[] = [
   // ── POS ──────────────────────────────────────────────────────────────────────
   {
     title: "Promo Campaigns",
-    environment: "MASTER", module: "POS",
+    environment: "MASTER",
+    module: "POS",
     permissions: ["master.promo.read", "master.promo.create"],
     children: [
-      { title: "Create", href: "/master/pos-config/promos/new", permissions: ["master.promo.create"] },
-      { title: "List", href: "/master/pos-config/promos", permissions: ["master.promo.read"] },
+      {
+        title: "Create",
+        href: "/master/pos-config/promos/new",
+        permissions: ["master.promo.create"],
+      },
+      {
+        title: "List",
+        href: "/master/pos-config/promos",
+        permissions: ["master.promo.read"],
+      },
     ],
   },
   {
     title: "Coupon Codes",
-    environment: "MASTER", module: "POS",
+    environment: "MASTER",
+    module: "POS",
     permissions: ["master.coupon.read", "master.coupon.create"],
     children: [
-      { title: "Create", href: "/master/pos-config/coupons/new", permissions: ["master.coupon.create"] },
-      { title: "List", href: "/master/pos-config/coupons", permissions: ["master.coupon.read"] },
+      {
+        title: "Create",
+        href: "/master/pos-config/coupons/new",
+        permissions: ["master.coupon.create"],
+      },
+      {
+        title: "List",
+        href: "/master/pos-config/coupons",
+        permissions: ["master.coupon.read"],
+      },
     ],
   },
   {
     title: "Alliance Discounts",
-    environment: "MASTER", module: "POS",
+    environment: "MASTER",
+    module: "POS",
     permissions: ["master.alliance.read", "master.alliance.create"],
     children: [
-      { title: "Create", href: "/master/pos-config/alliances/new", permissions: ["master.alliance.create"] },
-      { title: "List", href: "/master/pos-config/alliances", permissions: ["master.alliance.read"] },
+      {
+        title: "Create",
+        href: "/master/pos-config/alliances/new",
+        permissions: ["master.alliance.create"],
+      },
+      {
+        title: "List",
+        href: "/master/pos-config/alliances",
+        permissions: ["master.alliance.read"],
+      },
     ],
   },
   {
     title: "Vouchers",
-    environment: "MASTER", module: "POS",
+    environment: "MASTER",
+    module: "POS",
     permissions: ["pos.voucher.view", "pos.voucher.create"],
     children: [
-      { title: "Issue", href: "/master/pos-config/vouchers/new", permissions: ["pos.voucher.create"] },
-      { title: "List", href: "/master/pos-config/vouchers", permissions: ["pos.voucher.view"] },
+      {
+        title: "Issue",
+        href: "/master/pos-config/vouchers/new",
+        permissions: ["pos.voucher.create"],
+      },
+      {
+        title: "List",
+        href: "/master/pos-config/vouchers",
+        permissions: ["pos.voucher.view"],
+      },
     ],
   },
   {
     title: "Merchants",
-    environment: "MASTER", module: "POS",
+    environment: "MASTER",
+    module: "POS",
     permissions: ["master.merchant.read", "master.merchant.create"],
     children: [
-      { title: "Configure", href: "/master/pos-config/merchants", permissions: ["master.merchant.read"] },
+      {
+        title: "Configure",
+        href: "/master/pos-config/merchants",
+        permissions: ["master.merchant.read"],
+      },
     ],
   },
 ];
@@ -545,7 +637,13 @@ export const menuData: MenuItem[] = [
     icon: LayoutDashboard,
     href: "/erp",
     environment: "ERP",
-    permissions: ["erp.item.read", "erp.finance.chart-of-account.read", "erp.finance.journal-voucher.read", "inventory.read", "procurement.read"],
+    permissions: [
+      "erp.item.read",
+      "erp.finance.chart-of-account.read",
+      "erp.finance.journal-voucher.read",
+      "inventory.read",
+      "procurement.read",
+    ],
   },
   {
     title: "POS Dashboard",
@@ -683,10 +781,26 @@ export const menuData: MenuItem[] = [
         title: "Item Setup",
         permissions: ["erp.item.read", "erp.item.create", "erp.item.update"],
         children: [
-          { title: "Create", href: "/erp/items/create", permissions: ["erp.item.create"] },
-          { title: "List", href: "/erp/items/list", permissions: ["erp.item.read"] },
-          { title: "Bulk Discount", href: "/erp/items/bulk-discount", permissions: ["erp.item.update"] },
-          { title: "Campaigns", href: "/erp/items/campaigns", permissions: ["erp.item.read"] },
+          {
+            title: "Create",
+            href: "/erp/items/create",
+            permissions: ["erp.item.create"],
+          },
+          {
+            title: "List",
+            href: "/erp/items/list",
+            permissions: ["erp.item.read"],
+          },
+          {
+            title: "Bulk Discount",
+            href: "/erp/items/bulk-discount",
+            permissions: ["erp.item.update"],
+          },
+          {
+            title: "Campaigns",
+            href: "/erp/items/campaigns",
+            permissions: ["erp.item.read"],
+          },
           // { title: "Categories", href: "/erp/inventory/categories" },
         ],
       },
@@ -696,6 +810,10 @@ export const menuData: MenuItem[] = [
           {
             title: "Stock Ledger",
             href: "/erp/inventory/transactions/stock-received",
+          },
+          {
+            title: "Stock Adjustment",
+            href: "/erp/inventory/transactions/stock-adjustment",
           },
           {
             title: "Delivery Note",
@@ -708,7 +826,10 @@ export const menuData: MenuItem[] = [
           {
             title: "PLM Claims",
             href: "/erp/inventory/transactions/plm-claims",
-            permissions: ["erp.inventory.claims.acknowledge", "erp.inventory.warehouse.view"],
+            permissions: [
+              "erp.inventory.claims.acknowledge",
+              "erp.inventory.warehouse.view",
+            ],
           },
         ],
       },
@@ -718,7 +839,17 @@ export const menuData: MenuItem[] = [
     title: "Procurement",
     icon: ShoppingCart,
     environment: "ERP",
-    permissions: ["erp.procurement.vendor.read", "erp.procurement.pr.read", "erp.procurement.rfq.read", "erp.procurement.vq.create", "erp.procurement.po.create", "erp.procurement.grn.read", "erp.procurement.landed-cost.create", "erp.procurement.pi.read", "erp.procurement.pret.read"],
+    permissions: [
+      "erp.procurement.vendor.read",
+      "erp.procurement.pr.read",
+      "erp.procurement.rfq.read",
+      "erp.procurement.vq.create",
+      "erp.procurement.po.create",
+      "erp.procurement.grn.read",
+      "erp.procurement.landed-cost.create",
+      "erp.procurement.pi.read",
+      "erp.procurement.pret.read",
+    ],
     children: [
       {
         title: "Vendors",
@@ -801,7 +932,13 @@ export const menuData: MenuItem[] = [
     title: "Sales",
     icon: TrendingUp,
     environment: "ERP",
-    permissions: ["erp.sales.customer.read", "erp.sales.order.read", "erp.sales.dc.read", "erp.sales.invoice.read", "erp.claims.read"],
+    permissions: [
+      "erp.sales.customer.read",
+      "erp.sales.order.read",
+      "erp.sales.dc.read",
+      "erp.sales.invoice.read",
+      "erp.claims.read",
+    ],
     children: [
       {
         title: "Customers",
@@ -1296,7 +1433,11 @@ export const menuData: MenuItem[] = [
             href: "/hr/payroll-setup/pf-employee/withdraw-view",
             permissions: ["hr.provident-fund.read"],
           },
-          { title: "View Report", href: "/hr/payroll-setup/pf-employee/report", permissions: ["hr.provident-fund.read"] },
+          {
+            title: "View Report",
+            href: "/hr/payroll-setup/pf-employee/report",
+            permissions: ["hr.provident-fund.read"],
+          },
           // { title: "View Ledger", href: "/hr/payroll-setup/pf-employee/ledger", permissions: ["hr.provident-fund.read"] },
         ],
       },
@@ -1319,10 +1460,10 @@ export const menuData: MenuItem[] = [
             href: "/hr/payroll-setup/eobi-employee/withdraw-view",
             permissions: ["hr.eobi.read"],
           },
-          { 
-            title: "View Report", 
-            href: "/hr/payroll-setup/eobi-employee/report", 
-            permissions: ["hr.eobi.read"] 
+          {
+            title: "View Report",
+            href: "/hr/payroll-setup/eobi-employee/report",
+            permissions: ["hr.eobi.read"],
           },
         ],
       },
@@ -1448,7 +1589,7 @@ export const menuData: MenuItem[] = [
         href: "/pos/customers",
         permissions: ["pos.customer.view"],
       },
-    
+
       {
         title: "Cash Drawer",
         href: "/pos/shifts",
@@ -1506,6 +1647,11 @@ export const menuData: MenuItem[] = [
         title: "Return Requests",
         href: "/pos/inventory/returns",
         permissions: ["pos.inventory.returns.view"],
+      },
+      {
+        title: "Stock Ledger",
+        href: "/pos/inventory/ledger",
+        permissions: ["pos.inventory.view"],
       },
     ],
   },

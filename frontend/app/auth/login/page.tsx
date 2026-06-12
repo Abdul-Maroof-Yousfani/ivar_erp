@@ -167,7 +167,7 @@ export default function LoginPage() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label htmlFor="email" className="text-sm font-semibold">Email Address</Label>
+              <Label htmlFor="email" className="text-sm font-semibold">Email Address or Employee ID</Label>
               {hasSavedAccounts && (
                 <Link
                   href={`/auth/choose-account${window.location.search}`}
@@ -180,8 +180,8 @@ export default function LoginPage() {
             <Input
               id="email"
               name="email"
-              type="email"
-              placeholder="name@company.com"
+              type="text"
+              placeholder="name@company.com or EMP-001"
               required
               disabled={isPending}
               value={emailValue}

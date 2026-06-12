@@ -48,7 +48,6 @@ export class WorkingHoursPolicyService {
           name: body.name,
           startWorkingHours: body.startWorkingHours,
           endWorkingHours: body.endWorkingHours,
-          otStartsAt: body.otStartsAt ?? null,
           shortDayMins: body.shortDayMins ?? null,
           startBreakTime: body.startBreakTime ?? null,
           endBreakTime: body.endBreakTime ?? null,
@@ -141,10 +140,6 @@ export class WorkingHoursPolicyService {
           startWorkingHours:
             body.startWorkingHours ?? existing.startWorkingHours,
           endWorkingHours: body.endWorkingHours ?? existing.endWorkingHours,
-          otStartsAt:
-            body.otStartsAt !== undefined
-              ? body.otStartsAt
-              : existing.otStartsAt,
           shortDayMins:
             body.shortDayMins !== undefined
               ? body.shortDayMins

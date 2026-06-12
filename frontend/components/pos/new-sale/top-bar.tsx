@@ -70,7 +70,19 @@ export function NewSaleTopBar({
                                                 onClick={() => onSelectProduct(product)}
                                             >
                                                 <div className="flex flex-col">
-                                                    <span className="text-sm font-semibold">{product.description || 'Unknown Product'}</span>
+                                                    <span className="text-sm font-semibold">
+                                                        {product.description || 'Unknown Product'}
+                                                        {(typeof product.size === "object" ? product.size?.name : product.size) && (
+                                                            <span className="ml-2 text-[10px] font-normal text-muted-foreground bg-muted border border-border px-1.5 py-0.5 rounded">
+                                                                Size: {typeof product.size === "object" ? product.size?.name : product.size}
+                                                            </span>
+                                                        )}
+                                                        {(typeof product.color === "object" ? product.color?.name : product.color) && (
+                                                            <span className="ml-2 text-[10px] font-normal text-muted-foreground bg-muted border border-border px-1.5 py-0.5 rounded">
+                                                                Color: {typeof product.color === "object" ? product.color?.name : product.color}
+                                                            </span>
+                                                        )}
+                                                    </span>
                                                     <span className="text-xs text-muted-foreground">SKU: {product.sku || product.barCode || '-'}</span>
                                                 </div>
                                                 <div className="flex flex-col items-end gap-1">

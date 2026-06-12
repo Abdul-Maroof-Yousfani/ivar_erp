@@ -575,7 +575,6 @@ function RowActions({ row }: RowActionsProps) {
     shortDayDeductionAmount: policy.shortDayDeductionAmount?.toString() || "",
     overtimeRate: policy.overtimeRate?.toString() || "",
     gazzetedOvertimeRate: policy.gazzetedOvertimeRate?.toString() || "",
-    otStartsAt: policy.otStartsAt || "",
     status: policy.status,
     dayOverrides: initializeDayOverrides(),
   });
@@ -670,7 +669,6 @@ function RowActions({ row }: RowActionsProps) {
         shortDayDeductionAmount: editData.shortDayDeductionAmount ? parseFloat(editData.shortDayDeductionAmount) : null,
         overtimeRate: editData.overtimeRate && editData.overtimeRate !== "0" ? parseFloat(editData.overtimeRate) : null,
         gazzetedOvertimeRate: editData.gazzetedOvertimeRate && editData.gazzetedOvertimeRate !== "0" ? parseFloat(editData.gazzetedOvertimeRate) : null,
-        otStartsAt: editData.otStartsAt || null,
         status: editData.status,
         dayOverrides: groupDayOverrides(editData.dayOverrides, daysOfWeek),
       });
@@ -1323,7 +1321,7 @@ function RowActions({ row }: RowActionsProps) {
             {/* Overtime Rates */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Overtime Rates</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Overtime Rate</Label>
                   <Select
@@ -1365,16 +1363,6 @@ function RowActions({ row }: RowActionsProps) {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Overtime Starts At</Label>
-                  <TimePicker
-                    value={editData.otStartsAt || ""}
-                    onChange={(value) =>
-                      setEditData({ ...editData, otStartsAt: value })
-                    }
-                    disabled={isPending}
-                  />
                 </div>
               </div>
             </div>
@@ -1695,7 +1683,7 @@ function RowActions({ row }: RowActionsProps) {
               {/* Overtime Rates */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Overtime Rates</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm text-muted-foreground">Overtime Rate</Label>
                     <p className="font-medium">
@@ -1706,12 +1694,6 @@ function RowActions({ row }: RowActionsProps) {
                     <Label className="text-sm text-muted-foreground">Gazzeted Overtime Rate</Label>
                     <p className="font-medium">
                       {viewPolicy.gazzetedOvertimeRate ? `x${viewPolicy.gazzetedOvertimeRate}` : "None"}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-sm text-muted-foreground">Overtime Starts At</Label>
-                    <p className="font-medium">
-                      {viewPolicy.otStartsAt ? formatTimeForDisplay(viewPolicy.otStartsAt, true) : "N/A"}
                     </p>
                   </div>
                 </div>

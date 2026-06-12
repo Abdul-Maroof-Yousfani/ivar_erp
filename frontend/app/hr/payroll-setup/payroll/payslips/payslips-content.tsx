@@ -14,6 +14,7 @@ import { PayslipTemplate } from "./payslip-template";
 import DataTable from "@/components/common/data-table";
 import { getColumns, type PayslipRow } from "./columns";
 import { MonthYearPicker } from "@/components/ui/month-year-picker";
+import { EmployeeSelect } from "@/components/employees/employee-select";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import jsPDF from "jspdf";
 import * as htmlToImage from 'html-to-image';
@@ -22,10 +23,9 @@ import { useAuth } from "@/components/providers/auth-provider";
 interface PayslipsContentProps {
     departments: any[];
     subDepartments: any[];
-    employees: any[];
 }
 
-export function PayslipsContent({ departments, subDepartments, employees }: PayslipsContentProps) {
+export function PayslipsContent({ departments, subDepartments }: PayslipsContentProps) {
     const [isPending, startTransition] = useTransition();
     const { user, isAdmin, hasPermission } = useAuth();
     const [data, setData] = useState<any[]>([]);
@@ -60,20 +60,6 @@ export function PayslipsContent({ departments, subDepartments, employees }: Pays
         if (filters.departmentId === "all") return subDepartments;
         return subDepartments.filter((sd) => sd.departmentId === filters.departmentId);
     }, [filters.departmentId, subDepartments]);
-
-    const filteredEmployees = useMemo(() => {
-        let result = employees;
-        if (!canViewAll && user?.employeeId) {
-            return result.filter((e) => e.id === user.employeeId);
-        }
-        if (filters.departmentId !== "all") {
-            result = result.filter((e) => e.departmentId === filters.departmentId);
-        }
-        if (filters.subDepartmentId !== "all") {
-            result = result.filter((e) => e.subDepartmentId === filters.subDepartmentId);
-        }
-        return result;
-    }, [filters.departmentId, filters.subDepartmentId, employees, user, canViewAll]);
 
     const handleSearch = () => {
         startTransition(async () => {
@@ -206,10 +192,12 @@ export function PayslipsContent({ departments, subDepartments, employees }: Pays
                                 </div>
                                 <div className="space-y-2">
                                     <Label>Employee</Label>
-                                    <Autocomplete
-                                        options={filteredEmployees.map(e => ({ value: e.id, label: `(${e.employeeId}) ${e.employeeName}` }))}
+                                    <EmployeeSelect
                                         value={filters.employeeId}
                                         onValueChange={(value) => setFilters({ ...filters, employeeId: value || "all" })}
+                                        departmentId={filters.departmentId}
+                                        subDepartmentId={filters.subDepartmentId}
+                                        includeAllOption
                                         placeholder="Select Employee"
                                         searchPlaceholder="Search employee..."
                                     />

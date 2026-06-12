@@ -53,11 +53,11 @@ export async function createChartOfAccount(data: any): Promise<{ status: boolean
     const result = res.data;
     // If backend returns the object directly
     if (result.id) {
-        revalidatePath("/finance/chart-of-accounts");
+        revalidatePath("/erp/finance/chart-of-accounts");
         return { status: true, message: "Account created successfully", data: result };
     }
     if (result.status) {
-      revalidatePath("/finance/chart-of-accounts");
+      revalidatePath("/erp/finance/chart-of-accounts");
     }
     return result;
   } catch (error) {
@@ -72,11 +72,11 @@ export async function updateChartOfAccount(id: string, data: any): Promise<{ sta
       });
       const result = res.data;
       if (result.id) {
-          revalidatePath("/finance/chart-of-accounts");
+          revalidatePath("/erp/finance/chart-of-accounts");
           return { status: true, message: "Account updated successfully", data: result };
       }
       if (result.status) {
-        revalidatePath("/finance/chart-of-accounts");
+        revalidatePath("/erp/finance/chart-of-accounts");
       }
       return result;
     } catch (error) {
@@ -90,7 +90,7 @@ export async function deleteChartOfAccount(id: string): Promise<{ status: boolea
     });
     // Check for 204 or 200
     if (res.ok) {
-      revalidatePath("/finance/chart-of-accounts");
+      revalidatePath("/erp/finance/chart-of-accounts");
       return { status: true, message: "Account deleted successfully" };
     }
     const result = res.data;
@@ -161,7 +161,7 @@ export async function createBulkSubAccounts(
     });
     const result = res.data;
     if (result.status) {
-      revalidatePath("/finance/chart-of-accounts");
+      revalidatePath("/erp/finance/chart-of-accounts");
     }
     return result;
   } catch (error) {

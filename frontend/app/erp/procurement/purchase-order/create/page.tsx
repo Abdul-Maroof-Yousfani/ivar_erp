@@ -38,8 +38,6 @@ interface OrderItem {
 }
 
 const resolveItemAvgCost = (item: any): number => {
-    const avg = Number(item?.unitCost ?? 0);
-    if (!Number.isNaN(avg) && avg > 0) return avg;
     const fallback = Number(item?.unitPrice ?? 0);
     return Number.isNaN(fallback) ? 0 : fallback;
 };
@@ -509,7 +507,11 @@ export default function CreateDirectPurchaseOrder() {
                                                                                     </span>
                                                                                     <span className={cn("truncate text-sm", isAdded ? "font-bold text-primary" : "font-medium")}>{item.description}</span>
                                                                                 </div>
-                                                                                <span className="text-[11px] text-muted-foreground">Stock: <span className={cn("font-bold", item.availableStock > 0 ? "text-foreground" : "text-destructive")}>{item.availableStock ?? 0}</span></span>
+                                                                                <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                                                                                    <span>Stock: <span className={cn("font-bold", item.availableStock > 0 ? "text-foreground" : "text-destructive")}>{item.availableStock ?? 0}</span></span>
+                                                                                    <span>•</span>
+                                                                                    <span>Price: <span className="font-bold text-foreground">{formatCurrency(item.unitPrice || 0)}</span></span>
+                                                                                </div>
                                                                             </div>
                                                                             <div className="shrink-0">
                                                                                 {isAdded ? <CheckCircle2 className="h-5 w-5 text-primary fill-primary/10" /> : <Plus className="h-4 w-4 text-muted-foreground opacity-50" />}

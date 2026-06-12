@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/dialog";
 import { Printer, Gift, Loader2 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
+import { usePosSettings } from "@/hooks/use-pos-settings";
+import { printThermal } from "@/lib/utils/print";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -37,16 +39,28 @@ function fmtDate(dateStr?: string | null): string {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface PrintVoucherReceiptProps {
-    voucher: {
+    voucher?: {
         code: string;
         voucherType: string;
         faceValue: number;
+        discount?: number;
         description?: string;
         companyName?: string;
         expiresAt?: string | null;
         createdAt?: string;
         locations?: Array<{ location: { name: string; code: string } }>;
     };
+    vouchers?: Array<{
+        code: string;
+        voucherType: string;
+        faceValue: number;
+        discount?: number;
+        description?: string;
+        companyName?: string;
+        expiresAt?: string | null;
+        createdAt?: string;
+        locations?: Array<{ location: { name: string; code: string } }>;
+    }>;
     isLoading?: boolean;
     autoPrint?: boolean;
     onClose: () => void;
@@ -95,18 +109,23 @@ function VoucherSkeleton() {
 
 export function PrintVoucherReceipt({
     voucher,
+    vouchers,
     isLoading = false,
     autoPrint = false,
     onClose,
 }: PrintVoucherReceiptProps) {
     const { user } = useAuth();
+    const { settings } = usePosSettings();
+
+    const isBulk = vouchers !== undefined && vouchers.length > 0;
+    const voucherList = isBulk ? vouchers! : voucher ? [voucher] : [];
 
     useEffect(() => {
-        if (!isLoading && autoPrint) {
-            const timer = setTimeout(() => window.print(), 400);
+        if (!isLoading && autoPrint && voucherList.length > 0) {
+            const timer = setTimeout(() => printThermal("voucher-receipt-print-root", settings), 400);
             return () => clearTimeout(timer);
         }
-    }, [isLoading, autoPrint]);
+    }, [isLoading, autoPrint, settings, voucherList.length]);
 
     // ── Store info ────────────────────────────────────────────────────
     const storeName =
@@ -119,35 +138,67 @@ export function PrintVoucherReceipt({
     const storePhone   = (typeof user?.terminal?.location?.phone   === "string" ? user.terminal.location.phone   : "") || "";
     const terminalName = (typeof user?.terminal?.name === "string" ? user.terminal.name : "") || (typeof user?.terminal?.code === "string" ? user.terminal.code : "") || "";
 
-    const bodyProps: VoucherReceiptBodyProps = {
-        storeName,
-        storeAddress,
-        storePhone,
-        terminalName,
-        voucher,
-    };
+    const title = isBulk 
+        ? `Print Vouchers (${voucherList.length})` 
+        : `${(voucherList[0]?.voucherType ? `${voucherList[0].voucherType.replace(/_/g, ' ')} Voucher` : 'Gift Voucher')} Receipt`;
 
     return (
         <>
             <style>{`
+                /* Ensure print root and its descendants are rendered in solid black and white for standard/PDF rendering */
+                #voucher-receipt-print-root,
+                #voucher-receipt-print-root * {
+                    color: #000 !important;
+                    border-color: #000 !important;
+                    background-color: transparent !important;
+                    background: none !important;
+                }
+
+                #voucher-receipt-print-root [role="separator"],
+                #voucher-receipt-print-root hr {
+                    background-color: #000 !important;
+                    height: 1px !important;
+                }
+
                 @media print {
-                    body * { visibility: hidden !important; }
+                    body *:not(#voucher-receipt-print-root):not(#voucher-receipt-print-root *) {
+                        visibility: hidden !important;
+                        height: 0 !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        border: none !important;
+                    }
                     #voucher-receipt-print-root,
-                    #voucher-receipt-print-root * { visibility: visible !important; }
+                    #voucher-receipt-print-root * {
+                        visibility: visible !important;
+                        color: #000 !important;
+                        border-color: #000 !important;
+                        background-color: transparent !important;
+                        background: none !important;
+                    }
                     #voucher-receipt-print-root {
-                        position: fixed !important;
+                        position: absolute !important;
                         left: 0 !important;
                         top: 0 !important;
-                        width: 80mm !important;
-                        padding: 4mm 3mm !important;
+                        width: 72.1mm !important;
+                        padding: 0 !important;
                         background: #fff !important;
                         color: #000 !important;
                         font-family: 'Courier New', Courier, monospace !important;
                         font-size: 9pt !important;
                         line-height: 1.35 !important;
                     }
+                    /* Each voucher wrapper — page-break triggers thermal cutter */
+                    #voucher-receipt-print-root .voucher-print-page {
+                        page-break-inside: avoid !important;
+                        break-inside: avoid !important;
+                        padding: 2mm 1mm !important;
+                    }
+                    #voucher-receipt-print-root .voucher-print-page.voucher-cut {
+                        page-break-after: always !important;
+                        break-after: page !important;
+                    }
                     @page { margin: 0; size: 80mm auto; }
-                    #voucher-receipt-print-root > div > * { page-break-inside: avoid; break-inside: avoid; }
                 }
             `}</style>
 
@@ -157,27 +208,60 @@ export function PrintVoucherReceipt({
                     <DialogHeader className="px-5 pt-4 pb-3 border-b shrink-0">
                         <DialogTitle className="flex items-center gap-2">
                             {isLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                            Gift Voucher Receipt
+                            <span className="capitalize">{title.toLowerCase()}</span>
                         </DialogTitle>
                         <p className="text-sm text-muted-foreground">
                             {isLoading ? "Loading voucher data…" : "Review before printing."}
                         </p>
                     </DialogHeader>
 
-                    <div className="flex-1 overflow-y-auto px-4 py-3">
-                        {isLoading ? <VoucherSkeleton /> : <VoucherReceiptBody {...bodyProps} />}
+                    <div className="flex-1 overflow-y-auto px-4 py-3 bg-muted/10">
+                        {isLoading ? (
+                            <VoucherSkeleton />
+                        ) : isBulk ? (
+                            <div className="space-y-6 max-w-[420px] mx-auto py-2">
+                                {voucherList.map((v, idx) => (
+                                    <div key={v.code} className="bg-background border rounded-xl p-6 shadow-sm relative">
+                                        <div className="absolute top-3 left-3 bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded">
+                                            #{idx + 1} of {voucherList.length}
+                                        </div>
+                                        <div className="pt-2">
+                                            <VoucherReceiptBody
+                                                storeName={storeName}
+                                                storeAddress={storeAddress}
+                                                storePhone={storePhone}
+                                                terminalName={terminalName}
+                                                voucher={v}
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : voucherList.length > 0 ? (
+                            <div className="bg-background border rounded-xl p-6 shadow-sm max-w-[420px] mx-auto my-2">
+                                <VoucherReceiptBody
+                                    storeName={storeName}
+                                    storeAddress={storeAddress}
+                                    storePhone={storePhone}
+                                    terminalName={terminalName}
+                                    voucher={voucherList[0]}
+                                />
+                            </div>
+                        ) : (
+                            <div className="text-center py-12 text-muted-foreground">No voucher details available.</div>
+                        )}
                     </div>
 
                     <DialogFooter className="px-5 py-3 border-t shrink-0 gap-2">
                         <Button variant="outline" onClick={onClose} className="flex-1">Close</Button>
                         <Button
-                            onClick={() => window.print()}
+                            onClick={() => printThermal("voucher-receipt-print-root", settings)}
                             className="flex-1 gap-2"
-                            disabled={isLoading}
+                            disabled={isLoading || voucherList.length === 0}
                         >
                             {isLoading
                                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Preparing…</>
-                                : <><Printer className="h-4 w-4" /> Print Voucher</>
+                                : <><Printer className="h-4 w-4" /> {isBulk ? `Print ${voucherList.length} Vouchers` : "Print Voucher"}</>
                             }
                         </Button>
                     </DialogFooter>
@@ -185,13 +269,37 @@ export function PrintVoucherReceipt({
             </Dialog>
 
             {/* ── Print target — off-screen but rendered, visible only on print ── */}
-            {!isLoading && (
+            {!isLoading && voucherList.length > 0 && (
                 <div
                     id="voucher-receipt-print-root"
-                    style={{ position: "fixed", left: "-9999px", top: 0, width: "80mm", pointerEvents: "none" }}
+                    style={{ position: "fixed", left: "-9999px", top: 0, width: "72.1mm", pointerEvents: "none" }}
                     aria-hidden="true"
                 >
-                    <VoucherReceiptBody {...bodyProps} />
+                    {voucherList.map((v, index) => {
+                        const isLast = index === voucherList.length - 1;
+                        return (
+                            <div
+                                key={v.code}
+                                className={`voucher-print-page${!isLast ? " voucher-cut" : ""}`}
+                                style={{
+                                    // Inline styles as a fallback for Electron / silent print paths
+                                    pageBreakAfter: !isLast ? "always" : "auto",
+                                    breakAfter: !isLast ? "page" : "auto",
+                                    pageBreakInside: "avoid",
+                                    breakInside: "avoid",
+                                    padding: "2mm 1mm",
+                                }}
+                            >
+                                <VoucherReceiptBody
+                                    storeName={storeName}
+                                    storeAddress={storeAddress}
+                                    storePhone={storePhone}
+                                    terminalName={terminalName}
+                                    voucher={v}
+                                />
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </>
@@ -209,6 +317,7 @@ interface VoucherReceiptBodyProps {
         code: string;
         voucherType: string;
         faceValue: number;
+        discount?: number;
         description?: string;
         companyName?: string;
         expiresAt?: string | null;
@@ -238,12 +347,16 @@ function VoucherReceiptBody({
     );
 
     const voucherTypeLabel = voucher.voucherType.replace(/_/g, " ");
-    const locationNames = voucher.locations && voucher.locations.length > 0
-        ? voucher.locations.map(l => l.location.name).join(", ")
-        : "All Locations";
+
+    // Always show the exact locations the voucher is valid at.
+    // "All Locations" only when zero restrictions are set — never collapse
+    // a restricted list, as that causes customer disputes at non-valid outlets.
+    const locationList = voucher.locations ?? [];
+    const isUnrestricted = locationList.length === 0;
+    const locationNames  = locationList.map(l => l.location.name);
 
     return (
-        <div className="font-mono text-xs w-full max-w-95 mx-auto space-y-2">
+        <div className="font-mono text-xs w-full max-w-[72.1mm] mx-auto space-y-2">
 
             {/* ── Store Header ── */}
             <div className="text-center space-y-0.5">
@@ -260,18 +373,17 @@ function VoucherReceiptBody({
             {/* ── Voucher Title ── */}
             <div className="text-center space-y-2 py-2">
                 <div className="flex items-center justify-center gap-2">
-                    <Gift className="h-6 w-6 text-primary" />
-                    <p className="font-bold text-base tracking-widest uppercase">Gift Voucher</p>
+                    <Gift className="h-6 w-6 text-zinc-950" />
+                    <p className="font-bold text-base tracking-widest uppercase">{voucherTypeLabel} Voucher</p>
                 </div>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{voucherTypeLabel}</p>
             </div>
 
             <Separator />
 
             {/* ── Voucher Code (Large & Prominent) ── */}
-            <div className="text-center space-y-3 py-4 border-2 border-dashed border-primary rounded-lg bg-primary/5">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Voucher Code</p>
-                <p className="font-black text-3xl tracking-widest">{voucher.code}</p>
+            <div className="text-center space-y-3 py-4 border-2 border-dashed border-zinc-950 rounded-lg bg-zinc-50">
+                <p className="text-[10px] text-zinc-800 uppercase tracking-wide">Voucher Code</p>
+                <p className="font-black text-3xl tracking-widest text-zinc-950">{voucher.code}</p>
                 
                 {/* QR Code for easy scanning */}
                 <div className="flex justify-center pt-2">
@@ -282,15 +394,22 @@ function VoucherReceiptBody({
                         includeMargin={false}
                     />
                 </div>
-                <p className="text-[9px] text-muted-foreground">Scan or enter code at checkout</p>
+                <p className="text-[9px] text-zinc-800">Scan or enter code at checkout</p>
             </div>
 
             <Separator />
 
             {/* ── Voucher Value ── */}
-            <div className="text-center space-y-1 py-3 bg-muted/20 rounded-lg">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Voucher Value</p>
-                <p className="font-black text-4xl tracking-wider">Rs. {fmt(Number(voucher.faceValue))}</p>
+            <div className="text-center space-y-1 py-3 bg-zinc-100 rounded-lg border border-zinc-200">
+                <p className="text-[10px] text-zinc-800 uppercase tracking-wide">Voucher Value</p>
+                <p className="font-black text-4xl tracking-wider text-zinc-950">Rs. {fmt(Number(voucher.faceValue))}</p>
+                {/* {voucher.discount !== undefined && Number(voucher.discount) > 0 && (
+                    <div className="text-[10px] text-muted-foreground mt-1 flex justify-center gap-2 font-bold">
+                        <span>Disc: Rs. {fmt(Number(voucher.discount))}</span>
+                        <span>•</span>
+                        <span>Paid: Rs. {fmt(Number(voucher.faceValue) - Number(voucher.discount))}</span>
+                    </div>
+                )} */}
             </div>
 
             <Separator />
@@ -303,7 +422,7 @@ function VoucherReceiptBody({
                 {voucher.companyName && <Row label="Company" value={voucher.companyName} />}
                 {voucher.description && (
                     <div className="pt-1">
-                        <p className="text-[10px] text-muted-foreground">Note:</p>
+                        <p className="text-[10px] text-zinc-800">Note:</p>
                         <p className="text-[11px] leading-snug">{voucher.description}</p>
                     </div>
                 )}
@@ -313,14 +432,30 @@ function VoucherReceiptBody({
 
             {/* ── Redemption Locations ── */}
             <div className="space-y-1">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Valid At</p>
-                <p className="text-[11px] font-semibold">{locationNames}</p>
+                <p className="text-[10px] text-zinc-800 uppercase tracking-wide">
+                    Valid At {!isUnrestricted && <span className="normal-case">({locationNames.length} outlets)</span>}
+                </p>
+                {isUnrestricted ? (
+                    <p className="text-[11px] font-semibold">All Locations</p>
+                ) : (
+                    <ul className="space-y-0" style={{ columns: locationNames.length > 10 ? 2 : 1, columnGap: "4px" }}>
+                        {locationNames.map(name => (
+                            <li
+                                key={name}
+                                className="font-semibold leading-snug break-inside-avoid"
+                                style={{ fontSize: "9px" }}
+                            >
+                                • {name}
+                            </li>
+                        ))}
+                    </ul>
+                )}
             </div>
 
             <Separator />
 
             {/* ── Terms & Conditions ── */}
-            <div className="space-y-1 text-[9px] text-muted-foreground leading-snug">
+            <div className="space-y-1 text-[9px] text-zinc-800 leading-snug">
                 <p className="font-bold text-[10px] text-foreground uppercase tracking-wide">Terms & Conditions</p>
                 <ul className="list-disc list-inside space-y-0.5 pl-1">
                     {voucher.voucherType === "REFUND" ? (
@@ -355,13 +490,13 @@ function VoucherReceiptBody({
             {/* ── Footer Message ── */}
             <div className="text-center space-y-1 pt-2">
                 <p className="text-[11px] font-semibold">Thank you for choosing us!</p>
-                <p className="text-[9px] text-muted-foreground">
+                <p className="text-[9px] text-zinc-800">
                     For assistance, please contact the store
                 </p>
             </div>
 
             {/* ── Decorative border ── */}
-            <div className="text-center text-[10px] text-muted-foreground pt-2">
+            <div className="text-center text-[10px] text-zinc-800 pt-2">
                 ═══════════════════════════════
             </div>
         </div>

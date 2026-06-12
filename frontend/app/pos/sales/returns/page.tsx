@@ -31,7 +31,14 @@ function paidPerUnit(oi: any, orderGrandTotal: number, orderLineTotalsSum: numbe
     console.warn(`Invalid quantity for item ${oi.itemId}:`, qty);
     return 0;
   }
+  
+  // If the order line totals sum is extremely close to grand total (within FBR fee and minor rounding),
+  // then we can just return the actual lineTotal divided by quantity to avoid distributing FBR fee/rounding.
   const lineTotal = Number(oi.lineTotal);
+  if (Math.abs(orderLineTotalsSum - orderGrandTotal) <= 5) {
+    return lineTotal / qty;
+  }
+  
   const itemShare = orderLineTotalsSum > 0 ? (lineTotal / orderLineTotalsSum) * orderGrandTotal : lineTotal;
   return itemShare / qty;
 }
@@ -50,13 +57,14 @@ type Mode = "return" | "exchange" | "claim" | "refund";
 interface ReturnLine {
     orderId: string; orderNumber: string;
     orderItemId: string; itemId: string;
-    name: string; sku: string; brand?: string;
+    name: string; sku: string; brand?: string; size?: string; color?: string;
     orderedQty: number; returnQty: number;
     paidPerUnit: number; originalUnitPrice: number; discountPercent: number;
     discountAmount?: number; taxAmount?: number; taxPercent?: number;
+    originalQty?: number;
 }
 
-interface NewLine { itemId: string; name: string; sku: string; quantity: number; unitPrice: number; discountPct: number; }
+interface NewLine { itemId: string; name: string; sku: string; size?: string; color?: string; quantity: number; unitPrice: number; discountPct: number; }
 interface LoadedOrder { id: string; orderNumber: string; grandTotal: number; createdAt: string; items: any[]; coupon?: string; promo?: string; alliance?: string; }
 
 export default function ReturnsPage() {
@@ -72,6 +80,7 @@ export default function ReturnsPage() {
 
     // ── Loaded orders (multi-order support) ───────────────────────────
     const [loadedOrders, setLoadedOrders] = useState<LoadedOrder[]>([]);
+    const isAllianceCase = loadedOrders.some(o => !!o.alliance);
 
     // ── Return lines (flat, tagged with orderId) ──────────────────────
     const [returnLines, setReturnLines] = useState<ReturnLine[]>([]);
@@ -147,6 +156,8 @@ export default function ReturnsPage() {
                         name: oi.item?.description || oi.itemId,
                         sku: oi.item?.sku || "",
                         brand: oi.item?.brand || oi.item?.brandName || "",
+                        size: oi.item?.size?.name || "",
+                        color: oi.item?.color?.name || "",
                         orderedQty: remainingQty, returnQty: 0,
                         paidPerUnit: paidPerUnit(oi, orderGrandTotal, lineTotalsSum),
                         originalUnitPrice: Number(oi.unitPrice),
@@ -154,6 +165,7 @@ export default function ReturnsPage() {
                         discountAmount: Number(oi.discountAmount ?? 0),
                         taxAmount: Number(oi.taxAmount ?? 0),
                         taxPercent: Number(oi.taxPercent ?? 0),
+                        originalQty: Number(oi.quantity),
                     };
                 });
                 setReturnLines(prev => [...prev, ...lines]);
@@ -191,7 +203,7 @@ export default function ReturnsPage() {
         setNewLines(prev => {
             const ex = prev.find(l => l.itemId === p.id);
             if (ex) return prev.map(l => l.itemId === p.id ? { ...l, quantity: l.quantity + 1 } : l);
-            return [...prev, { itemId: p.id, name: p.description, sku: p.sku, quantity: 1, unitPrice: Number(p.unitPrice), discountPct: 0 }];
+            return [...prev, { itemId: p.id, name: p.description, sku: p.sku, size: typeof p.size === "object" ? p.size?.name : (p.size || ""), color: typeof p.color === "object" ? p.color?.name : (p.color || ""), quantity: 1, unitPrice: Number(p.unitPrice), discountPct: 0 }];
         });
         setNewItemSearch(""); setNewItemResults([]);
     };
@@ -306,11 +318,13 @@ export default function ReturnsPage() {
                     const orderId = loadedOrders[0].id;
                     // Calculate total refund amount
                     const totalRefundAmount = selectedLines.reduce((sum, l) => sum + (l.paidPerUnit * l.returnQty), 0);
+                    const items = selectedLines.map(l => ({ orderItemId: l.orderItemId, itemId: l.itemId, quantity: l.returnQty }));
                     
                     res = await authFetch(`/pos-sales/orders/${orderId}/refund`, {
                         method: "POST",
                         body: {
                             refundAmount: totalRefundAmount,
+                            items,
                             reason: notes || undefined,
                             managerUserId,
                         },
@@ -323,11 +337,13 @@ export default function ReturnsPage() {
                         const orderLines = selectedLines.filter(l => l.orderId === order.id);
                         if (orderLines.length === 0) continue;
                         const refundAmount = orderLines.reduce((sum, l) => sum + (l.paidPerUnit * l.returnQty), 0);
+                        const items = orderLines.map(l => ({ orderItemId: l.orderItemId, itemId: l.itemId, quantity: l.returnQty }));
                         
                         const r = await authFetch(`/pos-sales/orders/${order.id}/refund`, {
                             method: "POST",
                             body: {
                                 refundAmount,
+                                items,
                                 reason: notes || undefined,
                                 managerUserId,
                             },
@@ -449,9 +465,8 @@ export default function ReturnsPage() {
                 <>
                     {/* Mode tabs — hide Claim for multi-order */}
                     <Tabs value={mode} onValueChange={(v: any) => setMode(v)}>
-                        <TabsList className={`grid w-full max-w-md ${isMultiOrder ? "grid-cols-3" : "grid-cols-4"}`}>
+                        <TabsList className={`grid w-full max-w-md ${isMultiOrder ? "grid-cols-2" : "grid-cols-3"}`}>
                             {canReturn && <TabsTrigger value="return" className="gap-1.5"><RotateCcw className="h-3.5 w-3.5" />Return</TabsTrigger>}
-                            {canExchange && <TabsTrigger value="exchange" className="gap-1.5"><ArrowLeftRight className="h-3.5 w-3.5" />Exchange</TabsTrigger>}
                             {canReturn && <TabsTrigger value="refund" className="gap-1.5"><Receipt className="h-3.5 w-3.5" />Refund</TabsTrigger>}
                             {!isMultiOrder && canClaim && <TabsTrigger value="claim" className="gap-1.5"><FileText className="h-3.5 w-3.5" />Claim</TabsTrigger>}
                         </TabsList>
@@ -486,9 +501,13 @@ export default function ReturnsPage() {
                                         <TableRow className="hover:bg-transparent bg-muted/20">
                                             {isMultiOrder && <TableHead className="text-xs uppercase text-muted-foreground">Receipt</TableHead>}
                                             <TableHead className="text-xs uppercase">Item</TableHead>
+                                            <TableHead className="text-center text-xs uppercase">Size</TableHead>
+                                            <TableHead className="text-center text-xs uppercase">Color</TableHead>
                                             <TableHead className="text-right text-xs uppercase">Ordered</TableHead>
                                             <TableHead className="text-right text-xs uppercase">Unit Price</TableHead>
-                                            <TableHead className="text-right text-xs uppercase">Disc %</TableHead>
+                                            <TableHead className="text-right text-xs uppercase">
+                                                {isAllianceCase ? "Disc Amt" : "Disc %"}
+                                            </TableHead>
                                             <TableHead className="text-right text-xs uppercase">Tax %</TableHead>
                                             <TableHead className="text-right text-xs uppercase text-emerald-700">Paid/Unit</TableHead>
                                             <TableHead className="text-center text-xs uppercase">Return Qty</TableHead>
@@ -504,15 +523,31 @@ export default function ReturnsPage() {
                                                     </TableCell>
                                                 )}
                                                 <TableCell>
-                                                    <p className="font-medium text-sm">{line.name}</p>
+                                                    <p className="font-medium text-sm">
+                                                        {line.name}
+                                                    </p>
                                                     <p className="text-xs text-muted-foreground font-mono">{line.sku}</p>
                                                 </TableCell>
+                                                <TableCell className="text-center text-sm font-semibold">{line.size || "—"}</TableCell>
+                                                <TableCell className="text-center text-sm font-semibold">{line.color || "—"}</TableCell>
                                                 <TableCell className="text-right text-sm">{line.orderedQty}</TableCell>
                                                 <TableCell className="text-right text-sm font-mono">{formatCurrency(line.originalUnitPrice)}</TableCell>
                                                 <TableCell className="text-right text-sm">
-                                                    {line.discountPercent > 0
-                                                        ? <span className="text-destructive font-medium">{line.discountPercent}%</span>
-                                                        : <span className="text-muted-foreground">—</span>}
+                                                    {isAllianceCase ? (
+                                                        line.discountAmount && line.discountAmount > 0 ? (
+                                                            <span className="text-destructive font-medium">
+                                                                {formatCurrency(line.discountAmount / (line.originalQty || 1))}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-muted-foreground">—</span>
+                                                        )
+                                                    ) : (
+                                                        line.discountPercent > 0 ? (
+                                                            <span className="text-destructive font-medium">{line.discountPercent}%</span>
+                                                        ) : (
+                                                            <span className="text-muted-foreground">—</span>
+                                                        )
+                                                    )}
                                                 </TableCell>
                                                 <TableCell className="text-right text-sm">
                                                     {line.taxPercent && line.taxPercent > 0
@@ -565,7 +600,19 @@ export default function ReturnsPage() {
                                                         <button key={p.id} onClick={() => addNewItem(p)}
                                                             className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-muted text-sm border-b last:border-0">
                                                             <div className="text-left">
-                                                                <p className="font-medium">{p.description}</p>
+                                                                <p className="font-medium">
+                                                                    {p.description}
+                                                                    {(typeof p.size === "object" ? p.size?.name : p.size) && (
+                                                                        <span className="ml-2 text-[10px] font-normal text-muted-foreground bg-muted border border-border px-1.5 py-0.5 rounded">
+                                                                            Size: {typeof p.size === "object" ? p.size?.name : p.size}
+                                                                        </span>
+                                                                    )}
+                                                                    {(typeof p.color === "object" ? p.color?.name : p.color) && (
+                                                                        <span className="ml-2 text-[10px] font-normal text-muted-foreground bg-muted border border-border px-1.5 py-0.5 rounded">
+                                                                            Color: {typeof p.color === "object" ? p.color?.name : p.color}
+                                                                        </span>
+                                                                    )}
+                                                                </p>
                                                                 <p className="text-xs text-muted-foreground font-mono">{p.sku}</p>
                                                             </div>
                                                             <span className="font-bold font-mono">{formatCurrency(p.unitPrice)}</span>
@@ -579,6 +626,8 @@ export default function ReturnsPage() {
                                                 <TableHeader>
                                                     <TableRow className="hover:bg-transparent bg-muted/20">
                                                         <TableHead className="text-xs uppercase">Item</TableHead>
+                                                         <TableHead className="text-center text-xs uppercase">Size</TableHead>
+                                                         <TableHead className="text-center text-xs uppercase">Color</TableHead>
                                                         <TableHead className="text-right text-xs uppercase">Price</TableHead>
                                                         <TableHead className="text-center text-xs uppercase">Qty</TableHead>
                                                         <TableHead className="text-center text-xs uppercase text-primary">Disc %</TableHead>
@@ -589,7 +638,19 @@ export default function ReturnsPage() {
                                                     {newLinesNet.map(line => (
                                                         <TableRow key={line.itemId}>
                                                             <TableCell>
-                                                                <p className="font-medium text-sm">{line.name}</p>
+                                                                <p className="font-medium text-sm">
+                                                                    {line.name}
+                                                                    {line.size && (
+                                                                        <span className="ml-2 text-[10px] font-normal text-muted-foreground bg-muted border border-border px-1.5 py-0.5 rounded">
+                                                                            Size: {line.size}
+                                                                        </span>
+                                                                    )}
+                                                                    {line.color && (
+                                                                        <span className="ml-2 text-[10px] font-normal text-muted-foreground bg-muted border border-border px-1.5 py-0.5 rounded">
+                                                                            Color: {line.color}
+                                                                        </span>
+                                                                    )}
+                                                                </p>
                                                                 <p className="text-xs text-muted-foreground font-mono">{line.sku}</p>
                                                             </TableCell>
                                                             <TableCell className="text-right font-mono text-sm">{formatCurrency(line.unitPrice)}</TableCell>
@@ -790,6 +851,7 @@ export default function ReturnsPage() {
             {returnReceipt && (
                 <PrintReturnReceipt
                     returnRef={returnReceipt.returnRef}
+                    isAlliance={isAllianceCase}
                     originalOrders={loadedOrders.map(o => ({ orderNumber: o.orderNumber, grandTotal: o.grandTotal }))}
                     returnedLines={selectedLines.map(l => {
                         const detail = returnReceipt.itemRefundDetails?.find((d: any) => d.orderItemId === l.orderItemId);
@@ -797,6 +859,8 @@ export default function ReturnsPage() {
                         return {
                             name: l.name,
                             sku: l.sku,
+                            size: l.size,
+                            color: l.color,
                             brand: l.brand,
                             returnQty: l.returnQty,
                             paidPerUnit: l.paidPerUnit,

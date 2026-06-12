@@ -104,13 +104,13 @@ export function EmployeeUserList({
     const now = new Date();
     const diffMs = target.getTime() - now.getTime();
     if (diffMs < 0) return "already expired";
-
+    
     const diffMins = Math.floor(diffMs / 60000);
     if (diffMins < 60) return `in ${diffMins} min${diffMins > 1 ? 's' : ''}`;
-
+    
     const diffHours = Math.floor(diffMins / 60);
     if (diffHours < 24) return `in ${diffHours} hr${diffHours > 1 ? 's' : ''}`;
-
+    
     const diffDays = Math.floor(diffHours / 24);
     return `in ${diffDays} day${diffDays > 1 ? 's' : ''}`;
   };
@@ -124,21 +124,31 @@ export function EmployeeUserList({
   const canCreate = isAdminRole || userPermissions.includes("user.create");
   const canUpdate = isAdminRole || userPermissions.includes("user.update");
 
-  const userByEmployeeId = new Map<string, User>();
+  // User.employeeId now stores the alphanumeric code (e.g. EMP-001), not the UUID.
+  // Build the lookup map keyed by both the alphanumeric code AND the employee UUID for max reliability.
+  const userByEmployeeCode = new Map<string, User>(); // keyed by alphanumeric employeeId code
+  const userByEmployeeUuid = new Map<string, User>(); // keyed by employee.id UUID (via employee sub-object)
   for (const u of users) {
+    // u.employeeId is the alphanumeric code stored in Master DB User.employeeId
+    if (u.employeeId) {
+      userByEmployeeCode.set(u.employeeId, u);
+    }
+    // u.employee.id is the tenant Employee UUID (returned as a joined object)
     if (u.employee?.id) {
-      userByEmployeeId.set(u.employee.id, u);
-    } else if (u.employeeId) {
-      userByEmployeeId.set(u.employeeId, u);
+      userByEmployeeUuid.set(u.employee.id, u);
     }
   }
 
   const rows: Row[] = employees.map((e) => {
-    const matchedUser = userByEmployeeId.get(e.id) || null;
+    // Match by alphanumeric code first (correct after walkthrough fix), then fall back to UUID
+    const matchedUser =
+      userByEmployeeCode.get(e.employeeId) ||
+      userByEmployeeUuid.get(e.id) ||
+      null;
     const email = matchedUser?.email || e.officialEmail || "";
     return {
-      employeeId: e.id,
-      employeeCode: e.employeeId,
+      employeeId: e.id,           // UUID — for internal keying/filtering
+      employeeCode: e.employeeId, // alphanumeric code — what User.employeeId stores
       userId: matchedUser?.id || null,
       roleId: matchedUser?.role?.id || null,
       employeeName: e.employeeName,
@@ -164,10 +174,13 @@ export function EmployeeUserList({
         toast.error("You don't have permission to create user accounts");
         return;
       }
-      if (!row.email) {
-        toast.error("Official email not set for this employee");
+      // Email is no longer required — employees can authenticate via Employee ID + password.
+      // Warn if no email, but still allow account creation so they can log in with their code.
+      if (!row.email && !row.employeeCode) {
+        toast.error("Employee has no email or Employee ID — cannot create an account");
         return;
       }
+
       const parts = row.employeeName.trim().split(" ");
       const firstName = parts[0] || row.employeeName;
       const lastName = parts.slice(1).join(" ") || "";
@@ -175,10 +188,12 @@ export function EmployeeUserList({
       setSavingForId(row.employeeId);
       startTransition(async () => {
         const result = await createUser({
-          email: row.email,
+          // Pass email only if present; employees without email log in via employeeCode
+          ...(row.email ? { email: row.email } : {}),
           firstName,
           lastName,
-          employeeId: row.employeeId,
+          // employeeId in User table must be the alphanumeric code (e.g. EMP-001), not the UUID
+          employeeId: row.employeeCode,
           roleId: newRoleId || undefined,
         });
         if (result.status) {
@@ -260,9 +275,9 @@ export function EmployeeUserList({
     }
 
     setPermissionsTargetRow(row);
-
-    const roleExpiry = matchedUser.roleExpiresAt
-      ? new Date(matchedUser.roleExpiresAt).toISOString().slice(0, 16)
+    
+    const roleExpiry = matchedUser.roleExpiresAt 
+      ? new Date(matchedUser.roleExpiresAt).toISOString().slice(0, 16) 
       : "";
     setTargetUserRoleExpiresAt(roleExpiry);
 
@@ -314,7 +329,7 @@ export function EmployeeUserList({
       setImpersonatePendingId(row.employeeId);
 
       const apiBase =
-        process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5001/api";
+        process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
 
       const res = await fetch(`${apiBase}/auth/impersonate-by-employee`, {
         method: "POST",
@@ -330,7 +345,7 @@ export function EmployeeUserList({
       if (!res.ok || !payload.status) {
         toast.error(
           payload.message ||
-          "Failed to open dashboard. Make sure user account & dashboard access exist.",
+            "Failed to open dashboard. Make sure user account & dashboard access exist.",
         );
         return;
       }
@@ -468,9 +483,9 @@ export function EmployeeUserList({
   ];
 
   const erpMasterModules = [
-    "master.brand", "master.division", "master.channel-class", "master.color",
+    "master.brand", "master.division", "master.channel-class", "master.color", 
     "master.gender", "master.size", "master.silhouette", "master.tax-rate",
-    "master.item-class", "master.item-subclass", "master.old-season", "master.season",
+    "master.item-class", "master.item-subclass", "master.old-season", "master.season", 
     "master.segment", "master.hs-code", "master.category", "master.sub-category", "master.uom"
   ];
 
@@ -481,16 +496,16 @@ export function EmployeeUserList({
   const getCategory = (module: string): "HR" | "Master" | "ERP" | "POS" => {
     if (module.startsWith("pos.")) return "POS";
 
-    if (erpMasterModules.includes(module) || posMasterModules.includes(module) || module.startsWith("master.") ||
-      ["country", "state", "city", "location", "bank", "equipment",
-        "allowance-head", "deduction-head", "salary-breakup", "tax-slab",
-        "bonus-type", "loan-type", "leave-type", "leaves-policy", "eobi", "provident-fund",
-        "approval-setting", "rebate-nature", "role"].includes(module)) {
+    if (erpMasterModules.includes(module) || posMasterModules.includes(module) || module.startsWith("master.") || 
+        ["country", "state", "city", "location", "bank", "equipment", 
+         "allowance-head", "deduction-head", "salary-breakup", "tax-slab", 
+         "bonus-type", "loan-type", "leave-type", "leaves-policy", "eobi", "provident-fund",
+         "approval-setting", "rebate-nature", "role"].includes(module)) {
       return "Master";
     }
-
+    
     if (module.startsWith("erp.")) return "ERP";
-
+    
     return "HR";
   };
 
@@ -644,62 +659,101 @@ export function EmployeeUserList({
           }
         }}
       >
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] flex flex-col p-0 overflow-hidden border-t-4 border-t-violet-600 bg-background/95 backdrop-blur-md">
-          <div className="flex items-center justify-between border-b border-border/60 p-6 pb-4">
+        <DialogContent
+          noScroll
+          className="sm:max-w-[720px] max-h-[92vh] flex flex-col p-0 overflow-hidden border border-violet-500/20 bg-background/80 backdrop-blur-xl shadow-2xl rounded-3xl"
+        >
+          <div className="flex items-center justify-between border-b border-border/40 p-6 pb-4 bg-muted/20">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-violet-500/10 to-fuchsia-500/10 border border-violet-500/20 shadow-inner">
-                <ShieldCheck className="h-5 w-5 text-violet-600" />
+              <div className="p-2.5 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/25 border border-violet-400/20">
+                <ShieldCheck className="h-5 w-5" />
               </div>
               <div>
-                <DialogTitle className="text-lg font-bold tracking-tight bg-gradient-to-r from-violet-600 to-fuchsia-600 bg-clip-text text-transparent">
+                <DialogTitle className="text-xl font-bold tracking-tight bg-gradient-to-r from-violet-600 via-violet-500 to-fuchsia-600 bg-clip-text text-transparent">
                   Direct Permissions & Expiry
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  Override permissions for <span className="font-semibold text-foreground">{permissionsTargetRow?.employeeName}</span> or configure temporary roles.
+                  Override permissions for <span className="font-semibold text-foreground bg-violet-500/10 px-1.5 py-0.5 rounded text-violet-700 dark:text-violet-300">{permissionsTargetRow?.employeeName}</span> or configure temporary roles.
                 </DialogDescription>
               </div>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto space-y-6 p-6">
+          <div className="flex-1 overflow-y-auto space-y-6 p-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-violet-500/10 hover:[&::-webkit-scrollbar-thumb]:bg-violet-500/20">
             {/* Role Expiration Configuration */}
-            <div className="rounded-xl border border-border/80 bg-muted/10 p-4 shadow-sm hover:shadow-md transition-all duration-200 space-y-4">
-              <div className="flex items-center justify-between border-b border-border/40 pb-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <Clock className="h-3.5 w-3.5 text-violet-500" />
+            <div className="rounded-2xl border border-violet-500/10 bg-gradient-to-r from-violet-500/5 to-fuchsia-500/5 p-5 shadow-inner hover:border-violet-500/20 transition-all duration-300 space-y-4">
+              <div className="flex items-center justify-between border-b border-violet-500/10 pb-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400 flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-violet-500" />
                   Role Assignment
                 </h4>
                 {targetUserRoleExpiresAt && (
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${getRelativeTimeDesc(targetUserRoleExpiresAt) === 'already expired'
-                      ? 'bg-destructive/10 text-destructive'
-                      : 'bg-amber-500/10 text-amber-600'
-                    }`}>
+                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full shadow-xs ${
+                    getRelativeTimeDesc(targetUserRoleExpiresAt) === 'already expired'
+                      ? 'bg-destructive/10 text-destructive border border-destructive/20'
+                      : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
+                  }`}>
                     {getRelativeTimeDesc(targetUserRoleExpiresAt) === 'already expired' ? 'Expired' : `Expires ${getRelativeTimeDesc(targetUserRoleExpiresAt)}`}
                   </span>
                 )}
               </div>
-
+              
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground/60">Assigned Role</span>
-                  <div className="text-sm font-semibold flex items-center gap-2 mt-0.5">
-                    <span className="px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-600 text-xs border border-violet-500/20">
+                  <div className="text-sm font-semibold flex items-center gap-2 mt-1">
+                    <span className="px-3 py-1 rounded-xl bg-violet-500/10 text-violet-600 text-xs font-bold border border-violet-500/20 shadow-xs">
                       {roles.find(r => r.id === permissionsTargetRow?.roleId)?.name || "No Role"}
                     </span>
                   </div>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <Label htmlFor="role-expiry" className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground/60">
                     Expiry Date & Time (Optional)
                   </Label>
-                  <input
-                    id="role-expiry"
-                    type="datetime-local"
-                    className="flex h-9 w-full rounded-lg border border-input/60 bg-background/50 hover:bg-background/80 px-3 py-1 text-xs shadow-sm transition-all focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/50 disabled:cursor-not-allowed disabled:opacity-50"
-                    value={targetUserRoleExpiresAt}
-                    onChange={(e) => setTargetUserRoleExpiresAt(e.target.value)}
-                    disabled={isSavingPermissions || !permissionsTargetRow?.roleId}
-                  />
+                  <div className="flex flex-col gap-2">
+                    <input
+                      id="role-expiry"
+                      type="datetime-local"
+                      className="flex h-9 w-full rounded-xl border border-input bg-background/50 hover:bg-background/80 px-3 py-1 text-xs shadow-sm transition-all focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                      value={targetUserRoleExpiresAt}
+                      onChange={(e) => setTargetUserRoleExpiresAt(e.target.value)}
+                      disabled={isSavingPermissions || !permissionsTargetRow?.roleId}
+                    />
+                    {/* Presets */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { label: "+1 Hour", offsetMs: 3600000 },
+                        { label: "+1 Day", offsetMs: 86400000 },
+                        { label: "+7 Days", offsetMs: 604800000 },
+                      ].map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          disabled={isSavingPermissions || !permissionsTargetRow?.roleId}
+                          onClick={() => {
+                            const futureDate = new Date(Date.now() + preset.offsetMs);
+                            const offset = futureDate.getTimezoneOffset();
+                            const localDate = new Date(futureDate.getTime() - offset * 60 * 1000);
+                            setTargetUserRoleExpiresAt(localDate.toISOString().slice(0, 16));
+                          }}
+                          className="px-2 py-0.5 rounded-lg bg-violet-500/5 hover:bg-violet-500/10 text-[10px] font-medium text-violet-600 dark:text-violet-400 border border-violet-500/10 hover:border-violet-500/20 active:scale-95 transition-all duration-150"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                      {targetUserRoleExpiresAt && (
+                        <button
+                          type="button"
+                          disabled={isSavingPermissions}
+                          onClick={() => setTargetUserRoleExpiresAt("")}
+                          className="px-2 py-0.5 rounded-lg bg-destructive/5 hover:bg-destructive/10 text-[10px] font-medium text-destructive border border-destructive/10 hover:border-destructive/20 active:scale-95 transition-all duration-150"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -708,15 +762,15 @@ export function EmployeeUserList({
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/40 pb-2">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                  <ShieldAlert className="h-3.5 w-3.5 text-violet-500" />
+                  <ShieldAlert className="h-4 w-4 text-violet-500" />
                   Permission Overrides
                 </h4>
                 <div className="relative w-full sm:w-60 shrink-0">
-                  <Search className="absolute left-2.5 top-2 text-muted-foreground h-4 w-4" />
+                  <Search className="absolute left-3 top-2.5 text-muted-foreground/60 h-3.5 w-3.5" />
                   <input
                     type="text"
                     placeholder="Search permissions..."
-                    className="flex h-8 w-full rounded-lg border border-input/60 bg-background pl-8 pr-3 py-1 text-xs shadow-sm transition-all placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/50"
+                    className="flex h-8.5 w-full rounded-xl border border-input/80 bg-background/50 pl-9 pr-3 py-1 text-xs shadow-xs transition-all placeholder:text-muted-foreground/50 focus:border-violet-500 focus:bg-background focus:ring-2 focus:ring-violet-500/20 focus-visible:outline-hidden"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
@@ -732,11 +786,11 @@ export function EmployeeUserList({
                 }}
                 className="w-full"
               >
-                <TabsList className="grid w-full grid-cols-4 bg-muted/30">
-                  <TabsTrigger value="HR" className="text-xs">HR</TabsTrigger>
-                  <TabsTrigger value="Master" className="text-xs">Master</TabsTrigger>
-                  <TabsTrigger value="ERP" className="text-xs">ERP</TabsTrigger>
-                  <TabsTrigger value="POS" className="text-xs">POS</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-4 bg-muted/40 p-1 rounded-xl border border-border/30">
+                  <TabsTrigger value="HR" className="text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:text-violet-600 data-[state=active]:shadow-xs transition-all duration-200">HR</TabsTrigger>
+                  <TabsTrigger value="Master" className="text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:text-violet-600 data-[state=active]:shadow-xs transition-all duration-200">Master</TabsTrigger>
+                  <TabsTrigger value="ERP" className="text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:text-violet-600 data-[state=active]:shadow-xs transition-all duration-200">ERP</TabsTrigger>
+                  <TabsTrigger value="POS" className="text-xs font-semibold rounded-lg data-[state=active]:bg-background data-[state=active]:text-violet-600 data-[state=active]:shadow-xs transition-all duration-200">POS</TabsTrigger>
                 </TabsList>
 
                 {activePermissionTab === "Master" && (
@@ -746,32 +800,32 @@ export function EmployeeUserList({
                       setMasterFilter(val as any);
                       setSearchTerm("");
                     }}
-                    className="w-full mt-2"
+                    className="w-full mt-2.5 animate-in fade-in slide-in-from-top-1 duration-200"
                   >
-                    <TabsList className="bg-muted/10 w-full grid grid-cols-4 h-8 p-0.5">
-                      <TabsTrigger value="All" className="text-[11px] py-1">All Master</TabsTrigger>
-                      <TabsTrigger value="HR" className="text-[11px] py-1">HR Master</TabsTrigger>
-                      <TabsTrigger value="ERP" className="text-[11px] py-1">ERP Master</TabsTrigger>
-                      <TabsTrigger value="POS" className="text-[11px] py-1">POS Master</TabsTrigger>
+                    <TabsList className="bg-muted/20 w-full grid grid-cols-4 h-8.5 p-1 rounded-xl border border-border/20">
+                      <TabsTrigger value="All" className="text-[11px] py-1 rounded-lg data-[state=active]:bg-background data-[state=active]:text-violet-600 transition-all">All Master</TabsTrigger>
+                      <TabsTrigger value="HR" className="text-[11px] py-1 rounded-lg data-[state=active]:bg-background data-[state=active]:text-violet-600 transition-all">HR Master</TabsTrigger>
+                      <TabsTrigger value="ERP" className="text-[11px] py-1 rounded-lg data-[state=active]:bg-background data-[state=active]:text-violet-600 transition-all">ERP Master</TabsTrigger>
+                      <TabsTrigger value="POS" className="text-[11px] py-1 rounded-lg data-[state=active]:bg-background data-[state=active]:text-violet-600 transition-all">POS Master</TabsTrigger>
                     </TabsList>
                   </Tabs>
                 )}
               </Tabs>
 
-              <div className="border border-border/80 rounded-xl divide-y divide-border/40 max-h-[350px] overflow-y-auto bg-card shadow-inner space-y-3 p-1">
+              <div className="border border-border/60 rounded-2xl max-h-[380px] overflow-y-auto bg-slate-50/50 dark:bg-slate-950/20 shadow-inner space-y-4 p-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-violet-500/15 hover:[&::-webkit-scrollbar-thumb]:bg-violet-500/30">
                 {groupedEntries.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-muted-foreground flex flex-col items-center gap-2">
+                  <div className="p-8 text-center text-xs text-muted-foreground flex flex-col items-center gap-2 bg-background rounded-2xl border border-border/40">
                     <Shield className="h-8 w-8 text-muted-foreground/40" />
                     No permissions found in this category.
                   </div>
                 ) : (
                   groupedEntries.map(([moduleName, perms]) => (
-                    <div key={moduleName} className="p-3 bg-muted/5 rounded-xl border border-border/50 space-y-2.5">
-                      <h5 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1.5 border-b border-border/30 pb-1">
-                        <FolderOpen className="h-3.5 w-3.5 text-violet-500/80" />
+                    <div key={moduleName} className="p-4 bg-background dark:bg-slate-900/50 rounded-2xl border border-border/50 hover:border-violet-500/10 hover:shadow-xs transition-all duration-300 space-y-3 shadow-xs">
+                      <h5 className="text-[10px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400 flex items-center gap-1.5 border-b border-border/30 pb-1.5">
+                        <FolderOpen className="h-3.5 w-3.5" />
                         {moduleName}
                       </h5>
-                      <div className="space-y-3">
+                      <div className="space-y-2.5">
                         {perms.map((perm) => {
                           const override = overrides[perm.id];
                           const isOverridden = override !== undefined;
@@ -789,36 +843,36 @@ export function EmployeeUserList({
                             : perm.name;
 
                           return (
-                            <div key={perm.id} className="text-xs group min-w-0 w-full p-2.5 rounded-lg hover:bg-muted/30 transition-all duration-150 space-y-2">
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0 w-full">
+                            <div key={perm.id} className="text-xs group min-w-0 w-full p-3 rounded-xl border border-transparent hover:border-violet-500/10 hover:bg-violet-500/5 dark:hover:bg-violet-500/2 transition-all duration-200 space-y-2">
+                              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 min-w-0 w-full">
                                 <div className="space-y-1 min-w-0 flex-1">
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-semibold text-foreground truncate max-w-full">
+                                    <span className="font-semibold text-foreground text-sm tracking-tight truncate max-w-full">
                                       {displayName}
                                     </span>
 
                                     {/* Inheritance Status Badge */}
                                     {isInherited ? (
-                                      <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-emerald-600 bg-emerald-50/60 dark:bg-emerald-500/10 dark:text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-200/40">
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 shadow-xs">
                                         <ShieldCheck className="h-2.5 w-2.5" />
                                         Inherited: Allow
                                       </span>
                                     ) : (
-                                      <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded border border-border/50">
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full border border-border/60">
                                         <Shield className="h-2.5 w-2.5" />
                                         Inherited: Deny
                                       </span>
                                     )}
                                   </div>
                                   {perm.description && (
-                                    <p className="text-[11px] text-muted-foreground leading-normal pr-2">
+                                    <p className="text-[11px] text-muted-foreground/80 leading-normal pr-2">
                                       {perm.description}
                                     </p>
                                   )}
                                 </div>
 
                                 {/* Segmented Control Toggles */}
-                                <div className="flex items-center p-0.5 bg-muted rounded-lg border border-border/40 shrink-0 self-end sm:self-center shadow-sm">
+                                <div className="flex items-center p-0.5 bg-muted/50 rounded-xl border border-border/40 shrink-0 self-end sm:self-start shadow-xs transition-all duration-200">
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -826,10 +880,11 @@ export function EmployeeUserList({
                                       delete newOverrides[perm.id];
                                       setOverrides(newOverrides);
                                     }}
-                                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 ${val === "default"
-                                        ? "bg-background text-foreground shadow-sm"
-                                        : "bg-transparent text-muted-foreground/70 hover:text-foreground"
-                                      }`}
+                                    className={`px-3 py-1 text-[11px] font-semibold rounded-lg transition-all duration-200 ${
+                                      val === "default"
+                                        ? "bg-background text-foreground shadow-xs scale-102 border border-border/10"
+                                        : "bg-transparent text-muted-foreground/60 hover:text-foreground"
+                                    }`}
                                   >
                                     Default
                                   </button>
@@ -844,10 +899,11 @@ export function EmployeeUserList({
                                         }
                                       });
                                     }}
-                                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 flex items-center gap-1 ${val === "allow"
-                                        ? "bg-emerald-500 text-white shadow-sm font-semibold"
-                                        : "bg-transparent text-muted-foreground/70 hover:text-emerald-500"
-                                      }`}
+                                    className={`px-3 py-1 text-[11px] font-semibold rounded-lg transition-all duration-200 flex items-center gap-1 ${
+                                      val === "allow"
+                                        ? "bg-emerald-500 text-white shadow-xs font-bold scale-102"
+                                        : "bg-transparent text-muted-foreground/60 hover:text-emerald-500"
+                                    }`}
                                   >
                                     <ShieldCheck className="h-3 w-3" />
                                     Allow
@@ -863,10 +919,11 @@ export function EmployeeUserList({
                                         }
                                       });
                                     }}
-                                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-all duration-150 flex items-center gap-1 ${val === "deny"
-                                        ? "bg-destructive text-white shadow-sm font-semibold"
-                                        : "bg-transparent text-muted-foreground/70 hover:text-destructive"
-                                      }`}
+                                    className={`px-3 py-1 text-[11px] font-semibold rounded-lg transition-all duration-200 flex items-center gap-1 ${
+                                      val === "deny"
+                                        ? "bg-rose-500 text-white shadow-xs font-bold scale-102"
+                                        : "bg-transparent text-muted-foreground/60 hover:text-rose-500"
+                                    }`}
                                   >
                                     <ShieldX className="h-3 w-3" />
                                     Deny
@@ -876,34 +933,82 @@ export function EmployeeUserList({
 
                               {/* Optional expiration for overrides */}
                               {isOverridden && (
-                                <div className="flex flex-wrap items-center gap-2 pl-2 border-l-2 border-violet-500/40 py-1 mt-1 bg-muted/20 rounded px-2">
-                                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                                    <Calendar className="h-3 w-3 text-violet-500/80" />
-                                    <span>Expiry (Optional):</span>
-                                  </div>
-                                  <input
-                                    id={`exp-${perm.id}`}
-                                    type="datetime-local"
-                                    className="h-6 rounded-md border border-input/60 bg-background/50 hover:bg-background px-2 py-0.5 text-[10px] shadow-sm transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/50 cursor-pointer"
-                                    value={override.expiresAt}
-                                    onChange={(e) => {
-                                      setOverrides({
-                                        ...overrides,
-                                        [perm.id]: {
-                                          ...override,
-                                          expiresAt: e.target.value
-                                        }
-                                      });
-                                    }}
-                                  />
-                                  {override.expiresAt && (
-                                    <span className={`text-[9px] font-semibold ml-auto px-1.5 py-0.5 rounded ${getRelativeTimeDesc(override.expiresAt) === 'already expired'
-                                        ? 'bg-destructive/15 text-destructive'
-                                        : 'bg-violet-500/15 text-violet-600'
+                                <div className="flex flex-col gap-2 pl-3 border-l-2 border-violet-500/30 py-2 mt-2 bg-violet-500/5 rounded-r-xl transition-all duration-300">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
+                                      <Calendar className="h-3.5 w-3.5 text-violet-500" />
+                                      <span>Override Expiry:</span>
+                                    </div>
+                                    <input
+                                      id={`exp-${perm.id}`}
+                                      type="datetime-local"
+                                      className="h-7 rounded-lg border border-input bg-background/50 hover:bg-background px-2 py-0.5 text-[10px] shadow-xs transition-all focus:border-violet-500 focus:ring-1 focus:ring-violet-500 cursor-pointer"
+                                      value={override.expiresAt}
+                                      onChange={(e) => {
+                                        setOverrides({
+                                          ...overrides,
+                                          [perm.id]: {
+                                            ...override,
+                                            expiresAt: e.target.value
+                                          }
+                                        });
+                                      }}
+                                    />
+                                    {override.expiresAt && (
+                                      <span className={`text-[9px] font-bold ml-auto sm:ml-0 px-2 py-0.5 rounded-full shadow-xs ${
+                                        getRelativeTimeDesc(override.expiresAt) === 'already expired'
+                                          ? 'bg-destructive/10 text-destructive border border-destructive/20'
+                                          : 'bg-violet-500/10 text-violet-600 border border-violet-500/20'
                                       }`}>
-                                      {getRelativeTimeDesc(override.expiresAt) === 'already expired' ? 'Expired' : `Expires ${getRelativeTimeDesc(override.expiresAt)}`}
-                                    </span>
-                                  )}
+                                        {getRelativeTimeDesc(override.expiresAt) === 'already expired' ? 'Expired' : `Expires ${getRelativeTimeDesc(override.expiresAt)}`}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {/* Quick presets for override expiry */}
+                                  <div className="flex flex-wrap gap-1.5 pl-5">
+                                    {[
+                                      { label: "+1 Day", offsetMs: 86400000 },
+                                      { label: "+7 Days", offsetMs: 604800000 },
+                                      { label: "+30 Days", offsetMs: 2592000000 },
+                                    ].map((preset) => (
+                                      <button
+                                        key={preset.label}
+                                        type="button"
+                                        onClick={() => {
+                                          const futureDate = new Date(Date.now() + preset.offsetMs);
+                                          const offset = futureDate.getTimezoneOffset();
+                                          const localDate = new Date(futureDate.getTime() - offset * 60 * 1000);
+                                          setOverrides({
+                                            ...overrides,
+                                            [perm.id]: {
+                                              ...override,
+                                              expiresAt: localDate.toISOString().slice(0, 16)
+                                            }
+                                          });
+                                        }}
+                                        className="px-2 py-0.5 rounded-md bg-violet-500/5 hover:bg-violet-500/10 text-[9px] font-medium text-violet-600 dark:text-violet-400 border border-violet-500/10 hover:border-violet-500/20 active:scale-95 transition-all duration-150"
+                                      >
+                                        {preset.label}
+                                      </button>
+                                    ))}
+                                    {override.expiresAt && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOverrides({
+                                            ...overrides,
+                                            [perm.id]: {
+                                              ...override,
+                                              expiresAt: ""
+                                            }
+                                          });
+                                        }}
+                                        className="px-2 py-0.5 rounded-md bg-destructive/5 hover:bg-destructive/10 text-[9px] font-medium text-destructive border border-destructive/10 hover:border-destructive/20 active:scale-95 transition-all duration-150"
+                                      >
+                                        Clear
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -917,19 +1022,19 @@ export function EmployeeUserList({
             </div>
           </div>
 
-          <div className="border-t border-border/60 bg-muted/10 p-6 flex justify-end gap-3">
+          <div className="border-t border-border/40 bg-muted/20 p-5 flex justify-end gap-3 rounded-b-3xl">
             <Button
               variant="outline"
               onClick={() => setPermissionsDialogOpen(false)}
               disabled={isSavingPermissions}
-              className="h-9 px-4 rounded-lg text-xs"
+              className="h-9 px-4 rounded-xl text-xs font-semibold hover:bg-muted transition-all duration-200"
             >
               Cancel
             </Button>
             <Button
               onClick={handleSavePermissions}
               disabled={isSavingPermissions}
-              className="bg-violet-600 hover:bg-violet-700 text-white shadow-md hover:shadow-lg transition-all duration-200 h-9 px-4 rounded-lg text-xs"
+              className="bg-violet-600 hover:bg-violet-700 text-white shadow-md hover:shadow-violet-600/20 hover:scale-102 active:scale-98 transition-all duration-200 h-9 px-4 rounded-xl text-xs font-semibold"
             >
               {isSavingPermissions && <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />}
               Save Overrides

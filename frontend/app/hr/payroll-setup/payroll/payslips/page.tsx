@@ -1,17 +1,14 @@
 import { getDepartments, getSubDepartments } from "@/lib/actions/department";
-import { getEmployeesForDropdown } from "@/lib/actions/employee";
 import { PayslipsContent } from "./payslips-content";
 
 export default async function PayslipsPage() {
-    const [deptRes, subDeptRes, empRes] = await Promise.all([
+    const [deptRes, subDeptRes] = await Promise.all([
         getDepartments(),
         getSubDepartments(),
-        getEmployeesForDropdown(),
     ]);
 
     const departments = deptRes.status ? deptRes.data : [];
     const subDepartments = subDeptRes.status ? subDeptRes.data : [];
-    const employees = empRes.status ? (empRes.data || []) : [];
 
     return (
         <div className="p-0">
@@ -24,7 +21,6 @@ export default async function PayslipsPage() {
             <PayslipsContent
                 departments={departments}
                 subDepartments={subDepartments}
-                employees={employees}
             />
         </div>
     );

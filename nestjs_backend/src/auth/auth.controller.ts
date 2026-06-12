@@ -284,7 +284,7 @@ export class AuthController {
     }
 
     const terminalSession = await this.prisma.posSession.findFirst({
-      where: { posId: terminalContext.terminalId, status: 'open' },
+      where: { posId: terminalContext.terminalId },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -296,7 +296,7 @@ export class AuthController {
       terminalId: terminalContext.terminalId,
       posId: terminalContext.posId || terminalContext.terminalId,
       locationId: terminalContext.locationId || '',
-      posSessionId: terminalSession.id,
+      posSessionId: terminalSession.status === 'open' ? terminalSession.id : undefined,
       tenantId: terminalContext.tenantId || '',
     };
 
@@ -337,7 +337,7 @@ export class AuthController {
     }
 
     const terminalSession = await this.prisma.posSession.findFirst({
-      where: { posId: terminalContext?.terminalId, status: 'open' },
+      where: { posId: terminalContext?.terminalId },
       orderBy: { createdAt: 'desc' }
     });
 
@@ -657,6 +657,7 @@ export class AuthController {
                 id: terminalRaw.id,
                 code: terminalRaw.terminalCode,
                 name: terminalRaw.name,
+                isParent: terminalRaw.isParent,
                 location: terminalRaw.location ? {
                   id: terminalRaw.location.id,
                   code: terminalRaw.location.code,

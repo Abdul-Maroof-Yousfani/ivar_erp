@@ -10,7 +10,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import { CalendarIcon, Save } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, COMPANY_NAME } from "@/lib/utils";
 import { getChartOfAccounts } from "@/lib/actions/chart-of-account";
 import { saveOpeningBalance } from "@/lib/actions/opening-balance";
 import { toast } from "sonner";
@@ -38,7 +38,7 @@ export function OpeningBalanceClient() {
   const [entries, setEntries] = useState<Record<string, OpeningBalanceEntry>>({});
   const [date, setDate] = useState<Date>(new Date());
   const [isPending, startTransition] = useTransition();
-  const [companyName, setCompanyName] = useState("Speed pvt.LD");
+  const [companyName, setCompanyName] = useState(COMPANY_NAME || "Speed pvt.LD");
 
   useEffect(() => {
     loadAccounts();

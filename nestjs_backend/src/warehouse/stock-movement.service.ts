@@ -149,33 +149,6 @@ export class StockMovementService {
       rate: itemRate,
     }, tx);
 
-    // Decrement stock in warehouse (InventoryItem)
-    const warehouseStock = await tx.inventoryItem.findFirst({
-      where: {
-        itemId: dto.itemId,
-        warehouseId: dto.fromWarehouseId,
-        locationId: null,
-        status: 'AVAILABLE'
-      }
-    });
-
-    if (warehouseStock) {
-      await tx.inventoryItem.update({
-        where: { id: warehouseStock.id },
-        data: { quantity: { decrement: dto.quantity } }
-      });
-    } else {
-      await tx.inventoryItem.create({
-        data: {
-          itemId: dto.itemId,
-          warehouseId: dto.fromWarehouseId,
-          locationId: null,
-          quantity: -dto.quantity,
-          status: 'AVAILABLE'
-        }
-      });
-    }
-
     // 2. Increase Stock in Outlet (Location-specific InventoryItem)
     const existingStock = await tx.inventoryItem.findFirst({
       where: {

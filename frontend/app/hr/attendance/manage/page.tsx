@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useDebounce } from "@/hooks/use-debounce";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,7 +56,8 @@ import { DirectionalTransition } from "@/components/layouts/directional-transiti
 export default function AttendanceManagePage() {
   const [isPending, setIsPending] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const debouncedSearch = useDebounce(searchInput, 300);
   const [searchResults, setSearchResults] = useState<EmployeeForAttendance[]>([]);
   const [knownEmployees, setKnownEmployees] = useState<Map<string, EmployeeForAttendance>>(new Map());
   const [page, setPage] = useState(1);
@@ -109,27 +111,40 @@ export default function AttendanceManagePage() {
     fetchDepartments();
   }, []);
 
-  // Reset page when filters or search change
+  const employeeFilterKeyRef = useRef("");
+
+  // Reset results when department filters change
   useEffect(() => {
     setPage(1);
     setSearchResults([]);
-  }, [formData.departmentId, formData.subDepartmentId, searchQuery]);
+    setSearchInput("");
+  }, [formData.departmentId, formData.subDepartmentId]);
 
   // Fetch employees with server-side pagination and search
   useEffect(() => {
+    const filterKey = `${formData.departmentId}|${formData.subDepartmentId}|${debouncedSearch}`;
+    const filtersChanged = filterKey !== employeeFilterKeyRef.current;
+    employeeFilterKeyRef.current = filterKey;
+
+    if (filtersChanged && page !== 1) {
+      setPage(1);
+      return;
+    }
+
     const fetchEmployees = async () => {
       setLoading(true);
       try {
+        const fetchPage = filtersChanged ? 1 : page;
         const result = await getEmployeesForAttendance({
           departmentId: formData.departmentId || undefined,
           subDepartmentId: formData.subDepartmentId || undefined,
-          search: searchQuery || undefined,
-          page: page,
+          search: debouncedSearch || undefined,
+          page: fetchPage,
           limit: 100
         });
 
         if (result.status && result.data) {
-          if (page === 1) {
+          if (fetchPage === 1) {
             setSearchResults(result.data);
           } else {
             setSearchResults(prev => [...prev, ...result.data!]);
@@ -143,7 +158,7 @@ export default function AttendanceManagePage() {
             return next;
           });
         } else {
-          if (page === 1) setSearchResults([]);
+          if (fetchPage === 1) setSearchResults([]);
           if (result.message) toast.error(result.message);
         }
       } catch (error) {
@@ -155,7 +170,9 @@ export default function AttendanceManagePage() {
     };
 
     fetchEmployees();
-  }, [formData.departmentId, formData.subDepartmentId, searchQuery, page]);
+  }, [formData.departmentId, formData.subDepartmentId, debouncedSearch, page]);
+
+  const isInitialEmployeeLoad = loading && page === 1 && searchResults.length === 0;
 
   const handleLoadMore = () => {
     if (!loading && hasMore) {
@@ -580,7 +597,7 @@ export default function AttendanceManagePage() {
                 {/* Employee */}
                 <div className="space-y-2">
                   <Label>Employee <span className="text-red-500">*</span></Label>
-                  {loading ? (
+                  {isInitialEmployeeLoad ? (
                     <div className="h-10 bg-muted rounded animate-pulse" />
                   ) : (
                     <MultiSelect
@@ -591,14 +608,14 @@ export default function AttendanceManagePage() {
                       }))}
                       value={formData.employeeIds}
                       onValueChange={handleEmployeeChange}
-                      onSearch={setSearchQuery}
+                      onSearch={setSearchInput}
                       onLoadMore={handleLoadMore}
                       hasMore={hasMore}
                       isLoading={loading}
                       placeholder="Select employees..."
-                      searchPlaceholder="Search employee..."
-                      emptyMessage={searchQuery ? "No employees found" : "Type to search employees..."}
-                      disabled={isPending || (loading && page === 1)}
+                      searchPlaceholder="Search by name or employee ID..."
+                      emptyMessage={loading ? "Loading employees..." : "No employees found"}
+                      disabled={isPending}
                       maxDisplayedItems={5}
                     />
                   )}

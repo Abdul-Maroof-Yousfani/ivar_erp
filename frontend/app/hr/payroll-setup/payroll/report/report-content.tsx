@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { getPayrollReport } from "@/lib/actions/payroll";
 import { Department, SubDepartment, getSubDepartmentsByDepartment } from "@/lib/actions/department";
-import { EmployeeDropdownOption } from "@/lib/actions/employee";
+import { EmployeeSelect } from "@/components/employees/employee-select";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useRouter } from "next/navigation";
@@ -21,10 +21,9 @@ import { useEffect } from "react";
 
 interface ReportContentProps {
     initialDepartments: Department[];
-    initialEmployees: EmployeeDropdownOption[];
 }
 
-export function ReportContent({ initialDepartments, initialEmployees }: ReportContentProps) {
+export function ReportContent({ initialDepartments }: ReportContentProps) {
     const { user, isAdmin, hasPermission } = useAuth();
     const router = useRouter();
     const [isPending, startTransition] = useTransition();
@@ -49,23 +48,6 @@ export function ReportContent({ initialDepartments, initialEmployees }: ReportCo
         employeeId: "all",
     });
 
-    const filteredEmployees = useMemo(() => {
-        let result = initialEmployees;
-        
-        // Strict filtering for non-privileged users
-        if (!canViewAll && user?.employeeId) {
-            return result.filter(e => e.id === user.employeeId);
-        }
-
-        if (filters.departmentId !== "all") {
-            result = result.filter(e => e.departmentId === filters.departmentId);
-        }
-        if (filters.subDepartmentId !== "all") {
-            result = result.filter(e => e.subDepartmentId === filters.subDepartmentId);
-        }
-        return result;
-    }, [filters.departmentId, filters.subDepartmentId, initialEmployees, user, canViewAll]);
-
     const handleDepartmentChange = async (val: string) => {
         setFilters(prev => ({ ...prev, departmentId: val, subDepartmentId: "all", employeeId: "all" }));
         if (val !== "all") {
@@ -87,30 +69,46 @@ export function ReportContent({ initialDepartments, initialEmployees }: ReportCo
 
     const handleSearch = () => {
         startTransition(async () => {
-            const [year, month] = filters.monthYear.split("-");
+            if (!filters.monthYear) {
+                toast.error("Please select a month/year");
+                return;
+            }
+
             // Enforce employee restriction in search
             const effectiveEmployeeId = !canViewAll && user?.employeeId ? user.employeeId : filters.employeeId;
             
-            const result = await getPayrollReport({
-                month,
-                year,
-                departmentId: filters.departmentId,
-                subDepartmentId: filters.subDepartmentId,
-                employeeId: effectiveEmployeeId,
-            });
+            try {
+                const [year, month] = filters.monthYear.split("-");
+                const result = await getPayrollReport({
+                    month,
+                    year,
+                    departmentId: filters.departmentId,
+                    subDepartmentId: filters.subDepartmentId,
+                    employeeId: effectiveEmployeeId,
+                });
 
-            if (result.status && result.data) {
-                // Double check data filtering on client side
-                const filteredData = !canViewAll && user?.employeeId
-                    ? result.data.filter(row => row.employee?.id === user.employeeId || row.employeeId === user.employeeId)
-                    : result.data;
-                
-                setData(filteredData);
-                if (filteredData.length === 0) {
-                    toast.info("No records found for the selected filters.");
+                if (result.status && result.data) {
+                    // Double check data filtering on client side
+                    const filteredData = !canViewAll && user?.employeeId
+                        ? result.data.filter(row => row.employee?.id === user.employeeId || row.employeeId === user.employeeId)
+                        : result.data;
+                    
+                    setData(filteredData);
+                    
+                    if (filteredData.length === 0) {
+                        toast.info("No records found for the selected filters.");
+                    } else {
+                        toast.success(`Found ${filteredData.length} records`);
+                    }
+                } else {
+                    console.error("Failed to fetch data:", result.message);
+                    toast.error("Failed to fetch report data");
+                    setData([]);
                 }
-            } else {
-                toast.error(result.message || "Failed to fetch report");
+            } catch (error) {
+                console.error("Search error:", error);
+                toast.error("Failed to fetch report data");
+                setData([]);
             }
         });
     };
@@ -227,7 +225,7 @@ export function ReportContent({ initialDepartments, initialEmployees }: ReportCo
                     <div><b>Taxable:</b> ${Math.round(Number(row.taxBreakup?.taxableIncome || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                     ${row.taxBreakup?.fixedAmountTax > 0 ? `<div><b>Fixed Tax:</b> ${Math.round(Number(row.taxBreakup?.fixedAmountTax || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>` : ''}
                     ${row.taxBreakup?.percentageTax > 0 ? `<div><b>% Tax:</b> ${Math.round(Number(row.taxBreakup?.percentageTax || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>` : ''}
-                    <div><b>Annual Tax:</b> ${Math.round(Number(row.taxDeduction || 0) * 12).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                    <div><b>Annual Tax:</b> ${Math.round(Number(row.taxBreakup?.fixedAmountTax || 0) + Number(row.taxBreakup?.percentageTax || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                     <div class="section-header" style="margin-top: 4px; border-top: 1px solid #999;"><b>Monthly Tax:</b> ${Math.round(Number(row.taxDeduction || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                   </td>
                   <td>
@@ -270,7 +268,7 @@ export function ReportContent({ initialDepartments, initialEmployees }: ReportCo
         try {
             toast.info("Fetching all records for export...");
 
-            // Fetch ALL records matching current filters
+            // Fetch ALL records matching current filters for the selected month
             const [year, month] = filters.monthYear.split("-");
             const result = await getPayrollReport({
                 month,
@@ -307,7 +305,7 @@ export function ReportContent({ initialDepartments, initialEmployees }: ReportCo
 
             // 2. Generate Headers
             const staticHeadersPre = [
-                "S.No", "Employee ID", "Employee Name", "Department", "Sub-Department", "Designation",
+                "S.No", "Employee ID", "Employee Name", "Month", "Year", "Department", "Sub-Department", "Designation",
                 "Country", "Province", "City", "Station"
             ];
 
@@ -356,6 +354,8 @@ export function ReportContent({ initialDepartments, initialEmployees }: ReportCo
                     i + 1,
                     `"${emp.employeeId}"`,
                     `"${emp.employeeName}"`,
+                    `"${row.payroll?.month || ""}"`,
+                    `"${row.payroll?.year || ""}"`,
                     `"${emp.department?.name || ""}"`,
                     `"${emp.subDepartment?.name || ""}"`,
                     `"${emp.designation?.name || ""}"`,
@@ -383,6 +383,8 @@ export function ReportContent({ initialDepartments, initialEmployees }: ReportCo
             const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
+            
+            // Generate filename based on selected month
             link.download = `payroll-report-${filters.monthYear}-detailed.csv`;
             link.click();
 
@@ -400,7 +402,7 @@ export function ReportContent({ initialDepartments, initialEmployees }: ReportCo
                     <CardTitle>View Payroll Report</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                         {canViewAll && (
                             <>
                                 <div className="space-y-2">
@@ -429,10 +431,12 @@ export function ReportContent({ initialDepartments, initialEmployees }: ReportCo
 
                                 <div className="space-y-2">
                                     <Label>Employee</Label>
-                                    <Autocomplete
-                                        options={filteredEmployees.map(e => ({ value: e.id, label: `(${e.employeeId}) ${e.employeeName}` }))}
+                                    <EmployeeSelect
                                         value={filters.employeeId}
                                         onValueChange={(val) => setFilters(p => ({ ...p, employeeId: val || "all" }))}
+                                        departmentId={filters.departmentId}
+                                        subDepartmentId={filters.subDepartmentId}
+                                        includeAllOption
                                         placeholder="All Employees"
                                         searchPlaceholder="Search employee..."
                                     />
@@ -444,7 +448,9 @@ export function ReportContent({ initialDepartments, initialEmployees }: ReportCo
                             <Label>Month/Year</Label>
                             <MonthYearPicker
                                 value={filters.monthYear}
-                                onChange={(val) => setFilters(p => ({ ...p, monthYear: Array.isArray(val) ? val[0] : val }))}
+                                onChange={(val) => setFilters(p => ({ ...p, monthYear: val as string }))}
+                                multiple={false}
+                                placeholder="Select month and year"
                             />
                         </div>
 
@@ -471,6 +477,8 @@ export function ReportContent({ initialDepartments, initialEmployees }: ReportCo
                             data={data}
                             searchFields={[{ key: "employee.employeeName", label: "Employee Name" }]}
                             tableId="report-content"
+                            canBulkEdit={false}
+                            canBulkDelete={false}
                         />
                     </div>
 

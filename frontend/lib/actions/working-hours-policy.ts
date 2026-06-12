@@ -5,7 +5,6 @@ export interface WorkingHoursPolicy {
   name: string;
   startWorkingHours: string;
   endWorkingHours: string;
-  otStartsAt?: string | null;
   shortDayMins?: number | null;
   startBreakTime?: string | null;
   endBreakTime?: string | null;
@@ -94,7 +93,6 @@ export async function createWorkingHoursPolicy(data: {
   name: string;
   startWorkingHours: string;
   endWorkingHours: string;
-  otStartsAt?: string | null;
   shortDayMins?: number | null;
   startBreakTime?: string | null;
   endBreakTime?: string | null;
@@ -158,7 +156,6 @@ export async function updateWorkingHoursPolicy(id: string, data: {
   name: string;
   startWorkingHours: string;
   endWorkingHours: string;
-  otStartsAt?: string | null;
   shortDayMins?: number | null;
   startBreakTime?: string | null;
   endBreakTime?: string | null;

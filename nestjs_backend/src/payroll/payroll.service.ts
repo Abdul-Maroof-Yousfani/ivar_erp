@@ -683,28 +683,46 @@ export class PayrollService {
       // F. Calculate Tax (with Rebates) - YTD Cumulative Method
       // Tax is calculated based on Year-to-Date actual income + projected remaining months
       // Pakistan Tax Year: July 1 to June 30
+
+      // Calculate taxable portions for current month
+      const taxablePackageAmount = salaryBreakup
+        .filter(comp => comp.isTaxable !== false)
+        .reduce((sum, comp) => sum.add(new Decimal(comp.amount)), new Decimal(0));
+
+      const adjustedTaxablePackageAmount = adjustedSalaryBreakup
+        .filter(comp => comp.isTaxable !== false)
+        .reduce((sum, comp) => sum.add(new Decimal(comp.amount)), new Decimal(0));
+
+      const taxableAdHocAllowances = allowanceBreakup
+        .filter(a => a.isTaxable !== false)
+        .reduce((sum, a) => sum.add(new Decimal(a.amount)), new Decimal(0));
+
+      const taxableBonusAmount = bonusBreakup
+        .filter(b => b.isTaxable !== false)
+        .reduce((sum, b) => sum.add(new Decimal(b.amount)), new Decimal(0));
       
-      // Combine all taxable components - use adjusted salary breakup
+      // Combine all taxable components - use adjusted salary breakup and filter by isTaxable
       const allTaxableComponents = [
-        ...adjustedSalaryBreakup,
-        ...allowanceBreakup,
-        ...bonusBreakup,
+        ...adjustedSalaryBreakup.filter(comp => comp.isTaxable !== false),
+        ...allowanceBreakup.filter(comp => comp.isTaxable !== false),
+        ...bonusBreakup.filter(comp => comp.isTaxable !== false),
       ];
       
       const { taxDeduction, taxBreakup } = await this.calculateTaxYTD(
         employee.id,
         allTaxableComponents,
         emp.rebates || [],
-        packageAmount,
-        adjustedTotalPackageAmount, // Current month's actual amount after attendance
-        totalAdHocAllowances,
-        overtimeAmount,
-        bonusAmount,
+        taxablePackageAmount,
+        adjustedTaxablePackageAmount, // Current month's actual taxable amount after attendance
+        taxableAdHocAllowances,
+        overtimeAmount, // Overtime is fully taxable
+        taxableBonusAmount,
         leaveEncashmentAmount,
         allTaxSlabs,
         normalizedMonth,
         normalizedYear,
         salaryFraction,
+        emp.lastExitDate,
       );
 
       // G. Calculate EOBI & PF
@@ -728,8 +746,7 @@ export class PayrollService {
 
       // Total Deductions
       // NOTE: EOBI is NOT deducted from salary, only tracked for contribution records
-      const totalDeductionsSum = attendanceDeduction
-        .add(loanDeduction)
+      const totalDeductionsSum = loanDeduction
         .add(advanceSalaryDeduction)
         // .add(eobiDeduction) // EOBI is NOT deducted from salary
         .add(providentFundDeduction)
@@ -962,10 +979,184 @@ export class PayrollService {
   }
 
   async getPayrollById(id: string) {
-    return this.prisma.payroll.findUnique({
+    const payroll = await this.prisma.payroll.findUnique({
       where: { id },
-      include: { details: { include: { employee: true } } },
+      include: { 
+        details: { 
+          include: { 
+            employee: {
+              include: {
+                department: true,
+                subDepartment: true,
+                designation: true,
+                location: true,
+              }
+            } 
+          } 
+        } 
+      },
     });
+
+    if (!payroll) {
+      throw new BadRequestException(`Payroll with ID ${id} not found`);
+    }
+
+    return payroll;
+  }
+
+  async getPayrollByIdOrEmployeeId(id: string, filters: { year?: string; month?: string }) {
+    // First try to find as payroll ID
+    try {
+      const payroll = await this.prisma.payroll.findUnique({
+        where: { id },
+        include: { 
+          details: { 
+            include: { 
+              employee: {
+                include: {
+                  department: true,
+                  subDepartment: true,
+                  designation: true,
+                  location: true,
+                }
+              } 
+            } 
+          } 
+        },
+      });
+
+      if (payroll) {
+        return {
+          type: 'payroll',
+          data: payroll,
+        };
+      }
+    } catch (error) {
+      // If not found as payroll ID, continue to check as employee ID
+    }
+
+    // If not found as payroll ID, try as employee ID
+    const where: Prisma.PayrollDetailWhereInput = {
+      employeeId: id,
+    };
+
+    if (filters.year || filters.month) {
+      where.payroll = {
+        ...(filters.month && filters.month !== 'all' && { month: filters.month }),
+        ...(filters.year && filters.year !== 'all' && { year: filters.year }),
+      };
+    }
+
+    const payrollDetails = await this.prisma.payrollDetail.findMany({
+      where,
+      include: {
+        employee: {
+          include: {
+            department: true,
+            subDepartment: true,
+            designation: true,
+            location: true,
+          }
+        },
+        payroll: true,
+      },
+      orderBy: [
+        { payroll: { year: 'desc' } },
+        { payroll: { month: 'desc' } },
+      ],
+    });
+
+    if (payrollDetails.length === 0) {
+      throw new BadRequestException(`No payroll found for ID ${id}. Please check if the ID is correct or if payroll has been generated.`);
+    }
+
+    return {
+      type: 'employee',
+      employee: payrollDetails[0].employee,
+      payrollHistory: payrollDetails,
+      total: payrollDetails.length,
+    };
+  }
+
+  async getPayrollList(filters: { year?: string; month?: string }) {
+    const where: Prisma.PayrollWhereInput = {};
+
+    if (filters.year && filters.year !== 'all') {
+      where.year = filters.year;
+    }
+
+    if (filters.month && filters.month !== 'all') {
+      where.month = filters.month;
+    }
+
+    const payrolls = await this.prisma.payroll.findMany({
+      where,
+      select: {
+        id: true,
+        month: true,
+        year: true,
+        status: true,
+        generatedById: true,
+        generatedAt: true,
+        _count: {
+          select: {
+            details: true,
+          },
+        },
+      },
+      orderBy: [
+        { year: 'desc' },
+        { month: 'desc' },
+      ],
+    });
+
+    return {
+      payrolls,
+      total: payrolls.length,
+      message: payrolls.length === 0 ? 'No payrolls found. Use /api/payroll/preview and /api/payroll/confirm to create payroll.' : undefined,
+    };
+  }
+
+  async getEmployeePayroll(employeeId: string, filters: { year?: string; month?: string }) {
+    const where: Prisma.PayrollDetailWhereInput = {
+      employeeId: employeeId,
+    };
+
+    if (filters.year || filters.month) {
+      where.payroll = {
+        ...(filters.month && filters.month !== 'all' && { month: filters.month }),
+        ...(filters.year && filters.year !== 'all' && { year: filters.year }),
+      };
+    }
+
+    const payrollDetails = await this.prisma.payrollDetail.findMany({
+      where,
+      include: {
+        employee: {
+          include: {
+            department: true,
+            subDepartment: true,
+            designation: true,
+            location: true,
+          }
+        },
+        payroll: true,
+      },
+      orderBy: [
+        { payroll: { year: 'desc' } },
+        { payroll: { month: 'desc' } },
+      ],
+    });
+
+    if (payrollDetails.length === 0) {
+      throw new BadRequestException(`No payroll found for employee ID ${employeeId}`);
+    }
+
+    return {
+      employee: payrollDetails[0].employee,
+      payrollHistory: payrollDetails,
+      total: payrollDetails.length,
+    };
   }
 
   private async sendPayslipEmails(payrollId: string) {
@@ -2489,16 +2680,6 @@ export class PayrollService {
             : new Decimal(attendance.overtimeHours);
       }
 
-      // Recalculate/override regular overtime if policy.otStartsAt is defined and it's a regular workday
-      if (!isOnHolidayOrOff && policy && policy.otStartsAt && attendance.checkIn && attendance.checkOut) {
-        const checkInHours = this.parseTimeToHours(this.formatTime(attendance.checkIn));
-        const checkOutHours = this.parseTimeToHours(this.formatTime(attendance.checkOut));
-        const otStartsAtHours = this.parseTimeToHours(policy.otStartsAt);
-        const otStart = Math.max(checkInHours, otStartsAtHours);
-        const recalculatedOt = Math.max(0, checkOutHours - otStart);
-        otHours = new Decimal(recalculatedOt);
-      }
-
       // For holidays/off days: use overtimeHours if available, otherwise all working hours are overtime
       if (isOnHolidayOrOff && attendance.checkIn && attendance.checkOut) {
         if (!otHours || otHours.eq(0)) {
@@ -2550,17 +2731,6 @@ export class PayrollService {
     return { overtimeAmount: amount, overtimeBreakup };
   }
 
-  private parseTimeToHours(timeStr: string): number {
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    return hours + minutes / 60;
-  }
-
-  private formatTime(date: Date): string {
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    return `${hours}:${minutes}`;
-  }
-
   private async calculateTax(
     salaryBreakup: Array<{
       id: string;
@@ -2587,9 +2757,9 @@ export class PayrollService {
     }> = [];
 
     for (const component of salaryBreakup) {
-      // Include component if it's marked as taxable (default is true) and has amount > 0
-      // This ensures Basic Salary, House Rent, Utility, and all other salary components are included
-      if (component.isTaxable !== false && component.amount > 0) {
+      // Include component if it's explicitly marked as taxable (must be true) and has amount > 0
+      // This ensures only components with isTaxable = true are included in tax calculation
+      if (component.isTaxable === true && component.amount > 0) {
         // Determine if component is recurring (defaults to true if undefined, for backward compatibility)
         // BUT for our specific logic, we want explicit control.
         // Assuming salary components are recurring, but allowances/bonuses might not be.
@@ -2740,6 +2910,7 @@ export class PayrollService {
     currentMonth: string, // "01" to "12"
     currentYear: string,
     salaryFraction: Decimal,
+    lastExitDate?: string | Date | null,
   ): Promise<{ taxDeduction: Decimal; taxBreakup: any }> {
     
     const monthNum = parseInt(currentMonth, 10);
@@ -2780,6 +2951,7 @@ export class PayrollService {
 
     // Filter payrolls within current tax year and before current month
     let ytdGrossIncome = new Decimal(0);
+    let ytdTaxDeducted = new Decimal(0);
     const currentMonthDate = new Date(yearNum, monthNum - 1, 1);
 
     for (const payroll of previousPayrolls) {
@@ -2791,7 +2963,17 @@ export class PayrollService {
 
       // Check if payroll is within tax year and before current month
       if (payrollDate >= taxYearStart && payrollDate < currentMonthDate) {
-        ytdGrossIncome = ytdGrossIncome.add(new Decimal(payroll.grossSalary));
+        const taxBreakupData = typeof payroll.taxBreakup === 'string' 
+          ? JSON.parse(payroll.taxBreakup) 
+          : (payroll.taxBreakup || {});
+        
+        let prevTaxableGross = new Decimal(payroll.grossSalary);
+        if (taxBreakupData.currentMonthGross !== undefined) {
+          prevTaxableGross = new Decimal(taxBreakupData.currentMonthGross);
+        }
+
+        ytdGrossIncome = ytdGrossIncome.add(prevTaxableGross);
+        ytdTaxDeducted = ytdTaxDeducted.add(new Decimal(payroll.taxDeduction || 0));
       }
     }
 
@@ -2811,8 +2993,17 @@ export class PayrollService {
     let remainingMonths = 0;
     const nextMonthDate = new Date(yearNum, monthNum, 1); // First day of next month
     
+    let projectionEndDate = taxYearEnd;
+    if (lastExitDate) {
+      const exitDateObj = new Date(lastExitDate);
+      if (exitDateObj < taxYearEnd) {
+        // Stop projection at the month of exit
+        projectionEndDate = new Date(exitDateObj.getFullYear(), exitDateObj.getMonth() + 1, 0); 
+      }
+    }
+    
     let checkDate = new Date(nextMonthDate);
-    while (checkDate <= taxYearEnd) {
+    while (checkDate <= projectionEndDate) {
       remainingMonths++;
       checkDate.setMonth(checkDate.getMonth() + 1);
     }
@@ -2880,8 +3071,13 @@ export class PayrollService {
         percentageTaxAmount = excess.mul(new Decimal(slab.rate).div(100));
         const annualTax = fixedAmountTax.add(percentageTaxAmount);
         
-        // Step 6: Monthly tax = Annual tax / 12
-        taxDeduction = annualTax.div(12);
+        // Step 6: Monthly tax = (Total Annual Tax - Pichla Deducted Tax) / Baqiya Mahine
+        const remainingPayrolls = remainingMonths + 1; // +1 for the current month being processed
+        taxDeduction = annualTax.minus(ytdTaxDeducted).div(remainingPayrolls);
+        
+        if (taxDeduction.lt(0)) {
+          taxDeduction = new Decimal(0); // Cannot be negative
+        }
       }
     }
 
@@ -2898,6 +3094,7 @@ export class PayrollService {
     const taxBreakup = {
       method: 'YTD', // Indicate this is YTD method
       ytdGrossIncome: ytdGrossIncome.toNumber(),
+      ytdTaxDeducted: ytdTaxDeducted.toNumber(),
       currentMonthGross: currentMonthGross.toNumber(),
       projectedRemainingIncome: projectedRemainingIncome.toNumber(),
       remainingMonths: remainingMonths,

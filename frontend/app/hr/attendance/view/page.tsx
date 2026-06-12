@@ -452,10 +452,6 @@ function ViewEmployeeAttendanceDetailPage() {
 
   // Handle editing clock in/out times
   const handleEditTime = (record: DailyAttendanceRecord, field: 'checkIn' | 'checkOut') => {
-    if (!record.attendanceId) {
-      toast.error("Cannot edit: No attendance record exists for this date. Please create one first.");
-      return;
-    }
 
     const currentTime = record[field];
     let timeValue = '';
@@ -970,7 +966,7 @@ function ViewEmployeeAttendanceDetailPage() {
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
-                            {record.attendanceId && (
+                            {record.status !== "not-joined" as any && (
                               <button
                                 onClick={() => handleEditTime(record, 'checkIn')}
                                 className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-accent rounded"
@@ -1026,7 +1022,7 @@ function ViewEmployeeAttendanceDetailPage() {
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
-                            {record.attendanceId && (
+                            {record.status !== "not-joined" as any && (
                               <button
                                 onClick={() => handleEditTime(record, 'checkOut')}
                                 className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-accent rounded"

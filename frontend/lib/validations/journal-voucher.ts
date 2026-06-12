@@ -3,8 +3,8 @@ import { z } from "zod";
 export const journalVoucherDetailSchema = z.object({
     accountId: z.string().min(1, "Account is required"),
     tagAccountId: z.string().optional(),
-    debit: z.coerce.number().min(0),
-    credit: z.coerce.number().min(0),
+    debit: z.coerce.number().min(0).transform(v => Math.round(v)),
+    credit: z.coerce.number().min(0).transform(v => Math.round(v)),
     narration: z.string().optional(),
     refBillNo: z.string().optional(),
     isTaxApplicable: z.boolean().optional(),

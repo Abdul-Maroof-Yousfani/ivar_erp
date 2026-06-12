@@ -52,7 +52,6 @@ export default function CreateWorkingHoursPolicyPage() {
   const [endBreakTime, setEndBreakTime] = useState("");
   const [halfDayStartTime, setHalfDayStartTime] = useState("");
   const [lateStartTime, setLateStartTime] = useState("");
-  const [otStartsAt, setOtStartsAt] = useState("");
 
   // Deductions For Late
   const [lateDeductionType, setLateDeductionType] = useState("");
@@ -548,7 +547,6 @@ export default function CreateWorkingHoursPolicyPage() {
         gazzetedOvertimeRate && gazzetedOvertimeRate !== "0"
           ? parseFloat(gazzetedOvertimeRate)
           : null,
-      otStartsAt: otStartsAt || null,
       dayOverrides: groupDayOverrides(),
     };
 
@@ -589,7 +587,6 @@ export default function CreateWorkingHoursPolicyPage() {
     setShortDayDeductionAmount("");
     setOvertimeRate("");
     setGazzetedOvertimeRate("");
-    setOtStartsAt("");
     setDayOverrides({
       monday: {
         enabled: true,
@@ -1281,7 +1278,7 @@ export default function CreateWorkingHoursPolicyPage() {
             {/* Overtime Rates Section */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Overtime Rates</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Overtime Rate</Label>
                   <Select
@@ -1319,14 +1316,6 @@ export default function CreateWorkingHoursPolicyPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Overtime Starts At</Label>
-                  <TimePicker
-                    value={otStartsAt}
-                    onChange={setOtStartsAt}
-                    disabled={isPending}
-                  />
                 </div>
               </div>
             </div>

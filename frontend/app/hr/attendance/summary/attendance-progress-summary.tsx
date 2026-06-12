@@ -11,13 +11,10 @@ import {
 import DataTable from "@/components/common/data-table";
 import { columns } from "./columns";
 import type { AttendanceProgressRow } from "./columns";
-import type { Employee } from "@/lib/actions/employee";
+import type { AttendanceProgress } from "@/lib/actions/attendance";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Autocomplete } from "@/components/ui/autocomplete";
@@ -36,14 +33,13 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChevronDown } from "lucide-react";
-import type { AttendanceProgress } from "@/lib/actions/attendance";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { useEmployeeDropdown } from "@/hooks/use-employee-dropdown";
 import { useAuth } from "@/components/providers/auth-provider";
 import { DirectionalTransition } from "@/components/layouts/directional-transition";
 
 interface AttendanceProgressSummaryProps {
   initialData: AttendanceProgress[];
-  employees: Employee[];
   departments: Department[];
   newItemId?: string;
 }
@@ -74,7 +70,6 @@ const COLUMN_OPTIONS = [
 
 export function AttendanceProgressSummary({
   initialData,
-  employees,
   departments: initialDepartments,
   newItemId,
 }: AttendanceProgressSummaryProps) {
@@ -114,6 +109,12 @@ export function AttendanceProgressSummary({
   };
 
   const [dateRange, setDateRange] = useState<DateRange>(getInitialDateRange());
+
+  const { getEmployee, isInitialLoading, multiSelectProps } = useEmployeeDropdown({
+    departmentId: selectedDepartment,
+    subDepartmentId: selectedSubDepartment,
+    selectedIds: selectedEmployeeIds,
+  });
 
   // Handle user-specific view restriction
   useEffect(() => {
@@ -198,59 +199,13 @@ export function AttendanceProgressSummary({
     fetchSubDepartments();
   }, [selectedDepartment]);
 
-  // Filter employees based on department/sub-department selection
-  const filteredEmployeeOptions = useMemo(() => {
-    let result = employees;
-
-    if (selectedDepartment !== "all") {
-      const dept = initialDepartments.find((d) => d.id === selectedDepartment);
-      if (dept) {
-        result = result.filter(
-          (emp) =>
-            emp.departmentName === dept.name ||
-            emp.department === dept.name ||
-            emp.department === selectedDepartment,
-        );
-      }
-    }
-
-    if (selectedSubDepartment !== "all") {
-      const subDept = subDepartments.find(
-        (sd) => sd.id === selectedSubDepartment,
-      );
-      if (subDept) {
-        result = result.filter(
-          (emp) =>
-            emp.subDepartmentName === subDept.name ||
-            emp.subDepartment === subDept.name ||
-            emp.subDepartment === selectedSubDepartment,
-        );
-      }
-    }
-
-    return result.map((emp) => ({
-      value: emp.id,
-      label: emp.employeeName,
-      description: `${emp.employeeId}${emp.departmentName ? ` • ${emp.departmentName}` : ""}`,
-    }));
-  }, [
-    employees,
-    selectedDepartment,
-    selectedSubDepartment,
-    initialDepartments,
-    subDepartments,
-  ]);
-
   // Filter data based on selected filters
   const filteredData = useMemo(() => {
     let filtered = initialData;
 
     if (selectedEmployeeIds.length > 0) {
       const selectedEmployeeIdValues = selectedEmployeeIds
-        .map((id) => {
-          const emp = employees.find((e) => e.id === id);
-          return emp?.employeeId;
-        })
+        .map((id) => getEmployee(id)?.employeeId)
         .filter(Boolean);
 
       filtered = filtered.filter((item) =>
@@ -281,7 +236,7 @@ export function AttendanceProgressSummary({
     selectedEmployeeIds,
     selectedDepartment,
     selectedSubDepartment,
-    employees,
+    getEmployee,
     initialDepartments,
   ]);
 
@@ -375,14 +330,23 @@ export function AttendanceProgressSummary({
 
                   <div className="space-y-2 md:col-span-2">
                     <Label>Employees</Label>
-                    <MultiSelect
-                      options={filteredEmployeeOptions}
-                      value={selectedEmployeeIds}
-                      onValueChange={handleEmployeeChange}
-                      placeholder="All Employees"
-                      searchPlaceholder="Search employees..."
-                      emptyMessage="No employees found"
-                    />
+                    {isInitialLoading ? (
+                      <div className="h-10 bg-muted rounded-md animate-pulse" />
+                    ) : (
+                      <MultiSelect
+                        options={multiSelectProps.options}
+                        value={selectedEmployeeIds}
+                        onValueChange={handleEmployeeChange}
+                        onSearch={multiSelectProps.onSearch}
+                        onLoadMore={multiSelectProps.onLoadMore}
+                        hasMore={multiSelectProps.hasMore}
+                        isLoading={multiSelectProps.isLoading}
+                        placeholder="All Employees"
+                        searchPlaceholder="Search by name or employee ID..."
+                        emptyMessage={multiSelectProps.isLoading ? "Loading employees..." : "No employees found"}
+                        showSelectAll={false}
+                      />
+                    )}
                   </div>
                 </>
               )}

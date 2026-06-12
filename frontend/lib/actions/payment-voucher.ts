@@ -313,3 +313,62 @@ export async function getPaymentVoucher(id: string): Promise<{ status: boolean; 
         return { status: false, data: null, message: error.message };
     }
 }
+
+export async function updatePaymentVoucher(id: string, data: any) {
+    try {
+        const payload = {
+            ...data,
+            pvDate: new Date(data.pvDate).toISOString(),
+            billDate: data.billDate ? new Date(data.billDate).toISOString() : undefined,
+            chequeDate: data.chequeDate ? new Date(data.chequeDate).toISOString() : undefined,
+        };
+
+        const response = await authFetch(`/finance/payment-vouchers/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const errorData = response.data || {};
+            return {
+                status: false,
+                message: errorData.message || `Failed to update Payment Voucher: ${response.statusText || response.status}`
+            };
+        }
+
+        revalidatePath("/finance/payment-voucher/list");
+        revalidatePath(`/erp/finance/payment-voucher/${id}`);
+        revalidatePath("/erp/finance/payment-voucher/list");
+
+        return { status: true, message: "Payment Voucher updated successfully" };
+    } catch (error: any) {
+        console.error("Error updating payment voucher:", error);
+        return { status: false, message: error.message || "An unexpected error occurred" };
+    }
+}
+
+export async function updatePaymentVoucherStatus(id: string, status: "approved" | "rejected" | "pending", remarks?: string) {
+    try {
+        const response = await authFetch(`/finance/payment-vouchers/${id}/status`, {
+            method: "PATCH",
+            body: JSON.stringify({ status, remarks }),
+        });
+
+        if (!response.ok) {
+            const errorData = response.data || {};
+            return {
+                status: false,
+                message: errorData.message || `Failed to update status: ${response.statusText || response.status}`
+            };
+        }
+
+        revalidatePath("/finance/payment-voucher/list");
+        revalidatePath(`/erp/finance/payment-voucher/${id}`);
+        revalidatePath("/erp/finance/payment-voucher/list");
+
+        return { status: true, message: `Payment Voucher ${status} successfully` };
+    } catch (error: any) {
+        console.error("Error updating payment voucher status:", error);
+        return { status: false, message: error.message || "An unexpected error occurred" };
+    }
+}

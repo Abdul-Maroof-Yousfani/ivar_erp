@@ -23,7 +23,7 @@ import {
   Loader2, AlertCircle, Eye, EyeOff, Monitor, ShieldCheck,
   Wifi, WifiOff, Building2, ArrowLeft, Store, CheckCircle2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, COMPANY_NAME } from "@/lib/utils";
 import { buildSubdomainUrl } from "@/lib/navigation";
 import { posLoginClient, getGlobalPosContext, adminFetchLocationsClient } from "@/lib/client-auth";
 import { setPosTerminalAction } from "@/lib/actions/pos";
@@ -300,7 +300,7 @@ export default function DesktopLoginPage() {
         </div>
       </div>
       <div className="text-center space-y-1">
-        <p className="font-semibold text-foreground">IVAR POS</p>
+        <p className="font-semibold text-foreground">{COMPANY_NAME} POS</p>
         <p className="text-sm text-muted-foreground">Verifying your session...</p>
       </div>
     </div>
@@ -351,9 +351,9 @@ export default function DesktopLoginPage() {
       )}
 
       <div className="space-y-2">
-        <Label htmlFor="email" className="text-sm font-semibold">Email Address</Label>
+        <Label htmlFor="email" className="text-sm font-semibold">Email Address or Employee ID</Label>
         <Input
-          id="email" type="email" placeholder="name@company.com" required autoFocus
+          id="email" type="text" placeholder="name@company.com or EMP-001" required autoFocus
           disabled={loginPending} value={email} onChange={(e) => setEmail(e.target.value)}
           className="h-11 border-primary/10 focus-visible:ring-primary/20"
         />
@@ -529,7 +529,7 @@ export default function DesktopLoginPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-3 max-w-[280px] mx-auto">
-        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+        {[1,2,3,4,5,6,7,8,9].map((n) => (
           <Button key={n} variant="outline"
             className="h-14 text-2xl font-medium border-muted-foreground/20 hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all active:scale-95"
             onClick={() => pin.length < 4 && setPin(pin + n)}>{n}</Button>

@@ -24,6 +24,17 @@ import DataTable from "@/components/common/data-table";
 import { ColumnDef } from "@tanstack/react-table";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 
+interface LocalDraft {
+    voucherNo: string;
+    updatedAt: string;
+    formValues: {
+        description?: string;
+        type?: string;
+        jvDate?: string | Date;
+        details?: { accountId?: string; debit?: number; credit?: number }[];
+    };
+}
+
 export function JournalVoucherList({
     initialData,
     accounts,
@@ -45,10 +56,38 @@ export function JournalVoucherList({
     const [status, setStatus] = useState<string>("all");
     const [vouchers, setVouchers] = useState<JournalVoucher[]>(initialData);
     const [showFilterInfo, setShowFilterInfo] = useState(false);
+    const [localDrafts, setLocalDrafts] = useState<LocalDraft[]>([]);
+
+    useEffect(() => {
+        const draftsJson = localStorage.getItem("journal-voucher-drafts");
+        if (draftsJson) {
+            try {
+                const parsed = JSON.parse(draftsJson);
+                setTimeout(() => {
+                    setLocalDrafts(Object.values(parsed));
+                }, 0);
+            } catch {}
+        }
+    }, []);
+
+    const handleDiscardDraft = (draftId: string) => {
+        const draftsJson = localStorage.getItem("journal-voucher-drafts");
+        if (draftsJson) {
+            try {
+                const parsed = JSON.parse(draftsJson);
+                delete parsed[draftId];
+                localStorage.setItem("journal-voucher-drafts", JSON.stringify(parsed));
+                setLocalDrafts(Object.values(parsed));
+                toast.success("Draft discarded");
+            } catch {}
+        }
+    };
 
     // Use initial data directly as it comes from the server
     useEffect(() => {
-        setVouchers(initialData.sort((a, b) => new Date(b.jvDate).getTime() - new Date(a.jvDate).getTime()));
+        setTimeout(() => {
+            setVouchers(initialData.sort((a, b) => new Date(b.jvDate).getTime() - new Date(a.jvDate).getTime()));
+        }, 0);
     }, [initialData]);
 
     const handleApprove = async (id: string) => {
@@ -104,6 +143,11 @@ export function JournalVoucherList({
                                 {detail.tagAccountCode && (
                                     <span className="text-[10px] text-muted-foreground ml-1.5 italic bg-muted px-1 py-0.2 rounded">
                                         Tag: {detail.tagAccountCode}
+                                    </span>
+                                )}
+                                {detail.narration && (
+                                    <span className="block text-[10px] text-muted-foreground italic mt-0.5 ml-5">
+                                        {detail.narration}
                                     </span>
                                 )}
                             </span>
@@ -170,6 +214,61 @@ export function JournalVoucherList({
 
     return (
         <div className="space-y-6">
+            {localDrafts.length > 0 && (
+                <div className="bg-amber-50/50 dark:bg-amber-950/10 border border-amber-200 dark:border-amber-900/50 rounded-xl p-5 backdrop-blur-md shadow-sm space-y-4">
+                    <div className="flex items-center justify-between border-b border-amber-200/50 dark:border-amber-900/30 pb-2">
+                        <div className="flex items-center gap-2">
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                            </span>
+                            <h3 className="font-bold text-amber-800 dark:text-amber-400 text-sm uppercase tracking-wider">
+                                Unsaved Drafts ({localDrafts.length})
+                            </h3>
+                        </div>
+                        <p className="text-xs text-amber-600/80 dark:text-amber-500/80">
+                            Saved locally in your browser to prevent data loss
+                        </p>
+                    </div>
+                    <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
+                        {localDrafts.map((draft) => (
+                            <div
+                                key={draft.voucherNo}
+                                className="flex items-center justify-between p-3.5 rounded-lg border border-amber-200/40 bg-white/70 dark:bg-muted/30 dark:border-amber-900/20 shadow-sm transition-all duration-200 hover:shadow"
+                            >
+                                <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-sm">
+                                            {draft.voucherNo}
+                                        </span>
+                                        <span className="text-[10px] text-muted-foreground font-mono">
+                                            {format(new Date(draft.updatedAt), "dd MMM yyyy, hh:mm a")}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground truncate max-w-[280px]">
+                                        {draft.formValues?.description || "No description provided"}
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Link href={`/erp/finance/journal-voucher/create?draftId=${draft.voucherNo}`}>
+                                        <Button size="sm" variant="secondary" className="bg-amber-100 hover:bg-amber-200 text-amber-800 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:text-amber-300 font-semibold h-8">
+                                            Resume
+                                        </Button>
+                                    </Link>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => handleDiscardDraft(draft.voucherNo)}
+                                        className="h-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                                    >
+                                        Discard
+                                    </Button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
             <Card>
                 <CardHeader className="border-b flex flex-row items-center justify-between">
                     <CardTitle>Journal Vouchers</CardTitle>

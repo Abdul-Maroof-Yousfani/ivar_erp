@@ -43,8 +43,8 @@ function computeLineItem(
     // Step 4: Calculate tax on discounted amount
     const taxAmount = Math.round(afterDiscount * (taxPercent / 100));
     
-    // Step 5: Total = discounted WOST + tax
-    const total = afterDiscount + taxAmount;
+    // Step 5: Total = Math.round(discounted WOST + tax)
+    const total = Math.round(afterDiscount + taxAmount);
 
     return {
         id: product.id,
@@ -374,8 +374,8 @@ export default function NewSalePage() {
                 // Step 4: Calculate tax on discounted amount
                 const taxAmount = Math.round(afterDiscount * (item.taxPercent / 100));
                 
-                // Step 5: Total = discounted WOST + tax
-                const total = afterDiscount + taxAmount;
+                // Step 5: Total = Math.round(discounted WOST + tax)
+                const total = Math.round(afterDiscount + taxAmount);
                 
                 return { ...item, quantity, discountAmount, taxAmount, total };
             })
@@ -416,8 +416,8 @@ export default function NewSalePage() {
                 // Step 4: Calculate tax on discounted amount
                 const taxAmount = Math.round(afterDiscount * (item.taxPercent / 100));
                 
-                // Step 5: Total = discounted WOST + tax
-                const total = afterDiscount + taxAmount;
+                // Step 5: Total = Math.round(discounted WOST + tax)
+                const total = Math.round(afterDiscount + taxAmount);
                 
                 return { 
                     ...item, 

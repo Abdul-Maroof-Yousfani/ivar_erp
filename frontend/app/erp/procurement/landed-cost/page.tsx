@@ -201,16 +201,6 @@ import { PermissionGuard } from '@/components/auth/permission-guard';
                              View
                            </Link>
                          </Button>
-                          <Button
-                            size="sm"
-                            asChild
-                            disabled={!canCreate}
-                          >
-                            <Link href={`/erp/procurement/landed-cost/setup?grnId=${grn.id}`} transitionTypes={["nav-forward"]}>
-                              <Check className="h-4 w-4 mr-2" />
-                              Post Landed Cost
-                            </Link>
-                          </Button>
                        </TableCell>
                      </TableRow>
                    ))

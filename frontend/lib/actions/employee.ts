@@ -142,6 +142,9 @@ export async function getEmployeesForDropdown(params?: {
   page?: number;
   limit?: number;
   search?: string;
+  departmentId?: string;
+  subDepartmentId?: string;
+  providentFund?: boolean;
 }): Promise<{
   status: boolean;
   data?: EmployeeDropdownOption[];
@@ -158,6 +161,9 @@ export async function getEmployeesForDropdown(params?: {
     if (params?.page) searchParams.append('page', params.page.toString());
     if (params?.limit) searchParams.append('limit', params.limit.toString());
     if (params?.search) searchParams.append('search', params.search);
+    if (params?.departmentId) searchParams.append('departmentId', params.departmentId);
+    if (params?.subDepartmentId) searchParams.append('subDepartmentId', params.subDepartmentId);
+    if (params?.providentFund) searchParams.append('providentFund', 'true');
 
     const url = `/employees/dropdown${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     const res = await authFetch(url, {});
@@ -172,6 +178,48 @@ export async function getEmployeesForDropdown(params?: {
     return {
       status: false,
       message: error instanceof Error ? error.message : 'Failed to fetch employees.'
+    };
+  }
+}
+
+export async function getAllEmployeesForDropdown(filters?: {
+  departmentId?: string;
+  subDepartmentId?: string;
+  search?: string;
+  providentFund?: boolean;
+}): Promise<{
+  status: boolean;
+  data?: EmployeeDropdownOption[];
+  message?: string;
+}> {
+  try {
+    const limit = 100;
+    let page = 1;
+    let allEmployees: EmployeeDropdownOption[] = [];
+    let totalPages = 1;
+
+    do {
+      const result = await getEmployeesForDropdown({
+        ...filters,
+        page,
+        limit,
+      });
+
+      if (!result.status || !result.data) {
+        return { status: false, message: result.message || 'Failed to fetch employees.' };
+      }
+
+      allEmployees = [...allEmployees, ...result.data];
+      totalPages = result.meta?.totalPages ?? 1;
+      page += 1;
+    } while (page <= totalPages);
+
+    return { status: true, data: allEmployees };
+  } catch (error) {
+    console.error('Error fetching all employees for dropdown:', error);
+    return {
+      status: false,
+      message: error instanceof Error ? error.message : 'Failed to fetch employees.',
     };
   }
 }

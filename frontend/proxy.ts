@@ -65,7 +65,7 @@ function getBaseDomain(host: string): string {
 function getSubdomain(host: string): string | null {
   const hostWithoutPort = getHostWithoutPort(host);
 
-  // Handle localhost subdomains (e.g., "hr.localhost" or "hr.localhost:3002")
+  // Handle localhost subdomains (e.g., "hr.localhost" or "hr.localhost:3001")
   if (
     hostWithoutPort.includes("localhost") ||
     hostWithoutPort.includes("127.0.0.1")
@@ -411,8 +411,8 @@ export default function middleware(request: NextRequest): NextResponse {
         setupUrl.searchParams.set("subdomain", "pos");
         return NextResponse.redirect(setupUrl);
       } else if (!hasUser) {
-        // Terminal is registered, but no cashier logged in -> Redirect to Cashier Login
-        const cashierUrl = buildUrl("auth", "/pos/user-login");
+        // Terminal is registered, but no cashier logged in -> Redirect to main Login Page
+        const cashierUrl = buildUrl("auth", "/login");
         cashierUrl.searchParams.set("callbackUrl", pathname);
         cashierUrl.searchParams.set("subdomain", "pos");
         return NextResponse.redirect(cashierUrl);

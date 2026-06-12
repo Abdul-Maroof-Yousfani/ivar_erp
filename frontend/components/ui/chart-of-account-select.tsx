@@ -165,7 +165,18 @@ function TreeRow({
                 )}
             >
                 {/* Expand / collapse chevron */}
-                <span className="shrink-0 w-4 h-4 flex items-center justify-center">
+                <span
+                    onClick={(e) => {
+                        if (hasChildren) {
+                            e.stopPropagation();
+                            onToggle(node.id);
+                        }
+                    }}
+                    className={cn(
+                        "shrink-0 w-4 h-4 flex items-center justify-center rounded transition-colors",
+                        hasChildren ? "cursor-pointer hover:bg-accent-foreground/10" : "pointer-events-none opacity-0"
+                    )}
+                >
                     {hasChildren ? (
                         isExpanded ? (
                             <ChevronDownIcon className="h-3.5 w-3.5" />

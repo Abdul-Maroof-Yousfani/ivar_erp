@@ -42,6 +42,8 @@ export default function StockTransferPage() {
         id: string;
         sku: string;
         description: string;
+        color?: string;
+        size?: string;
         quantity: number;
         notes: string;
         availableStock: number;
@@ -168,11 +170,8 @@ export default function StockTransferPage() {
     }, []);
 
     // Barcode Resolution handler
-    const normalizeScannerValue = (value: string) => value.trim().replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
-
     const handleBarcodeResolve = async (barcode: string) => {
-        const normalizedBarcode = normalizeScannerValue(barcode);
-        if (!normalizedBarcode) return;
+        if (!barcode.trim()) return;
         if (!selectedWarehouseId) {
             if (soundEnabled) playScanErrorBuzz();
             toast.error('Please select a warehouse first.');
@@ -188,14 +187,14 @@ export default function StockTransferPage() {
                 }
             }
 
-            const res = await inventoryApi.search(normalizedBarcode, selectedWarehouseId, searchLocationId, appliedFilters);
+            const res = await inventoryApi.search(barcode.trim(), selectedWarehouseId, searchLocationId, appliedFilters);
             if (!res.status || !res.data || res.data.length === 0) {
                 if (soundEnabled) playScanErrorBuzz();
                 toast.error(`No item found for barcode/SKU: "${barcode}"`);
                 return;
             }
 
-            const cleanedBarcode = normalizedBarcode.toLowerCase();
+            const cleanedBarcode = barcode.trim().toLowerCase();
             let matchedItem = res.data.find((item: any) => 
                 (item.barCode && item.barCode.toLowerCase() === cleanedBarcode) ||
                 (item.sku && item.sku.toLowerCase() === cleanedBarcode) ||
@@ -222,6 +221,8 @@ export default function StockTransferPage() {
                 id: matchedItem.id,
                 sku: matchedItem.sku ?? matchedItem.itemId ?? '',
                 description: matchedItem.description ?? matchedItem.name ?? '',
+                color: matchedItem.color?.name,
+                size: matchedItem.size?.name,
                 availableStock: availableStock,
             };
 
@@ -229,7 +230,7 @@ export default function StockTransferPage() {
             if (existingIndex > -1) {
                 if (autoIncrement) {
                     const newQty = selectedItems[existingIndex].quantity + bulkQty;
-                    if (newQty > itemData.availableStock && transferMode !== 'WAREHOUSE_TO_OUTLET') {
+                    if (newQty > itemData.availableStock) {
                         toast.warning(`Quantity exceeds available stock (${itemData.availableStock})`);
                     }
                     setSelectedItems(prev => prev.map((item, idx) => 
@@ -248,13 +249,15 @@ export default function StockTransferPage() {
                     });
                 }
             } else {
-                if (bulkQty > itemData.availableStock && transferMode !== 'WAREHOUSE_TO_OUTLET') {
+                if (bulkQty > itemData.availableStock) {
                     toast.warning(`Quantity exceeds available stock (${itemData.availableStock})`);
                 }
                 setSelectedItems(prev => [...prev, {
                     id: itemData.id,
                     sku: itemData.sku,
                     description: itemData.description,
+                    color: itemData.color,
+                    size: itemData.size,
                     quantity: bulkQty,
                     notes: '',
                     availableStock: itemData.availableStock,
@@ -452,7 +455,7 @@ export default function StockTransferPage() {
                 return;
             }
 
-            if (bulkQty > itemData.availableStock && transferMode !== 'WAREHOUSE_TO_OUTLET') {
+            if (bulkQty > itemData.availableStock) {
                 toast.warning(`Quantity exceeds available stock (${itemData.availableStock})`);
             }
 
@@ -460,6 +463,8 @@ export default function StockTransferPage() {
                 id: itemData.id,
                 sku: itemData.sku,
                 description: itemData.description,
+                color: itemData.color?.name,
+                size: itemData.size?.name,
                 quantity: bulkQty,
                 notes: '',
                 availableStock: itemData.availableStock
@@ -501,7 +506,7 @@ export default function StockTransferPage() {
         }
 
         const hasInsufficientStock = selectedItems.some(item => item.quantity > item.availableStock);
-        if (hasInsufficientStock && transferMode !== 'WAREHOUSE_TO_OUTLET') {
+        if (hasInsufficientStock) {
             toast.error('One or more items have insufficient stock for this transfer');
             return;
         }
@@ -1240,11 +1245,21 @@ export default function StockTransferPage() {
                                                                                                     {item.description}
                                                                                                 </span>
                                                                                             </div>
-                                                                                            <div className="flex items-center gap-3">
+                                                                                            <div className="flex items-center gap-3 flex-wrap">
                                                                                                 <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                                                                                                     <WarehouseIcon className="h-3 w-3" />
                                                                                                     Stock: <span className={cn("font-bold", item.availableStock > 0 ? "text-foreground" : "text-destructive")}>{item.availableStock}</span>
                                                                                                 </span>
+                                                                                                {item.color?.name && (
+                                                                                                    <span className="text-[11px] text-muted-foreground">
+                                                                                                        • Color: <span className="font-semibold text-foreground">{item.color.name}</span>
+                                                                                                    </span>
+                                                                                                )}
+                                                                                                {item.size?.name && (
+                                                                                                    <span className="text-[11px] text-muted-foreground">
+                                                                                                        • Size: <span className="font-semibold text-foreground">{item.size.name}</span>
+                                                                                                    </span>
+                                                                                                )}
                                                                                                 {isSelected && (
                                                                                                     <Badge variant="outline" className="h-4 text-[9px] px-1 bg-primary/5 text-primary border-primary/20">Added</Badge>
                                                                                                 )}
@@ -1289,6 +1304,8 @@ export default function StockTransferPage() {
                                     <TableRow className="bg-muted/50">
                                         <TableHead className="w-[150px]">SKU</TableHead>
                                         <TableHead>Description</TableHead>
+                                        <TableHead className="w-[120px]">Color</TableHead>
+                                        <TableHead className="w-[80px]">Size</TableHead>
                                         <TableHead className="w-[100px] text-center">In Stock</TableHead>
                                         <TableHead className="w-[120px]">Transfer Qty</TableHead>
                                         <TableHead>Item Notes</TableHead>
@@ -1298,7 +1315,7 @@ export default function StockTransferPage() {
                                 <TableBody>
                                     {selectedItems.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={6} className="h-32 text-center text-muted-foreground italic">
+                                            <TableCell colSpan={8} className="h-32 text-center text-muted-foreground italic">
                                                 No items added yet. Search and add items above.
                                             </TableCell>
                                         </TableRow>
@@ -1308,6 +1325,12 @@ export default function StockTransferPage() {
                                                 <TableCell className="font-mono text-xs font-semibold">{item.sku}</TableCell>
                                                 <TableCell>
                                                     <span className="text-sm font-medium">{item.description}</span>
+                                                </TableCell>
+                                                <TableCell className="text-xs text-muted-foreground font-semibold">
+                                                    {item.color || <span className="text-muted-foreground/30">—</span>}
+                                                </TableCell>
+                                                <TableCell className="text-xs text-muted-foreground font-semibold">
+                                                    {item.size || <span className="text-muted-foreground/30">—</span>}
                                                 </TableCell>
                                                 <TableCell className="text-center font-bold text-primary">{item.availableStock}</TableCell>
                                                 <TableCell>

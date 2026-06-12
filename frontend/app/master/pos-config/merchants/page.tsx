@@ -28,6 +28,8 @@ import { authFetch } from "@/lib/auth";
 import { formatCurrency } from "@/lib/utils";
 import { queueMerchantsExport } from "@/lib/actions/pos-config";
 import { MerchantBulkUploadModal } from "@/components/master/merchant-bulk-upload-modal";
+import { ChartOfAccountSelect } from "@/components/ui/chart-of-account-select";
+import { getChartOfAccountsTree } from "@/lib/actions/chart-of-account";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Location { id: string; name: string; code: string; }
@@ -59,6 +61,17 @@ const MERCHANT_CODE_LABELS: Record<number, string> = {
   6: "6 – Meezan",
   7: "7 – HBL IPG",
   8: "8 – BAFL IPG",
+};
+
+const BANK_TO_MERCHANT_CODE: Record<string, number> = {
+  "HBL": 1,
+  "AL-Falah": 2,
+  "Keenu": 3,
+  "AL-Falah | AMEX": 4,
+  "Allied Bank": 5,
+  "Meezan": 6,
+  "HBL IPG": 7,
+  "AL-Falah IPG": 8,
 };
 
 // ─── Form defaults ─────────────────────────────────────────────────────────────
@@ -97,6 +110,11 @@ export default function MerchantsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Chart of accounts states
+  const [accountsTree, setAccountsTree] = useState<any[]>([]);
+  const [flatAccounts, setFlatAccounts] = useState<any[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState("");
+
   // ── Load data ────────────────────────────────────────────────────────────────
   const loadMerchants = useCallback(async () => {
     setIsLoading(true);
@@ -110,10 +128,42 @@ export default function MerchantsPage() {
 
   useEffect(() => {
     loadMerchants();
-    authFetch("/warehouse/locations?status=active&limit=200")
+    
+    // Correct location API path
+    authFetch("/locations")
       .then(res => { if (res.ok && res.data?.status) setLocations(res.data.data || []); })
       .catch(() => {});
+
+    // Load Chart of Accounts Tree
+    getChartOfAccountsTree()
+      .then(res => {
+        if (res.status && res.data) {
+          setAccountsTree(res.data);
+          const flat: any[] = [];
+          const walk = (list: any[]) => {
+            for (const node of list) {
+              flat.push(node);
+              if (node.children?.length) walk(node.children);
+            }
+          };
+          walk(res.data);
+          setFlatAccounts(flat);
+        }
+      })
+      .catch(() => {});
   }, [loadMerchants]);
+
+  // Sync selectedAccountId when flatAccounts or form.bankGlCode changes
+  useEffect(() => {
+    if (flatAccounts.length > 0 && form.bankGlCode) {
+      const acc = flatAccounts.find(a => a.code === form.bankGlCode);
+      if (acc && acc.id !== selectedAccountId) {
+        setSelectedAccountId(acc.id);
+      }
+    } else if (!form.bankGlCode) {
+      setSelectedAccountId("");
+    }
+  }, [flatAccounts, form.bankGlCode, selectedAccountId]);
 
   // ── Filtered list ────────────────────────────────────────────────────────────
   const filtered = merchants.filter(m => {
@@ -134,6 +184,7 @@ export default function MerchantsPage() {
   const openCreate = () => {
     setEditingId(null);
     setForm({ ...EMPTY_FORM });
+    setSelectedAccountId("");
     setDialogOpen(true);
   };
 
@@ -151,7 +202,20 @@ export default function MerchantsPage() {
       isActive: m.isActive,
       locationIds: m.locations.map(l => l.locationId),
     });
+    const acc = flatAccounts.find(a => a.code === m.bankGlCode);
+    setSelectedAccountId(acc?.id || "");
     setDialogOpen(true);
+  };
+
+  // ── Account Selector Change ──────────────────────────────────────────────────
+  const handleAccountChange = (val: string) => {
+    setSelectedAccountId(val);
+    const acc = flatAccounts.find(a => a.id === val);
+    if (acc) {
+      setForm(f => ({ ...f, bankGlCode: acc.code }));
+    } else {
+      setForm(f => ({ ...f, bankGlCode: "" }));
+    }
   };
 
   // ── Auto-fill description ────────────────────────────────────────────────────
@@ -163,6 +227,7 @@ export default function MerchantsPage() {
 
   // ── Save ─────────────────────────────────────────────────────────────────────
   const handleSave = async () => {
+    if (form.locationIds.length === 0) { toast.error("Location is required"); return; }
     if (!form.description.trim()) { toast.error("Description is required"); return; }
     if (!form.costCentreTag.trim()) { toast.error("Cost Centre Tag is required"); return; }
     if (!form.tagId.trim()) { toast.error("Tag ID is required"); return; }
@@ -415,23 +480,62 @@ export default function MerchantsPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            {/* Row 1: Cost Centre Tag + Tag ID */}
+            {/* Location selector */}
+            <div className="space-y-1.5">
+              <Label>Location <span className="text-destructive">*</span></Label>
+              <Select
+                value={form.locationIds[0] || ""}
+                onValueChange={(val) => {
+                  const loc = locations.find(l => l.id === val);
+                  if (loc) {
+                    setForm(f => {
+                      const nextForm = {
+                        ...f,
+                        locationIds: [loc.id],
+                        costCentreTag: loc.name,
+                        tagId: loc.code,
+                      };
+                      if (f.bankName) {
+                        nextForm.description = `${loc.name} | ${f.bankName}`;
+                      }
+                      return nextForm;
+                    });
+                  } else {
+                    setForm(f => ({ ...f, locationIds: [], costCentreTag: "", tagId: "" }));
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select connected location..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.map(loc => (
+                    <SelectItem key={loc.id} value={loc.id}>
+                      {loc.code} – {loc.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Derived Location Names */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label>Cost Centre Tag <span className="text-destructive">*</span></Label>
+                <Label>Cost Centre Tag</Label>
                 <Input
-                  placeholder="e.g. C&K-CENTAURUS MALL"
+                  disabled
+                  placeholder="Derived from location..."
                   value={form.costCentreTag}
-                  onChange={e => setForm(f => ({ ...f, costCentreTag: e.target.value }))}
-                  onBlur={autoDescription}
+                  className="bg-muted/50 cursor-not-allowed text-muted-foreground font-medium"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Tag ID <span className="text-destructive">*</span></Label>
+                <Label>Tag ID</Label>
                 <Input
-                  placeholder="e.g. CK1006"
+                  disabled
+                  placeholder="Derived from location..."
                   value={form.tagId}
-                  onChange={e => setForm(f => ({ ...f, tagId: e.target.value.toUpperCase() }))}
+                  className="bg-muted/50 cursor-not-allowed text-muted-foreground font-mono font-medium"
                 />
               </div>
             </div>
@@ -440,7 +544,23 @@ export default function MerchantsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Bank / Acquirer <span className="text-destructive">*</span></Label>
-                <Select value={form.bankName} onValueChange={v => { setForm(f => ({ ...f, bankName: v })); setTimeout(autoDescription, 0); }}>
+                <Select
+                  value={form.bankName}
+                  onValueChange={v => {
+                    const code = BANK_TO_MERCHANT_CODE[v] || 1;
+                    setForm(f => {
+                      const nextForm = {
+                        ...f,
+                        bankName: v,
+                        merchantCode: code,
+                      };
+                      if (f.costCentreTag) {
+                        nextForm.description = `${f.costCentreTag} | ${v}`;
+                      }
+                      return nextForm;
+                    });
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select bank..." />
                   </SelectTrigger>
@@ -450,20 +570,13 @@ export default function MerchantsPage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Merchant Code <span className="text-destructive">*</span></Label>
-                <Select
-                  value={String(form.merchantCode)}
-                  onValueChange={v => setForm(f => ({ ...f, merchantCode: Number(v) }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(MERCHANT_CODE_LABELS).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Merchant Code</Label>
+                <Input
+                  disabled
+                  placeholder="Derived from bank..."
+                  value={MERCHANT_CODE_LABELS[form.merchantCode] || String(form.merchantCode)}
+                  className="bg-muted/50 cursor-not-allowed text-muted-foreground font-medium"
+                />
               </div>
             </div>
 
@@ -480,7 +593,7 @@ export default function MerchantsPage() {
                     placeholder="e.g. 0.01265"
                     value={form.commissionRate}
                     onChange={e => setForm(f => ({ ...f, commissionRate: e.target.value }))}
-                    className="pr-16"
+                    className="pr-16 font-medium"
                   />
                   {form.commissionRate && !isNaN(Number(form.commissionRate)) && (
                     <span className="absolute right-3 top-2.5 text-xs text-muted-foreground font-mono">
@@ -491,12 +604,18 @@ export default function MerchantsPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>Bank GL Code <span className="text-destructive">*</span></Label>
-                <Input
-                  placeholder="e.g. 31100005"
-                  value={form.bankGlCode}
-                  onChange={e => setForm(f => ({ ...f, bankGlCode: e.target.value }))}
-                  className="font-mono"
+                <ChartOfAccountSelect
+                  accounts={accountsTree}
+                  value={selectedAccountId}
+                  onValueChange={handleAccountChange}
+                  placeholder="Select Bank GL Account"
+                  className="h-10 border-gray-300 dark:border-input"
                 />
+                {form.bankGlCode && (
+                  <p className="text-[10px] text-muted-foreground font-mono">
+                    Selected GL Code: {form.bankGlCode}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -516,41 +635,8 @@ export default function MerchantsPage() {
                 placeholder="e.g. C&K-CENTAURUS MALL | HBL"
                 value={form.description}
                 onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                className="font-medium"
               />
-            </div>
-
-            <Separator />
-
-            {/* Locations */}
-            <div className="space-y-2">
-              <Label>Applicable Locations</Label>
-              <p className="text-xs text-muted-foreground">
-                Select which locations this merchant config applies to. Leave empty for all locations.
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto border rounded-lg p-3">
-                {locations.map(loc => (
-                  <label
-                    key={loc.id}
-                    className="flex items-center gap-2 text-xs cursor-pointer hover:bg-muted/30 rounded px-1 py-0.5"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={form.locationIds.includes(loc.id)}
-                      onChange={() => toggleLocation(loc.id)}
-                      className="rounded"
-                    />
-                    <span className="truncate" title={loc.name}>{loc.name}</span>
-                  </label>
-                ))}
-                {locations.length === 0 && (
-                  <p className="text-xs text-muted-foreground col-span-3 text-center py-2">
-                    No locations found
-                  </p>
-                )}
-              </div>
-              {form.locationIds.length > 0 && (
-                <p className="text-xs text-primary">{form.locationIds.length} location(s) selected</p>
-              )}
             </div>
 
             <Separator />

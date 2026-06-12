@@ -16,6 +16,7 @@ import {
   Calendar,
   ExternalLink,
   Info,
+  Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -30,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { Autocomplete } from "@/components/ui/autocomplete";
 import { ChartOfAccount } from "@/lib/actions/chart-of-account";
 import { getGeneralLedger, GeneralLedgerResult, queueGeneralLedgerExport } from "@/lib/actions/finance-reports";
 import { numberToWords } from "../../journal-voucher/components/journal-voucher-print";
@@ -38,6 +40,18 @@ import { toast } from "sonner";
 
 const fmt = (n: number) =>
   n.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const getLocalStartOfDayISO = (d: Date) => {
+  const start = new Date(d);
+  start.setHours(0, 0, 0, 0);
+  return start.toISOString();
+};
+
+const getLocalEndOfDayISO = (d: Date) => {
+  const end = new Date(d);
+  end.setHours(23, 59, 59, 999);
+  return end.toISOString();
+};
 
 const SOURCE_LABELS: Record<string, string> = {
   PURCHASE_INVOICE: "Purchase Invoice",
@@ -76,6 +90,7 @@ const getSourceLink = (sourceType: string, sourceId: string) => {
 
 export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }) {
   const [accountId, setAccountId] = React.useState("");
+  const [tagAccountId, setTagAccountId] = React.useState("");
   const [fromDate, setFromDate] = React.useState<Date | undefined>(
     new Date(new Date().getFullYear(), 0, 1)
   );
@@ -86,16 +101,35 @@ export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }
   const [isPending, startTransition] = React.useTransition();
   const [isExporting, setIsExporting] = React.useState(false);
 
+  // Find selected account in the tree to check for children (sub-accounts)
+  const selectedAccountInTree = React.useMemo(() => {
+    if (!accountId || accounts.length === 0) return null;
+    const findInTree = (nodes: ChartOfAccount[], id: string): ChartOfAccount | undefined => {
+      for (const node of nodes) {
+        if (node.id === id) return node;
+        if (node.children?.length) {
+          const found = findInTree(node.children, id);
+          if (found) return found;
+        }
+      }
+      return undefined;
+    };
+    return findInTree(accounts, accountId);
+  }, [accountId, accounts]);
+
+  const subAccounts = selectedAccountInTree?.children ?? [];
+
   // Pagination states
   const [page, setPage] = React.useState(1);
   const [limit, setLimit] = React.useState(50);
 
   const load = (targetPage = page, targetLimit = limit) => {
-    if (!accountId) return;
+    const targetAccountId = tagAccountId || accountId;
+    if (!targetAccountId) return;
     startTransition(async () => {
-      const res = await getGeneralLedger(accountId, {
-        from: fromDate ? format(fromDate, "yyyy-MM-dd") : undefined,
-        to: toDate ? format(toDate, "yyyy-MM-dd") : undefined,
+      const res = await getGeneralLedger(targetAccountId, {
+        from: fromDate ? getLocalStartOfDayISO(fromDate) : undefined,
+        to: toDate ? getLocalEndOfDayISO(toDate) : undefined,
         page: targetPage,
         limit: targetLimit,
         sourceType: sourceType === "all" ? undefined : sourceType,
@@ -175,13 +209,14 @@ export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }
 
   // Dispatch Background Excel queue export
   const handleQueueExport = () => {
-    if (!accountId) return;
+    const targetAccountId = tagAccountId || accountId;
+    if (!targetAccountId) return;
     setIsExporting(true);
 
     toast.promise(
-      queueGeneralLedgerExport(accountId, {
-        from: fromDate ? format(fromDate, "yyyy-MM-dd") : undefined,
-        to: toDate ? format(toDate, "yyyy-MM-dd") : undefined,
+      queueGeneralLedgerExport(targetAccountId, {
+        from: fromDate ? getLocalStartOfDayISO(fromDate) : undefined,
+        to: toDate ? getLocalEndOfDayISO(toDate) : undefined,
         sourceType: sourceType === "all" ? undefined : sourceType,
       }),
       {
@@ -262,21 +297,46 @@ export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }
           <CardContent className="pt-6 space-y-6">
             {/* Filters Bar */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end p-5 rounded-xl border border-border bg-muted/10 dark:bg-muted/5 shadow-sm">
-              <div className="space-y-2 md:col-span-4">
+              <div className={cn("space-y-2", subAccounts.length > 0 ? "md:col-span-3" : "md:col-span-4")}>
                 <Label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1.5">
                   <BookOpen className="h-3 w-3 text-primary/70" /> Chart of Account
                 </Label>
                 <ChartOfAccountSelect
                   accounts={accounts}
                   value={accountId}
-                  onValueChange={setAccountId}
+                  onValueChange={(val) => {
+                    setAccountId(val);
+                    setTagAccountId(""); // Reset sub-account when main account changes
+                  }}
                   placeholder="Select Account..."
-                  allowGroups={false}
+                  allowGroups={true}
                   className="h-10 text-sm shadow-sm"
                 />
               </div>
+
+              {subAccounts.length > 0 && (
+                <div className="space-y-2 md:col-span-3">
+                  <Label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Tag className="h-3 w-3 text-primary/70" /> Sub-account / Tag
+                  </Label>
+                  <Autocomplete
+                    options={[
+                      { value: "all", label: "All Sub-accounts" },
+                      ...subAccounts.map((child) => ({
+                        value: child.id,
+                        label: `${child.code} - ${child.name}`,
+                      })),
+                    ]}
+                    value={tagAccountId || "all"}
+                    onValueChange={(value) => setTagAccountId(value === "all" ? "" : value)}
+                    placeholder="Select Sub-account..."
+                    searchPlaceholder="Search sub-account..."
+                    className="h-10 text-sm shadow-sm"
+                  />
+                </div>
+              )}
               
-              <div className="space-y-2 md:col-span-3">
+              <div className={cn("space-y-2", subAccounts.length > 0 ? "md:col-span-2" : "md:col-span-3")}>
                 <Label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1.5">
                   <Calendar className="h-3 w-3 text-primary/70" /> Date Range
                 </Label>
@@ -294,7 +354,7 @@ export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }
                 />
               </div>
 
-              <div className="space-y-2 md:col-span-3">
+              <div className={cn("space-y-2", subAccounts.length > 0 ? "md:col-span-2" : "md:col-span-3")}>
                 <Label className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1.5">
                   <Filter className="h-3 w-3 text-primary/70" /> Document Type
                 </Label>
@@ -508,7 +568,12 @@ export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }
 
                             {/* Narration */}
                             <td className="px-4 py-3 border-r dark:border-border/40 max-w-[240px] truncate text-muted-foreground/90">
-                              {row.narration || row.description || "—"}
+                              <div className="font-medium truncate">{row.narration || row.description || "—"}</div>
+                              {row.tagAccount && (
+                                <span className="inline-block mt-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold bg-indigo-50 dark:bg-indigo-950/30 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-950/40">
+                                  Tag: {row.tagAccount.code} - {row.tagAccount.name}
+                                </span>
+                              )}
                             </td>
 
                             {/* Debit */}
@@ -678,23 +743,43 @@ export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }
 
       {/* ─── GORGEOUS PRINT/PDF VIEW CONTAINER (HIDDEN ON SCREEN, SHOWN IN PRINT) ─── */}
       {data && (
-        <div className="hidden print:block font-sans text-black p-8 bg-white min-h-screen leading-normal w-full max-w-[1000px] mx-auto box-border">
+        <div id="general-ledger-print-section" className="hidden print:block font-sans text-black p-4 bg-white min-h-screen leading-normal w-full max-w-[1000px] mx-auto box-border">
+          <style dangerouslySetInnerHTML={{__html: `
+            @media print {
+              body * {
+                visibility: hidden !important;
+              }
+              #general-ledger-print-section,
+              #general-ledger-print-section * {
+                visibility: visible !important;
+              }
+              #general-ledger-print-section {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 10px !important;
+                box-sizing: border-box !important;
+              }
+            }
+          `}} />
           {/* Header */}
-          <div className="flex justify-between mb-6 gap-4 items-start border-b pb-4 border-gray-300">
-            <div className="w-[20%] flex flex-col items-start justify-center">
-              <img src="/image-v2.png" alt="Logo" className="w-28 object-contain" />
+          <div className="flex justify-between mb-3 gap-4 items-start border-b pb-2 border-gray-300">
+            <div className="w-[15%] flex flex-col items-start justify-center">
+              <img src="/image.png" alt="Logo" className="w-20 object-contain" />
             </div>
             
-            <div className="w-[50%] flex flex-col justify-center text-center">
-              <div className="bg-[#eef2f6] text-black w-full text-center py-2.5 text-lg sm:text-xl font-bold print:bg-[#eef2f6] [-webkit-print-color-adjust:exact] [color-adjust:exact] uppercase tracking-wider rounded">
+            <div className="w-[55%] flex flex-col justify-center text-center">
+              <div className="bg-[#eef2f6] text-black w-full text-center py-1.5 text-md font-bold print:bg-[#eef2f6] [-webkit-print-color-adjust:exact] [color-adjust:exact] uppercase tracking-wider rounded">
                 General Ledger Report
               </div>
-              <p className="text-[12px] font-bold text-gray-700 mt-2">
+              <p className="text-[10px] font-bold text-gray-700 mt-1">
                 Account Head: {data.account.code} — {data.account.name}
               </p>
             </div>
 
-            <div className="w-[30%] bg-[#f8fafc] text-[10px] sm:text-[11px] p-2.5 border border-gray-300 print:bg-[#f8fafc] [-webkit-print-color-adjust:exact] [color-adjust:exact] flex flex-col gap-1 rounded">
+            <div className="w-[30%] bg-[#f8fafc] text-[8px] sm:text-[9px] p-1.5 border border-gray-300 print:bg-[#f8fafc] [-webkit-print-color-adjust:exact] [color-adjust:exact] flex flex-col gap-0.5 rounded">
               <div className="flex justify-between">
                 <span className="font-bold">Period From:</span>
                 <span>{fromDate ? format(fromDate, "dd/MM/yyyy") : "Beginning"}</span>
@@ -707,7 +792,7 @@ export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }
                 <span className="font-bold">Normal Bal:</span>
                 <span>{isDebitNormal ? "Debit (Dr)" : "Credit (Cr)"}</span>
               </div>
-              <div className="flex justify-between border-t pt-1 mt-1 border-gray-200">
+              <div className="flex justify-between border-t pt-0.5 mt-0.5 border-gray-200">
                 <span className="font-bold">Printed:</span>
                 <span>{format(new Date(), "dd/MM/yyyy HH:mm")}</span>
               </div>
@@ -715,33 +800,33 @@ export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }
           </div>
 
           {/* Table */}
-          <table className="w-full text-xs sm:text-[12px] mb-4 border-collapse table-fixed">
+          <table className="w-full text-[9px] mb-2 border-collapse table-fixed">
             <thead>
-              <tr className="border-y-2 border-black font-bold text-left">
-                <th className="py-2 pr-1 w-[12%]">Date</th>
-                <th className="py-2 pr-1 w-[18%]">Reference</th>
-                <th className="py-2 pr-1 w-[16%]">Source Doc</th>
-                <th className="py-2 pr-1 w-[24%]">Narration</th>
-                <th className="py-2 pr-1 text-right w-[10%]">Debit</th>
-                <th className="py-2 pr-1 text-right w-[10%]">Credit</th>
-                <th className="py-2 text-right w-[10%]">Balance</th>
+              <tr className="border-y border-black font-bold text-left">
+                <th className="py-1 pr-1 w-[12%] text-[9px]">Date</th>
+                <th className="py-1 pr-1 w-[18%] text-[9px]">Reference</th>
+                <th className="py-1 pr-1 w-[16%] text-[9px]">Source Doc</th>
+                <th className="py-1 pr-1 w-[24%] text-[9px]">Narration</th>
+                <th className="py-1 pr-1 text-right w-[10%] text-[9px]">Debit</th>
+                <th className="py-1 pr-1 text-right w-[10%] text-[9px]">Credit</th>
+                <th className="py-1 text-right w-[10%] text-[9px]">Balance</th>
               </tr>
             </thead>
             <tbody>
               {/* Opening Balance Row */}
               <tr className="border-b border-gray-300 align-top italic text-gray-600 font-medium bg-gray-50/50">
-                <td className="py-2 pr-1">—</td>
-                <td className="py-2 pr-1">—</td>
-                <td className="py-2 pr-1">Opening Balance</td>
-                <td className="py-2 pr-1">Balance brought forward</td>
-                <td className="py-2 pr-1 text-right">—</td>
-                <td className="py-2 pr-1 text-right">—</td>
-                <td className="py-2 text-right font-mono font-semibold">{fmt(data.openingBalance)}</td>
+                <td className="py-1 pr-1">—</td>
+                <td className="py-1 pr-1">—</td>
+                <td className="py-1 pr-1">Opening Balance</td>
+                <td className="py-1 pr-1">Balance brought forward</td>
+                <td className="py-1 pr-1 text-right">—</td>
+                <td className="py-1 pr-1 text-right">—</td>
+                <td className="py-1 text-right font-mono font-semibold">{fmt(data.openingBalance)}</td>
               </tr>
 
               {data.rows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-gray-500 border-b">
+                  <td colSpan={7} className="py-4 text-center text-gray-500 border-b">
                     No transactions recorded in this period.
                   </td>
                 </tr>
@@ -749,25 +834,30 @@ export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }
 
               {data.rows.map((row) => (
                 <tr key={row.id} className="border-b border-gray-200 align-top">
-                  <td className="py-2 pr-1 font-mono text-[11px] whitespace-nowrap">
+                  <td className="py-1 pr-1 font-mono text-[8px] whitespace-nowrap">
                     {format(new Date(row.transactionDate), "dd/MM/yyyy")}
                   </td>
-                  <td className="py-2 pr-1 font-mono font-semibold text-[11px]">
+                  <td className="py-1 pr-1 font-mono font-semibold text-[8px]">
                     {row.sourceRef}
                   </td>
-                  <td className="py-2 pr-1 text-[11px]">
+                  <td className="py-1 pr-1 text-[8px]">
                     {SOURCE_LABELS[row.sourceType] ?? row.sourceType}
                   </td>
-                  <td className="py-2 pr-1 text-[11px] leading-snug break-words">
-                    {row.narration || row.description || "—"}
+                  <td className="py-1 pr-1 text-[8px] leading-tight break-words">
+                    <div>{row.narration || row.description || "—"}</div>
+                    {row.tagAccount && (
+                      <div className="text-[7px] text-indigo-700 font-semibold mt-0.5">
+                        Tag: {row.tagAccount.code} - {row.tagAccount.name}
+                      </div>
+                    )}
                   </td>
-                  <td className="py-2 pr-1 text-right font-mono text-[11px]">
+                  <td className="py-1 pr-1 text-right font-mono text-[8px]">
                     {row.debit > 0 ? fmt(row.debit) : ""}
                   </td>
-                  <td className="py-2 pr-1 text-right font-mono text-[11px]">
+                  <td className="py-1 pr-1 text-right font-mono text-[8px]">
                     {row.credit > 0 ? fmt(row.credit) : ""}
                   </td>
-                  <td className="py-2 text-right font-mono font-semibold text-[11px]">
+                  <td className="py-1 text-right font-mono font-semibold text-[8px]">
                     {fmt(row.runningBalance)}
                   </td>
                 </tr>
@@ -775,27 +865,27 @@ export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={4} className="py-4 px-0 align-bottom border-b border-black">
-                  <div className="flex gap-2 font-bold text-[12px] leading-tight flex-wrap">
+                <td colSpan={4} className="py-2 px-0 align-bottom border-b border-black">
+                  <div className="flex gap-2 font-bold text-[9px] leading-tight flex-wrap">
                     <span className="whitespace-nowrap">Closing Balance in Words:</span>
                     <span className="underline decoration-dashed decoration-gray-400 underline-offset-2 break-words">
                       {numberToWords(Math.abs(data.rangeClosingBalance))} {data.rangeClosingBalance >= 0 ? (isDebitNormal ? "(Debit)" : "(Credit)") : (isDebitNormal ? "(Credit)" : "(Debit)")}
                     </span>
                   </div>
                 </td>
-                <td className="py-2 pr-1 text-right align-bottom border-b border-black">
-                  <div className="ml-auto border-t border-black pb-0.5" style={{ borderBottom: '3px double black' }}>
-                    <span className="tabular-nums font-mono text-[11px] block pt-0.5">{fmt(data.rangeTotalDebit)}</span>
+                <td className="py-1 pr-1 text-right align-bottom border-b border-black">
+                  <div className="ml-auto border-t border-black pb-0.5" style={{ borderBottom: '2px double black' }}>
+                    <span className="tabular-nums font-mono text-[8px] block pt-0.5">{fmt(data.rangeTotalDebit)}</span>
                   </div>
                 </td>
-                <td className="py-2 pr-1 text-right align-bottom border-b border-black">
-                  <div className="ml-auto border-t border-black pb-0.5" style={{ borderBottom: '3px double black' }}>
-                    <span className="tabular-nums font-mono text-[11px] block pt-0.5">{fmt(data.rangeTotalCredit)}</span>
+                <td className="py-1 pr-1 text-right align-bottom border-b border-black">
+                  <div className="ml-auto border-t border-black pb-0.5" style={{ borderBottom: '2px double black' }}>
+                    <span className="tabular-nums font-mono text-[8px] block pt-0.5">{fmt(data.rangeTotalCredit)}</span>
                   </div>
                 </td>
-                <td className="py-2 text-right align-bottom border-b border-black">
-                  <div className="ml-auto border-t border-black pb-0.5" style={{ borderBottom: '3px double black' }}>
-                    <span className="tabular-nums font-mono font-bold text-[11px] block pt-0.5">{fmt(data.rangeClosingBalance)}</span>
+                <td className="py-1 text-right align-bottom border-b border-black">
+                  <div className="ml-auto border-t border-black pb-0.5" style={{ borderBottom: '2px double black' }}>
+                    <span className="tabular-nums font-mono font-bold text-[8px] block pt-0.5">{fmt(data.rangeClosingBalance)}</span>
                   </div>
                 </td>
               </tr>
@@ -803,30 +893,30 @@ export function GeneralLedgerClient({ accounts }: { accounts: ChartOfAccount[] }
           </table>
 
           {/* Remarks */}
-          <div className="mt-4 mb-8">
-            <div className="font-bold text-[13px]">General Ledger Summary Remarks</div>
-            <p className="text-[11px] mt-1 text-gray-700 leading-relaxed">
+          <div className="mt-2 mb-4">
+            <div className="font-bold text-[10px]">General Ledger Summary Remarks</div>
+            <p className="text-[9px] mt-0.5 text-gray-700 leading-tight">
               This statement represents verified transaction ledger history for Account Head {data.account.code} ({data.account.name}). The opening balance of {fmt(data.openingBalance)} is compiled from postings preceding {fromDate ? format(fromDate, "dd-MM-yyyy") : "inception"}. Net closing balance is {fmt(data.rangeClosingBalance)}.
             </p>
           </div>
 
           {/* Signatures */}
-          <div className="grid grid-cols-4 gap-4 mt-16 pt-4">
-            <div className="border border-black h-20 p-2 flex flex-col justify-between items-center rounded bg-gray-50/20">
-              <span className="text-[9px] font-extrabold tracking-wider text-gray-500 uppercase">PREPARED BY</span>
-              <div className="w-11/12 border-b border-gray-400 border-dashed mb-1"></div>
+          <div className="grid grid-cols-4 gap-4 mt-6 pt-2">
+            <div className="border border-black h-12 p-1.5 flex flex-col justify-between items-center rounded bg-gray-50/20">
+              <span className="text-[7px] font-extrabold tracking-wider text-gray-500 uppercase">PREPARED BY</span>
+              <div className="w-11/12 border-b border-gray-400 border-dashed mb-0.5"></div>
             </div>
-            <div className="border border-black h-20 p-2 flex flex-col justify-between items-center rounded bg-gray-50/20">
-              <span className="text-[9px] font-extrabold tracking-wider text-gray-500 uppercase">CHECKED BY</span>
-              <div className="w-11/12 border-b border-gray-400 border-dashed mb-1"></div>
+            <div className="border border-black h-12 p-1.5 flex flex-col justify-between items-center rounded bg-gray-50/20">
+              <span className="text-[7px] font-extrabold tracking-wider text-gray-500 uppercase">CHECKED BY</span>
+              <div className="w-11/12 border-b border-gray-400 border-dashed mb-0.5"></div>
             </div>
-            <div className="border border-black h-20 p-2 flex flex-col justify-between items-center rounded bg-gray-50/20">
-              <span className="text-[9px] font-extrabold tracking-wider text-gray-500 uppercase">AUDITED BY</span>
-              <div className="w-11/12 border-b border-gray-400 border-dashed mb-1"></div>
+            <div className="border border-black h-12 p-1.5 flex flex-col justify-between items-center rounded bg-gray-50/20">
+              <span className="text-[7px] font-extrabold tracking-wider text-gray-500 uppercase">AUDITED BY</span>
+              <div className="w-11/12 border-b border-gray-400 border-dashed mb-0.5"></div>
             </div>
-            <div className="border border-black h-20 p-2 flex flex-col justify-between items-center rounded bg-gray-50/20">
-              <span className="text-[9px] font-extrabold tracking-wider text-gray-500 uppercase">APPROVED BY</span>
-              <div className="w-11/12 border-b border-gray-400 border-dashed mb-1"></div>
+            <div className="border border-black h-12 p-1.5 flex flex-col justify-between items-center rounded bg-gray-50/20">
+              <span className="text-[7px] font-extrabold tracking-wider text-gray-500 uppercase">APPROVED BY</span>
+              <div className="w-11/12 border-b border-gray-400 border-dashed mb-0.5"></div>
             </div>
           </div>
         </div>

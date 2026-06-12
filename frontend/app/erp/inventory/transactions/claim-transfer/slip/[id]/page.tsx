@@ -8,6 +8,7 @@ import { Printer, ArrowLeft } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { getTransferRequests } from '@/lib/actions/transfer-request';
 
 interface TransferSlip {
     id: string;
@@ -26,6 +27,8 @@ interface TransferSlip {
         item: {
             sku: string;
             description: string;
+            color?: { name: string } | null;
+            size?: { name: string } | null;
         };
     }>;
     claim?: {
@@ -47,8 +50,7 @@ export default function ClaimTransferSlipPage() {
     const loadTransferSlip = async () => {
         setLoading(true);
         try {
-            const response = await fetch(`/api/transfer-request?id=${id}`);
-            const result = await response.json();
+            const result = await getTransferRequests({ id });
 
             if (result.status && result.data && result.data.length > 0) {
                 setTransfer(result.data[0]);
@@ -230,6 +232,8 @@ export default function ClaimTransferSlipPage() {
                                                 <th className="text-left p-3 font-medium">#</th>
                                                 <th className="text-left p-3 font-medium">SKU</th>
                                                 <th className="text-left p-3 font-medium">Description</th>
+                                                <th className="text-left p-3 font-medium">Color</th>
+                                                <th className="text-left p-3 font-medium">Size</th>
                                                 <th className="text-right p-3 font-medium">Quantity</th>
                                             </tr>
                                         </thead>
@@ -239,13 +243,15 @@ export default function ClaimTransferSlipPage() {
                                                     <td className="p-3">{index + 1}</td>
                                                     <td className="p-3 font-mono">{item.item.sku}</td>
                                                     <td className="p-3">{item.item.description}</td>
+                                                    <td className="p-3">{item.item.color?.name || '-'}</td>
+                                                    <td className="p-3">{item.item.size?.name || '-'}</td>
                                                     <td className="p-3 text-right font-semibold">{item.quantity}</td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                         <tfoot className="bg-muted/30 border-t-2">
                                             <tr>
-                                                <td colSpan={3} className="p-3 font-semibold text-right">
+                                                <td colSpan={5} className="p-3 font-semibold text-right">
                                                     Total Items:
                                                 </td>
                                                 <td className="p-3 text-right font-bold">

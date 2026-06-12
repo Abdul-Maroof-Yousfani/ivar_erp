@@ -14,7 +14,7 @@ import { Plus, Trash2, Loader2, Tag, CheckIcon, ChevronDownIcon, Copy } from "lu
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { createJournalVoucher } from "@/lib/actions/journal-voucher";
+import { createJournalVoucher, updateJournalVoucher, type JournalVoucher } from "@/lib/actions/journal-voucher";
 import { ChartOfAccount } from "@/lib/actions/chart-of-account";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
@@ -128,7 +128,7 @@ function TagAccountSelect({ children, value, onValueChange, disabled }: TagAccou
 }
 
 // ─── Main form ────────────────────────────────────────────────────────────────
-export function JournalVoucherForm() {
+export function JournalVoucherForm({ initialData }: { initialData?: JournalVoucher }) {
     const router = useRouter();
     const [isPending, setIsPending] = useState(false);
     // Shared tree — populated once the ChartOfAccountSelect loads it
@@ -137,13 +137,23 @@ export function JournalVoucherForm() {
     const form = useForm<JournalVoucherFormValues>({
         resolver: zodResolver(journalVoucherSchema) as any,
         defaultValues: {
-            jvNo: `JV${new Date().getFullYear().toString().slice(-2)}${(new Date().getMonth() + 1).toString().padStart(2, "0")}${Math.floor(1000 + Math.random() * 9000)}`,
-            jvDate: new Date(),
-            description: "",
-            details: [
-                { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
-                { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
-            ],
+            jvNo: initialData?.jvNo || `JV${new Date().getFullYear().toString().slice(-2)}${(new Date().getMonth() + 1).toString().padStart(2, "0")}${Math.floor(1000 + Math.random() * 9000)}`,
+            jvDate: initialData?.jvDate ? new Date(initialData.jvDate) : new Date(),
+            description: initialData?.description || "",
+            details: initialData?.details
+                ? initialData.details.map((d) => ({
+                      accountId: d.accountId,
+                      tagAccountId: d.tagAccountId || "",
+                      debit: Math.round(Number(d.debit) || 0),
+                      credit: Math.round(Number(d.credit) || 0),
+                      narration: d.narration || "",
+                      refBillNo: d.refBillNo || "",
+                      isTaxApplicable: d.isTaxApplicable ?? false,
+                  }))
+                : [
+                      { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
+                      { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
+                  ],
         },
     });
 
@@ -187,6 +197,98 @@ export function JournalVoucherForm() {
         });
     }, [watchDetails.map((d) => d.accountId).join(","), tree]);
 
+    // Auto-save draft logic (multiple drafts keyed by jvNo)
+    const watchAllFields = form.watch();
+    const voucherNo = watchAllFields.jvNo;
+    useEffect(() => {
+        if (initialData || !voucherNo) return;
+        const timeout = setTimeout(() => {
+            const draftsJson = localStorage.getItem("journal-voucher-drafts") || "{}";
+            try {
+                const drafts = JSON.parse(draftsJson);
+                drafts[voucherNo] = {
+                    voucherNo,
+                    updatedAt: new Date().toISOString(),
+                    formValues: watchAllFields,
+                };
+                localStorage.setItem("journal-voucher-drafts", JSON.stringify(drafts));
+            } catch (e) {
+                console.error("Error saving draft", e);
+            }
+        }, 1000);
+        return () => clearTimeout(timeout);
+    }, [watchAllFields, voucherNo, initialData]);
+
+    // Restore draft logic
+    useEffect(() => {
+        if (initialData) return;
+        
+        // 1. Check if there's a specific draftId query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlDraftId = urlParams.get("draftId");
+        
+        const draftsJson = localStorage.getItem("journal-voucher-drafts");
+        if (!draftsJson) return;
+        
+        try {
+            const drafts = JSON.parse(draftsJson);
+            
+            if (urlDraftId) {
+                const draft = drafts[urlDraftId];
+                if (draft && draft.formValues) {
+                    if (draft.formValues.jvDate) {
+                        draft.formValues.jvDate = new Date(draft.formValues.jvDate);
+                    }
+                    form.reset(draft.formValues);
+                    toast.success(`Restored draft: ${urlDraftId}`);
+                }
+            } else {
+                // Check if any drafts exist
+                const draftKeys = Object.keys(drafts);
+                if (draftKeys.length === 1) {
+                    const singleKey = draftKeys[0];
+                    const draft = drafts[singleKey];
+                    const hasDetails = draft.formValues?.details?.some((d: { accountId?: string; debit?: number; credit?: number }) => d.accountId || (d.debit ?? 0) > 0 || (d.credit ?? 0) > 0);
+                    const hasDescription = draft.formValues?.description;
+                    if (hasDetails || hasDescription) {
+                        toast(`You have an unsaved draft (${singleKey}).`, {
+                            action: {
+                                label: "Restore",
+                                onClick: () => {
+                                    if (draft.formValues.jvDate) {
+                                        draft.formValues.jvDate = new Date(draft.formValues.jvDate);
+                                    }
+                                    form.reset(draft.formValues);
+                                    toast.success("Draft restored!");
+                                }
+                            },
+                            cancel: {
+                                label: "Discard",
+                                onClick: () => {
+                                    delete drafts[singleKey];
+                                    localStorage.setItem("journal-voucher-drafts", JSON.stringify(drafts));
+                                }
+                            },
+                            duration: 15000,
+                        });
+                    }
+                } else if (draftKeys.length > 1) {
+                    toast(`You have ${draftKeys.length} pending drafts.`, {
+                        action: {
+                            label: "View Drafts",
+                            onClick: () => {
+                                router.push("/finance/journal-voucher/list");
+                            }
+                        },
+                        duration: 15000,
+                    });
+                }
+            }
+        } catch (e) {
+            console.error("Failed to parse drafts", e);
+        }
+    }, [initialData, form, router]);
+
     const onSubmit: SubmitHandler<JournalVoucherFormValues> = async (values) => {
         try {
             setIsPending(true);
@@ -194,15 +296,29 @@ export function JournalVoucherForm() {
                 ...values,
                 details: values.details.map((d) => ({
                     ...d,
+                    debit: Math.round(Number(d.debit) || 0),
+                    credit: Math.round(Number(d.credit) || 0),
                     tagAccountId: d.tagAccountId || undefined,
                 })),
             };
-            const result = await createJournalVoucher(payload);
+            const result = initialData
+                ? await updateJournalVoucher(initialData.id, payload)
+                : await createJournalVoucher(payload);
             if (result.status) {
-                toast.success("Journal Voucher created successfully");
+                if (!initialData && voucherNo) {
+                    const draftsJson = localStorage.getItem("journal-voucher-drafts");
+                    if (draftsJson) {
+                        try {
+                            const drafts = JSON.parse(draftsJson);
+                            delete drafts[voucherNo];
+                            localStorage.setItem("journal-voucher-drafts", JSON.stringify(drafts));
+                        } catch {}
+                    }
+                }
+                toast.success(initialData ? "Journal Voucher updated successfully" : "Journal Voucher created successfully");
                 router.push("/finance/journal-voucher/list");
             } else {
-                toast.error(result.message || "Failed to create Journal Voucher");
+                toast.error(result.message || (initialData ? "Failed to update Journal Voucher" : "Failed to create Journal Voucher"));
             }
         } catch {
             toast.error("An unexpected error occurred");
@@ -216,11 +332,11 @@ export function JournalVoucherForm() {
     useEffect(() => {
         // Calculate total taxable amount (based on debits and credits where isTaxApplicable is true)
         const taxableDebitAmount = watchDetails.reduce((sum: number, detail: any) => {
-            return sum + (detail.isTaxApplicable ? (Number(detail.debit) || 0) : 0);
+            return sum + (detail.isTaxApplicable ? Math.round(Number(detail.debit) || 0) : 0);
         }, 0);
         
         const taxableCreditAmount = watchDetails.reduce((sum: number, detail: any) => {
-            return sum + (detail.isTaxApplicable ? (Number(detail.credit) || 0) : 0);
+            return sum + (detail.isTaxApplicable ? Math.round(Number(detail.credit) || 0) : 0);
         }, 0);
         
         const taxableAmount = Math.max(taxableDebitAmount, taxableCreditAmount);
@@ -235,8 +351,9 @@ export function JournalVoucherForm() {
                     if (accountNode?.code && tagNode?.code) {
                         const calculatedTax = calculateTaxForAccount(accountNode.code, tagNode.code, taxableAmount);
                         if (calculatedTax !== null) {
-                            const currentDebit = Number(detail.debit) || 0;
-                            const currentCredit = Number(detail.credit) || 0;
+                            const roundedTax = Math.round(calculatedTax);
+                            const currentDebit = Math.round(Number(detail.debit) || 0);
+                            const currentCredit = Math.round(Number(detail.credit) || 0);
                             
                             // Determine which side to place the tax
                             // If taxableAmount comes from Debits, tax is a Credit liability
@@ -244,13 +361,13 @@ export function JournalVoucherForm() {
                             const isLiability = taxableDebitAmount > 0;
                             
                             if (isLiability) {
-                                if (currentCredit !== calculatedTax) {
-                                    form.setValue(`details.${index}.credit`, calculatedTax, { shouldValidate: true });
+                                if (currentCredit !== roundedTax) {
+                                    form.setValue(`details.${index}.credit`, roundedTax, { shouldValidate: true });
                                     form.setValue(`details.${index}.debit`, 0, { shouldValidate: true });
                                 }
                             } else {
-                                if (currentDebit !== calculatedTax) {
-                                    form.setValue(`details.${index}.debit`, calculatedTax, { shouldValidate: true });
+                                if (currentDebit !== roundedTax) {
+                                    form.setValue(`details.${index}.debit`, roundedTax, { shouldValidate: true });
                                     form.setValue(`details.${index}.credit`, 0, { shouldValidate: true });
                                 }
                             }
@@ -267,10 +384,10 @@ export function JournalVoucherForm() {
 
     const duplicateRowToOpposite = (fromIndex: number) => {
         const fromRow = form.getValues(`details.${fromIndex}`);
-        const debitVal = Number(fromRow.debit) || 0;
-        const creditVal = Number(fromRow.credit) || 0;
+        const debitVal = Math.round(Number(fromRow.debit) || 0);
+        const creditVal = Math.round(Number(fromRow.credit) || 0);
         
-        const val = debitVal || creditVal;
+        const val = Math.round(debitVal || creditVal);
         const isFromDebit = debitVal > 0;
         
         const targetIndex = fromIndex + 1;
@@ -300,7 +417,7 @@ export function JournalVoucherForm() {
     return (
         <Card className="w-full">
             <CardHeader className="border-b">
-                <CardTitle>Create Journal Voucher Form</CardTitle>
+                <CardTitle>{initialData ? "Edit Journal Voucher" : "Create Journal Voucher Form"}</CardTitle>
             </CardHeader>
             <CardContent className="pt-6">
                 <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-8">
@@ -457,12 +574,17 @@ export function JournalVoucherForm() {
                                                 <td className="px-4 py-3">
                                                     <Input
                                                         type="number"
-                                                        step="0.01"
+                                                        step="1"
                                                         placeholder="Debit"
                                                         {...form.register(`details.${index}.debit`, {
                                                             valueAsNumber: true,
                                                             onChange: (e) => {
-                                                                if (Number(e.target.value) > 0) {
+                                                                const rawVal = Number(e.target.value) || 0;
+                                                                const roundedVal = Math.round(rawVal);
+                                                                if (rawVal !== roundedVal) {
+                                                                    form.setValue(`details.${index}.debit`, roundedVal, { shouldValidate: true });
+                                                                }
+                                                                if (roundedVal > 0) {
                                                                     form.setValue(`details.${index}.credit`, 0, { shouldValidate: true });
                                                                 }
                                                             },
@@ -474,12 +596,17 @@ export function JournalVoucherForm() {
                                                 <td className="px-4 py-3">
                                                     <Input
                                                         type="number"
-                                                        step="0.01"
+                                                        step="1"
                                                         placeholder="Credit"
                                                         {...form.register(`details.${index}.credit`, {
                                                             valueAsNumber: true,
                                                             onChange: (e) => {
-                                                                if (Number(e.target.value) > 0) {
+                                                                const rawVal = Number(e.target.value) || 0;
+                                                                const roundedVal = Math.round(rawVal);
+                                                                if (rawVal !== roundedVal) {
+                                                                    form.setValue(`details.${index}.credit`, roundedVal, { shouldValidate: true });
+                                                                }
+                                                                if (roundedVal > 0) {
                                                                     form.setValue(`details.${index}.debit`, 0, { shouldValidate: true });
                                                                 }
                                                             },
@@ -571,7 +698,7 @@ export function JournalVoucherForm() {
                             disabled={isPending || !isBalanced || totalDebit === 0}
                         >
                             {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                            Create Journal Voucher
+                            {initialData ? "Update Journal Voucher" : "Create Journal Voucher"}
                         </Button>
                     </div>
                 </form>

@@ -228,14 +228,6 @@ export class UploadProcessor {
                 await this.csvParser.parseFileFromPath(filePath, filename, async (record) => {
                     totalRecordsCount++;
 
-                    // Default missing brand to Ivar and SKU to mock to bypass validator checks
-                    if (!record.data.concept || String(record.data.concept).trim() === '') {
-                        record.data.concept = 'Ivar';
-                    }
-                    if (!record.data.sku || String(record.data.sku).trim() === '') {
-                        record.data.sku = 'PENDING-AUTO-GEN';
-                    }
-
                     const itemId = record.data.itemId ? String(record.data.itemId).trim() : undefined;
                     const barCode = record.data.barCode ? String(record.data.barCode).trim() : undefined;
 
@@ -521,15 +513,12 @@ export class UploadProcessor {
     private async prepareItemData(record: ParsedRecord, tenantMasterData: MasterDataService): Promise<any> {
         const { data } = record;
 
-        // Force Brand to "Ivar"
-        const resolvedBrandName = 'Ivar';
-
         // Step 1: All independent master data resolved in parallel
         const [
             brandId, itemClassId, categoryId, sizeId, colorId,
             genderId, silhouetteId, channelClassId, seasonId, segmentId, hsCodeId,
         ] = await Promise.all([
-            tenantMasterData.getOrCreateBrand(resolvedBrandName),
+            tenantMasterData.getOrCreateBrand(data.concept as string),
             tenantMasterData.getOrCreateItemClass(data.class as string),
             // "Department" in the sheet is a top-level product category (e.g. "Footwear").
             // "ProductCategory/Series" is its child (e.g. "Shoes").
@@ -553,67 +542,10 @@ export class UploadProcessor {
             tenantMasterData.getOrCreateSubCategory(data.productCategory as string, categoryId),
         ]);
 
-        // Fetch master details for SKU and Description auto-generation
-        const [
-            categoryRec, subCategoryRec, genderRec, seasonRec, sizeRec, colorRec, silhouetteRec
-        ] = await Promise.all([
-            categoryId ? tenantMasterData.prisma.category.findUnique({ where: { id: categoryId }, select: { name: true } }) : null,
-            subCategoryId ? tenantMasterData.prisma.category.findUnique({ where: { id: subCategoryId }, select: { name: true } }) : null,
-            genderId ? tenantMasterData.prisma.gender.findUnique({ where: { id: genderId }, select: { name: true } }) : null,
-            seasonId ? tenantMasterData.prisma.season.findUnique({ where: { id: seasonId }, select: { name: true } }) : null,
-            sizeId ? tenantMasterData.prisma.size.findUnique({ where: { id: sizeId }, select: { name: true } }) : null,
-            colorId ? tenantMasterData.prisma.color.findUnique({ where: { id: colorId }, select: { name: true } }) : null,
-            silhouetteId ? tenantMasterData.prisma.silhouette.findUnique({ where: { id: silhouetteId }, select: { name: true } }) : null,
-        ]);
-
-        // Generate sequential serial suffix based on item count
-        const last = await tenantMasterData.prisma.item.findFirst({
-            orderBy: { itemId: 'desc' },
-            select: { itemId: true },
-        });
-        const lastNum = last && /^\d{6}$/.test(last.itemId) ? parseInt(last.itemId, 10) : 0;
-        const serial = String(lastNum + 1).padStart(3, '0').slice(-3);
-
-        const brandCode = "IVAR";
-        const genderCode = genderRec?.name ? genderRec.name.charAt(0).toUpperCase() : "X";
-        const subCatCode = subCategoryRec?.name ? subCategoryRec.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() : "XX";
-        const silCode = silhouetteRec?.name ? silhouetteRec.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() : "XX";
-        const colCode = colorRec?.name ? colorRec.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase() : "XXX";
-        const sizeCode = sizeRec?.name ? sizeRec.name.replace(/[^A-Za-z0-9]/g, "").toUpperCase() : "XX";
-
-        const generatedSku = `${brandCode}-${genderCode}-${subCatCode}-${silCode}-${colCode}-${sizeCode}-${serial}`;
-        const finalSku = (data.sku && data.sku !== 'PENDING-AUTO-GEN') ? String(data.sku) : generatedSku;
-
-        const generatedBarcode = `IVAR${String(lastNum + 1).padStart(9, '0')}`;
-        const finalBarcode = data.barCode ? String(data.barCode) : generatedBarcode;
-
-        const generatedDescription = `Ivar ${categoryRec?.name || ""} ${subCategoryRec?.name || ""} in ${colorRec?.name || ""} for ${genderRec?.name || ""} (${seasonRec?.name || ""} - ${silhouetteRec?.name || ""}, Size ${sizeRec?.name || ""})`;
-        const finalDescription = data.description ? String(data.description) : generatedDescription;
-
-        // Auto-resolve dynamic default HS Code if none provided
-        let finalHsCodeId = hsCodeId;
-        if (!finalHsCodeId) {
-            const firstHs = await tenantMasterData.prisma.hsCode.findFirst({ select: { id: true } });
-            if (firstHs) {
-                finalHsCodeId = firstHs.id;
-            } else {
-                finalHsCodeId = await tenantMasterData.getOrCreateHsCode('610910');
-            }
-        }
-
-        const imageUrl = data.imageUrl ? String(data.imageUrl) : "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=400&q=80";
-
-        // Query hsCodeStr dynamically from the db for returning it properly
-        let finalHsCodeStr = data.hsCode ? String(data.hsCode) : null;
-        if (!finalHsCodeStr && finalHsCodeId) {
-            const h = await tenantMasterData.prisma.hsCode.findUnique({ where: { id: finalHsCodeId }, select: { hsCode: true } });
-            finalHsCodeStr = h?.hsCode || null;
-        }
-
         return {
-            sku: finalSku,
-            barCode: finalBarcode,
-            description: finalDescription,
+            sku: data.sku ? String(data.sku) : null,
+            barCode: data.barCode ? String(data.barCode) : null,
+            description: data.description ? String(data.description) : null,
             unitPrice: data.unitPrice ? Number(data.unitPrice) : 0,
             unitCost: data.unitCost ? Number(data.unitCost) : 0,
             fob: data.fob ? Number(data.fob) : 0,
@@ -623,8 +555,8 @@ export class UploadProcessor {
             discountAmount: data.discountAmount ? Number(data.discountAmount) : 0,
             discountStartDate: data.discountStartDate ?? null,
             discountEndDate: data.discountEndDate ?? null,
-            status: 'active',
-            isActive: true,
+            status: data.isActive === false ? 'inactive' : 'active',
+            isActive: data.isActive !== false,
             // Scalar string fields stored directly on Item
             case: data.case ? String(data.case) : null,
             band: data.band ? String(data.band) : null,
@@ -632,16 +564,16 @@ export class UploadProcessor {
             movementName: data.movementName ? String(data.movementName) : null,
             heelHeight: data.heelHeight ? String(data.heelHeight) : null,
             width: data.width ? String(data.width) : null,
-            hsCodeStr: finalHsCodeStr,
+            hsCodeStr: data.hsCode ? String(data.hsCode) : null,
             uom: data.uom ? String(data.uom) : null,
             currency: data.currency ? String(data.currency) : null,
             launchDate: data.launchDate ?? null,
             oldSeason: data.oldSeason ? String(data.oldSeason) : null,
-            imageUrl,
             // Resolved FK IDs
             brandId, itemClassId, itemSubclassId, silhouetteId,
             sizeId, colorId, seasonId, genderId, categoryId,
-            subCategoryId, hsCodeId: finalHsCodeId, divisionId, channelClassId, segmentId,
+            subCategoryId, hsCodeId, divisionId, channelClassId, segmentId,
         };
     }
 }
+

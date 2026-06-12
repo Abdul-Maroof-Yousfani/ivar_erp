@@ -7,6 +7,7 @@ export interface Location {
     id: string;
     name: string;
     code: string;
+    shortCode: string | null;
     address: string | null;
     cityId: string | null;
     companyId: string | null;
@@ -14,6 +15,20 @@ export interface Location {
     geoFenceRadius: number;
     ipWhitelist: string | null;
     ipWhitelistEnabled: boolean;
+    phone: string | null;
+    latitude: number | string | null;
+    longitude: number | string | null;
+    fbrBposId: string | null;
+    fbrBearerToken: string | null;
+    fbrNtn: string | null;
+    fbrSellerName: string | null;
+    fbrEnabled: boolean;
+    /// Whether this outlet is currently online.
+    isOnline: boolean;
+    /// Cash GL Account Code
+    cashGLCode: string | null;
+    /// Timestamp of the last known online time.
+    lastOnlineAt: string | null;
     city?: {
         id: string;
         name: string;
@@ -68,7 +83,7 @@ export async function getLocationById(id: string): Promise<{ status: boolean; da
 }
 
 // Create locations bulk
-export async function createLocations(items: { name: string; code: string; address?: string; cityId?: string; companyId?: string }[]): Promise<{ status: boolean; message: string; data?: Location[] }> {
+export async function createLocations(items: { name: string; code: string; address?: string; cityId?: string; companyId?: string; shortCode?: string }[]): Promise<{ status: boolean; message: string; data?: Location[] }> {
     if (!items.length) {
         return { status: false, message: "At least one location is required" };
     }
@@ -100,6 +115,8 @@ export async function updateLocations(
         geoFenceRadius?: number;
         ipWhitelist?: string;
         ipWhitelistEnabled?: boolean;
+        cashGLCode?: string | null;
+        shortCode?: string | null;
     }[]): Promise<{ status: boolean; message: string }> {
     if (!items.length) {
         return { status: false, message: "No items to update" };
@@ -116,6 +133,40 @@ export async function updateLocations(
         return data;
     } catch (error) {
         return { status: false, message: "Failed to update locations" };
+    }
+}
+
+// Update location other details (IP, Coordinates, FBR credentials, etc.)
+export async function updateLocationOtherInfo(
+    id: string,
+    data: {
+        phone?: string;
+        latitude?: number;
+        longitude?: number;
+        geoFenceEnabled?: boolean;
+        geoFenceRadius?: number;
+        ipWhitelist?: string;
+        ipWhitelistEnabled?: boolean;
+        fbrBposId?: string;
+        fbrBearerToken?: string;
+        fbrNtn?: string;
+        fbrSellerName?: string;
+        fbrEnabled?: boolean;
+    }
+): Promise<{ status: boolean; message: string; data?: Location }> {
+    try {
+        const res = await authFetch(`/locations/${id}/other-info`, {
+            method: "PUT",
+            body: JSON.stringify(data),
+        });
+        const resData = res.data;
+        if (resData.status) {
+            revalidatePath("/master/location");
+        }
+        return resData;
+    } catch (error) {
+        console.error('Error updating location other info:', error);
+        return { status: false, message: "Failed to update location details" };
     }
 }
 
@@ -152,3 +203,23 @@ export async function deleteLocation(id: string): Promise<{ status: boolean; mes
         return { status: false, message: 'Failed to delete location' };
     }
 }
+
+/// Toggle the online/offline status for an outlet.
+export async function updateLocationOnlineStatus(
+    id: string,
+    isOnline: boolean,
+): Promise<{ status: boolean; message?: string; data?: Location }> {
+    try {
+        const res = await authFetch(`/locations/${id}/online-status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ isOnline }),
+        });
+        const data = res.data;
+        if (data.status) {
+            revalidatePath('/master/location');
+        }
+        return data;
+    } catch (error) {
+        return { status: false, message: 'Failed to update online status' };
+    }
+}

@@ -13,6 +13,7 @@ export interface PosSettings {
     receiptShowTax: boolean;
     receiptAutoPrint: boolean;
     receiptShowCashier: boolean;
+    receiptPrinterName: string;
     defaultPaymentMethod: string;
     requireCustomer: boolean;
     defaultTaxPercent: string;
@@ -29,6 +30,7 @@ export const POS_SETTINGS_DEFAULTS: PosSettings = {
     receiptShowTax: true,
     receiptAutoPrint: false,
     receiptShowCashier: true,
+    receiptPrinterName: "",
     defaultPaymentMethod: "cash",
     requireCustomer: false,
     defaultTaxPercent: "0",

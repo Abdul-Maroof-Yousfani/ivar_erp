@@ -231,7 +231,7 @@ function UpdateTenderModal({ order, open, onOpenChange, onSuccess }: {
                                             {t.slipNo && <span className="font-mono text-xs text-muted-foreground ml-1">#{t.slipNo}</span>}
                                         </span>
                                         <span className="font-mono font-semibold">{formatCurrency(t.amount)}</span>
-                                        <button onClick={() => setTenders(prev => prev.filter((_, j) => j !== i))}
+                                        <button onClick={() => removeTender(i)}
                                             className="text-muted-foreground hover:text-destructive transition-colors ml-1">
                                             <Trash2 className="h-3.5 w-3.5" />
                                         </button>
@@ -704,10 +704,10 @@ export default function SalesHistoryPage() {
                                     <Printer className="h-3.5 w-3.5" />
                                 </Button>
                             )}
-                            {(order.status === 'returned' || order.status === 'partially_returned') && (
+                            {(order.status === 'returned' || order.status === 'partially_returned' || order.status === 'refunded') && (
                                 <Button variant="ghost" size="icon"
                                     className="h-8 w-8 rounded-full text-destructive hover:bg-destructive/5"
-                                    title="Print return slip"
+                                    title={order.status === 'refunded' ? "Print refund slip" : "Print return slip"}
                                     onClick={() => openPrintDialog(order, "return")}>
                                     <RotateCcw className="h-3.5 w-3.5" />
                                 </Button>
@@ -1137,6 +1137,7 @@ export default function SalesHistoryPage() {
                 <PrintReceipt
                     order={{ ...selectedOrder, isGiftReceipt: false }}
                     tenders={selectedOrder.tenders || []}
+                    creditVouchers={selectedOrder.creditVouchers}
                     isLoading={isLoadingReceipt}
                     onClose={() => { setShowPrint(false); setIsLoadingReceipt(false); }}
                 />
@@ -1147,6 +1148,7 @@ export default function SalesHistoryPage() {
                 <PrintReceipt
                     order={{ ...selectedOrder, isGiftReceipt: true }}
                     tenders={selectedOrder.tenders || []}
+                    creditVouchers={selectedOrder.creditVouchers}
                     isLoading={isLoadingReceipt}
                     onClose={() => { setShowGiftPrint(false); setIsLoadingReceipt(false); }}
                 />
@@ -1163,13 +1165,16 @@ export default function SalesHistoryPage() {
             )}
 
             {/* Print Return Receipt */}
-            {showReturnPrint && selectedOrder && returnDetails && (
+            {showReturnPrint && selectedOrder && (
                 <PrintReturnReceipt
                     returnRef={selectedOrder.orderNumber}
+                    isRefund={selectedOrder.status === 'refunded' || selectedOrder.status === 'partially_returned'}
+                    isAlliance={!!selectedOrder.alliance}
                     originalOrders={[{ orderNumber: selectedOrder.orderNumber, grandTotal: Number(selectedOrder.grandTotal) }]}
-                    returnedLines={returnDetails.items.map((item: any) => ({
+                    returnedLines={(returnDetails?.items ?? []).map((item: any) => ({
                         name: item.item?.description || "Unknown Item",
                         sku: item.item?.sku || "-",
+                        size: item.item?.size?.name ?? "",
                         brand: item.item?.brand?.name,
                         returnQty: item.returnableQty || item.quantity,
                         paidPerUnit: Number(item.originalPaidPerUnit || item.unitPrice),
@@ -1180,16 +1185,18 @@ export default function SalesHistoryPage() {
                         discountPercent: Number(item.discountPercent || 0),
                         taxAmount: Number(item.taxAmount || 0),
                         taxPercent: Number(item.taxPercent || 0),
-                        refundPerUnit: Number(item.refundPerUnit || item.unitPrice),
+                        refundPerUnit: item.refundPerUnit,
                         priceAdjusted: item.priceAdjusted || false,
                         originalPaidPerUnit: Number(item.originalPaidPerUnit || item.unitPrice),
                         couponDeduction: Number(item.couponDeduction || 0),
                     }))}
-                    refundTotal={returnDetails.items.reduce((sum: number, item: any) => sum + Number(item.refundAmount || 0), 0)}
-                    notes={returnDetails.reason}
-                    discountNotes={returnDetails.discountNotes}
-                    returnedAt={returnDetails.returnedAt}
+                    refundTotal={returnDetails?.items?.reduce((sum: number, item: any) => sum + Number(item.refundAmount || 0), 0) ?? 0}
+                    notes={returnDetails?.reason}
+                    discountNotes={returnDetails?.discountNotes}
+                    returnedAt={returnDetails?.returnedAt}
+                    exchangeVoucher={returnDetails?.exchangeVoucher ?? null}
                     paymentMethod={selectedOrder.paymentMethod}
+                    isLoading={isLoadingReceipt}
                     onClose={() => setShowReturnPrint(false)}
                 />
             )}

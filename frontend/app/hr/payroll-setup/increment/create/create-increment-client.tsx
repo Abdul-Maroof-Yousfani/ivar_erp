@@ -30,15 +30,14 @@ import {
 } from "@/components/ui/table";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MonthYearPicker } from "@/components/ui/month-year-picker";
-import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { useEmployeeDropdown } from "@/hooks/use-employee-dropdown";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, Search, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import {
-  getEmployeesForDropdown,
   getEmployeeById,
-  type EmployeeDropdownOption,
   type Employee,
 } from "@/lib/actions/employee";
 import {
@@ -72,7 +71,6 @@ interface EmployeeIncrementItem {
 
 interface CreateIncrementClientProps {
   initialDepartments: Department[];
-  initialEmployees: EmployeeDropdownOption[];
   initialEmployeeGrades: EmployeeGrade[];
   initialDesignations: Designation[];
   editMode?: boolean;
@@ -82,7 +80,6 @@ interface CreateIncrementClientProps {
 
 export function CreateIncrementClient({
   initialDepartments,
-  initialEmployees,
   initialEmployeeGrades,
   initialDesignations,
   editMode = false,
@@ -92,7 +89,6 @@ export function CreateIncrementClient({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [departments] = useState<Department[]>(initialDepartments);
-  const [employees] = useState<EmployeeDropdownOption[]>(initialEmployees);
   const [employeeGrades] = useState<EmployeeGrade[]>(initialEmployeeGrades);
   const [designations] = useState<Designation[]>(initialDesignations);
   const [subDepartments, setSubDepartments] = useState<SubDepartment[]>([]);
@@ -115,6 +111,12 @@ export function CreateIncrementClient({
   const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState<Record<string, Employee>>({});
   const [loadingEmployeeDetails, setLoadingEmployeeDetails] = useState<Record<string, boolean>>({});
   const [latestSalaries, setLatestSalaries] = useState<Record<string, number>>({});
+
+  const { getEmployee, isInitialLoading, multiSelectProps } = useEmployeeDropdown({
+    departmentId: formData.department,
+    subDepartmentId: formData.subDepartment,
+    selectedIds: selectedEmployeeIds,
+  });
 
   // Calculate salary based on increment/decrement
   const calculateSalary = (
@@ -255,17 +257,6 @@ export function CreateIncrementClient({
     fetchSubDepartments();
   }, [formData.department]);
 
-  // Filter employees based on department and sub-department
-  const filteredEmployees = employees.filter((emp) => {
-    if (formData.department && formData.department !== "all") {
-      if (emp.departmentId !== formData.department) return false;
-    }
-    if (formData.subDepartment && formData.subDepartment !== "all") {
-      if (emp.subDepartmentId !== formData.subDepartment) return false;
-    }
-    return true;
-  });
-
   const handleDepartmentChange = (departmentId: string) => {
     setFormData((prev) => ({
       ...prev,
@@ -325,13 +316,6 @@ export function CreateIncrementClient({
     }
   };
 
-  // Prepare employee options for MultiSelect
-  const employeeOptions: MultiSelectOption[] = filteredEmployees.map((emp) => ({
-    value: emp.id,
-    label: emp.employeeName,
-    description: `${emp.employeeId}${emp.departmentName ? ` • ${emp.departmentName}` : ""}`,
-  }));
-
   const handleSearch = async () => {
     if (
       !formData.incrementType ||
@@ -365,7 +349,7 @@ export function CreateIncrementClient({
 
     // Create increment items for all selected employees
     const newIncrementsPromises = selectedEmployeeIds.map(async (empId) => {
-      const employee = employees.find((e) => e.id === empId);
+      const employee = getEmployee(empId);
       const employeeDetail = selectedEmployeeDetails[empId];
       
       // Get previous designation
@@ -637,16 +621,25 @@ export function CreateIncrementClient({
                 <Label htmlFor="employee">
                   Employee <span className="text-destructive">*</span>
                 </Label>
-                <MultiSelect
-                  options={employeeOptions}
-                  value={selectedEmployeeIds}
-                  onValueChange={handleEmployeeSelectionChange}
-                  placeholder="Select employee(s)"
-                  searchPlaceholder="Search employees..."
-                  emptyMessage="No employees found"
-                  disabled={isPending || viewMode || editMode}
-                  maxDisplayedItems={2}
-                />
+                {isInitialLoading ? (
+                  <div className="h-10 bg-muted rounded-md animate-pulse" />
+                ) : (
+                  <MultiSelect
+                    options={multiSelectProps.options}
+                    value={selectedEmployeeIds}
+                    onValueChange={handleEmployeeSelectionChange}
+                    onSearch={multiSelectProps.onSearch}
+                    onLoadMore={multiSelectProps.onLoadMore}
+                    hasMore={multiSelectProps.hasMore}
+                    isLoading={multiSelectProps.isLoading}
+                    placeholder="Select employee(s)"
+                    searchPlaceholder="Search by name or employee ID..."
+                    emptyMessage={multiSelectProps.isLoading ? "Loading employees..." : "No employees found"}
+                    disabled={isPending || viewMode || editMode}
+                    maxDisplayedItems={2}
+                    showSelectAll={false}
+                  />
+                )}
               </div>
             </div>
 
@@ -672,7 +665,7 @@ export function CreateIncrementClient({
                       </TableHeader>
                       <TableBody>
                         {selectedEmployeeIds.map((empId) => {
-                          const employee = employees.find((e) => e.id === empId);
+                          const employee = getEmployee(empId);
                           const employeeDetail = selectedEmployeeDetails[empId];
                           const isLoading = loadingEmployeeDetails[empId];
                           

@@ -20,8 +20,20 @@ import { format } from "date-fns";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Link from "next/link";
+import { toast } from "sonner";
 import DataTable from "@/components/common/data-table";
 import { ColumnDef } from "@tanstack/react-table";
+
+interface LocalDraft {
+    voucherNo: string;
+    updatedAt: string;
+    formValues: {
+        description?: string;
+        type?: string;
+        rvDate?: string | Date;
+        details?: { accountId?: string; debit?: number; credit?: number }[];
+    };
+}
 
 export function ReceiptVoucherList({
     initialData,
@@ -45,10 +57,38 @@ export function ReceiptVoucherList({
     const [status, setStatus] = useState<string>("all");
     const [vouchers, setVouchers] = useState<ReceiptVoucher[]>(initialData);
     const [showFilterInfo, setShowFilterInfo] = useState(false);
+    const [localDrafts, setLocalDrafts] = useState<LocalDraft[]>([]);
+
+    useEffect(() => {
+        const draftsJson = localStorage.getItem("receipt-voucher-drafts");
+        if (draftsJson) {
+            try {
+                const parsed = JSON.parse(draftsJson);
+                setTimeout(() => {
+                    setLocalDrafts(Object.values(parsed));
+                }, 0);
+            } catch {}
+        }
+    }, []);
+
+    const handleDiscardDraft = (draftId: string) => {
+        const draftsJson = localStorage.getItem("receipt-voucher-drafts");
+        if (draftsJson) {
+            try {
+                const parsed = JSON.parse(draftsJson);
+                delete parsed[draftId];
+                localStorage.setItem("receipt-voucher-drafts", JSON.stringify(parsed));
+                setLocalDrafts(Object.values(parsed));
+                toast.success("Draft discarded");
+            } catch {}
+        }
+    };
 
     // Use initial data directly as it comes from the server
     useEffect(() => {
-        setVouchers(initialData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+        setTimeout(() => {
+            setVouchers(initialData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+        }, 0);
     }, [initialData]);
 
     const columns = useMemo<ColumnDef<ReceiptVoucher>[]>(() => [
@@ -91,13 +131,20 @@ export function ReceiptVoucherList({
                         {/* Debit lines — from details if present, else fallback to header */}
                         {debitLines.length > 0
                             ? debitLines.map((d, di) => (
-                                <div key={`dr-${di}`} className="flex justify-between text-xs gap-3">
-                                    <span className="text-blue-600 font-medium truncate max-w-[150px]">
-                                        {d.accountCode ? `${d.accountCode} ` : ""}{d.accountName}
-                                    </span>
-                                    <span className="font-bold tabular-nums shrink-0">
-                                        {Number(d.debit).toLocaleString("en-PK", { minimumFractionDigits: 2 })}
-                                    </span>
+                                <div key={`dr-${di}`} className="space-y-0.5">
+                                    <div className="flex justify-between text-xs gap-3">
+                                        <span className="text-blue-600 font-medium truncate max-w-[150px]">
+                                            {d.accountCode ? `${d.accountCode} ` : ""}{d.accountName}
+                                        </span>
+                                        <span className="font-bold tabular-nums shrink-0">
+                                            {Number(d.debit).toLocaleString("en-PK", { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                    {d.narration && (
+                                        <span className="block text-[10px] text-muted-foreground italic pl-2">
+                                            {d.narration}
+                                        </span>
+                                    )}
                                 </div>
                             ))
                             : (
@@ -115,13 +162,20 @@ export function ReceiptVoucherList({
                         <div className="border-t border-dashed border-border my-0.5" />
                         {/* Credit lines */}
                         {creditLines.map((d, ci) => (
-                            <div key={`cr-${ci}`} className="flex justify-between text-xs gap-3 opacity-70 italic">
-                                <span className="text-green-600 truncate max-w-[150px]">
-                                    (Cr: {d.accountCode ? `${d.accountCode} ` : ""}{d.accountName})
-                                </span>
-                                <span className="tabular-nums shrink-0">
-                                    {Number(d.credit).toLocaleString("en-PK", { minimumFractionDigits: 2 })}
-                                </span>
+                            <div key={`cr-${ci}`} className="space-y-0.5 opacity-70 italic">
+                                <div className="flex justify-between text-xs gap-3">
+                                    <span className="text-green-600 truncate max-w-[150px]">
+                                        (Cr: {d.accountCode ? `${d.accountCode} ` : ""}{d.accountName})
+                                    </span>
+                                    <span className="tabular-nums shrink-0">
+                                        {Number(d.credit).toLocaleString("en-PK", { minimumFractionDigits: 2 })}
+                                    </span>
+                                </div>
+                                {d.narration && (
+                                    <span className="block text-[10px] text-muted-foreground pl-2">
+                                        {d.narration}
+                                    </span>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -195,7 +249,66 @@ export function ReceiptVoucherList({
                     </Button>
                 </div>
             </div>
-
+ 
+            {localDrafts.length > 0 && (
+                <div className="bg-amber-50/50 dark:bg-amber-950/10 border border-amber-200 dark:border-amber-900/50 rounded-xl p-5 backdrop-blur-md shadow-sm space-y-4">
+                    <div className="flex items-center justify-between border-b border-amber-200/50 dark:border-amber-900/30 pb-2">
+                        <div className="flex items-center gap-2">
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                            </span>
+                            <h3 className="font-bold text-amber-800 dark:text-amber-400 text-sm uppercase tracking-wider">
+                                Unsaved Drafts ({localDrafts.length})
+                            </h3>
+                        </div>
+                        <p className="text-xs text-amber-600/80 dark:text-amber-500/80">
+                            Saved locally in your browser to prevent data loss
+                        </p>
+                    </div>
+                    <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
+                        {localDrafts.map((draft) => (
+                            <div
+                                key={draft.voucherNo}
+                                className="flex items-center justify-between p-3.5 rounded-lg border border-amber-200/40 bg-white/70 dark:bg-muted/30 dark:border-amber-900/20 shadow-sm transition-all duration-200 hover:shadow"
+                            >
+                                <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-mono font-bold text-slate-800 dark:text-slate-200 text-sm">
+                                            {draft.voucherNo}
+                                        </span>
+                                        <span className="text-[10px] text-muted-foreground font-mono">
+                                            {format(new Date(draft.updatedAt), "dd MMM yyyy, hh:mm a")}
+                                        </span>
+                                        <span className="text-[9px] uppercase font-semibold px-1.5 py-0.2 rounded bg-amber-200 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200">
+                                            {draft.formValues?.type || "bank"}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground truncate max-w-[280px]">
+                                        {draft.formValues?.description || "No description provided"}
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Link href={`/erp/finance/receipt-voucher/create?draftId=${draft.voucherNo}`}>
+                                        <Button size="sm" variant="secondary" className="bg-amber-100 hover:bg-amber-200 text-amber-800 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:text-amber-300 font-semibold h-8">
+                                            Resume
+                                        </Button>
+                                    </Link>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => handleDiscardDraft(draft.voucherNo)}
+                                        className="h-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                                    >
+                                        Discard
+                                    </Button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+ 
             <Tabs value={type} onValueChange={(val) => setType(val as "bank" | "cash")} className="w-full">
                 <TabsList variant="card" className="grid w-full max-w-md grid-cols-2">
                     <TabsTrigger value="bank" className="flex items-center gap-2">

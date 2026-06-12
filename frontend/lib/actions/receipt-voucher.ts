@@ -182,3 +182,57 @@ export async function getReceiptVoucher(id: string): Promise<{ status: boolean; 
         return { status: false, data: null, message: error.message };
     }
 }
+
+export async function updateReceiptVoucher(id: string, data: any) {
+    try {
+        const payload = {
+            ...data,
+            rvDate: new Date(data.rvDate).toISOString(),
+            billDate: data.billDate ? new Date(data.billDate).toISOString() : null,
+            chequeDate: data.chequeDate ? new Date(data.chequeDate).toISOString() : null,
+        };
+
+        // Remove null/undefined values
+        Object.keys(payload).forEach(key => {
+            if (payload[key] === null || payload[key] === undefined || payload[key] === '') {
+                delete payload[key];
+            }
+        });
+
+        const response = await authFetch(`/finance/receipt-vouchers/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const err = response.data || {};
+            return { status: false, message: err.message || `Failed to update Receipt Voucher: ${response.status}` };
+        }
+
+        revalidatePath("/erp/finance/receipt-voucher/list");
+        revalidatePath(`/erp/finance/receipt-voucher/${id}`);
+        return { status: true, message: "Receipt Voucher updated successfully" };
+    } catch (e: any) {
+        return { status: false, message: e.message || "An unexpected error occurred" };
+    }
+}
+
+export async function updateReceiptVoucherStatus(id: string, status: "approved" | "rejected" | "pending", remarks?: string) {
+    try {
+        const response = await authFetch(`/finance/receipt-vouchers/${id}/status`, {
+            method: "PATCH",
+            body: JSON.stringify({ status, remarks }),
+        });
+
+        if (!response.ok) {
+            const err = response.data || {};
+            return { status: false, message: err.message || `Failed to update status: ${response.status}` };
+        }
+
+        revalidatePath("/erp/finance/receipt-voucher/list");
+        revalidatePath(`/erp/finance/receipt-voucher/${id}`);
+        return { status: true, message: `Receipt Voucher ${status} successfully` };
+    } catch (e: any) {
+        return { status: false, message: e.message || "An unexpected error occurred" };
+    }
+}

@@ -16,7 +16,7 @@ import { getPosByLocation, updatePos, createPos, Pos } from "@/lib/actions/pos";
 import { ManagerVerificationDialog } from "@/components/auth/manager-verification-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Key, Loader2, Monitor, Plus, Power, PowerOff, ShieldAlert, X } from "lucide-react";
+import { Key, Loader2, Monitor, Plus, Power, PowerOff, ShieldAlert, X, Crown } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 
 interface ManagePosModalProps {
@@ -38,7 +38,7 @@ export function ManagePosModal({
     const [verificationOpen, setVerificationOpen] = useState(false);
     const [showAddForm, setShowAddForm] = useState(false);
     const [pendingAction, setPendingAction] = useState<{
-        type: 'status' | 'pin' | 'create';
+        type: 'status' | 'pin' | 'create' | 'parent';
         id: string;
         targetStatus?: string;
     } | null>(null);
@@ -105,6 +105,10 @@ export function ManagePosModal({
                     terminalPin: newPin,
                 });
                 setNewPin("");
+            } else if (pendingAction.type === 'parent') {
+                result = await updatePos(pendingAction.id, {
+                    isParent: true,
+                });
             } else if (pendingAction.type === 'create') {
                 result = await createPos({
                     name: newName,
@@ -219,15 +223,28 @@ export function ManagePosModal({
                         ) : (
                             <div className="space-y-4">
                                 {posList.map((pos) => (
-                                    <div key={pos.id} className="flex items-center justify-between p-4 rounded-xl border bg-card hover:shadow-sm transition-all">
+                                    <div key={pos.id} className={`flex items-center justify-between p-4 rounded-xl border bg-card hover:shadow-sm transition-all ${
+                                        pos.isParent ? 'border-amber-400/60 bg-amber-50/40 dark:bg-amber-950/20' : ''
+                                    }`}>
                                         <div className="flex flex-col gap-1">
                                             <div className="flex items-center gap-2">
                                                 <span className="font-bold text-lg tracking-tight">{pos.terminalCode || pos.posId}</span>
                                                 <Badge variant={pos.status === 'active' ? 'default' : 'secondary'} className="text-[10px] h-4">
                                                     {pos.status}
                                                 </Badge>
+                                                {pos.isParent && (
+                                                    <Badge className="text-[10px] h-4 gap-0.5 bg-amber-500 hover:bg-amber-500 text-white">
+                                                        <Crown className="h-2.5 w-2.5" />
+                                                        Parent
+                                                    </Badge>
+                                                )}
                                             </div>
                                             <span className="text-xs text-muted-foreground">{pos.name} ({pos.posId})</span>
+                                            {pos.isParent && (
+                                                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                                                    Manages shift open/close &amp; reconciliation reports
+                                                </span>
+                                            )}
                                         </div>
 
                                         <div className="flex items-center gap-2">
@@ -267,6 +284,20 @@ export function ManagePosModal({
                                                     </Button>
                                                 )}
                                             </div>
+
+                                            {/* Parent toggle */}
+                                            {!pos.isParent && (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-8 text-[10px] gap-1.5 border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
+                                                    onClick={() => handleActionClick('parent', pos.id)}
+                                                    disabled={isPending && pendingAction?.id === pos.id}
+                                                >
+                                                    <Crown className="h-3 w-3" />
+                                                    Set as Parent
+                                                </Button>
+                                            )}
 
                                             <Button
                                                 variant={pos.status === 'active' ? "destructive" : "default"}
@@ -311,6 +342,8 @@ export function ManagePosModal({
                 description={
                     pendingAction?.type === 'status'
                         ? `Are you sure you want to ${pendingAction.targetStatus === 'active' ? 'activate' : 'deactivate'} this POS terminal?`
+                        : pendingAction?.type === 'parent'
+                        ? 'Are you sure you want to set this terminal as the parent? The current parent terminal will be demoted to a child terminal.'
                         : "Please verify your password to reset the terminal PIN."
                 }
             />

@@ -39,9 +39,13 @@ export class VoucherService {
         locationId?: string;
         isActive?: boolean;
         search?: string;
+        includeVoided?: boolean;
     }) {
         try {
-            const where: any = { isDeleted: false };
+            const where: any = {};
+            if (!filters?.includeVoided) {
+                where.isDeleted = false;
+            }
             if (filters?.voucherType) where.voucherType = filters.voucherType;
             if (filters?.isActive !== undefined) where.isActive = filters.isActive;
             if (filters?.search) {
@@ -77,23 +81,30 @@ export class VoucherService {
     async issueVoucher(data: {
         voucherType: VoucherType;
         faceValue: number;
+        discount?: number;
         description?: string;
         customerId?: string;
         companyName?: string;
+        companyGlCode?: string;
         requireCustomerMatch?: boolean;
         issuedByLocationId?: string;
         issuedByUserId?: string;
         sourceOrderId?: string;
         expiresAt?: string;
         locationIds?: string[]; // empty = all locations
+        paymentMode?: string;
+        cardholderName?: string;
+        cardLast4?: string;
+        slipNo?: string;
+        merchantId?: string;
     }, ctx?: { userId?: string; ipAddress?: string; userAgent?: string }) {
         try {
             const code = generateCode(data.voucherType);
 
-            // EXCHANGE vouchers are locked to issuing location
+            // EXCHANGE vouchers are usable everywhere by default (empty location restriction)
             // REFUND vouchers are also locked to issuing location (record-only)
             const locationIds =
-                (data.voucherType === 'EXCHANGE' || data.voucherType === 'REFUND') && data.issuedByLocationId
+                (data.voucherType === 'REFUND') && data.issuedByLocationId
                     ? [data.issuedByLocationId]
                     : (data.locationIds ?? []);
 
@@ -105,9 +116,11 @@ export class VoucherService {
                     code,
                     voucherType: data.voucherType,
                     faceValue: data.faceValue,
+                    discount: data.discount ?? 0,
                     description: data.description,
                     customerId: data.customerId,
                     companyName: data.companyName,
+                    companyGlCode: data.companyGlCode,
                     requireCustomerMatch: data.requireCustomerMatch ?? false,
                     issuedByLocationId: data.issuedByLocationId,
                     issuedByUserId: data.issuedByUserId,
@@ -115,6 +128,11 @@ export class VoucherService {
                     expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined,
                     isActive: !isRefundVoucher, // REFUND vouchers are inactive (not redeemable)
                     isRedeemed: isRefundVoucher, // REFUND vouchers are marked as redeemed
+                    paymentMode: data.paymentMode,
+                    cardholderName: data.cardholderName,
+                    cardLast4: data.cardLast4,
+                    slipNo: data.slipNo,
+                    merchantId: data.merchantId,
                     locations: {
                         create: locationIds.map((locId) => ({ locationId: locId })),
                     },
@@ -125,7 +143,9 @@ export class VoucherService {
                             locationId: data.issuedByLocationId,
                             notes: isRefundVoucher 
                                 ? `Refund voucher issued - Cash refunded to customer (Record only)`
-                                : `Issued as ${data.voucherType}`,
+                                : data.paymentMode === 'CARD'
+                                    ? `Issued as ${data.voucherType} (Paid via Card${data.cardLast4 ? ` - ****${data.cardLast4}` : ''})`
+                                    : `Issued as ${data.voucherType} (Paid via Cash)`,
                         },
                     },
                 },
@@ -176,12 +196,19 @@ export class VoucherService {
         voucherType: VoucherType;
         faceValue: number;
         quantity: number; // max 500 per batch
+        discount?: number;
         description?: string;
         companyName?: string;
+        companyGlCode?: string;
         expiresAt?: string;
         locationIds?: string[];
         issuedByLocationId?: string;
         issuedByUserId?: string;
+        paymentMode?: string;
+        cardholderName?: string;
+        cardLast4?: string;
+        slipNo?: string;
+        merchantId?: string;
     }, ctx?: { userId?: string; ipAddress?: string; userAgent?: string }) {
         try {
             const qty = Math.min(data.quantity, 500);
@@ -205,11 +232,18 @@ export class VoucherService {
                             code,
                             voucherType: data.voucherType,
                             faceValue: data.faceValue,
+                            discount: data.discount ?? 0,
                             description: data.description,
                             companyName: data.companyName,
+                            companyGlCode: data.companyGlCode,
                             issuedByLocationId: data.issuedByLocationId,
                             issuedByUserId: data.issuedByUserId,
                             expiresAt,
+                            paymentMode: data.paymentMode,
+                            cardholderName: data.cardholderName,
+                            cardLast4: data.cardLast4,
+                            slipNo: data.slipNo,
+                            merchantId: data.merchantId,
                             locations: {
                                 create: locationIds.map((locId) => ({ locationId: locId })),
                             },
@@ -218,7 +252,9 @@ export class VoucherService {
                                     action: 'ISSUED',
                                     amountUsed: 0,
                                     locationId: data.issuedByLocationId,
-                                    notes: `Bulk issued (${qty}) as ${data.voucherType}`,
+                                    notes: data.paymentMode === 'CARD'
+                                        ? `Bulk issued (${qty}) as ${data.voucherType} (Paid via Card${data.cardLast4 ? ` - ****${data.cardLast4}` : ''})`
+                                        : `Bulk issued (${qty}) as ${data.voucherType} (Paid via Cash)`,
                                 },
                             },
                         },
@@ -286,14 +322,16 @@ export class VoucherService {
             });
 
             if (!voucher) return { status: false, message: 'Voucher not found' };
-            if (!voucher.isActive) return { status: false, message: 'Voucher has been voided' };
             if (voucher.isRedeemed) return { status: false, message: 'Voucher has already been redeemed' };
+            if (!voucher.isActive) return { status: false, message: 'Voucher has been voided' };
             if (voucher.expiresAt && voucher.expiresAt < new Date()) {
                 return { status: false, message: 'Voucher has expired' };
             }
 
             // Location check — if locations list is non-empty, must match
-            if (voucher.locations.length > 0) {
+            // Bypass location check for EXCHANGE and CREDIT vouchers (they can be used everywhere by default)
+            const bypassLocationCheck = voucher.voucherType === 'EXCHANGE' || voucher.voucherType === 'CREDIT';
+            if (voucher.locations.length > 0 && !bypassLocationCheck) {
                 const allowed = voucher.locations.some((l) => l.locationId === locationId);
                 if (!allowed) {
                     return { status: false, message: 'Voucher is not valid at this location' };
@@ -317,6 +355,7 @@ export class VoucherService {
                     code: voucher.code,
                     voucherType: voucher.voucherType,
                     faceValue: Number(voucher.faceValue),
+                    discount: Number(voucher.discount),
                     description: voucher.description,
                     customerId: voucher.customerId,
                     requireCustomerMatch: voucher.requireCustomerMatch,
@@ -369,19 +408,24 @@ export class VoucherService {
                 data: { voucherId: r.voucherId, orderId, amountUsed: r.amountUsed },
             });
 
-            // ── Generate CREDIT voucher for unused balance ──
-            // All voucher types (including EXCHANGE) generate credit vouchers for remaining balance
+            // ── Generate remaining balance voucher ──
             if (remainingBalance > 0) {
-                const creditVoucherCode = this.generateCreditVoucherCode();
+                const isCorporate = voucher.voucherType === 'CORPORATE';
+                const nextType = isCorporate ? 'CORPORATE' : 'CREDIT';
+                const newCode = generateCode(nextType);
                 const expiresAt = voucher.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
                 const creditVoucher = await tx.voucher.create({
                     data: {
-                        code: creditVoucherCode,
-                        voucherType: 'CREDIT',
+                        code: newCode,
+                        voucherType: nextType,
                         faceValue: remainingBalance,
-                        description: `Credit voucher for unused balance from ${voucher.code}`,
-                        customerId: voucher.customerId,
+                        description: isCorporate
+                            ? `Corporate voucher for unused balance from ${voucher.code}`
+                            : `Credit voucher for unused balance from ${voucher.code}`,
+                        customerId: isCorporate ? null : voucher.customerId,
+                        companyName: isCorporate ? voucher.companyName : null,
+                        companyGlCode: isCorporate ? voucher.companyGlCode : null,
                         issuedByLocationId: locationId,
                         issuedByUserId: ctx?.userId,
                         sourceOrderId: orderId,
@@ -392,10 +436,13 @@ export class VoucherService {
                 });
 
                 // Add location restriction (same as original voucher)
-                const originalLocations = await tx.voucherLocation.findMany({
-                    where: { voucherId: voucher.id },
-                    select: { locationId: true },
-                });
+                // Bypass for CREDIT vouchers as they are usable everywhere by default
+                const originalLocations = voucher.voucherType === 'EXCHANGE' || voucher.voucherType === 'CREDIT'
+                    ? []
+                    : await tx.voucherLocation.findMany({
+                        where: { voucherId: voucher.id },
+                        select: { locationId: true },
+                    });
 
                 if (originalLocations.length > 0) {
                     await tx.voucherLocation.createMany({
@@ -406,14 +453,16 @@ export class VoucherService {
                     });
                 }
 
-                // Log credit voucher issuance
+                // Log remaining balance voucher issuance
                 await tx.voucherTransaction.create({
                     data: {
                         voucherId: creditVoucher.id,
                         action: 'ISSUED',
                         amountUsed: 0,
                         locationId,
-                        notes: `Credit voucher issued for unused balance of ${voucher.code}`,
+                        notes: isCorporate
+                            ? `Corporate voucher issued for unused balance of ${voucher.code}`
+                            : `Credit voucher issued for unused balance of ${voucher.code}`,
                     },
                 });
 
@@ -535,6 +584,64 @@ export class VoucherService {
         }
     }
 
+    // ── Restore a voided voucher ──────────────────────────────────
+    async restoreVoidedVoucher(id: string, ctx?: { userId?: string; ipAddress?: string; userAgent?: string }) {
+        try {
+            const voucher = await this.prisma.voucher.findFirst({ where: { id } });
+            if (!voucher) return { status: false, message: 'Voucher not found' };
+            if (!voucher.isDeleted) return { status: false, message: 'Voucher is not voided/deleted' };
+            if (voucher.isRedeemed) return { status: false, message: 'Cannot restore a redeemed voucher' };
+
+            await this.prisma.voucher.update({
+                where: { id },
+                data: { isActive: true, isDeleted: false, deletedAt: null },
+            });
+
+            await this.prisma.voucherTransaction.create({
+                data: {
+                    voucherId: id,
+                    action: 'RESTORED',
+                    amountUsed: 0,
+                    notes: 'Restored by staff',
+                },
+            });
+
+            runInBackground(
+                'Restore Voucher',
+                this.activityLogs.log({
+                    userId: ctx?.userId,
+                    action: 'update',
+                    module: 'pos-config',
+                    entity: 'Voucher',
+                    entityId: id,
+                    description: `Restored voucher ${voucher.code}.`,
+                    ipAddress: ctx?.ipAddress,
+                    userAgent: ctx?.userAgent,
+                    status: 'success',
+                }),
+            );
+
+            return { status: true, message: 'Voucher restored' };
+        } catch (error: any) {
+            runInBackground(
+                'Restore Voucher (Failure)',
+                this.activityLogs.log({
+                    userId: ctx?.userId,
+                    action: 'update',
+                    module: 'pos-config',
+                    entity: 'Voucher',
+                    entityId: id,
+                    description: `Failed to restore voucher`,
+                    errorMessage: error?.message,
+                    ipAddress: ctx?.ipAddress,
+                    userAgent: ctx?.userAgent,
+                    status: 'failure',
+                }),
+            );
+            return { status: false, message: error.message };
+        }
+    }
+
     // ── Restore voucher on order void/return ──────────────────────
     async restoreVoucher(voucherId: string, orderId: string, locationId: string, tx: any) {
         await tx.voucher.update({
@@ -558,7 +665,7 @@ export class VoucherService {
     async getVoucher(id: string) {
         try {
             const voucher = await this.prisma.voucher.findFirst({
-                where: { id, isDeleted: false },
+                where: { id },
                 include: {
                     locations: { include: { location: { select: { id: true, name: true, code: true } } } },
                     transactions: { orderBy: { createdAt: 'desc' } },
@@ -567,6 +674,55 @@ export class VoucherService {
             });
             if (!voucher) return { status: false, message: 'Voucher not found' };
             return { status: true, data: voucher };
+        } catch (error: any) {
+            return { status: false, message: error.message };
+        }
+    }
+
+    // ── Update voucher expiry ──────────────────────────────────────
+    async updateVoucherExpiry(
+        id: string,
+        expiresAt: string | null,
+        ctx?: { userId?: string; ipAddress?: string; userAgent?: string }
+    ) {
+        try {
+            const voucher = await this.prisma.voucher.findFirst({ where: { id, isDeleted: false } });
+            if (!voucher) return { status: false, message: 'Voucher not found' };
+            if (voucher.isRedeemed) return { status: false, message: 'Cannot edit expiry of a redeemed voucher' };
+            if (!voucher.isActive) return { status: false, message: 'Cannot edit expiry of an inactive/voided voucher' };
+
+            const updatedExpiresAt = expiresAt ? new Date(expiresAt) : null;
+
+            await this.prisma.voucher.update({
+                where: { id },
+                data: { expiresAt: updatedExpiresAt },
+            });
+
+            await this.prisma.voucherTransaction.create({
+                data: {
+                    voucherId: id,
+                    action: 'EXPIRY_UPDATED',
+                    amountUsed: 0,
+                    notes: `Expiry updated to ${updatedExpiresAt ? updatedExpiresAt.toLocaleString() : 'No expiry'}`,
+                },
+            });
+
+            runInBackground(
+                'Update Voucher Expiry',
+                this.activityLogs.log({
+                    userId: ctx?.userId,
+                    action: 'update',
+                    module: 'pos-config',
+                    entity: 'Voucher',
+                    entityId: id,
+                    description: `Updated voucher ${voucher.code} expiry to ${updatedExpiresAt ? updatedExpiresAt.toISOString() : 'No expiry'}`,
+                    ipAddress: ctx?.ipAddress,
+                    userAgent: ctx?.userAgent,
+                    status: 'success',
+                }),
+            );
+
+            return { status: true, message: 'Voucher expiry updated' };
         } catch (error: any) {
             return { status: false, message: error.message };
         }

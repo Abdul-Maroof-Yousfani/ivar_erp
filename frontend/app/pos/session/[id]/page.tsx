@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,9 @@ import { PrintReconciliation } from "@/components/pos/print-reconciliation";
 export default function SessionSummaryPage() {
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const sessionId = params.id as string;
+    const dateQuery = searchParams?.get("date");
     
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -30,7 +32,27 @@ export default function SessionSummaryPage() {
         const fetchDetails = async () => {
             setLoading(true);
             try {
-                const res = await authFetch(`/pos-session/${sessionId}/reconciliation`);
+                let resolvedId = sessionId;
+                if (sessionId === "current") {
+                    const currentRes = await authFetch("/pos-session/current");
+                    if (currentRes.ok && currentRes.data) {
+                        const id = currentRes.data.session?.id || currentRes.data.id;
+                        if (id) {
+                            resolvedId = id;
+                        } else {
+                            toast.error("No active POS session found");
+                            router.replace("/pos/shifts");
+                            return;
+                        }
+                    } else {
+                        toast.error("No active POS session found");
+                        router.replace("/pos/shifts");
+                        return;
+                    }
+                }
+
+                const url = `/pos-session/${resolvedId}/reconciliation${dateQuery ? `?date=${dateQuery}` : ""}`;
+                const res = await authFetch(url);
                 if (res.ok) {
                     setData(res.data);
                 } else {
@@ -44,7 +66,7 @@ export default function SessionSummaryPage() {
         };
 
         fetchDetails();
-    }, [sessionId]);
+    }, [sessionId, dateQuery, router]);
 
     if (loading) {
         return (
@@ -113,6 +135,33 @@ export default function SessionSummaryPage() {
                     </div>
                 </div>
             </div>
+
+            {data?.availableDates && data.availableDates.length > 1 && (
+                <div className="max-w-6xl mx-auto px-4 mb-6 flex justify-center animate-in fade-in slide-in-from-top-1 duration-200">
+                    <div className="flex items-center gap-1.5 bg-card border border-border p-1 rounded-full shadow-sm">
+                        {data.availableDates.map((d: string) => {
+                            const formatted = new Date(d).toLocaleDateString("en-PK", {
+                                day: "2-digit", month: "short", year: "numeric"
+                            });
+                            const isActive = data.selectedDate === d;
+                            return (
+                                <Button
+                                    key={d}
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => router.push(`/pos/session/${sessionId}?date=${d}`)}
+                                    className={cn(
+                                        "rounded-full h-8 px-4 text-xs font-bold transition-all",
+                                        isActive ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:bg-muted"
+                                    )}
+                                >
+                                    {formatted}
+                                </Button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             <div className="max-w-6xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* LEFT COLUMN: Meta & Drawer */}

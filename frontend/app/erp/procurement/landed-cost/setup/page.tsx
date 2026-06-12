@@ -241,9 +241,7 @@ export default function LandedCostSetupPage() {
       console.log('GRN items count:', grnItems.length);
 
       const basicItems: LocalItem[] = grnItems.map((gi: any) => {
-        const poItems = (grn as any).purchaseOrder?.items || [];
-        const poItem = poItems.find((pi: any) => String(pi.itemId) === String(gi.itemId));
-        const unitFob = poItem ? parseFloat(String(poItem.unitPrice)) : 0;
+        const unitFob = gi.item?.fob !== undefined && gi.item?.fob !== null ? parseFloat(String(gi.item.fob)) : 0;
 
         return {
           itemId: gi.item?.id || gi.itemId, // Prioritize UUID

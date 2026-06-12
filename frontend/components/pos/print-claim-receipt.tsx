@@ -10,6 +10,7 @@ import { Printer, FileText, Loader2 } from "lucide-react";
 import type { PosSettings } from "@/hooks/use-pos-settings";
 import { POS_SETTINGS_DEFAULTS } from "@/hooks/use-pos-settings";
 import { useAuth } from "@/components/providers/auth-provider";
+import { printThermal } from "@/lib/utils/print";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -177,10 +178,10 @@ export function PrintClaimReceipt({
 
     useEffect(() => {
         if (!isLoading && settings.receiptAutoPrint) {
-            const timer = setTimeout(() => window.print(), 400);
+            const timer = setTimeout(() => printThermal("claim-print-root", settings), 400);
             return () => clearTimeout(timer);
         }
-    }, [isLoading, settings.receiptAutoPrint]);
+    }, [isLoading, settings.receiptAutoPrint, settings]);
 
     // ── Store info ───────────────────────
     const storeName =
@@ -206,18 +207,52 @@ export function PrintClaimReceipt({
         <>
             {/* ── Print styles ── */}
             <style>{`
+                /* Ensure print root and its descendants are rendered in solid black and white for standard/PDF rendering */
+                #claim-print-root,
+                #claim-print-root * {
+                    color: #000 !important;
+                    border-color: #000 !important;
+                    background-color: transparent !important;
+                    background: none !important;
+                }
+
+                #claim-print-root [role="separator"],
+                #claim-print-root hr {
+                    background-color: #000 !important;
+                    height: 1px !important;
+                }
+
+                /* Badges/statuses: instead of colored background, show black text with a black border */
+                #claim-print-root [style*="background-color"] {
+                    background-color: transparent !important;
+                    color: #000 !important;
+                    border: 1px solid #000 !important;
+                }
+
                 @media print {
-                    body * { visibility: hidden !important; }
+                    body *:not(#claim-print-root):not(#claim-print-root *) {
+                        visibility: hidden !important;
+                        height: 0 !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        border: none !important;
+                    }
 
                     #claim-print-root,
-                    #claim-print-root * { visibility: visible !important; }
+                    #claim-print-root * {
+                        visibility: visible !important;
+                        color: #000 !important;
+                        border-color: #000 !important;
+                        background-color: transparent !important;
+                        background: none !important;
+                    }
 
                     #claim-print-root {
-                        position: fixed !important;
+                        position: absolute !important;
                         left: 0 !important;
                         top: 0 !important;
-                        width: 80mm !important;
-                        padding: 4mm 3mm !important;
+                        width: 72.1mm !important;
+                        padding: 2mm 1mm !important;
                         background: #fff !important;
                         color: #000 !important;
                         font-family: 'Courier New', Courier, monospace !important;
@@ -252,7 +287,7 @@ export function PrintClaimReceipt({
 
                     <DialogFooter className="px-5 py-3 border-t shrink-0 gap-2">
                         <Button variant="outline" onClick={onClose} className="flex-1">Close</Button>
-                        <Button onClick={() => window.print()} className="flex-1 gap-2 bg-amber-600 hover:bg-amber-700" disabled={isLoading}>
+                        <Button onClick={() => printThermal("claim-print-root", settings)} className="flex-1 gap-2 bg-amber-600 hover:bg-amber-700" disabled={isLoading}>
                             {isLoading
                                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Preparing…</>
                                 : <><Printer className="h-4 w-4" /> Print Claim Receipt</>
@@ -266,7 +301,7 @@ export function PrintClaimReceipt({
             {!isLoading && (
                 <div
                     id="claim-print-root"
-                    style={{ position: "fixed", left: "-9999px", top: 0, width: "80mm", pointerEvents: "none" }}
+                    style={{ position: "fixed", left: "-9999px", top: 0, width: "72.1mm", pointerEvents: "none" }}
                     aria-hidden="true"
                 >
                     <ClaimBody {...bodyProps} />
@@ -329,7 +364,7 @@ function ClaimBody({
     const statusText = status.replace(/_/g, " ");
 
     return (
-        <div className="font-mono text-xs w-full max-w-95 mx-auto space-y-2">
+        <div className="font-mono text-xs w-full max-w-[72.1mm] mx-auto space-y-2">
 
             {/* ── Store Header ── */}
             <div className="text-center space-y-0.5">
@@ -543,20 +578,6 @@ function ClaimBody({
                     </div>
                 </>
             )}
-
-            <Separator />
-
-            {/* ── Terms & Conditions ── */}
-            <div className="text-[10px] space-y-0.5">
-                <p className="font-bold text-[11px]">TERMS &amp; CONDITIONS</p>
-                <p>• Damaged / defective items must be reported within 4 days of purchase</p>
-                <p>• Exchanges are only accepted within 7 days of purchase</p>
-                <p>• Refunds only eligible only on manufacturing defects</p>
-                <p>• Used, washed, altered, or worn items are not eligible for exchanges</p>
-                <p>• Tags must be intact for any exchange</p>
-                <p>• One exchange per order only (exchanged item can not be exchanged again)</p>
-                <p>• Sale items are non-returnable &amp; non-exchangeable (unless defected)</p>
-            </div>
 
             <Separator />
 
