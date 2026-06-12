@@ -90,4 +90,4 @@ export function formatDate(date: string | Date): string {
   }).format(d);
 }
 
-export const COMPANY_NAME = "Speed (Pvt.) Limited";
+export const COMPANY_NAME = "IVAR";

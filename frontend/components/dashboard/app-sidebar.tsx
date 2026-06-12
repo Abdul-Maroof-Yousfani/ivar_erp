@@ -75,9 +75,21 @@ function flattenMasterEntries(items: MenuItem[]): MasterEntry[] {
 
 // ─── Module badge config ──────────────────────────────────────────────────────
 const MODULE_BADGE: Record<string, { label: string; className: string }> = {
-  HR:  { label: "HR",  className: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
-  ERP: { label: "ERP", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
-  POS: { label: "POS", className: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300" },
+  HR: {
+    label: "HR",
+    className:
+      "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+  },
+  ERP: {
+    label: "ERP",
+    className:
+      "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  },
+  POS: {
+    label: "POS",
+    className:
+      "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300",
+  },
 };
 
 // ─── Master sidebar: inline search + flat list ────────────────────────────────
@@ -179,11 +191,15 @@ function MasterSidebarContent({
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">
               <Database className="h-6 w-6 text-muted-foreground/20 mb-2" />
-              <p className="text-xs text-muted-foreground/50">No modules found</p>
+              <p className="text-xs text-muted-foreground/50">
+                No modules found
+              </p>
             </div>
           ) : (
             filtered.map((entry) => {
-              const isActive = pathname === entry.href || pathname.startsWith(entry.href + "/");
+              const isActive =
+                pathname === entry.href ||
+                pathname.startsWith(entry.href + "/");
               return (
                 <Link
                   key={entry.href}
@@ -250,10 +266,14 @@ function MasterSearchPanel({
       <ScrollArea className="flex-1">
         <div className="p-1.5 space-y-0.5">
           {filtered.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">No modules found</p>
+            <p className="text-xs text-muted-foreground text-center py-4">
+              No modules found
+            </p>
           ) : (
             filtered.map((entry) => {
-              const isActive = pathname === entry.href || pathname.startsWith(entry.href + "/");
+              const isActive =
+                pathname === entry.href ||
+                pathname.startsWith(entry.href + "/");
               return (
                 <Link
                   key={entry.href}
@@ -263,9 +283,7 @@ function MasterSearchPanel({
                   onClick={onNavigate}
                   className={cn(
                     "flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs transition-colors",
-                    isActive
-                      ? "bg-accent font-semibold"
-                      : "hover:bg-accent/60",
+                    isActive ? "bg-accent font-semibold" : "hover:bg-accent/60",
                   )}
                 >
                   <span className="truncate">{entry.title}</span>
@@ -338,8 +356,7 @@ function SubMenuItem({ item, pathname }: { item: MenuItem; pathname: string }) {
         isActive && "bg-sidebar-accent/80 font-medium shadow-sm",
       )}
     >
-      <Link href={item.href || "#"} transitionTypes={["nav-forward"]}
-      >
+      <Link href={item.href || "#"} transitionTypes={["nav-forward"]}>
         <span>{item.title}</span>
       </Link>
     </SidebarMenuSubButton>
@@ -469,8 +486,7 @@ function MenuItemComponent({
           "data-[active=true]:bg-sidebar-accent data-[active=true]:shadow-md",
         )}
       >
-        <Link href={item.href || "#"} transitionTypes={["nav-forward"]}
-        >
+        <Link href={item.href || "#"} transitionTypes={["nav-forward"]}>
           {Icon && (
             <Icon
               className={cn(
@@ -623,10 +639,10 @@ export function AppSidebar({
     // We only want to show the switcher if they have explicit access to specific HR and ERP modules
     // Items with "BOTH" (like Dashboard/Profile) shouldn't trigger the switcher presence
     const hasHRAccess = permissionFiltered.some(
-      (item) => item.environment === "HR"
+      (item) => item.environment === "HR",
     );
     const hasERPAccess = permissionFiltered.some(
-      (item) => item.environment === "ERP"
+      (item) => item.environment === "ERP",
     );
 
     // Then filter by environment
@@ -637,7 +653,7 @@ export function AppSidebar({
 
     const isChildTerminal = user?.terminal && !user.terminal.isParent;
     let finalFiltered = envFiltered;
-    
+
     const roleName = (user?.role?.name || "").toLowerCase().trim();
     const isCurrentUserManager =
       roleName.includes("manager") ||
@@ -645,7 +661,12 @@ export function AppSidebar({
       user?.permissions?.includes("pos.return.create") ||
       user?.permissions?.includes("*");
 
-    if (environment === "POS" && isChildTerminal && !isAdmin() && !isCurrentUserManager) {
+    if (
+      environment === "POS" &&
+      isChildTerminal &&
+      !isAdmin() &&
+      !isCurrentUserManager
+    ) {
       const restrictedRoutes = [
         "/pos/reports",
         "/pos/session",
@@ -654,23 +675,25 @@ export function AppSidebar({
         "/pos/inventory/outbound",
         "/pos/inventory/inbound",
         "/pos/inventory/receiving",
-        "/pos/inventory/ledger"
+        "/pos/inventory/ledger",
       ];
-      
-      finalFiltered = envFiltered.map(item => {
-        if (item.children) {
-          const filteredChildren = item.children.filter(child => {
-            return !restrictedRoutes.includes(child.href || "");
-          });
-          return { ...item, children: filteredChildren };
-        }
-        return item;
-      }).filter(item => {
-        if (item.children && item.children.length === 0 && !item.href) {
-          return false;
-        }
-        return !restrictedRoutes.includes(item.href || "");
-      });
+
+      finalFiltered = envFiltered
+        .map((item) => {
+          if (item.children) {
+            const filteredChildren = item.children.filter((child) => {
+              return !restrictedRoutes.includes(child.href || "");
+            });
+            return { ...item, children: filteredChildren };
+          }
+          return item;
+        })
+        .filter((item) => {
+          if (item.children && item.children.length === 0 && !item.href) {
+            return false;
+          }
+          return !restrictedRoutes.includes(item.href || "");
+        });
     }
 
     return { filteredMenu: finalFiltered, hasHRAccess, hasERPAccess };
@@ -706,13 +729,13 @@ export function AppSidebar({
           <div className="flex items-center gap-3 px-2 justify-center group-data-[collapsible=icon]:justify-center">
             <div className="flex items-center justify-center size-10 aspect-square rounded-xl bg-white text-primary shadow-sm group-data-[collapsible=icon]:rounded-lg transition-all duration-200">
               <Image
-                src={"/image.png"}
+                src={"/image-v2.png"}
                 alt="Logo"
                 width={30}
                 height={30}
                 className="object-contain"
               />
-              </div>
+            </div>
             <div className="flex flex-col group-data-[collapsible=icon]:hidden transition-opacity duration-200">
               <span className="font-bold text-base leading-tight text-sidebar-foreground">
                 {COMPANY_NAME}
@@ -720,7 +743,7 @@ export function AppSidebar({
               <span className="text-xs text-sidebar-foreground/60 font-medium">
                 {logoLabel}
               </span>
-            </div> 
+            </div>
           </div>
         </div>
       </SidebarHeader>
