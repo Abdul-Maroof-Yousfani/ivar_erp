@@ -623,11 +623,11 @@ function ReturnBody({
             {/* ── Terms ── */}
             <div className="text-[10px] space-y-0.5">
                 <p className="font-bold text-[11px]">TERMS &amp; CONDITIONS OF SALE</p>
-                <p>No Refund.</p>
-                <p>Exchanges on unused products within 10 days only from the outlet where purchased.</p>
-                <p>Claim will not be accepted without Sales Tax Invoice.</p>
+                <p>No refund under any circumstances.</p>
+                <p>Exchange is allowed within 10 days of purchase only on unused items from the outlet where purchased.</p>
+                <p>Sales Tax Invoice must be presented for any exchange or claim.</p>
                 <p>Sales and promotional items are strictly non-exchangeable.</p>
-                <p>Item purchases at full price which go on sale will be exchanged at the marked down price.</p>
+                <p>Items purchased at full price which go on sale will be exchanged at the marked down price.</p>
             </div>
 
             <Separator />
