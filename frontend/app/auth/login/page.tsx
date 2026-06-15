@@ -23,7 +23,7 @@ function buildSubdomainUrl(subdomain: string, path: string, port?: string): stri
     if (hostname.includes("localtest.me")) {
       baseDomain = "localtest.me";
     }
-    const portStr = port || window.location.port || "3001";
+    const portStr = port || window.location.port || "3002";
     return `${protocol}//${subdomain}.${baseDomain}:${portStr}${path}`;
   } else {
     // For production, use spl.inplsoftwares.com as base
@@ -128,7 +128,7 @@ export default function LoginPage() {
         localStorage.setItem("rememberedProfiles", JSON.stringify(remembered));
 
         // Get port from current URL
-        const port = window.location.port || "3001";
+        const port = window.location.port || "3002";
         // Strip subdomain prefix from callback URL for the final URL
         const finalPath = stripSubdomainPrefix(callbackUrl, targetSubdomain);
         // Build redirect URL with correct subdomain and port

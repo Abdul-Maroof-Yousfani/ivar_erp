@@ -43,6 +43,18 @@ export class CreateItemDto {
   @IsOptional()
   status?: string;
 
+  @IsString()
+  @IsOptional()
+  itemType?: string;
+
+  @IsString()
+  @IsOptional()
+  uom?: string;
+
+  @IsNumber()
+  @IsOptional()
+  rollSize?: number;
+
   // Pricing & Discounts
   @IsNumber()
   @IsOptional()

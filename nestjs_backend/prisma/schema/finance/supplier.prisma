@@ -36,6 +36,7 @@ model Supplier {
   chartOfAccounts  ChartOfAccount[]            @relation("ChartOfAccountToSupplier")
   debitNotes       DebitNote[]
   ledgerEntries    SupplierLedger[]
+  fabricTrackers   FabricVendorTracker[]
 
   @@index([nature])
   @@index([type])

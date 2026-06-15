@@ -342,6 +342,26 @@ export function HeaderNotifications() {
       return;
     }
 
+    // fabric-vendor-tracker-export.ready
+    if (n.actionType === "fabric-vendor-tracker-export.ready" && n.actionPayload) {
+      try {
+        const payload = typeof n.actionPayload === "string"
+          ? JSON.parse(n.actionPayload)
+          : n.actionPayload;
+        const jobId = payload?.jobId;
+        if (jobId) {
+          const base = getApiBaseUrl();
+          await triggerDownload(
+            `${base}/fabric-vendor-tracker/export/${jobId}/download`,
+            `fabric-vendor-tracker-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          );
+        }
+      } catch (e) {
+        console.error("Fabric Vendor Tracker export download failed:", e);
+      }
+      return;
+    }
+
     // stock-ledger-export.ready
     if (n.actionType === "stock-ledger-export.ready" && n.actionPayload) {
       try {

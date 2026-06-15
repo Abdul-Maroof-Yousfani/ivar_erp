@@ -20,6 +20,7 @@ function sanitizeItemData(data: any) {
         "sizeId",
         "colorId",
         "silhouetteId",
+        "hsCodeId",
     ];
 
     for (const key of keysToCheck) {
@@ -38,6 +39,13 @@ function sanitizeItemData(data: any) {
     if (sanitized.movementType === "") sanitized.movementType = undefined;
     if (sanitized.heelHeight === "") sanitized.heelHeight = undefined;
     if (sanitized.width === "") sanitized.width = undefined;
+    
+    // Convert rollSize to number if provided, otherwise set to undefined
+    if (sanitized.rollSize === "" || sanitized.rollSize === null || sanitized.rollSize === undefined || isNaN(Number(sanitized.rollSize))) {
+        sanitized.rollSize = undefined;
+    } else {
+        sanitized.rollSize = Number(sanitized.rollSize);
+    }
 
     return sanitized;
 }

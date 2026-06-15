@@ -488,6 +488,7 @@ export default function PurchaseInvoiceDetailPage() {
                       <thead>
                         <tr className="border-b">
                           <th className="text-left p-3">Item</th>
+                          <th className="text-center p-3 w-[120px]">Roll Size</th>
                           <th className="text-right p-3">Quantity</th>
                           <th className="text-right p-3">Price</th>
                           <th className="text-right p-3">Line Total</th>
@@ -503,6 +504,15 @@ export default function PurchaseInvoiceDetailPage() {
                               <div className="text-sm text-gray-500">
                                 {item.item?.itemId || item.itemId}
                               </div>
+                            </td>
+                            <td className="p-3 text-center">
+                              {item.rollSize ? (
+                                <Badge variant="outline" className="font-semibold text-xs border-blue-200 bg-blue-50 text-blue-700">
+                                  {item.rollSize.toLocaleString()}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground/45 text-xs">-</span>
+                              )}
                             </td>
                             <td className="p-3 text-right">{item.quantity}</td>
                             <td className="p-3 text-right">
@@ -700,6 +710,11 @@ export default function PurchaseInvoiceDetailPage() {
                         <div className="text-gray-700">
                           {item.item?.description || item.description || "-"}
                         </div>
+                        {item.rollSize && (
+                          <div className="text-[11px] text-blue-700 font-semibold mt-0.5">
+                            Roll Size: {item.rollSize.toLocaleString()}
+                          </div>
+                        )}
                       </td>
                       <td className="py-2 pr-2 text-right tabular-nums">
                         {item.quantity}

@@ -51,6 +51,7 @@ export async function createPurchaseInvoice(data: {
         unitPrice: number;
         taxRate?: number;
         discountRate?: number;
+        rollSize?: number;
     }[];
 }) {
     try {
@@ -147,6 +148,7 @@ export async function updatePurchaseInvoice(id: string, data: {
         unitPrice: number;
         taxRate?: number;
         discountRate?: number;
+        rollSize?: number;
     }[];
 }) {
     try {
@@ -182,6 +184,7 @@ export async function searchItemsForDirectPI(query: string, filters?: {
     categoryIds?: string[];
     silhouetteIds?: string[];
     genderIds?: string[];
+    itemType?: string;
 }) {
     try {
         const params = new URLSearchParams();
@@ -191,6 +194,7 @@ export async function searchItemsForDirectPI(query: string, filters?: {
         if (filters?.categoryIds?.length) params.append('categoryIds', filters.categoryIds.join(','));
         if (filters?.silhouetteIds?.length) params.append('silhouetteIds', filters.silhouetteIds.join(','));
         if (filters?.genderIds?.length) params.append('genderIds', filters.genderIds.join(','));
+        if (filters?.itemType) params.append('itemType', filters.itemType);
         const response = await authFetch(`/finance/items?${params.toString()}`);
         return response.data?.data ?? response.data ?? [];
     } catch (error) {

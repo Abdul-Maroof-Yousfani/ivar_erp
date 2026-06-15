@@ -101,6 +101,7 @@ export class ItemService {
       categoryIds?: string[];
       silhouetteIds?: string[];
       genderIds?: string[];
+      itemType?: string;
     },
   ) {
     const skip = (page - 1) * limit;
@@ -148,6 +149,9 @@ export class ItemService {
     }
     if (filters?.genderIds?.length) {
       andClauses.push({ genderId: { in: filters.genderIds } });
+    }
+    if (filters?.itemType) {
+      andClauses.push({ itemType: filters.itemType });
     }
 
     const where: any = andClauses.length > 0 ? { AND: andClauses } : {};

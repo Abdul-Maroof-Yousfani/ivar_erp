@@ -12,6 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandGroup, CommandItem, CommandList } from '@/components/ui/command';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Autocomplete } from '@/components/ui/autocomplete';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -40,6 +41,8 @@ interface SelectedItem {
     description: string;
     quantity: number;
     unitPrice: number;
+    uom?: string;
+    rollSize?: number;
     taxRate: number;
     discountRate: number;
     notes: string;
@@ -70,6 +73,7 @@ export default function CreateDirectPurchaseInvoicePage() {
     const [bulkQty, setBulkQty] = useState(1);
     const [bulkUnitPrice, setBulkUnitPrice] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
+    const [searchItemType, setSearchItemType] = useState<'FINISHED' | 'RAW_FABRIC'>('FINISHED');
 
     // Barcode scanner states
     const [barcodeTab, setBarcodeTab] = useState<'scan' | 'search'>('scan');
@@ -201,6 +205,8 @@ export default function CreateDirectPurchaseInvoicePage() {
                 sku: matchedItem.sku ?? matchedItem.itemId ?? '',
                 description: matchedItem.description ?? matchedItem.name ?? '',
                 unitPrice: matchedItem.unitPrice ?? matchedItem.unitCost ?? 0,
+                uom: matchedItem.uom ?? 'Pcs',
+                rollSize: matchedItem.rollSize,
             };
 
             const existingIndex = selectedItems.findIndex(i => i.id === itemData.id);
@@ -208,11 +214,11 @@ export default function CreateDirectPurchaseInvoicePage() {
                 if (autoIncrement) {
                     setSelectedItems(prev => prev.map((item, idx) => 
                         idx === existingIndex 
-                            ? { ...item, quantity: item.quantity + bulkQty }
-                            : item
+                        ? { ...item, quantity: item.quantity + bulkQty }
+                        : item
                     ));
                     if (soundEnabled) playScanSuccessBeep();
-                    toast.success(`Incremented quantity for ${itemData.sku} (Total: ${selectedItems[existingIndex].quantity + bulkQty})`, {
+                    toast.success(`Incremented quantity for ${itemData.sku} (Total: ${selectedItems[existingIndex].quantity + bulkQty} ${itemData.uom})`, {
                         id: `scan-inc-${itemData.id}`,
                     });
                 } else {
@@ -228,6 +234,8 @@ export default function CreateDirectPurchaseInvoicePage() {
                     description: itemData.description,
                     quantity: bulkQty,
                     unitPrice: bulkUnitPrice > 0 ? bulkUnitPrice : (itemData.unitPrice ?? 0),
+                    uom: itemData.uom,
+                    rollSize: itemData.rollSize,
                     taxRate: 0,
                     discountRate: 0,
                     notes: '',
@@ -369,7 +377,7 @@ export default function CreateDirectPurchaseInvoicePage() {
         }
         setSearchLoading(true);
         try {
-            const results = await searchItemsForDirectPI(query, active);
+            const results = await searchItemsForDirectPI(query, { ...active, itemType: searchItemType });
             const options = (results as any[]).map((item: any) => ({
                 value: item.id,
                 label: `${item.sku} - ${item.description ?? item.name ?? ''}`,
@@ -378,6 +386,8 @@ export default function CreateDirectPurchaseInvoicePage() {
                     sku: item.sku ?? item.itemId ?? '',
                     description: item.description ?? item.name ?? '',
                     unitPrice: item.unitPrice ?? item.unitCost ?? 0,
+                    uom: item.uom ?? 'Pcs',
+                    rollSize: item.rollSize,
                 },
             }));
             setItemOptions(options);
@@ -401,6 +411,8 @@ export default function CreateDirectPurchaseInvoicePage() {
                 description: itemData.description,
                 quantity: bulkQty,
                 unitPrice: bulkUnitPrice > 0 ? bulkUnitPrice : (itemData.unitPrice ?? 0),
+                uom: itemData.uom ?? 'Pcs',
+                rollSize: itemData.rollSize,
                 taxRate: 0,
                 discountRate: 0,
                 notes: '',
@@ -429,6 +441,15 @@ export default function CreateDirectPurchaseInvoicePage() {
 
     const { subtotal, taxAmount, total } = calculateTotals();
 
+    const getQtyByUomSummary = () => {
+        const summary: Record<string, number> = {};
+        selectedItems.forEach(item => {
+            const uom = item.uom || 'Pcs';
+            summary[uom] = (summary[uom] || 0) + item.quantity;
+        });
+        return summary;
+    };
+
     const handleSubmit = async () => {
         if (!supplierId) { toast.error('Please select a supplier'); return; }
         if (!warehouseId) { toast.error('Please select a warehouse'); return; }
@@ -454,6 +475,7 @@ export default function CreateDirectPurchaseInvoicePage() {
                     unitPrice: i.unitPrice,
                     taxRate: i.taxRate,
                     discountRate: i.discountRate,
+                    rollSize: i.rollSize,
                 })),
             });
             toast.success('Purchase invoice created');
@@ -581,8 +603,13 @@ export default function CreateDirectPurchaseInvoicePage() {
                 <Card className="lg:col-span-3">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
                         <CardTitle>Items & Quantities</CardTitle>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <Badge variant="secondary">{selectedItems.length} Items Selected</Badge>
+                            {Object.entries(getQtyByUomSummary()).map(([uom, qty]) => (
+                                <Badge key={uom} variant="outline" className="bg-primary/10 border-primary/20 text-primary font-bold">
+                                    {qty.toLocaleString()} {uom}
+                                </Badge>
+                            ))}
 
                             {/* Filter trigger */}
                             <Tooltip>
@@ -982,7 +1009,28 @@ export default function CreateDirectPurchaseInvoicePage() {
                                             />
                                         </div>
 
-                                        <div className="flex-1 space-y-1.5 relative w-full">
+                                        {/* Search Category Select */}
+                                        <div className="w-full md:w-48 space-y-1.5">
+                                            <Label htmlFor="search-item-type" className="text-xs text-muted-foreground">Order Item Category</Label>
+                                            <Select 
+                                                value={searchItemType} 
+                                                onValueChange={(val: 'FINISHED' | 'RAW_FABRIC') => {
+                                                    setSearchItemType(val);
+                                                    setItemOptions([]);
+                                                    setSearchQuery('');
+                                                }}
+                                            >
+                                                <SelectTrigger id="search-item-type" className="h-10 border-primary/20 focus-visible:ring-primary shadow-sm">
+                                                    <SelectValue placeholder="Select Category" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="FINISHED">Finished Goods (Item)</SelectItem>
+                                                    <SelectItem value="RAW_FABRIC">Production Fabrics</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div className="flex-1 space-y-1.5 relative w-full font-sans">
                                             <Label htmlFor="item-search" className="text-xs text-muted-foreground">Search Items (Select Multiple)</Label>
                                             <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
                                                 <PopoverTrigger asChild>
@@ -1126,6 +1174,8 @@ export default function CreateDirectPurchaseInvoicePage() {
                                         <TableHead className="w-[130px]">SKU</TableHead>
                                         <TableHead>Description</TableHead>
                                         <TableHead className="w-[90px] text-center">Qty</TableHead>
+                                        <TableHead className="w-[85px] text-center">UOM</TableHead>
+                                        <TableHead className="w-[100px] text-center">Roll Size</TableHead>
                                         <TableHead className="w-[120px]">Unit Price</TableHead>
                                         <TableHead className="w-[90px]">Tax %</TableHead>
                                         <TableHead className="w-[90px]">Disc %</TableHead>
@@ -1136,7 +1186,7 @@ export default function CreateDirectPurchaseInvoicePage() {
                                 <TableBody>
                                     {selectedItems.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={8} className="h-32 text-center text-muted-foreground italic">
+                                            <TableCell colSpan={10} className="h-32 text-center text-muted-foreground italic">
                                                 No items added yet. Search and add items above.
                                             </TableCell>
                                         </TableRow>
@@ -1156,7 +1206,22 @@ export default function CreateDirectPurchaseInvoicePage() {
                                                             min="1"
                                                             value={item.quantity}
                                                             onChange={e => updateItem(item.id, 'quantity', Number(e.target.value))}
-                                                            className="h-8 w-20 focus-visible:ring-primary shadow-none bg-transparent group-hover:bg-background transition-colors"
+                                                            className="h-8 w-20 focus-visible:ring-primary shadow-none bg-transparent group-hover:bg-background transition-colors text-center font-semibold"
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell className="text-center">
+                                                        <Badge variant="outline" className="font-semibold text-xs border-primary/20 bg-primary/5 text-primary">
+                                                            {item.uom || 'Pcs'}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="text-center">
+                                                        <Input
+                                                            type="number"
+                                                            min="0"
+                                                            placeholder="e.g. 1000"
+                                                            value={item.rollSize ?? ''}
+                                                            onChange={e => updateItem(item.id, 'rollSize', e.target.value === '' ? undefined : Number(e.target.value))}
+                                                            className="h-8 w-24 focus-visible:ring-primary shadow-none bg-transparent group-hover:bg-background transition-colors text-center font-semibold mx-auto"
                                                         />
                                                     </TableCell>
                                                     <TableCell>

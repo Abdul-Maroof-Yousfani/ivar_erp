@@ -14,7 +14,7 @@ if [ ! -f "$BACKEND_ENV" ]; then
     cat > "$BACKEND_ENV" << EOF
 DATABASE_URL=postgresql://speedlimit:speedlimit123@localhost:5432/speedlimit
 PORT=3000
-FRONTEND_URL=http://localhost:3001
+FRONTEND_URL=http://localhost:3002
 JWT_ACCESS_SECRET=your-super-secret-access-key-change-in-production
 JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-in-production
 NODE_ENV=development
@@ -95,7 +95,7 @@ echo ""
 echo "=== Starting Development Servers ==="
 echo ""
 echo "Backend will run on: http://localhost:3000"
-echo "Frontend will run on: http://localhost:3001"
+echo "Frontend will run on: http://localhost:3002"
 echo ""
 echo "Press Ctrl+C to stop both servers"
 echo ""
@@ -105,7 +105,7 @@ echo "Starting backend..."
 cd nestjs_backend
 export DATABASE_URL="postgresql://speedlimit:speedlimit123@localhost:5432/speedlimit"
 export PORT=3000
-export FRONTEND_URL="http://localhost:3001"
+export FRONTEND_URL="http://localhost:3002"
 export NODE_ENV=development
 bun run start:dev &
 BACKEND_PID=$!
@@ -131,7 +131,7 @@ echo "Backend PID: $BACKEND_PID"
 echo "Frontend PID: $FRONTEND_PID"
 echo ""
 echo "Backend: http://localhost:3000"
-echo "Frontend: http://localhost:3001"
+echo "Frontend: http://localhost:3002"
 echo ""
 echo "Press Ctrl+C to stop both servers"
 

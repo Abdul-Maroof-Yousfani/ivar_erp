@@ -64,6 +64,7 @@ export default function CreateDirectPurchaseOrder() {
 
     // Search — Popover multi-select (same as stock-transfer)
     const [searchQuery, setSearchQuery] = useState('');
+    const [searchItemType, setSearchItemType] = useState<'FINISHED' | 'RAW_FABRIC'>('FINISHED');
     const [searchResults, setSearchResults] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [isPopoverOpen, setIsPopoverOpen] = useState(false);
@@ -98,7 +99,7 @@ export default function CreateDirectPurchaseOrder() {
         if (query.trim().length < 2) { setSearchResults([]); return; }
         setIsSearching(true);
         try {
-            const res = await inventoryApi.search(query.trim());
+            const res = await inventoryApi.search(query.trim(), undefined, undefined, { itemType: searchItemType });
             if (res.status && res.data) {
                 setSearchResults(res.data.map((item: any) => ({
                     value: item.id,
@@ -114,7 +115,7 @@ export default function CreateDirectPurchaseOrder() {
         } finally {
             setIsSearching(false);
         }
-    }, [isPopoverOpen]);
+    }, [isPopoverOpen, searchItemType]);
 
     const handleSelectItem = useCallback((item: any) => {
         // For PO: single select — clicking adds directly with current qty/price
@@ -461,6 +462,26 @@ export default function CreateDirectPurchaseOrder() {
                         {/* Add Item Form */}
                         <div className="space-y-3 border-b pb-4 p-4 bg-primary/5 rounded-lg border border-primary/10">
                             <div className="flex gap-3 items-end flex-wrap">
+                                {/* Search Category Select */}
+                                <div className="w-48 space-y-1.5">
+                                    <Label className="text-xs text-muted-foreground">Order Item Category</Label>
+                                    <Select 
+                                        value={searchItemType} 
+                                        onValueChange={(val: 'FINISHED' | 'RAW_FABRIC') => {
+                                            setSearchItemType(val);
+                                            setSearchResults([]);
+                                            setSearchQuery('');
+                                        }}
+                                    >
+                                        <SelectTrigger className="h-10 border-primary/20">
+                                            <SelectValue placeholder="Select Category" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="FINISHED">Finished Goods (Item)</SelectItem>
+                                            <SelectItem value="RAW_FABRIC">Production Fabrics</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                                 {/* Search Popover */}
                                 <div className="flex-1 min-w-[200px] space-y-1.5">
                                     <Label className="text-xs text-muted-foreground">Search & Select Item</Label>

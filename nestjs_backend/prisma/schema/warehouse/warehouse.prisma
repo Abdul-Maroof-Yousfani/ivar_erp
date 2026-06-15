@@ -28,6 +28,7 @@ model Warehouse {
   deliveryChallans DeliveryChallan[]
   erpSalesInvoices ERPSalesInvoice[]
   purchaseInvoices PurchaseInvoice[]
+  fabricTrackers   FabricVendorTracker[]
 
   @@index([companyId])
   @@index([type])

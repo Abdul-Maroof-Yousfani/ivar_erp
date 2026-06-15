@@ -35,12 +35,14 @@ export class InventoryController {
     @Query('categoryIds') categoryIds?: string,
     @Query('silhouetteIds') silhouetteIds?: string,
     @Query('genderIds') genderIds?: string,
+    @Query('itemType') itemType?: string,
   ) {
     const filters = {
       brandIds: brandIds ? brandIds.split(',').filter(Boolean) : undefined,
       categoryIds: categoryIds ? categoryIds.split(',').filter(Boolean) : undefined,
       silhouetteIds: silhouetteIds ? silhouetteIds.split(',').filter(Boolean) : undefined,
       genderIds: genderIds ? genderIds.split(',').filter(Boolean) : undefined,
+      itemType,
     };
     const data = await this.inventoryService.searchInventory(query, warehouseId, locationId, filters);
     return { status: true, data };

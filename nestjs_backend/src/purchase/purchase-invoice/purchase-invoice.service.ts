@@ -84,6 +84,7 @@ export class PurchaseInvoiceService {
                 taxAmount: itemTaxAmount,
                 discountRate: item.discountRate || 0,
                 discountAmount: itemDiscountAmount,
+                rollSize: item.rollSize,
               };
             }),
           },
@@ -295,6 +296,7 @@ export class PurchaseInvoiceService {
                 taxAmount: itemTaxAmount,
                 discountRate: item.discountRate || 0,
                 discountAmount: itemDiscountAmount,
+                rollSize: item.rollSize,
               };
             }),
           }
@@ -807,8 +809,9 @@ export class PurchaseInvoiceService {
         if ((invoice as any).invoiceType === 'DIRECT' && (invoice as any).warehouseId) {
           const warehouseId = (invoice as any).warehouseId as string;
           for (const item of invoice.items) {
-            const qty = new Prisma.Decimal(item.quantity);
-            const unitPrice = new Prisma.Decimal(item.unitPrice);
+            const rollSize = item.rollSize && Number(item.rollSize) > 0 ? Number(item.rollSize) : 1;
+            const qty = new Prisma.Decimal(item.quantity).mul(rollSize);
+            const unitPrice = new Prisma.Decimal(item.unitPrice).div(rollSize);
 
             // Stock ledger entry (INBOUND)
             await this.stockLedger.createEntry(

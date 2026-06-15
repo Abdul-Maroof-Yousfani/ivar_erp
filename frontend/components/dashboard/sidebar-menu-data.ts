@@ -833,6 +833,11 @@ export const menuData: MenuItem[] = [
           },
         ],
       },
+      {
+        title: "Production Fabric Form",
+        href: "/erp/inventory/fabric-vendor-tracker",
+        permissions: ["inventory.read"],
+      },
     ],
   },
   {

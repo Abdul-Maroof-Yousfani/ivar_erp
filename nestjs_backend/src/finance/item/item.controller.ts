@@ -44,6 +44,7 @@ export class ItemController {
     @Query('categoryIds') categoryIds?: string,
     @Query('silhouetteIds') silhouetteIds?: string,
     @Query('genderIds') genderIds?: string,
+    @Query('itemType') itemType?: string,
   ) {
     const parseIds = (v?: string) => (v ? v.split(',').filter(Boolean) : undefined);
     return this.itemService.findAll(
@@ -57,6 +58,7 @@ export class ItemController {
         categoryIds: parseIds(categoryIds),
         silhouetteIds: parseIds(silhouetteIds),
         genderIds: parseIds(genderIds),
+        itemType,
       },
     );
   }

@@ -1,0 +1,38 @@
+model FabricVendorTracker {
+  id              String       @id @default(uuid())
+  trackerNumber   String       @unique @map("tracker_number") // E.g. FT-2026-0001
+  supplierId      String       @map("supplier_id")            // Vendor (Supplier) ID
+  itemId          String       @map("item_id")                // Fabric ID (Item)
+  warehouseId     String       @map("warehouse_id")           // Warehouse ID (e.g. Main Store)
+  
+  // 1. Issue Phase (Form ka pehla part)
+  qtyIssued       Decimal      @db.Decimal(15, 4) @map("qty_issued")
+  issueDate       DateTime     @default(now()) @map("issue_date")
+  
+  // 2. Consumption Phase (Form ka dusra part - pehle null/zero hoga)
+  qtyUsed         Decimal      @default(0.0) @db.Decimal(15, 4) @map("qty_used")
+  qtyReturned     Decimal      @default(0.0) @db.Decimal(15, 4) @map("qty_returned")
+  qtyShortage     Decimal      @default(0.0) @db.Decimal(15, 4) @map("qty_shortage")
+  consumptionDate DateTime?    @map("consumption_date")
+  
+  status          FabricStatus @default(PENDING) // PENDING | COMPLETED
+  notes           String?
+  
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  supplier        Supplier     @relation(fields: [supplierId], references: [id])
+  item            Item         @relation(fields: [itemId], references: [id])
+  warehouse       Warehouse    @relation(fields: [warehouseId], references: [id])
+
+  @@index([supplierId])
+  @@index([itemId])
+  @@index([warehouseId])
+  @@map("fabric_vendor_trackers")
+}
+
+enum FabricStatus {
+  PENDING   // Fabric vendor ke paas chala gaya hai, consumption report hona baki hai
+  COMPLETED // Vendor ne consumption report kar di hai, balance clear hai
+}
