@@ -103,6 +103,8 @@ export class InventoryService {
         OR: query
           ? [
               { sku: { contains: query, mode: 'insensitive' } },
+              { barCode: { contains: query, mode: 'insensitive' } },
+              { itemId: { contains: query, mode: 'insensitive' } },
               { description: { contains: query, mode: 'insensitive' } },
             ]
           : undefined,
@@ -112,7 +114,9 @@ export class InventoryService {
       take: 50,
       select: {
         id: true,
+        itemId: true,
         sku: true,
+        barCode: true,
         description: true,
         unitPrice: true,
         unitCost: true, // Added unitCost field
