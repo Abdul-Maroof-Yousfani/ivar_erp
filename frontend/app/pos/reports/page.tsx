@@ -60,6 +60,7 @@ import DataTable from "@/components/common/data-table";
 import { DateRangePicker, DateRange } from "@/components/ui/date-range-picker";
 import { cn, formatCurrency } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
+import { queuePosSalesExport } from "@/lib/actions/pos-sales";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -342,6 +343,8 @@ export default function SalesReportPage() {
     fetchReport();
   }, [fetchReport]);
 
+  const [isExporting, setIsExporting] = useState(false);
+
   // ── Export CSV ─────────────────────────────────────────────────────────────
   const exportCSV = useCallback(() => {
     if (!reportData?.orders?.length) {
@@ -384,6 +387,30 @@ export default function SalesReportPage() {
     URL.revokeObjectURL(url);
     toast.success("CSV exported");
   }, [reportData]);
+
+  // ── Export Excel (Background) ──────────────────────────────────────────────
+  const handleExcelExport = useCallback(async () => {
+    setIsExporting(true);
+    try {
+      const res = await queuePosSalesExport({
+        startDate: filters.dateRange?.from?.toISOString().split("T")[0],
+        endDate: filters.dateRange?.to?.toISOString().split("T")[0],
+        status: filters.status !== "all" ? filters.status : undefined,
+        paymentMethod: filters.paymentMethod !== "all" ? filters.paymentMethod : undefined,
+        search: filters.search || undefined,
+      });
+
+      if (res.status) {
+        toast.success(res.message || "Excel export queued successfully. You will be notified when it is ready.");
+      } else {
+        toast.error(res.message || "Failed to export Excel");
+      }
+    } catch (error) {
+      toast.error("An error occurred while exporting Excel");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [filters]);
 
   // ── Columns: Orders ────────────────────────────────────────────────────────
   const orderColumns = useMemo<ColumnDef<ReportOrder>[]>(
@@ -497,6 +524,14 @@ export default function SalesReportPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleExcelExport} disabled={isLoading || isExporting}>
+            {isExporting ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+            ) : (
+              <Download className="h-4 w-4 mr-1.5" />
+            )}
+            Export Excel
+          </Button>
           <Button variant="outline" size="sm" onClick={exportCSV} disabled={isLoading}>
             <Download className="h-4 w-4 mr-1.5" />
             Export CSV

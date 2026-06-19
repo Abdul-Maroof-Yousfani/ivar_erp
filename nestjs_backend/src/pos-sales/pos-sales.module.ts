@@ -13,6 +13,10 @@ import { StockLedgerModule } from '../warehouse/stock-ledger/stock-ledger.module
 import { FbrService } from './fbr.service';
 import { CustomerModule } from '../sales/customer/customer.module';
 import { PosConfigModule } from '../pos-config/pos-config.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { PosSalesExportController } from './pos-sales-export.controller';
+import { PosSalesExportService } from './pos-sales-export.service';
+import { PosSalesExportProcessor } from './pos-sales-export.processor';
 
 @Module({
     imports: [
@@ -20,9 +24,17 @@ import { PosConfigModule } from '../pos-config/pos-config.module';
         StockLedgerModule,
         CustomerModule,
         PosConfigModule,
-        BullModule.registerQueue({ name: 'sales-history-upload' }),
+        NotificationsModule,
+        BullModule.registerQueue(
+            { name: 'sales-history-upload' },
+            { name: 'pos-sales-export' }
+        ),
     ],
-    controllers: [PosSalesController, SalesHistoryBulkUploadController],
+    controllers: [
+        PosSalesController,
+        SalesHistoryBulkUploadController,
+        PosSalesExportController
+    ],
     providers: [
         PosSalesService,
         FbrService,
@@ -31,7 +43,10 @@ import { PosConfigModule } from '../pos-config/pos-config.module';
         SalesHistoryCsvParserService,
         SalesHistoryValidatorService,
         UploadEventsService,
+        PosSalesExportService,
+        PosSalesExportProcessor,
     ],
     exports: [PosSalesService],
 })
 export class PosSalesModule { }
+

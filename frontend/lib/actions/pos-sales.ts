@@ -79,3 +79,33 @@ export async function listSalesOrders(params?: {
         return { status: false, data: [], meta: { total: 0, page: 1, limit: 100, totalPages: 0 }, message: "Failed to fetch orders" };
     }
 }
+
+export async function queuePosSalesExport(params?: {
+    startDate?: string;
+    endDate?: string;
+    locationId?: string;
+    cashierUserId?: string;
+    paymentMethod?: string;
+    status?: string;
+    search?: string;
+}): Promise<{ status: boolean; data?: { jobId: string }; message?: string }> {
+    try {
+        const res = await authFetch("/pos-sales/export", {
+            method: "POST",
+            params: {
+                startDate: params?.startDate || undefined,
+                endDate: params?.endDate || undefined,
+                locationId: params?.locationId || undefined,
+                cashierUserId: params?.cashierUserId || undefined,
+                paymentMethod: params?.paymentMethod || undefined,
+                status: params?.status || undefined,
+                search: params?.search || undefined,
+            },
+        });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("queuePosSalesExport error:", error);
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+

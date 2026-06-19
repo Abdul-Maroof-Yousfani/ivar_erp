@@ -1316,6 +1316,7 @@ export class PosSessionService {
       },
     };
   }
+  
   /**
    * Generates a Journal Voucher for a closed session based on reconciliation details.
    */

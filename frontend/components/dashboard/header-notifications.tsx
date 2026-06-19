@@ -382,6 +382,26 @@ export function HeaderNotifications() {
       return;
     }
 
+    // pos-sales-export.ready
+    if (n.actionType === "pos-sales-export.ready" && n.actionPayload) {
+      try {
+        const payload = typeof n.actionPayload === "string"
+          ? JSON.parse(n.actionPayload)
+          : n.actionPayload;
+        const jobId = payload?.jobId;
+        if (jobId) {
+          const base = getApiBaseUrl();
+          await triggerDownload(
+            `${base}/pos-sales/export/${jobId}/download`,
+            `pos-sales-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          );
+        }
+      } catch (e) {
+        console.error("POS Sales export download failed:", e);
+      }
+      return;
+    }
+
     const route = getActionRoute(n);
     if (route) router.push(route);
   }, [handleMarkRead, getActionRoute, router]);
