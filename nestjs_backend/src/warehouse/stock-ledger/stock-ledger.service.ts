@@ -279,10 +279,11 @@ export class StockLedgerService {
             const currentStock = await transaction.stockLedger.aggregate({
               where: {
                 itemId,
-                warehouseId,
-                // If locationId is provided, check location-specific stock (outlet)
-                // Otherwise check warehouse-wide stock
-                ...(locationId ? { locationId } : { locationId: null }),
+                // If locationId is provided, check location-specific stock (outlet) regardless of warehouse.
+                // Otherwise check warehouse-wide stock (where locationId is null)
+                ...(locationId
+                  ? { locationId }
+                  : { warehouseId, locationId: null }),
               },
               _sum: {
                 qty: true,
@@ -292,8 +293,9 @@ export class StockLedgerService {
             const totalStock = currentStock._sum.qty || new Prisma.Decimal(0);
 
             if (totalStock.plus(quantity).isNegative()) {
+              const locationMsg = locationId ? ` at location ${locationId}` : ` in warehouse ${warehouseId}`;
               throw new BadRequestException(
-                `Insufficient stock for item ${itemId} in warehouse ${warehouseId}. Current: ${totalStock}, Requested: ${quantity.abs()}`,
+                `Insufficient stock for item ${itemId}${locationMsg}. Current: ${totalStock}, Requested: ${quantity.abs()}`,
               );
             }
           }
