@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Minus, Plus, Trash2, CircleDot, Truck } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, cn } from "@/lib/utils";
 import { ManagerVerificationDialog } from "@/components/auth/manager-verification-dialog";
 import { useAuth } from "@/components/providers/auth-provider";
 
@@ -30,6 +30,7 @@ export interface CartItem {
     discountPercent: number; // Original/default discount
     discountAmount: number;
     overrideDiscountPercent?: number; // Manager override discount (for record)
+    overrideDiscountNote?: string;
     taxPercent: number;
     taxAmount: number;
     total: number;
@@ -41,9 +42,10 @@ export interface CartItem {
 interface CartTableProps {
     items: CartItem[];
     onQuantityChange: (id: string, quantity: number) => void;
-    onDiscountChange?: (id: string, discountPercent: number) => void;
+    onDiscountChange?: (id: string, discountPercent: number, note?: string) => void;
     onRemoveItem: (id: string) => void;
     onToggleTransit?: (id: string) => void;
+    focusedIndex?: number;
 }
 
 export function CartTable({
@@ -52,9 +54,9 @@ export function CartTable({
     onDiscountChange,
     onRemoveItem,
     onToggleTransit,
+    focusedIndex = -1,
 }: CartTableProps) {
     const { user } = useAuth();
-    const isManager = user?.role === 'manager' || user?.role === 'admin';
     
     const [showManagerVerification, setShowManagerVerification] = useState(false);
     const [pendingDiscountChange, setPendingDiscountChange] = useState<{
@@ -118,24 +120,20 @@ export function CartTable({
             return next;
         });
 
-        // If user is manager/admin, allow direct change
-        if (isManager) {
-            onDiscountChange?.(itemId, newDiscount);
-            return;
-        }
-
-        // Otherwise, require manager verification
+        // Always require manager verification with a note for discount override
         setPendingDiscountChange({ itemId, newDiscount });
         setShowManagerVerification(true);
     };
 
-    const handleManagerVerified = (_managerUserId?: string) => {
+    const handleManagerVerified = (managerUserId?: string, note?: string) => {
         if (pendingDiscountChange) {
             onDiscountChange?.(
                 pendingDiscountChange.itemId,
-                pendingDiscountChange.newDiscount
+                pendingDiscountChange.newDiscount,
+                note
             );
             setPendingDiscountChange(null);
+            setShowManagerVerification(false);
         }
     };
 
@@ -211,7 +209,10 @@ export function CartTable({
                         items.map((item, index) => (
                             <TableRow
                                 key={item.id}
-                                className="group transition-colors"
+                                className={cn(
+                                    "group transition-colors relative",
+                                    index === focusedIndex && "bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary font-medium shadow-inner"
+                                )}
                             >
                                 {/* Row number */}
                                 <TableCell className="text-center text-muted-foreground font-medium">
@@ -348,6 +349,7 @@ export function CartTable({
                                     <div className="flex flex-col items-center gap-0.5">
                                         <div className="flex items-center justify-center gap-1">
                                             <Input
+                                                id={`discount-input-${index}`}
                                                 type="number"
                                                 min={item.overrideDiscountPercent ?? item.discountPercent}
                                                 max={50}
@@ -433,8 +435,10 @@ export function CartTable({
             open={showManagerVerification}
             onOpenChange={handleVerificationCancel}
             onVerified={handleManagerVerified}
+            requireNote={true}
+            notePlaceholder="Enter reason/note for override (required)..."
             title="Manager Verification Required"
-            description="Discount override requires manager authorization. Enter manager password to proceed."
+            description="Discount override requires manager authorization and a justification note. Enter manager password and note to proceed."
         />
     </>
     );

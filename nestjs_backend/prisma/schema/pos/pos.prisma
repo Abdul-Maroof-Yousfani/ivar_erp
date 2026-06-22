@@ -60,6 +60,8 @@ model MerchantConfigLocation {
 model SalesOrder {
   id                    String              @id @default(uuid())
   orderNumber           String              @unique
+  returnNumber          String?             @unique @map("return_number")
+  refundNumber          String?             @unique @map("refund_number")
   posId                 String?             @map("pos_id")
   terminalId            String?             @map("terminal_id")
   locationId            String?             @map("location_id")
@@ -74,6 +76,7 @@ model SalesOrder {
   paymentStatus         String              @default("unpaid") @map("payment_status")
   status                String              @default("draft")
   notes                 String?
+  manualDiscountNote    String?             @map("manual_discount_note")
   globalDiscountPercent Decimal?            @map("global_discount_percent") @db.Decimal(5, 2)
   globalDiscountAmount  Decimal?            @map("global_discount_amount") @db.Decimal(15, 2)
   promoId               String?             @map("promo_id")
@@ -121,6 +124,7 @@ model SalesOrderItem {
   discountPercent         Decimal    @default(0) @db.Decimal(5, 2)
   discountAmount          Decimal    @default(0) @db.Decimal(15, 2)
   overrideDiscountPercent Decimal?   @map("override_discount_percent") @db.Decimal(5, 2)
+  overrideDiscountNote    String?    @map("override_discount_note")
   taxPercent              Decimal    @default(0) @db.Decimal(5, 2)
   taxAmount               Decimal    @default(0) @db.Decimal(15, 2)
   lineTotal               Decimal    @db.Decimal(15, 2)
@@ -354,4 +358,18 @@ model VoucherRedemption {
   @@unique([voucherId, orderId])
   @@index([orderId])
   @@map("pos_voucher_redemptions")
+}
+
+model OrderSequence {
+  id          String   @id @default(uuid())
+  prefix      String
+  fiscalYear  Int      @map("fiscal_year")
+  locationId  String?  @map("location_id")
+  warehouseId String?  @map("warehouse_id")
+  companyId   String?  @map("company_id")
+  lastSeq     Int      @default(0) @map("last_seq")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([prefix, fiscalYear, locationId, warehouseId, companyId])
+  @@map("order_sequences")
 }

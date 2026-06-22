@@ -190,9 +190,9 @@ export function PrintReturnReceipt({
         "Store";
 
     const storeAddress = settings.receiptAddress || (typeof user?.terminal?.location?.address === "string" ? user.terminal.location.address : "") || "";
-    const storePhone   = settings.receiptPhone   || (typeof user?.terminal?.location?.phone   === "string" ? user.terminal.location.phone   : "") || "";
-    const storeNTN     = settings.receiptNTN     || (typeof user?.terminal?.location?.fbrNtn  === "string" ? user.terminal.location.fbrNtn  : "") || "";
-    const storeSTRN    = settings.receiptSTRN    || "";
+    const storePhone = settings.receiptPhone || (typeof user?.terminal?.location?.phone === "string" ? user.terminal.location.phone : "") || "";
+    const storeNTN = settings.receiptNTN || (typeof user?.terminal?.location?.fbrNtn === "string" ? user.terminal.location.fbrNtn : "") || "";
+    const storeSTRN = settings.receiptSTRN || "";
     const terminalName = (typeof user?.terminal?.name === "string" ? user.terminal.name : "") || (typeof user?.terminal?.code === "string" ? user.terminal.code : "") || "";
 
     const cashierName = user ? `${user.firstName} ${user.lastName}`.trim() : "";
@@ -280,7 +280,7 @@ export function PrintReturnReceipt({
                         <Button onClick={() => printThermal("return-print-root", settings)} className="flex-1 gap-2" disabled={isLoading}>
                             {isLoading
                                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Preparing…</>
-                                : <><Printer className="h-4 w-4" /> Print Return Receipt</>
+                                : <><Printer className="h-4 w-4" /> {isRefund ? "Print Refund Receipt" : "Print Return Receipt"}</>
                             }
                         </Button>
                     </DialogFooter>
@@ -364,7 +364,7 @@ function ReturnBody({
 
             {/* ── Return Invoice Title ── */}
             <div className="text-center space-y-0.5">
-                <p className="font-bold text-sm tracking-widest uppercase">{isRefund ? "Refund Invoice" : "Return Invoice"}</p>
+                <p className="font-bold text-sm tracking-widest uppercase">{isRefund ? "Refund Voucher" : "Sales Return"}</p>
                 <p className="font-black text-2xl tracking-wider">*{returnRef}*</p>
             </div>
 
@@ -372,10 +372,10 @@ function ReturnBody({
 
             {/* ── Receipt meta ── */}
             <div className="space-y-0.5 text-[11px]">
-                <Row label={isRefund ? "Refund Ref." : "Return Ref."}  value={returnRef} bold />
-                <Row label="Date"         value={fmtDate(returnedAt)} />
-                {cashierName  && <Row label="Processed By" value={cashierName}  />}
-                {terminalName && <Row label="Terminal"     value={terminalName} />}
+                <Row label={isRefund ? "Refund Ref." : "Return Ref."} value={returnRef} bold />
+                <Row label="Date" value={fmtDate(returnedAt)} />
+                {cashierName && <Row label="Processed By" value={cashierName} />}
+                {terminalName && <Row label="Terminal" value={terminalName} />}
             </div>
 
             <Separator />
@@ -405,25 +405,25 @@ function ReturnBody({
 
             {/* ── Returned item lines ── */}
             {returnedLines.map((line, idx) => {
-                const qty          = line.returnQty;
-                const taxPct       = line.taxPercent ?? 0;
-                const taxDivisor   = 1 + (taxPct / 100);
+                const qty = line.returnQty;
+                const taxPct = line.taxPercent ?? 0;
+                const taxDivisor = 1 + (taxPct / 100);
 
                 // Use unitPrice (original retail) as the base, showing the adjusted discount details below
                 const effectiveRetailPerUnit = line.unitPrice ?? line.paidPerUnit;
                 const originalRetailPerUnit = line.unitPrice ?? line.paidPerUnit;
 
                 // Calculate WOST from effective retail price
-                const wostPerUnit  = effectiveRetailPerUnit / taxDivisor;
-                const totalWost    = wostPerUnit * qty;
+                const wostPerUnit = effectiveRetailPerUnit / taxDivisor;
+                const totalWost = wostPerUnit * qty;
 
                 // Use the discount details (adjusted by backend for markdown)
-                const discPct      = line.discountPercent ?? 0;
-                const discAmt      = line.discountAmount ?? 0;
-                const afterDisc    = totalWost - discAmt;
+                const discPct = line.discountPercent ?? 0;
+                const discAmt = line.discountAmount ?? 0;
+                const afterDisc = totalWost - discAmt;
 
                 // Tax on discounted WOST
-                const taxAmt       = line.taxAmount ?? 0;
+                const taxAmt = line.taxAmount ?? 0;
 
                 // Value including tax = actual refund for this item
                 const valueIncludingTax = afterDisc + taxAmt;
@@ -545,7 +545,7 @@ function ReturnBody({
             </div>
 
             {/* ── Exchange Voucher ── */}
-            {exchangeVoucher && (
+            {exchangeVoucher && !isRefund && (
                 <>
                     <Separator />
                     <div className="text-center space-y-1 border-2 border-dashed border-zinc-950 rounded-lg px-3 py-3 bg-zinc-50">
@@ -623,18 +623,18 @@ function ReturnBody({
             {/* ── Terms ── */}
             <div className="text-[10px] space-y-0.5">
                 <p className="font-bold text-[11px]">TERMS &amp; CONDITIONS OF SALE</p>
-                <p>No refund under any circumstances.</p>
-                <p>Exchange is allowed within 10 days of purchase only on unused items from the outlet where purchased.</p>
-                <p>Sales Tax Invoice must be presented for any exchange or claim.</p>
+                <p>No Refund.</p>
+                <p>Exchanges on unused products within 10 days only from the outlet where purchased.</p>
+                <p>Claim will not be accepted without Sales Tax Invoice.</p>
                 <p>Sales and promotional items are strictly non-exchangeable.</p>
-                <p>Items purchased at full price which go on sale will be exchanged at the marked down price.</p>
+                <p>Item purchases at full price which go on sale will be exchanged at the marked down price.</p>
             </div>
 
             <Separator />
 
             {/* ── Footer ── */}
             <div className="text-center text-[10px] space-y-0.5 pb-1">
-                {storeNTN  && <p>Sales Tax No.: {storeNTN}</p>}
+                {storeNTN && <p>Sales Tax No.: {storeNTN}</p>}
                 {storeSTRN && <p>NTN: {storeSTRN}</p>}
                 <p>{settings.receiptFooter || "*** THANK YOU ***"}</p>
                 <p className="tracking-widest font-bold">{returnRef}</p>

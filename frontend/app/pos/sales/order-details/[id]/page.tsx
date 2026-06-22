@@ -54,6 +54,7 @@ export default function OrderDetailsPage() {
     const [showGiftPrint, setShowGiftPrint] = useState(false);
     const [showReturnPrint, setShowReturnPrint] = useState(false);
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
+    const [isRefundPrint, setIsRefundPrint] = useState(false);
     const [showClaimReceipt, setShowClaimReceipt] = useState(false);
     const [selectedClaim, setSelectedClaim] = useState<any>(null);
 
@@ -85,21 +86,22 @@ export default function OrderDetailsPage() {
         }
     };
 
-    const handlePrintReturn = async () => {
+    const handlePrintReturn = async (type: "return" | "refund") => {
         // Open dialog immediately with skeleton
         setReturnDetails(null);
+        setIsRefundPrint(type === "refund");
         setIsLoadingReceipt(true);
         setShowReturnPrint(true);
         try {
-            const res = await authFetch(`/pos-sales/orders/${orderId}/return-details`);
+            const res = await authFetch(`/pos-sales/orders/${orderId}/return-details?type=${type}`);
             if (res.ok && res.data?.status) {
                 setReturnDetails(res.data.data);
             } else {
-                toast.error("Failed to load return details");
+                toast.error(`Failed to load ${type} details`);
                 setShowReturnPrint(false);
             }
         } catch {
-            toast.error("Failed to load return details");
+            toast.error(`Failed to load ${type} details`);
             setShowReturnPrint(false);
         } finally {
             setIsLoadingReceipt(false);
@@ -179,9 +181,14 @@ export default function OrderDetailsPage() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    {(order.status === 'returned' || order.status === 'partially_returned') && (
-                        <Button variant="outline" onClick={handlePrintReturn} className="gap-2">
+                    {(order.hasReturn || order.status === 'returned' || order.status === 'partially_returned') && (
+                        <Button variant="outline" onClick={() => handlePrintReturn("return")} className="gap-2">
                             <RotateCcw className="h-4 w-4" /> Return Slip
+                        </Button>
+                    )}
+                    {(order.hasRefund || order.status === 'refunded' || (order.status === 'partially_returned' && !order.hasReturn && !order.hasRefund)) && (
+                        <Button variant="outline" onClick={() => handlePrintReturn("refund")} className="gap-2 border-purple-300 text-purple-600 hover:bg-purple-50 hover:text-purple-700">
+                            <RotateCcw className="h-4 w-4" /> Refund Slip
                         </Button>
                     )}
                     {!isHold && order.isGiftReceipt && (
@@ -510,6 +517,7 @@ export default function OrderDetailsPage() {
             {showReturnPrint && order && (
                 <PrintReturnReceipt
                     returnRef={order.orderNumber}
+                    isRefund={isRefundPrint}
                     isAlliance={!!order.alliance}
                     originalOrders={[{ orderNumber: order.orderNumber, grandTotal: Number(order.grandTotal) }]}
                     returnedLines={(returnDetails?.items ?? []).map((item: any) => ({

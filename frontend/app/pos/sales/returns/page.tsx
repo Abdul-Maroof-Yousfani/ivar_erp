@@ -91,11 +91,31 @@ export default function ReturnsPage() {
     const [newItemResults, setNewItemResults] = useState<any[]>([]);
 
     // ── Mode & misc ───────────────────────────────────────────────────
-    const [mode, setMode] = useState<Mode>("return");
+    const [mode, setMode] = useState<Mode | "">( "");
+    const [pendingMode, setPendingMode] = useState<Mode | "">("");
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [reasonCode, setReasonCode] = useState("DEFECTIVE");
     const [notes, setNotes] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showVerify, setShowVerify] = useState(false);
+
+    const handleSelectionClick = useCallback((selected: Mode) => {
+        if (selected === mode || (selected === "return" && mode === "exchange")) {
+            return;
+        }
+        setPendingMode(selected);
+        setShowConfirmModal(true);
+    }, [mode]);
+
+    const confirmModeSelection = useCallback(() => {
+        if (pendingMode) {
+            setMode(pendingMode);
+            if (pendingMode !== "return" && pendingMode !== "exchange") {
+                setNewLines([]);
+            }
+        }
+        setShowConfirmModal(false);
+    }, [pendingMode]);
 
     // ── Memo-level discount on new items (exchange only) ──────────────
     const [memoDiscType, setMemoDiscType] = useState<"pct" | "flat">("pct");
@@ -106,7 +126,20 @@ export default function ReturnsPage() {
         returnRef: string;
         refundTotal: number;
         returnedAt: string;
-        itemRefundDetails?: { orderItemId: string; itemId: string; quantity: number; originalPaidPerUnit: number; refundPerUnit: number; priceAdjusted: boolean }[];
+        itemRefundDetails?: {
+            orderItemId: string;
+            itemId: string;
+            quantity: number;
+            originalPaidPerUnit: number;
+            refundPerUnit: number;
+            priceAdjusted: boolean;
+            couponDeduction?: number;
+            unitPrice?: number;
+            discountPercent?: number;
+            discountAmount?: number;
+            taxAmount?: number;
+            taxPercent?: number;
+        }[];
         exchangeVoucher?: { code: string; faceValue: number; expiresAt: string } | null;
     } | null>(null);
 
@@ -177,7 +210,13 @@ export default function ReturnsPage() {
 
     // ── Remove an order ───────────────────────────────────────────────
     const removeOrder = (orderId: string) => {
-        setLoadedOrders(prev => prev.filter(o => o.id !== orderId));
+        setLoadedOrders(prev => {
+            const updated = prev.filter(o => o.id !== orderId);
+            if (updated.length === 0) {
+                setMode("");
+            }
+            return updated;
+        });
         setReturnLines(prev => prev.filter(l => l.orderId !== orderId));
     };
 
@@ -209,7 +248,16 @@ export default function ReturnsPage() {
     };
 
     const setNewQty = (itemId: string, qty: number) => {
-        if (qty <= 0) { setNewLines(prev => prev.filter(l => l.itemId !== itemId)); return; }
+        if (qty <= 0) {
+            setNewLines(prev => {
+                const updated = prev.filter(l => l.itemId !== itemId);
+                if (updated.length === 0 && mode === "exchange") {
+                    setMode("return");
+                }
+                return updated;
+            });
+            return;
+        }
         setNewLines(prev => prev.map(l => l.itemId === itemId ? { ...l, quantity: qty } : l));
     };
 
@@ -448,12 +496,18 @@ export default function ReturnsPage() {
                 {loadedOrders.length > 0 && (
                     <div className="flex flex-wrap gap-2">
                         {loadedOrders.map(o => (
-                            <div key={o.id} className="flex items-center gap-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 px-3 py-1.5">
-                                <Receipt className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                                <span className="font-mono font-bold text-emerald-700 text-sm">{o.orderNumber}</span>
-                                <span className="text-muted-foreground text-xs">{formatCurrency(o.grandTotal)}</span>
-                                <button onClick={() => removeOrder(o.id)} className="text-muted-foreground hover:text-destructive transition-colors ml-1">
-                                    <X className="h-3.5 w-3.5" />
+                            <div key={o.id} className="flex items-center gap-2.5 rounded-full bg-gradient-to-r from-emerald-500/10 to-teal-500/10 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-300/80 dark:border-emerald-700/80 px-4 py-2 shadow-sm transition-all hover:shadow duration-200">
+                                <div className="p-1 bg-emerald-500 text-white rounded-full">
+                                    <Receipt className="h-3 w-3 shrink-0" />
+                                </div>
+                                <span className="font-mono font-extrabold text-emerald-700 dark:text-emerald-300 text-sm tracking-wide">{o.orderNumber}</span>
+                                <div className="h-3 w-px bg-emerald-300/60 dark:bg-emerald-700/60" />
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold text-xs">{formatCurrency(o.grandTotal)}</span>
+                                <button 
+                                    onClick={() => removeOrder(o.id)} 
+                                    className="text-emerald-600 hover:text-destructive dark:text-emerald-400 dark:hover:text-red-400 transition-colors ml-1 hover:scale-110 duration-200"
+                                >
+                                    <X className="h-4 w-4" />
                                 </button>
                             </div>
                         ))}
@@ -463,31 +517,94 @@ export default function ReturnsPage() {
 
             {loadedOrders.length > 0 && (
                 <>
-                    {/* Mode tabs — hide Claim for multi-order */}
-                    <Tabs value={mode} onValueChange={(v: any) => setMode(v)}>
-                        <TabsList className={`grid w-full max-w-md ${isMultiOrder ? "grid-cols-2" : "grid-cols-3"}`}>
-                            {canReturn && <TabsTrigger value="return" className="gap-1.5"><RotateCcw className="h-3.5 w-3.5" />Return</TabsTrigger>}
-                            {canReturn && <TabsTrigger value="refund" className="gap-1.5"><Receipt className="h-3.5 w-3.5" />Refund</TabsTrigger>}
-                            {!isMultiOrder && canClaim && <TabsTrigger value="claim" className="gap-1.5"><FileText className="h-3.5 w-3.5" />Claim</TabsTrigger>}
-                        </TabsList>
-
-                        {isMultiOrder && mode === "claim" && setMode("return") as any}
-
-                        {mode === "refund" && (
-                            <div className="mt-3 flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/20 px-3 py-2 text-xs text-green-700">
-                                <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                                <span>Cash refund at original price. Refund voucher generated for record keeping only.</span>
+                    {mode === "" ? (
+                        <div className="rounded-xl border bg-card p-8 text-center space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                            <div className="space-y-2">
+                                <h2 className="text-xl font-bold tracking-tight">Select Transaction Type</h2>
+                                <p className="text-sm text-muted-foreground">Please choose the type of action you want to perform for the loaded order(s).</p>
                             </div>
-                        )}
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto">
+                                {/* Return / Exchange Card */}
+                                {canReturn && (
+                                    <button
+                                        onClick={() => handleSelectionClick("return")}
+                                        className="group relative flex flex-col items-center text-center p-6 bg-emerald-50/30 hover:bg-emerald-50 dark:bg-emerald-950/5 dark:hover:bg-emerald-950/20 border border-emerald-200/60 hover:border-emerald-500 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1"
+                                    >
+                                        <div className="p-3 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-xl mb-4 group-hover:scale-110 transition-transform">
+                                            <RotateCcw className="h-6 w-6" />
+                                        </div>
+                                        <h3 className="font-bold text-emerald-800 dark:text-emerald-300 mb-1 text-sm sm:text-base">Return / Exchange</h3>
+                                        <p className="text-[11px] sm:text-xs text-muted-foreground leading-relaxed">Return items for store credit/voucher or exchange for other products.</p>
+                                    </button>
+                                )}
 
-                        {mode === "claim" && (
-                            <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-700">
-                                <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                                <span>Claim is submitted to ERP for review. No immediate refund — ERP verifies and approves.</span>
+                                {/* Cash Refund Card */}
+                                {canReturn && (
+                                    <button
+                                        onClick={() => handleSelectionClick("refund")}
+                                        className="group relative flex flex-col items-center text-center p-6 bg-indigo-50/30 hover:bg-indigo-50 dark:bg-indigo-950/5 dark:hover:bg-indigo-950/20 border border-indigo-200/60 hover:border-indigo-500 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1"
+                                    >
+                                        <div className="p-3 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-xl mb-4 group-hover:scale-110 transition-transform">
+                                            <Receipt className="h-6 w-6" />
+                                        </div>
+                                        <h3 className="font-bold text-indigo-800 dark:text-indigo-300 mb-1 text-sm sm:text-base">Cash Refund</h3>
+                                        <p className="text-[11px] sm:text-xs text-muted-foreground leading-relaxed">Process a cash refund directly to the customer for their returned items.</p>
+                                    </button>
+                                )}
+
+                                {/* ERP Claim Card */}
+                                {!isMultiOrder && canClaim && (
+                                    <button
+                                        onClick={() => handleSelectionClick("claim")}
+                                        className="group relative flex flex-col items-center text-center p-6 bg-amber-50/30 hover:bg-amber-50 dark:bg-amber-950/5 dark:hover:bg-amber-950/20 border border-amber-200/60 hover:border-amber-500 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1"
+                                    >
+                                        <div className="p-3 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-xl mb-4 group-hover:scale-110 transition-transform">
+                                            <FileText className="h-6 w-6" />
+                                        </div>
+                                        <h3 className="font-bold text-amber-800 dark:text-amber-300 mb-1 text-sm sm:text-base">ERP Claim</h3>
+                                        <p className="text-[11px] sm:text-xs text-muted-foreground leading-relaxed">Submit items to ERP for validation and inspection approval.</p>
+                                    </button>
+                                )}
                             </div>
-                        )}
+                        </div>
+                    ) : (
+                        <Tabs value={mode === "exchange" ? "return" : mode} onValueChange={(v: any) => handleSelectionClick(v)}>
+                            <TabsList className={`grid w-full max-w-md ${isMultiOrder ? "grid-cols-2" : "grid-cols-3"}`}>
+                                {canReturn && (
+                                    <TabsTrigger value="return" className="gap-1.5 data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
+                                        <RotateCcw className="h-3.5 w-3.5" />Return
+                                    </TabsTrigger>
+                                )}
+                                {canReturn && (
+                                    <TabsTrigger value="refund" className="gap-1.5 data-[state=active]:bg-indigo-600 data-[state=active]:text-white">
+                                        <Receipt className="h-3.5 w-3.5" />Refund
+                                    </TabsTrigger>
+                                )}
+                                {!isMultiOrder && canClaim && (
+                                    <TabsTrigger value="claim" className="gap-1.5 data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+                                        <FileText className="h-3.5 w-3.5" />Claim
+                                    </TabsTrigger>
+                                )}
+                            </TabsList>
 
-                        <TabsContent value={mode} className="mt-4 space-y-4">
+                            {isMultiOrder && mode === "claim" && setMode("return") as any}
+
+                            {mode === "refund" && (
+                                <div className="mt-3 flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/20 px-3 py-2 text-xs text-green-700">
+                                    <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                                    <span>Cash refund at original price. Refund voucher generated for record keeping only.</span>
+                                </div>
+                            )}
+
+                            {mode === "claim" && (
+                                <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-700">
+                                    <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                                    <span>Claim is submitted to ERP for review. No immediate refund — ERP verifies and approves.</span>
+                                </div>
+                            )}
+
+                            <TabsContent value={mode === "exchange" ? "return" : mode} className="mt-4 space-y-4">
 
                             {/* Items table — grouped by order */}
                             <div className="rounded-xl border bg-card overflow-hidden">
@@ -843,9 +960,79 @@ export default function ReturnsPage() {
                             )}
                         </TabsContent>
                     </Tabs>
+                    )}
                 </>
             )}
         </div>
+
+            {/* ── Transaction Mode Confirmation Dialog ─────────────────── */}
+            {showConfirmModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-card border rounded-2xl shadow-2xl p-6 max-w-md w-full mx-auto animate-in fade-in zoom-in-95 duration-200">
+                        <div className="flex flex-col items-center text-center">
+                            {/* Icon & Title based on pendingMode */}
+                            {pendingMode === "return" && (
+                                <>
+                                    <div className="p-4 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 rounded-2xl mb-4">
+                                        <RotateCcw className="h-10 w-10 animate-bounce" />
+                                    </div>
+                                    <h3 className="text-xl font-bold text-emerald-800 dark:text-emerald-300">Confirm Return / Exchange</h3>
+                                    <p className="text-sm text-muted-foreground mt-2 px-2 leading-relaxed">
+                                        Are you sure you want to select <span className="font-semibold text-emerald-600 dark:text-emerald-400">Return / Exchange</span>? You will be able to return items for store credit/vouchers or exchange them for new products.
+                                    </p>
+                                </>
+                            )}
+                            {pendingMode === "refund" && (
+                                <>
+                                    <div className="p-4 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-2xl mb-4">
+                                        <Receipt className="h-10 w-10 animate-bounce" />
+                                    </div>
+                                    <h3 className="text-xl font-bold text-indigo-800 dark:text-indigo-300">Confirm Cash Refund</h3>
+                                    <p className="text-sm text-muted-foreground mt-2 px-2 leading-relaxed">
+                                        Are you sure you want to select <span className="font-semibold text-indigo-600 dark:text-indigo-400">Cash Refund</span>? This will refund the amount directly in cash to the customer.
+                                    </p>
+                                </>
+                            )}
+                            {pendingMode === "claim" && (
+                                <>
+                                    <div className="p-4 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-2xl mb-4">
+                                        <FileText className="h-10 w-10 animate-bounce" />
+                                    </div>
+                                    <h3 className="text-xl font-bold text-amber-800 dark:text-amber-300">Confirm ERP Claim</h3>
+                                    <p className="text-sm text-muted-foreground mt-2 px-2 leading-relaxed">
+                                        Are you sure you want to select <span className="font-semibold text-amber-600 dark:text-amber-400">ERP Claim</span>? This will submit a claim request to the ERP for review and inspection approval.
+                                    </p>
+                                </>
+                            )}
+
+                            {/* Buttons */}
+                            <div className="flex gap-3 w-full mt-6">
+                                <Button 
+                                    variant="outline" 
+                                    className="flex-1 rounded-xl"
+                                    onClick={() => {
+                                        setShowConfirmModal(false);
+                                        setPendingMode("");
+                                    }}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button 
+                                    className={cn(
+                                        "flex-1 rounded-xl font-bold text-white transition-all hover:scale-105 duration-200 shadow-md hover:shadow-lg",
+                                        pendingMode === "return" ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 shadow-emerald-500/20" :
+                                        pendingMode === "refund" ? "bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-700 shadow-indigo-500/20" :
+                                        "bg-amber-600 hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-700 shadow-amber-500/20"
+                                    )}
+                                    onClick={confirmModeSelection}
+                                >
+                                    Yes, Proceed
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── Return Receipt Dialog ─────────────────────────────────── */}
             {returnReceipt && (
