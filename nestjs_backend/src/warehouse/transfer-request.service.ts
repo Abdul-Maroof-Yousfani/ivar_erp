@@ -82,8 +82,15 @@ export class TransferRequestService {
             for (const item of data.items) {
                 let availableQty = 0;
                 if (transferType === 'WAREHOUSE_TO_OUTLET') {
-                    // Allow negative stock transfer for warehouse-to-outlet, skip check
-                    continue;
+                    const stock = await this.prisma.inventoryItem.findFirst({
+                        where: {
+                            warehouseId: data.fromWarehouseId,
+                            locationId: null, // Ensure we check warehouse main stock
+                            itemId: item.itemId,
+                            status: 'AVAILABLE'
+                        }
+                    });
+                    availableQty = stock ? Number(stock.quantity) : 0;
                 } else {
                     const stock = await this.prisma.inventoryItem.findFirst({
                         where: {
@@ -160,13 +167,45 @@ export class TransferRequestService {
         }
     }
 
-    async getRequests(warehouseId?: string, status?: string, id?: string) {
+    async getRequests(
+        warehouseId?: string,
+        status?: string,
+        id?: string,
+        transferType?: string,
+        search?: string,
+        dateFrom?: string,
+        dateTo?: string,
+    ) {
+        const andClauses: any[] = [];
+        
+        if (id) {
+            andClauses.push({ id });
+        }
+        if (warehouseId && warehouseId !== 'all') {
+            andClauses.push({ fromWarehouseId: warehouseId });
+        }
+        if (status && status !== 'all') {
+            andClauses.push({ status });
+        }
+        if (transferType && transferType !== 'all') {
+            andClauses.push({ transferType });
+        }
+        if (search) {
+            andClauses.push({
+                requestNo: { contains: search.trim(), mode: 'insensitive' }
+            });
+        }
+        if (dateFrom || dateTo) {
+            const dateFilter: any = {};
+            if (dateFrom) dateFilter.gte = new Date(dateFrom);
+            if (dateTo)   dateFilter.lte = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
+            andClauses.push({ createdAt: dateFilter });
+        }
+        
+        const where = andClauses.length ? { AND: andClauses } : {};
+
         const requests = await this.prisma.transferRequest.findMany({
-            where: {
-                ...(id ? { id } : {}),
-                ...(warehouseId ? { fromWarehouseId: warehouseId } : {}),
-                ...(status ? { status } : {}),
-            },
+            where,
             include: {
                 items: {
                     include: {
@@ -188,6 +227,7 @@ export class TransferRequestService {
 
         return Promise.all(requests.map(req => this.enrichRequest(req)));
     }
+
 
     async getIncomingRequests(locationId: string) {
         const requests = await this.prisma.transferRequest.findMany({
