@@ -40,22 +40,28 @@ const COLUMNS: {
   align?: ExcelJS.Alignment['horizontal'];
 }[] = [
   // Transfer
-  { header: 'Request No',      key: 'requestNo',      width: 18, group: 'Transfer', align: 'center' },
-  { header: 'Date',            key: 'requestDate',    width: 20, group: 'Transfer', numFmt: 'dd-mmm-yyyy hh:mm', align: 'center' },
-  { header: 'Transfer Type',   key: 'transferType',   width: 24, group: 'Transfer' },
-  { header: 'Status',          key: 'status',         width: 12, group: 'Transfer', align: 'center' },
-  { header: 'From Location',   key: 'fromLocation',   width: 24, group: 'Transfer' },
-  { header: 'To Location',     key: 'toLocation',     width: 24, group: 'Transfer' },
-  { header: 'Notes',           key: 'notes',          width: 30, group: 'Transfer' },
+  { header: 'Request No',        key: 'requestNo',              width: 18, group: 'Transfer', align: 'center' },
+  { header: 'Date',              key: 'requestDate',            width: 20, group: 'Transfer', numFmt: 'dd-mmm-yyyy hh:mm', align: 'center' },
+  { header: 'Expected Date',     key: 'expectedDate',           width: 14, group: 'Transfer', numFmt: 'dd-mmm-yyyy', align: 'center' },
+  { header: 'Transfer Type',     key: 'transferType',           width: 24, group: 'Transfer' },
+  { header: 'Status',            key: 'status',                 width: 12, group: 'Transfer', align: 'center' },
+  { header: 'From Location',     key: 'fromLocation',           width: 24, group: 'Transfer' },
+  { header: 'To Location',       key: 'toLocation',             width: 24, group: 'Transfer' },
+  { header: 'Notes',             key: 'notes',                  width: 30, group: 'Transfer' },
+  { header: 'Created By ID',     key: 'createdById',            width: 18, group: 'Transfer', align: 'center' },
+  { header: 'Approved By ID',    key: 'approvedById',           width: 18, group: 'Transfer', align: 'center' },
+  { header: 'Requires Src Appr', key: 'requiresSourceApproval', width: 18, group: 'Transfer', align: 'center' },
+  { header: 'Src Appr By ID',    key: 'sourceApprovedById',     width: 18, group: 'Transfer', align: 'center' },
+  { header: 'Src Appr At',       key: 'sourceApprovedAt',       width: 20, group: 'Transfer', numFmt: 'dd-mmm-yyyy hh:mm', align: 'center' },
   // Detail
-  { header: 'Line #',          key: 'lineNo',         width: 8,  group: 'Detail', align: 'center' },
-  { header: 'SKU',             key: 'sku',            width: 20, group: 'Detail' },
-  { header: 'Barcode',         key: 'barCode',        width: 18, group: 'Detail' },
-  { header: 'Description',     key: 'description',    width: 36, group: 'Detail' },
-  { header: 'Color',           key: 'color',          width: 14, group: 'Detail' },
-  { header: 'Size',            key: 'size',           width: 10, group: 'Detail', align: 'center' },
-  { header: 'Quantity',        key: 'quantity',       width: 14, group: 'Detail', numFmt: '#,##0.00', align: 'right' },
-  { header: 'Fulfilled Qty',   key: 'fulfilledQty',   width: 14, group: 'Detail', numFmt: '#,##0.00', align: 'right' },
+  { header: 'Line #',            key: 'lineNo',                 width: 8,  group: 'Detail', align: 'center' },
+  { header: 'SKU',               key: 'sku',                    width: 20, group: 'Detail' },
+  { header: 'Barcode',           key: 'barCode',                width: 18, group: 'Detail' },
+  { header: 'Description',       key: 'description',            width: 36, group: 'Detail' },
+  { header: 'Color',             key: 'color',                  width: 14, group: 'Detail' },
+  { header: 'Size',              key: 'size',                   width: 10, group: 'Detail', align: 'center' },
+  { header: 'Quantity',          key: 'quantity',               width: 14, group: 'Detail', numFmt: '#,##0.00', align: 'right' },
+  { header: 'Fulfilled Qty',     key: 'fulfilledQty',           width: 14, group: 'Detail', numFmt: '#,##0.00', align: 'right' },
 ];
 
 @Processor('delivery-note-export')
@@ -214,21 +220,27 @@ export class DeliveryNoteExportProcessor {
             const isCompleted = transfer.status === 'COMPLETED' || transfer.status === 'completed';
 
             const rowData: Record<string, any> = {
-              requestNo:      dIdx === 0 ? transfer.requestNo : '',
-              requestDate:    dIdx === 0 ? new Date(transfer.createdAt) : null,
-              transferType:   dIdx === 0 ? transfer.transferType : '',
-              status:         dIdx === 0 ? transfer.status.toUpperCase() : '',
-              fromLocation:   dIdx === 0 ? fromLocName : '',
-              toLocation:     dIdx === 0 ? toLocName : '',
-              notes:          dIdx === 0 ? (transfer.notes ?? '') : '',
-              lineNo:         detail ? dIdx + 1 : '',
-              sku:            detail?.item?.sku            ?? '',
-              barCode:        detail?.item?.barCode        ?? '',
-              description:    detail?.item?.description    ?? '',
-              color:          detail?.item?.color?.name    ?? '',
-              size:           detail?.item?.size?.name     ?? '',
-              quantity:       detail ? Number(detail.quantity) : null,
-              fulfilledQty:   detail ? Number(detail.fulfilledQty) : null,
+              requestNo:              transfer.requestNo,
+              requestDate:            new Date(transfer.createdAt),
+              expectedDate:           transfer.expectedDate ? new Date(transfer.expectedDate) : null,
+              transferType:           transfer.transferType,
+              status:                 transfer.status.toUpperCase(),
+              fromLocation:           fromLocName,
+              toLocation:             toLocName,
+              notes:                  transfer.notes ?? '',
+              createdById:            transfer.createdById ?? '',
+              approvedById:           transfer.approvedById ?? '',
+              requiresSourceApproval: transfer.requiresSourceApproval ? 'Yes' : 'No',
+              sourceApprovedById:     transfer.sourceApprovedById ?? '',
+              sourceApprovedAt:       transfer.sourceApprovedAt ? new Date(transfer.sourceApprovedAt) : null,
+              lineNo:                 detail ? dIdx + 1 : '',
+              sku:                    detail?.item?.sku            ?? '',
+              barCode:                detail?.item?.barCode        ?? '',
+              description:            detail?.item?.description    ?? '',
+              color:                  detail?.item?.color?.name    ?? '',
+              size:                   detail?.item?.size?.name     ?? '',
+              quantity:               detail ? Number(detail.quantity) : null,
+              fulfilledQty:           detail ? Number(detail.fulfilledQty) : null,
             };
 
             const dataRow = ws.getRow(rowIdx + 3);
@@ -257,6 +269,7 @@ export class DeliveryNoteExportProcessor {
                 right:  { style: 'hair', color: { argb: `FF${BORDER_COLOR}` } },
               };
             });
+
 
             dataRow.height = 16;
             dataRow.commit();
