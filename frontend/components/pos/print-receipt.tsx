@@ -771,6 +771,17 @@ function ReceiptBody({
 
       {/* ── Store Header ── */}
       <div className="text-center pb-1 border-b border-zinc-400">
+        <div className="flex justify-center mb-1.5">
+          <Image
+            src={typeof window !== "undefined" ? `${window.location.origin}/image-v2.png` : "/image-v2.png"}
+            alt="Store Logo"
+            width={120}
+            height={40}
+            className="object-contain"
+            unoptimized
+            priority
+          />
+        </div>
         <p className="font-black text-[13px] leading-tight uppercase tracking-wide">{storeName}</p>
         {(storeAddress || storePhone) && (
           <p className="text-[9px] leading-snug">
@@ -966,7 +977,7 @@ function ReceiptBody({
       {/* ── Terms ── */}
       <div className="py-1 border-b border-dashed border-zinc-400 text-[8px] leading-snug">
         <p className="font-bold text-[9px] uppercase">Terms &amp; Conditions</p>
-        <p>• No refund. Exchange within 10 days on unused items with invoice. Sale items non-exchangeable. Full-price items go on sale: exchanged at marked-down price.</p>
+        <p>• No refund. Exchange within 4   days on unused items with invoice. Sale items non-exchangeable. Full-price items go on sale: exchanged at marked-down price.</p>
       </div>
 
       {/* ── Footer ── */}
@@ -1042,7 +1053,16 @@ function A4InvoiceBody({
       {/* Top Header Section */}
       <div>
         <div className="flex justify-between items-start border-b-2 border-zinc-800 pb-5 mb-6">
-          <div className="space-y-1">
+          <div className="space-y-2">
+            <Image
+              src={typeof window !== "undefined" ? `${window.location.origin}/image-v2.png` : "/image-v2.png"}
+              alt="Store Logo"
+              width={140}
+              height={50}
+              className="object-contain mb-1"
+              unoptimized
+              priority
+            />
             <h1 className="text-xl font-extrabold tracking-tight uppercase text-zinc-900">
               {storeName}
             </h1>

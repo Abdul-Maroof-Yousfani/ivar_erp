@@ -40,10 +40,15 @@ export class PosSalesService implements OnModuleInit {
         }, msUntilMidnight);
     }
 
-    // ─── Generate next SO number per location ──────────────────────────
-    private async generateOrderNumber(locationId: string, tx?: Prisma.TransactionClient): Promise<string> {
+    // ─── Generate sequential numbers per location and Pakistan fiscal year ───
+    private async generateSequentialNumber(
+        prefix: string,
+        fieldName: 'orderNumber' | 'returnNumber' | 'refundNumber',
+        locationId: string,
+        tx?: Prisma.TransactionClient
+    ): Promise<string> {
         const prismaClient = tx || this.prisma;
-        
+
         // Find the location name and configured shortCode
         const location = await prismaClient.location.findUnique({
             where: { id: locationId },
@@ -57,7 +62,6 @@ export class PosSalesService implements OnModuleInit {
         // Determine shortCode: use custom configured shortCode or generate dynamically
         let shortCode = location.shortCode?.trim();
         if (!shortCode) {
-            // Helper logic matching generateShortCode from location.service.ts
             shortCode = location.name
                 .split(/[\s\-_]+/)
                 .map((word) => word.replace(/[^a-zA-Z0-9]/g, ''))
@@ -76,42 +80,55 @@ export class PosSalesService implements OnModuleInit {
         const fiscalYearStartYear = month >= 6 ? year : year - 1;
         const fiscalYearStartDate = new Date(Date.UTC(fiscalYearStartYear, 6, 1, 0, 0, 0, 0));
 
-        // Find the latest sales order for this location created during the current fiscal year
+        // Find the latest order/return/refund for this location/fiscal year, ordering by the field itself descending to get the highest suffix directly!
         const lastOrder = await prismaClient.salesOrder.findFirst({
             where: {
                 locationId,
                 createdAt: { gte: fiscalYearStartDate },
-                orderNumber: { startsWith: `SI-${shortCode}-` }
+                [fieldName]: { startsWith: `${prefix}-${shortCode}-` }
             },
-            orderBy: { createdAt: 'desc' },
-            select: { orderNumber: true }
+            orderBy: { [fieldName]: 'desc' },
+            select: { [fieldName]: true }
         });
 
         let seq = 1;
-        if (lastOrder && lastOrder.orderNumber) {
-            const parts = lastOrder.orderNumber.split('-');
+        const lastVal = lastOrder ? ((lastOrder as any)[fieldName] as string | null) : null;
+        if (lastVal) {
+            const parts = lastVal.split('-');
             const lastPart = parts[parts.length - 1];
             if (/^\d+$/.test(lastPart)) {
                 seq = parseInt(lastPart, 10) + 1;
             }
         }
 
-        let nextOrderNumber = `SI-${shortCode}-${String(seq).padStart(5, '0')}`;
+        let nextNumber = `${prefix}-${shortCode}-${String(seq).padStart(5, '0')}`;
         let exists = await prismaClient.salesOrder.findUnique({
-            where: { orderNumber: nextOrderNumber },
+            where: { [fieldName]: nextNumber } as any,
             select: { id: true }
         });
 
         while (exists) {
             seq++;
-            nextOrderNumber = `SI-${shortCode}-${String(seq).padStart(5, '0')}`;
+            nextNumber = `${prefix}-${shortCode}-${String(seq).padStart(5, '0')}`;
             exists = await prismaClient.salesOrder.findUnique({
-                where: { orderNumber: nextOrderNumber },
+                where: { [fieldName]: nextNumber } as any,
                 select: { id: true }
             });
         }
 
-        return nextOrderNumber;
+        return nextNumber;
+    }
+
+    private async generateOrderNumber(locationId: string, tx?: Prisma.TransactionClient): Promise<string> {
+        return this.generateSequentialNumber('SI', 'orderNumber', locationId, tx);
+    }
+
+    private async generateReturnNumber(locationId: string, tx?: Prisma.TransactionClient): Promise<string> {
+        return this.generateSequentialNumber('SR', 'returnNumber', locationId, tx);
+    }
+
+    private async generateRefundNumber(locationId: string, tx?: Prisma.TransactionClient): Promise<string> {
+        return this.generateSequentialNumber('RF', 'refundNumber', locationId, tx);
     }
 
     // ─── Lookup items by barcode / SKU (for POS scanner) ──────────────
@@ -275,6 +292,8 @@ export class PosSalesService implements OnModuleInit {
                         unitPrice: lineItem.unitPrice,
                         discountPercent: discPct,
                         discountAmount: discAmt + promoDisc,
+                        overrideDiscountPercent: lineItem.overrideDiscountPercent || undefined,
+                        overrideDiscountNote: lineItem.overrideDiscountNote || undefined,
                         taxPercent: taxPct,
                         taxAmount: taxAmt,
                         lineTotal: Math.max(0, lineTotal),
@@ -301,11 +320,15 @@ export class PosSalesService implements OnModuleInit {
                 let allianceDiscount = 0;
                 let couponDiscount = 0;
                 
-                // 1. Manual discount (from UI)
+                // 1. Manual discount (from UI) — calculated on full subtotal (replaces item discounts)
+                //    Max 50% allowed; flat amount capped at 50% of Grand Total before manual discount
+                const grandTotalBeforeManual = Math.round((subtotal - lineItemDiscount + recalculatedTotalTax + 1) * 100) / 100;
                 if (dto.globalDiscountPercent) {
-                    manualDiscount = Math.round(subtotalAfterItemDiscount * (dto.globalDiscountPercent / 100) * 100) / 100;
+                    const cappedPercent = Math.min(dto.globalDiscountPercent, 50);
+                    manualDiscount = Math.round(subtotal * (cappedPercent / 100) * 100) / 100;
                 } else if (dto.globalDiscountAmount) {
-                    manualDiscount = Math.min(dto.globalDiscountAmount, subtotalAfterItemDiscount);
+                    const maxFlatDiscount = Math.round(grandTotalBeforeManual * 0.5 * 100) / 100;
+                    manualDiscount = Math.min(dto.globalDiscountAmount, maxFlatDiscount);
                 }
                 // 2. Alliance discount (calculated on subtotal AFTER item discounts)
                 if (dto.allianceId) {
@@ -361,8 +384,9 @@ export class PosSalesService implements OnModuleInit {
                     globalDiscAmt = couponDiscount;
                     appliedDiscountType = 'coupon';
                 } else if (manualDiscount > 0) {
-                    // Manual discount
+                    // Manual discount — replaces item-level discounts
                     globalDiscAmt = manualDiscount;
+                    finalLineItemDiscount = 0; // Remove item discounts when manual discount is applied
                     appliedDiscountType = 'manual';
                 }
 
@@ -482,6 +506,7 @@ export class PosSalesService implements OnModuleInit {
                         cashierUserId,
                         paymentMethod: isCreditSale && totalPaid === 0 ? 'credit_account' : paymentMethod,
                         notes: notesParts.join(' | ') || undefined,
+                        manualDiscountNote: dto.manualDiscountNote || undefined,
                         subtotal,
                         discountAmount: totalDiscount,
                         taxAmount: finalTotalTax,
@@ -897,11 +922,12 @@ export class PosSalesService implements OnModuleInit {
                 referenceType: { in: ['POS_RETURN', 'POS_REFUND'] },
                 referenceId: { in: orderIds },
             },
-            select: { referenceId: true, itemId: true, qty: true },
+            select: { referenceId: true, itemId: true, qty: true, referenceType: true },
         });
 
         // Build map: orderId -> itemId -> returnedQty
         const returnedQtyMap = new Map<string, Map<string, number>>();
+        const orderReturnFlags = new Map<string, { hasReturn: boolean; hasRefund: boolean }>();
         for (const entry of returnEntries) {
             if (!returnedQtyMap.has(entry.referenceId)) {
                 returnedQtyMap.set(entry.referenceId, new Map());
@@ -909,6 +935,13 @@ export class PosSalesService implements OnModuleInit {
             const itemMap = returnedQtyMap.get(entry.referenceId)!;
             const current = itemMap.get(entry.itemId) || 0;
             itemMap.set(entry.itemId, current + Math.abs(Number(entry.qty)));
+
+            if (!orderReturnFlags.has(entry.referenceId)) {
+                orderReturnFlags.set(entry.referenceId, { hasReturn: false, hasRefund: false });
+            }
+            const flags = orderReturnFlags.get(entry.referenceId)!;
+            if (entry.referenceType === 'POS_RETURN') flags.hasReturn = true;
+            if (entry.referenceType === 'POS_REFUND') flags.hasRefund = true;
         }
 
         // ── Fetch claims for ALL orders ──
@@ -998,8 +1031,10 @@ export class PosSalesService implements OnModuleInit {
             for (const claim of orderClaims) {
                 for (const claimItem of claim.items) {
                     const current = claimedQtyMap.get(claimItem.itemId) || { claimed: 0, approved: 0 };
+                    const isRejected = claim.status === 'REJECTED' || claimItem.itemStatus === 'REJECTED';
+                    const claimedToAdd = isRejected ? 0 : Number(claimItem.claimedQty);
                     claimedQtyMap.set(claimItem.itemId, {
-                        claimed: current.claimed + Number(claimItem.claimedQty),
+                        claimed: current.claimed + claimedToAdd,
                         approved: current.approved + Number(claimItem.approvedQty),
                     });
                 }
@@ -1012,11 +1047,14 @@ export class PosSalesService implements OnModuleInit {
                 approvedClaimQty: claimedQtyMap.get(oi.itemId)?.approved || 0,
             }));
 
+            const returnFlags = orderReturnFlags.get(order.id) || { hasReturn: false, hasRefund: false };
             return { 
                 ...order, 
                 tenders, 
                 items: enrichedItems,
                 claims: orderClaims,
+                hasReturn: returnFlags.hasReturn,
+                hasRefund: returnFlags.hasRefund,
             };
         });
 
@@ -1058,19 +1096,55 @@ export class PosSalesService implements OnModuleInit {
                 referenceType: { in: ['POS_RETURN', 'POS_REFUND'] },
                 referenceId: id,
             },
-            select: { itemId: true, qty: true },
+            select: { itemId: true, qty: true, referenceType: true },
         });
 
+        let hasReturn = false;
+        let hasRefund = false;
         const returnedQtyMap = new Map<string, number>();
         for (const entry of returnEntries) {
             const current = returnedQtyMap.get(entry.itemId) || 0;
             returnedQtyMap.set(entry.itemId, current + Math.abs(Number(entry.qty)));
+            if (entry.referenceType === 'POS_RETURN') hasReturn = true;
+            if (entry.referenceType === 'POS_REFUND') hasRefund = true;
         }
 
-        // Attach returnedQty to each item
+        // Fetch claims for this order to compute claimedQty correctly
+        const orderClaims = await this.prisma.posClaim.findMany({
+            where: { salesOrderId: id },
+            select: {
+                status: true,
+                items: {
+                    select: {
+                        itemId: true,
+                        claimedQty: true,
+                        approvedQty: true,
+                        itemStatus: true,
+                    },
+                },
+            },
+        });
+
+        // Build map of itemId -> total claimed/approved quantities across all claims
+        const claimedQtyMap = new Map<string, { claimed: number; approved: number }>();
+        for (const claim of orderClaims) {
+            for (const claimItem of claim.items) {
+                const current = claimedQtyMap.get(claimItem.itemId) || { claimed: 0, approved: 0 };
+                const isRejected = claim.status === 'REJECTED' || claimItem.itemStatus === 'REJECTED';
+                const claimedToAdd = isRejected ? 0 : Number(claimItem.claimedQty);
+                claimedQtyMap.set(claimItem.itemId, {
+                    claimed: current.claimed + claimedToAdd,
+                    approved: current.approved + Number(claimItem.approvedQty),
+                });
+            }
+        }
+
+        // Attach returnedQty, claimedQty, and approvedClaimQty to each item
         const enrichedItems = order.items.map(oi => ({
             ...oi,
             returnedQty: returnedQtyMap.get(oi.itemId) || 0,
+            claimedQty: claimedQtyMap.get(oi.itemId)?.claimed || 0,
+            approvedClaimQty: claimedQtyMap.get(oi.itemId)?.approved || 0,
         }));
 
         const tenders: { method: string; amount: number; slipNo?: string }[] = [];
@@ -1110,7 +1184,7 @@ export class PosSalesService implements OnModuleInit {
             select: { code: true, faceValue: true, expiresAt: true },
         });
 
-        return { status: true, data: { ...order, items: enrichedItems, tenders, creditVouchers } };
+        return { status: true, data: { ...order, items: enrichedItems, tenders, creditVouchers, hasReturn, hasRefund } };
     }
 
     // ─── Partial return ───────────────────────────────────────────────
@@ -1129,6 +1203,12 @@ export class PosSalesService implements OnModuleInit {
 
                 // Determine effective location for return (where stock goes back)
                 const effectiveLocationId = returnLocationId || order.locationId;
+
+                // Generate sequential return number if not set
+                let returnNumber = (order as any).returnNumber;
+                if (!returnNumber) {
+                    returnNumber = await this.generateReturnNumber(effectiveLocationId || '', tx);
+                }
 
                 // ── Fetch already-returned quantities BEFORE creating new entries ──
                 const existingReturnEntries = await tx.stockLedger.findMany({
@@ -1299,7 +1379,11 @@ export class PosSalesService implements OnModuleInit {
                 const newStatus = allItemsReturned ? 'returned' : 'partially_returned';
                 const updatedOrder = await tx.salesOrder.update({
                     where: { id },
-                    data: { status: newStatus, notes: reason ? `Return (${newStatus}): ${reason}` : order.notes },
+                    data: {
+                        status: newStatus,
+                        returnNumber,
+                        notes: reason ? `Return (${newStatus}): ${reason}` : order.notes,
+                    },
                 });
 
                 // ── Restore Voucher / Coupon ────────────────────────────
@@ -1367,6 +1451,7 @@ export class PosSalesService implements OnModuleInit {
                 return { 
                     status: true, 
                     data: updatedOrder, 
+                    returnRef: returnNumber,
                     refundAmount: Math.round(totalRefundAmount * 100) / 100, 
                     itemRefundDetails, 
                     exchangeVoucher: exchangeVoucher ? {
@@ -1419,7 +1504,7 @@ export class PosSalesService implements OnModuleInit {
     }
 
     // ─── Get return details for printing return slip ──────────────────
-    async getReturnDetails(orderId: string) {
+    async getReturnDetails(orderId: string, type?: 'return' | 'refund') {
         try {
             const order = await this.prisma.salesOrder.findUnique({
                 where: { id: orderId },
@@ -1453,7 +1538,7 @@ export class PosSalesService implements OnModuleInit {
             // Fetch ALREADY-RETURNED quantities from stock ledger
             const returnEntries = await this.prisma.stockLedger.findMany({
                 where: {
-                    referenceType: { in: ['POS_RETURN', 'POS_REFUND'] },
+                    referenceType: type === 'return' ? 'POS_RETURN' : type === 'refund' ? 'POS_REFUND' : { in: ['POS_RETURN', 'POS_REFUND'] },
                     referenceId: orderId,
                 },
                 select: { itemId: true, qty: true, referenceType: true },
@@ -1476,6 +1561,8 @@ export class PosSalesService implements OnModuleInit {
                     data: {
                         orderId: order.id,
                         orderNumber: order.orderNumber,
+                        returnNumber: (order as any).returnNumber,
+                        refundNumber: (order as any).refundNumber,
                         items: [],
                         reason: order.notes,
                         discountNotes: [],
@@ -1585,17 +1672,21 @@ export class PosSalesService implements OnModuleInit {
                 discountNotes.push(`Alliance: ${(order as any).alliance.partnerName || (order as any).alliance.code}`);
             }
 
-            const exchangeVoucher = await this.prisma.voucher.findFirst({
-                where: { sourceOrderId: order.id, voucherType: 'EXCHANGE', isDeleted: false },
-                select: { code: true, faceValue: true, expiresAt: true },
-                orderBy: { createdAt: 'desc' }
-            });
+            const exchangeVoucher = type === 'refund'
+                ? null
+                : await this.prisma.voucher.findFirst({
+                    where: { sourceOrderId: order.id, voucherType: 'EXCHANGE', isDeleted: false },
+                    select: { code: true, faceValue: true, expiresAt: true },
+                    orderBy: { createdAt: 'desc' }
+                });
 
             return {
                 status: true,
                 data: {
                     orderId: order.id,
                     orderNumber: order.orderNumber,
+                    returnNumber: (order as any).returnNumber,
+                    refundNumber: (order as any).refundNumber,
                     items: enrichedItems,
                     reason: order.notes,
                     discountNotes,
@@ -1929,6 +2020,12 @@ export class PosSalesService implements OnModuleInit {
 
                 const effectiveLocationId = order.locationId;
 
+                // Generate sequential refund number if not set
+                let refundNumber = (order as any).refundNumber;
+                if (!refundNumber) {
+                    refundNumber = await this.generateRefundNumber(effectiveLocationId || '', tx);
+                }
+
                 // Fetch ALREADY-RETURNED quantities from stock ledger (to determine status later)
                 const previousReturns = await tx.stockLedger.findMany({
                     where: { referenceType: { in: ['POS_RETURN', 'POS_REFUND'] }, referenceId: id },
@@ -2023,13 +2120,14 @@ export class PosSalesService implements OnModuleInit {
                     where: { id },
                     data: { 
                         status: newStatus, 
+                        refundNumber,
                         notes: refundVoucher 
                             ? `Cash refunded Rs.${refundAmount} (${newStatus}) - Refund voucher ${refundVoucher.code} (Record only) - Inventory restored${reason ? `: ${reason}` : ''}`
                             : (reason ? `Cash refund Rs.${refundAmount} (${newStatus}) - Inventory restored: ${reason}` : `Cash refund Rs.${refundAmount} (${newStatus}) - Inventory restored`)
                     },
                 });
 
-                return { updatedOrder, refundVoucher };
+                return { updatedOrder, refundVoucher, refundNumber };
             });
 
             runInBackground(
@@ -2053,6 +2151,8 @@ export class PosSalesService implements OnModuleInit {
             return { 
                 status: true, 
                 data: result.updatedOrder, 
+                refundRef: result.refundNumber,
+                returnRef: result.refundNumber,
                 refundVoucher: result.refundVoucher ? {
                     code: result.refundVoucher.code,
                     faceValue: result.refundVoucher.faceValue,
@@ -2094,7 +2194,7 @@ export class PosSalesService implements OnModuleInit {
 
             const itemsData = dto.items.map((lineItem) => {
                 const subtotal = lineItem.unitPrice * lineItem.quantity;
-                const discPct = lineItem.discountPercent || 0;
+                const discPct = lineItem.overrideDiscountPercent ?? lineItem.discountPercent ?? 0;
                 const discAmt = Math.round(subtotal * (discPct / 100));
                 const afterDisc = subtotal - discAmt;
                 const taxPct = lineItem.taxPercent || 0;
@@ -2106,6 +2206,8 @@ export class PosSalesService implements OnModuleInit {
                     unitPrice: lineItem.unitPrice,
                     discountPercent: discPct,
                     discountAmount: discAmt,
+                    overrideDiscountPercent: lineItem.overrideDiscountPercent || undefined,
+                    overrideDiscountNote: lineItem.overrideDiscountNote || undefined,
                     taxPercent: taxPct,
                     taxAmount: taxAmt,
                     lineTotal: Math.max(0, lineTotal),

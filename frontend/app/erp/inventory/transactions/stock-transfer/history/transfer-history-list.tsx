@@ -21,7 +21,8 @@ import {
     MapPin,
     Calendar,
     Hash,
-    Printer
+    Printer,
+    Eye
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -43,19 +44,33 @@ export function StockTransferHistoryList({ initialEntries }: StockTransferHistor
     }
 
     const getStatusBadge = (status: string) => {
-        switch (status.toUpperCase()) {
+        const s = status.toUpperCase();
+        switch (s) {
+            case 'PENDING_CHECKER':
+                return (
+                    <Badge variant="secondary" className="bg-amber-100 text-amber-700 hover:bg-amber-100/80 border-amber-200 gap-1 capitalize">
+                        <Clock className="h-3 w-3" /> pending checker
+                    </Badge>
+                );
+            case 'PENDING_AUTHORIZER':
+                return (
+                    <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100/80 border-blue-200 gap-1 capitalize">
+                        <Clock className="h-3 w-3" /> pending authorizer
+                    </Badge>
+                );
             case 'PENDING':
                 return (
                     <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-100/80 border-orange-200 gap-1 capitalize">
-                        <Clock className="h-3 w-3" /> {status.toLowerCase()}
+                        <Clock className="h-3 w-3" /> pending
                     </Badge>
                 );
             case 'COMPLETED':
                 return (
                     <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-100/80 border-green-200 gap-1 capitalize">
-                        <CheckCircle2 className="h-3 w-3" /> {status.toLowerCase()}
+                        <CheckCircle2 className="h-3 w-3" /> completed
                     </Badge>
                 );
+            case 'REJECTED':
             case 'CANCELLED':
                 return (
                     <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100/80 border-red-200 gap-1 capitalize">
@@ -121,9 +136,9 @@ export function StockTransferHistoryList({ initialEntries }: StockTransferHistor
                                 </TableCell>
                                 <TableCell className="text-right">
                                     <Button variant="outline" size="sm" asChild>
-                                        <Link href={`/erp/inventory/transactions/stock-transfer/slip/${transfer.id}`} target="_blank">
-                                            <Printer className="h-4 w-4 mr-2" />
-                                            Print
+                                        <Link href={`/erp/inventory/transactions/stock-transfer/slip/${transfer.id}`}>
+                                            <Eye className="h-4 w-4 mr-2" />
+                                            View & Approve
                                         </Link>
                                     </Button>
                                 </TableCell>

@@ -249,6 +249,7 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
     const [showReturnPrint, setShowReturnPrint] = useState(false);
     const [showUpdateTender, setShowUpdateTender] = useState(false);
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
+    const [isRefundPrint, setIsRefundPrint] = useState(false);
 
     // ── Bulk-upload modal state ────────────────────────────────────────────────
     const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
@@ -300,7 +301,7 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
     }, [uploadProgress?.status]);
 
     // ── Print helpers ──────────────────────────────────────────────────────────
-    const openPrintDialog = useCallback(async (listOrder: any, mode: "sales" | "gift" | "return") => {
+    const openPrintDialog = useCallback(async (listOrder: any, mode: "sales" | "gift" | "return" | "refund") => {
         setIsLoadingReceipt(true);
         if (mode === "sales") {
             setSelectedOrder({ ...listOrder, isGiftReceipt: false });
@@ -308,8 +309,14 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
         } else if (mode === "gift") {
             setSelectedOrder({ ...listOrder, isGiftReceipt: true });
             setShowGiftPrint(true);
-        } else {
+        } else if (mode === "return") {
             setSelectedOrder(listOrder);
+            setIsRefundPrint(false);
+            setReturnDetails(null);
+            setShowReturnPrint(true);
+        } else if (mode === "refund") {
+            setSelectedOrder(listOrder);
+            setIsRefundPrint(true);
             setReturnDetails(null);
             setShowReturnPrint(true);
         }
@@ -319,9 +326,10 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
                 const full = res.data.data;
                 if (mode === "sales")  setSelectedOrder({ ...full, isGiftReceipt: false });
                 if (mode === "gift")   setSelectedOrder({ ...full, isGiftReceipt: true });
-                if (mode === "return") {
+                if (mode === "return" || mode === "refund") {
                     setSelectedOrder(full);
-                    const retRes = await authFetch(`/pos-sales/orders/${listOrder.id}/return-details`);
+                    const typeParam = mode === "refund" ? "refund" : "return";
+                    const retRes = await authFetch(`/pos-sales/orders/${listOrder.id}/return-details?type=${typeParam}`);
                     if (retRes.ok && retRes.data?.status) setReturnDetails(retRes.data.data);
                 }
             } else {
@@ -513,12 +521,20 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
                                         <Printer className="h-3.5 w-3.5" />
                                     </Button>
                                 )}
-                                {(order.status === "returned" || order.status === "partially_returned" || order.status === "refunded") && (
+                                {(order.hasReturn || order.status === "returned" || order.status === "partially_returned") && (
                                     <Button variant="ghost" size="icon"
                                         className="h-8 w-8 rounded-full text-destructive hover:bg-destructive/5"
-                                        title={order.status === "refunded" ? "Print refund slip" : "Print return slip"}
+                                        title="Print return slip"
                                         onClick={() => openPrintDialog(order, "return")}>
                                         <RotateCcw className="h-3.5 w-3.5" />
+                                    </Button>
+                                )}
+                                {(order.hasRefund || order.status === "refunded" || (order.status === "partially_returned" && !order.hasReturn && !order.hasRefund)) && (
+                                    <Button variant="ghost" size="icon"
+                                        className="h-8 w-8 rounded-full text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30"
+                                        title="Print refund slip"
+                                        onClick={() => openPrintDialog(order, "refund")}>
+                                        <RotateCcw className="h-3.5 w-3.5 text-purple-600" />
                                     </Button>
                                 )}
                                 {order.claims && order.claims.length > 0 && (
@@ -671,6 +687,7 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
             {showReturnPrint && selectedOrder && (
                 <PrintReturnReceipt
                     returnRef={selectedOrder?.orderNumber ?? ""}
+                    isRefund={isRefundPrint}
                     isAlliance={!!selectedOrder?.alliance}
                     originalOrders={[{ orderNumber: selectedOrder?.orderNumber ?? "", grandTotal: Number(selectedOrder?.grandTotal ?? 0) }]}
                     returnedLines={

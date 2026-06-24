@@ -21,9 +21,11 @@ import { useAuth } from "@/components/providers/auth-provider";
 interface ManagerVerificationDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    onVerified: (managerUserId?: string) => void;
+    onVerified: (managerUserId?: string, note?: string) => void;
     title?: string;
     description?: string;
+    requireNote?: boolean;
+    notePlaceholder?: string;
 }
 
 export function ManagerVerificationDialog({
@@ -32,16 +34,20 @@ export function ManagerVerificationDialog({
     onVerified,
     title = "Manager Verification Required",
     description = "Enter manager credentials to authorise this restricted action.",
+    requireNote = false,
+    notePlaceholder = "Enter mandatory note/reason here...",
 }: ManagerVerificationDialogProps) {
     const { user } = useAuth();
     const [emailOrId, setEmailOrId] = useState("");
     const [password, setPassword] = useState("");
+    const [note, setNote] = useState("");
     const [isPending, startTransition] = useTransition();
 
     useEffect(() => {
         if (open) {
             setEmailOrId(user?.email || "");
             setPassword("");
+            setNote("");
         }
     }, [open, user]);
 
@@ -54,14 +60,19 @@ export function ManagerVerificationDialog({
             toast.error("Password is required");
             return;
         }
+        if (requireNote && !note.trim()) {
+            toast.error("Mandatory note / reason is required");
+            return;
+        }
 
         startTransition(async () => {
             const result = await verifyManager(emailOrId, password);
             if (result.status && result.data) {
                 toast.success("Manager credentials verified");
-                onVerified(result.data.userId);
+                onVerified(result.data.userId, note.trim());
                 onOpenChange(false);
                 setPassword("");
+                setNote("");
             } else {
                 toast.error(result.message || "Invalid credentials or unauthorized role");
             }
@@ -104,6 +115,21 @@ export function ManagerVerificationDialog({
                             autoFocus
                         />
                     </div>
+                    {requireNote && (
+                        <div className="space-y-2">
+                            <Label htmlFor="mgr-note" className="flex items-center gap-1">
+                                Note / Reason <span className="text-destructive">*</span>
+                            </Label>
+                            <Input
+                                id="mgr-note"
+                                type="text"
+                                value={note}
+                                onChange={(e) => setNote(e.target.value)}
+                                placeholder={notePlaceholder}
+                                disabled={isPending}
+                            />
+                        </div>
+                    )}
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>

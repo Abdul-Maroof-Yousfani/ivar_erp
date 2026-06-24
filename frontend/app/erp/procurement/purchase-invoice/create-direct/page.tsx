@@ -1128,10 +1128,20 @@ export default function CreateDirectPurchaseInvoicePage() {
                                                                                                 {item.description}
                                                                                             </span>
                                                                                         </div>
-                                                                                        <div className="flex items-center gap-3">
+                                                                                        <div className="flex items-center gap-3 flex-wrap">
                                                                                             <span className="text-[11px] text-muted-foreground">
                                                                                                 Unit Price: <span className="font-bold text-foreground">{(item.unitPrice ?? 0).toLocaleString()}</span>
                                                                                             </span>
+                                                                                            {searchItemType === 'RAW_FABRIC' && item.uom && (
+                                                                                                <Badge variant="outline" className="h-4 text-[9px] px-1.5 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800">
+                                                                                                    UOM: {item.uom}
+                                                                                                </Badge>
+                                                                                            )}
+                                                                                            {searchItemType === 'RAW_FABRIC' && item.rollSize != null && item.rollSize > 0 && (
+                                                                                                <Badge variant="outline" className="h-4 text-[9px] px-1.5 bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800">
+                                                                                                    Roll: {item.rollSize}
+                                                                                                </Badge>
+                                                                                            )}
                                                                                             {isSelected && (
                                                                                                 <Badge variant="outline" className="h-4 text-[9px] px-1 bg-primary/5 text-primary border-primary/20">Added</Badge>
                                                                                             )}
@@ -1174,8 +1184,8 @@ export default function CreateDirectPurchaseInvoicePage() {
                                         <TableHead className="w-[130px]">SKU</TableHead>
                                         <TableHead>Description</TableHead>
                                         <TableHead className="w-[90px] text-center">Qty</TableHead>
-                                        <TableHead className="w-[85px] text-center">UOM</TableHead>
-                                        <TableHead className="w-[100px] text-center">Roll Size</TableHead>
+                                        {searchItemType === 'RAW_FABRIC' && <TableHead className="w-[85px] text-center">UOM</TableHead>}
+                                        {searchItemType === 'RAW_FABRIC' && <TableHead className="w-[100px] text-center">Roll Size</TableHead>}
                                         <TableHead className="w-[120px]">Unit Price</TableHead>
                                         <TableHead className="w-[90px]">Tax %</TableHead>
                                         <TableHead className="w-[90px]">Disc %</TableHead>
@@ -1186,7 +1196,7 @@ export default function CreateDirectPurchaseInvoicePage() {
                                 <TableBody>
                                     {selectedItems.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={10} className="h-32 text-center text-muted-foreground italic">
+                                            <TableCell colSpan={searchItemType === 'RAW_FABRIC' ? 10 : 8} className="h-32 text-center text-muted-foreground italic">
                                                 No items added yet. Search and add items above.
                                             </TableCell>
                                         </TableRow>
@@ -1209,21 +1219,25 @@ export default function CreateDirectPurchaseInvoicePage() {
                                                             className="h-8 w-20 focus-visible:ring-primary shadow-none bg-transparent group-hover:bg-background transition-colors text-center font-semibold"
                                                         />
                                                     </TableCell>
-                                                    <TableCell className="text-center">
-                                                        <Badge variant="outline" className="font-semibold text-xs border-primary/20 bg-primary/5 text-primary">
-                                                            {item.uom || 'Pcs'}
-                                                        </Badge>
-                                                    </TableCell>
-                                                    <TableCell className="text-center">
-                                                        <Input
-                                                            type="number"
-                                                            min="0"
-                                                            placeholder="e.g. 1000"
-                                                            value={item.rollSize ?? ''}
-                                                            onChange={e => updateItem(item.id, 'rollSize', e.target.value === '' ? undefined : Number(e.target.value))}
-                                                            className="h-8 w-24 focus-visible:ring-primary shadow-none bg-transparent group-hover:bg-background transition-colors text-center font-semibold mx-auto"
-                                                        />
-                                                    </TableCell>
+                                                    {searchItemType === 'RAW_FABRIC' && (
+                                                        <TableCell className="text-center">
+                                                            <Badge variant="outline" className="font-semibold text-xs border-primary/20 bg-primary/5 text-primary">
+                                                                {item.uom || 'Pcs'}
+                                                            </Badge>
+                                                        </TableCell>
+                                                    )}
+                                                    {searchItemType === 'RAW_FABRIC' && (
+                                                        <TableCell className="text-center">
+                                                            <Input
+                                                                type="number"
+                                                                min="0"
+                                                                placeholder="e.g. 1000"
+                                                                value={item.rollSize ?? ''}
+                                                                onChange={e => updateItem(item.id, 'rollSize', e.target.value === '' ? undefined : Number(e.target.value))}
+                                                                className="h-8 w-24 focus-visible:ring-primary shadow-none bg-transparent group-hover:bg-background transition-colors text-center font-semibold mx-auto"
+                                                            />
+                                                        </TableCell>
+                                                    )}
                                                     <TableCell>
                                                         <Input
                                                             type="number"

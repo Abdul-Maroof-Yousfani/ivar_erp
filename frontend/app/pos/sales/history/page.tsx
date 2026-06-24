@@ -418,6 +418,7 @@ export default function SalesHistoryPage() {
     const [showUpdateTender, setShowUpdateTender] = useState(false);
     // isLoadingReceipt: dialog opens immediately, receipt fetches in background
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
+    const [isRefundPrint, setIsRefundPrint] = useState(false);
     const [showClaimReceipt, setShowClaimReceipt] = useState(false);
     const [selectedClaim, setSelectedClaim] = useState<any>(null);
 
@@ -468,7 +469,7 @@ export default function SalesHistoryPage() {
     // Open print dialog immediately with skeleton, then fetch full order in background
     const openPrintDialog = useCallback(async (
         listOrder: any,
-        mode: "sales" | "gift" | "return",
+        mode: "sales" | "gift" | "return" | "refund",
     ) => {
         // Open dialog right away with loading state
         setIsLoadingReceipt(true);
@@ -478,8 +479,14 @@ export default function SalesHistoryPage() {
         } else if (mode === "gift") {
             setSelectedOrder({ ...listOrder, isGiftReceipt: true });
             setShowGiftPrint(true);
-        } else {
+        } else if (mode === "return") {
             setSelectedOrder(listOrder);
+            setIsRefundPrint(false);
+            setReturnDetails(null);
+            setShowReturnPrint(true);
+        } else if (mode === "refund") {
+            setSelectedOrder(listOrder);
+            setIsRefundPrint(true);
             setReturnDetails(null);
             setShowReturnPrint(true);
         }
@@ -490,9 +497,10 @@ export default function SalesHistoryPage() {
                 const full = res.data.data;
                 if (mode === "sales")  setSelectedOrder({ ...full, isGiftReceipt: false });
                 if (mode === "gift")   setSelectedOrder({ ...full, isGiftReceipt: true });
-                if (mode === "return") {
+                if (mode === "return" || mode === "refund") {
                     setSelectedOrder(full);
-                    const retRes = await authFetch(`/pos-sales/orders/${listOrder.id}/return-details`);
+                    const typeParam = mode === "refund" ? "refund" : "return";
+                    const retRes = await authFetch(`/pos-sales/orders/${listOrder.id}/return-details?type=${typeParam}`);
                     if (retRes.ok && retRes.data?.status) setReturnDetails(retRes.data.data);
                 }
             } else {
@@ -704,12 +712,20 @@ export default function SalesHistoryPage() {
                                     <Printer className="h-3.5 w-3.5" />
                                 </Button>
                             )}
-                            {(order.status === 'returned' || order.status === 'partially_returned' || order.status === 'refunded') && (
+                            {(order.hasReturn || order.status === 'returned' || order.status === 'partially_returned') && (
                                 <Button variant="ghost" size="icon"
                                     className="h-8 w-8 rounded-full text-destructive hover:bg-destructive/5"
-                                    title={order.status === 'refunded' ? "Print refund slip" : "Print return slip"}
+                                    title="Print return slip"
                                     onClick={() => openPrintDialog(order, "return")}>
                                     <RotateCcw className="h-3.5 w-3.5" />
+                                </Button>
+                            )}
+                            {(order.hasRefund || order.status === 'refunded' || (order.status === 'partially_returned' && !order.hasReturn && !order.hasRefund)) && (
+                                <Button variant="ghost" size="icon"
+                                    className="h-8 w-8 rounded-full text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30"
+                                    title="Print refund slip"
+                                    onClick={() => openPrintDialog(order, "refund")}>
+                                    <RotateCcw className="h-3.5 w-3.5 text-purple-600" />
                                 </Button>
                             )}
                             {/* Claim receipt button - show if order has claims */}
@@ -1168,7 +1184,7 @@ export default function SalesHistoryPage() {
             {showReturnPrint && selectedOrder && (
                 <PrintReturnReceipt
                     returnRef={selectedOrder.orderNumber}
-                    isRefund={selectedOrder.status === 'refunded' || selectedOrder.status === 'partially_returned'}
+                    isRefund={isRefundPrint}
                     isAlliance={!!selectedOrder.alliance}
                     originalOrders={[{ orderNumber: selectedOrder.orderNumber, grandTotal: Number(selectedOrder.grandTotal) }]}
                     returnedLines={(returnDetails?.items ?? []).map((item: any) => ({
