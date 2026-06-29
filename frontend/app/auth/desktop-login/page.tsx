@@ -565,7 +565,7 @@ export default function DesktopLoginPage() {
 
   // ── Step titles ───────────────────────────────────────────────────────────
   const titles: Record<string, string> = {
-    checking: "Speed Limit POS",
+    checking: `${COMPANY_NAME} POS`,
     login: "Sign in to POS",
     registering: "Registering Device",
     "pos-setup:location-list": "Select Location",

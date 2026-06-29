@@ -3,6 +3,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { COMPANY_NAME } from "@/lib/utils";
 
 export default function SettingsPage() {
   return (
@@ -34,7 +35,7 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-2">
                 <Label>System Name</Label>
-                <Input placeholder="HR Management System" defaultValue="Speed Limit HRMS" />
+                <Input placeholder="HR Management System" defaultValue={`${COMPANY_NAME} HRMS`} />
             </div>
           </CardContent>
         </Card>

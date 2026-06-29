@@ -30,6 +30,7 @@ import Link from "next/link";
 import { useAuth } from "@/components/providers/auth-provider";
 import { PermissionGuard } from "@/components/auth/permission-guard";
 import { toast } from "sonner";
+import { COMPANY_NAME } from "@/lib/utils";
 
 export default function GrnDetailPage() {
   const router = useRouter();
@@ -475,7 +476,7 @@ export default function GrnDetailPage() {
                 </div>
                 <div className="flex gap-2">
                   <span className="font-bold w-16 shrink-0">Location:</span>{" "}
-                  <span>Speed Limit ERP Location</span>
+                  <span>{COMPANY_NAME} ERP Location</span>
                 </div>
               </div>
               <div className="w-1/2 p-2 border border-gray-300 flex flex-col justify-center">
@@ -484,7 +485,7 @@ export default function GrnDetailPage() {
                 </div>
                 <div className="flex gap-2 mb-1">
                   <span className="font-bold w-16 shrink-0">Name:</span>{" "}
-                  <span>Speed Limit Warehouse</span>
+                  <span>{COMPANY_NAME} Warehouse</span>
                 </div>
                 <div className="flex gap-2">
                   <span className="font-bold w-16 shrink-0">Address:</span>{" "}

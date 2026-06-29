@@ -1074,7 +1074,7 @@ export class PosSessionService {
         : `${formatDate(startRangeStr)} - ${formatDate(endRangeStr)}`;
 
     return {
-      companyName: 'Speed (Private) Limited',
+      companyName: "IVAR",
       locationName: session.pos.location?.name ?? 'Nike-Dolmen Clifton',
       reportTitle: 'Sales Reconciliation',
       dateRange: dateRange,

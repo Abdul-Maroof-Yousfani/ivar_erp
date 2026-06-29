@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { COMPANY_NAME } from "@/lib/utils";
 
 const PAGE_TITLES: Record<string, string> = {
   "/auth/login":          "Login",
@@ -19,7 +20,7 @@ export function AuthTitleUpdater() {
     if (typeof document === "undefined") return;
     const cleanPath = pathname.split("?")[0].replace(/\/$/, "");
     const page = PAGE_TITLES[cleanPath] ?? "Authentication";
-    document.title = `${page} | Speed Limit`;
+    document.title = `${page} | ${COMPANY_NAME}`;
   }, [pathname]);
 
   return null;

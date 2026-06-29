@@ -24,6 +24,7 @@ import {
 import { PurchaseInvoice as ApiPurchaseInvoice } from "@/lib/api";
 import { toast } from "sonner";
 import { PermissionGuard } from "@/components/auth/permission-guard";
+import { COMPANY_NAME } from "@/lib/utils";
 
 export function numberToWords(amount: number): string {
   const a = [
@@ -668,7 +669,7 @@ export default function PurchaseInvoiceDetailPage() {
                 </div>
                 <div className="flex gap-2 mb-1">
                   <span className="font-bold w-16 shrink-0">Name:</span>{" "}
-                  <span>Speed Limit ERP</span>
+                  <span>{COMPANY_NAME}</span>
                 </div>
                 <div className="flex gap-2">
                   <span className="font-bold w-16 shrink-0">Address:</span>{" "}

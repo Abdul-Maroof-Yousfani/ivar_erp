@@ -69,3 +69,27 @@ export async function queueStockLedgerExport(filters?: {
         return { status: false, message: "Failed to connect to server" };
     }
 }
+
+export async function getStockActivityReport(filters: {
+    locationId: string;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
+}) {
+    try {
+        const queryParams = new URLSearchParams();
+        queryParams.append("locationId", filters.locationId);
+        if (filters.startDate) queryParams.append("startDate", filters.startDate);
+        if (filters.endDate) queryParams.append("endDate", filters.endDate);
+        if (filters.search) queryParams.append("search", filters.search);
+
+        const queryString = queryParams.toString();
+        const url = `/stock-ledger/activity-report${queryString ? `?${queryString}` : ""}`;
+
+        const response = await authFetch(url, { method: "GET" });
+        return response.data;
+    } catch (error) {
+        console.error("Get stock activity report error:", error);
+        return { status: false, data: [], message: "Failed to fetch stock activity report" };
+    }
+}

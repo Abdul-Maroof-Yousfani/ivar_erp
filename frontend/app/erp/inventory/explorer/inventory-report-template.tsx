@@ -1,6 +1,7 @@
 "use client";
 
 import { Warehouse, WarehouseLocation } from '@/lib/api';
+import { COMPANY_NAME } from '@/lib/utils';
 import { format } from 'date-fns';
 
 interface MatrixRow {
@@ -25,7 +26,7 @@ export function InventoryReportTemplate({
             {/* Header */}
             <div className="flex justify-between items-start mb-6 border-b-2 border-indigo-600 pb-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-indigo-700 italic">Speed (Pvt.) Limited</h1>
+                    <h1 className="text-2xl font-bold text-indigo-700 italic">{COMPANY_NAME}</h1>
                     <h2 className="text-lg font-bold mt-1">Inventory Matrix Report</h2>
                 </div>
                 <div className="text-right">

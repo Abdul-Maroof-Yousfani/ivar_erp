@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { PermissionGuard } from '@/components/auth/permission-guard';
 import { useAuth } from '@/components/providers/auth-provider';
 import { toast } from 'sonner';
+import { COMPANY_NAME } from '@/lib/utils';
 
 export default function TransferSlipPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
@@ -238,7 +239,7 @@ export default function TransferSlipPage({ params }: { params: Promise<{ id: str
                         </p>
                     </div>
                     <div className="text-right">
-                        <div className="font-bold text-lg">Speed Limit (ERP)</div>
+                        <div className="font-bold text-lg">{COMPANY_NAME}</div>
                         <p className="text-sm text-gray-600">Company Standard Template</p>
                     </div>
                 </div>

@@ -382,6 +382,26 @@ export function HeaderNotifications() {
       return;
     }
 
+    // delivery-note-export.ready
+    if (n.actionType === "delivery-note-export.ready" && n.actionPayload) {
+      try {
+        const payload = typeof n.actionPayload === "string"
+          ? JSON.parse(n.actionPayload)
+          : n.actionPayload;
+        const jobId = payload?.jobId;
+        if (jobId) {
+          const base = getApiBaseUrl();
+          await triggerDownload(
+            `${base}/transfer-request/export/${jobId}/download`,
+            `delivery-notes-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          );
+        }
+      } catch (e) {
+        console.error("Delivery note export download failed:", e);
+      }
+      return;
+    }
+
     // pos-sales-export.ready
     if (n.actionType === "pos-sales-export.ready" && n.actionPayload) {
       try {
