@@ -785,6 +785,11 @@ export default function StockTransferPage() {
                         <div className="flex items-center gap-2">
                             <div className="flex items-center gap-2">
                                 <Badge variant="secondary">{selectedItems.length} Items Selected</Badge>
+                                {selectedItems.length > 0 && (
+                                    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 font-bold">
+                                        Total QTY: {selectedItems.reduce((sum, i) => sum + (i.quantity || 0), 0)}
+                                    </Badge>
+                                )}
                             </div>
                             {/* Filter Sheet Trigger */}
                             <div className="flex items-center gap-2">
@@ -1289,8 +1294,13 @@ export default function StockTransferPage() {
                                                 <Info className="h-3 w-3" />
                                                 <span>Click items in the list to toggle selection. Popover stays open for multiple selects.</span>
                                             </div>
-                                            <div className="font-semibold">
-                                                {selectedItems.length} items currently in list
+                                            <div className="flex items-center gap-3 font-semibold">
+                                                <span>{selectedItems.length} items currently in list</span>
+                                                {selectedItems.length > 0 && (
+                                                    <span className="text-primary font-bold">
+                                                        · Total QTY: {selectedItems.reduce((sum, i) => sum + (i.quantity || 0), 0)}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -1362,6 +1372,22 @@ export default function StockTransferPage() {
                                                 </TableCell>
                                             </TableRow>
                                         ))
+                                    )}
+                                    {selectedItems.length > 0 && (
+                                        <TableRow className="bg-muted/40 border-t-2 border-primary/20">
+                                            <TableCell colSpan={4} className="text-xs font-bold text-muted-foreground uppercase tracking-wider py-2.5 pl-4">
+                                                Total
+                                            </TableCell>
+                                            <TableCell className="text-center font-bold text-primary text-sm py-2.5">
+                                                {selectedItems.reduce((sum, i) => sum + (i.availableStock || 0), 0)}
+                                            </TableCell>
+                                            <TableCell className="font-bold text-foreground text-sm py-2.5">
+                                                <span className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground px-2.5 py-1 rounded-md text-xs font-bold">
+                                                    {selectedItems.reduce((sum, i) => sum + (i.quantity || 0), 0)} QTY
+                                                </span>
+                                            </TableCell>
+                                            <TableCell colSpan={2} />
+                                        </TableRow>
                                     )}
                                 </TableBody>
                             </Table>
