@@ -304,6 +304,13 @@ export default function CreatePurchaseInvoicePage() {
         return;
       }
 
+      // Validate supplierId — must be a valid UUID (auto-filled from GRN/Landed Cost)
+      if (!formData.supplierId) {
+        alert("Supplier could not be determined from the selected GRN/Landed Cost. Please check the GRN data.");
+        setLoading(false);
+        return;
+      }
+
       // Clean up empty string values to undefined for optional UUID fields
       const { isApproved, ...restFormData } = formData;
       const cleanedFormData = {
@@ -319,6 +326,8 @@ export default function CreatePurchaseInvoicePage() {
         items: validItems,
         status: formData.isApproved ? "APPROVED" : undefined,
       };
+
+      console.log("Final Payload (stringified):", JSON.stringify(payload, null, 2));
 
       console.log("Final Payload:", payload);
 

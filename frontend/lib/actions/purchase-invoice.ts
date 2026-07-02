@@ -55,9 +55,28 @@ export async function createPurchaseInvoice(data: {
     }[];
 }) {
     try {
+        // Next.js server actions serialize `undefined` as "$undefined" string.
+        // Strip those out before sending to backend to avoid DTO validation failures.
+        const cleanData = JSON.parse(
+            JSON.stringify(data, (_, value) =>
+                value === '$undefined' || value === undefined ? undefined : value
+            )
+        );
+
+        // Also clean items: remove null rollSize (backend expects number or omitted)
+        if (cleanData.items) {
+            cleanData.items = cleanData.items.map((item: any) => {
+                const { rollSize, ...rest } = item;
+                if (rollSize !== null && rollSize !== undefined) {
+                    return { ...rest, rollSize };
+                }
+                return rest;
+            });
+        }
+
         const response = await authFetch("/purchase/purchase-invoices", {
             method: "POST",
-            body: JSON.stringify(data),
+            body: JSON.stringify(cleanData),
         });
         const result = response.data;
         revalidatePath("/erp/procurement/purchase-invoice");
