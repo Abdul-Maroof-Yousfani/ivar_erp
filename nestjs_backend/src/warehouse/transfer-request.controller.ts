@@ -5,7 +5,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { OptionalJwtAuth } from '../auth/auth.controller';
-import { CreateBypassedTransferRequestDto } from './dto/create-bypassed-transfer.dto';
+import { CreateBypassedTransferRequestDto, BulkCreateBypassedTransferRequestDto } from './dto/create-bypassed-transfer.dto';
 
 @ApiTags('Transfer Request')
 @ApiBearerAuth()
@@ -16,15 +16,19 @@ export class TransferRequestController {
 
     @Post('bypass')
     @OptionalJwtAuth()
-    @ApiOperation({ summary: 'Create a bypassed transfer request (Direct correction endpoint)' })
-    @ApiBody({ type: CreateBypassedTransferRequestDto })
-    async createBypassed(@Body() dto: CreateBypassedTransferRequestDto, @Req() req: any) {
-        const data = await this.transferRequestService.createBypassedRequest(dto, {
-            userId: req.user?.id,
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent'],
-        });
-        return { status: true, data, message: 'Bypassed transfer request created successfully' };
+    @ApiOperation({ summary: 'Create bypassed transfer requests in bulk (Direct correction endpoint)' })
+    @ApiBody({ type: BulkCreateBypassedTransferRequestDto })
+    async createBypassed(@Body() dto: BulkCreateBypassedTransferRequestDto, @Req() req: any) {
+        const results: any[] = [];
+        for (const transferDto of dto.transfers) {
+            const data = await this.transferRequestService.createBypassedRequest(transferDto, {
+                userId: req.user?.id,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+            });
+            results.push(data);
+        }
+        return { status: true, data: results, message: 'Bypassed transfer requests created in bulk successfully' };
     }
 
     @Post()

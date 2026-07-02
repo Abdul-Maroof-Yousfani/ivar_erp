@@ -59,3 +59,11 @@ export class CreateBypassedTransferRequestDto {
   @IsOptional()
   createdById?: string;
 }
+
+export class BulkCreateBypassedTransferRequestDto {
+  @ApiProperty({ type: [CreateBypassedTransferRequestDto], description: 'List of transfer requests to create in bulk' })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateBypassedTransferRequestDto)
+  transfers: CreateBypassedTransferRequestDto[];
+}
