@@ -78,7 +78,8 @@ export class TransferRequestService {
                 }
             }
 
-            // Validate stock availability based on transfer type
+            // NOTE: Stock availability validation is bypassed to allow transfers even when system stock is negative.
+            /*
             for (const item of data.items) {
                 let availableQty = 0;
                 if (transferType === 'WAREHOUSE_TO_OUTLET') {
@@ -106,6 +107,7 @@ export class TransferRequestService {
                     throw new BadRequestException(`Insufficient stock for item ID: ${item.itemId}. Available: ${availableQty}, Requested: ${item.quantity}`);
                 }
             }
+            */
 
             const created = await this.prisma.transferRequest.create({
                 data: {
@@ -530,7 +532,7 @@ export class TransferRequestService {
             }
 
             return this.prisma.$transaction(async (tx) => {
-                // 1. Check and reserve stock at source outlet
+                // 1. Check and reserve stock at source outlet (allow negative stock)
                 for (const item of request.items) {
                     const sourceStock = await tx.inventoryItem.findFirst({
                         where: {
@@ -540,18 +542,28 @@ export class TransferRequestService {
                         },
                     });
 
-                    if (!sourceStock || Number(sourceStock.quantity) < Number(item.quantity)) {
-                        throw new BadRequestException(`Insufficient stock for item ${item.itemId} at source outlet. Current: ${sourceStock?.quantity || 0}, Requested: ${item.quantity}`);
+                    if (sourceStock) {
+                        // Decrease source outlet stock
+                        await tx.inventoryItem.update({
+                            where: { id: sourceStock.id },
+                            data: { quantity: { decrement: Number(item.quantity) } },
+                        });
+                    } else {
+                        // Create negative stock entry if it doesn't exist
+                        const fallbackWarehouse = await tx.warehouse.findFirst({ where: { isDeleted: false } });
+                        await tx.inventoryItem.create({
+                            data: {
+                                itemId: item.itemId,
+                                locationId: request.fromLocationId!,
+                                warehouseId: fallbackWarehouse?.id || request.fromWarehouseId!,
+                                quantity: -Number(item.quantity),
+                                status: 'AVAILABLE',
+                            }
+                        });
                     }
 
-                    // Decrease source outlet stock
-                    await tx.inventoryItem.update({
-                        where: { id: sourceStock.id },
-                        data: { quantity: { decrement: Number(item.quantity) } },
-                    });
-
-                    // Use actual warehouseId from the inventoryItem record
-                    const actualWarehouseId = sourceStock.warehouseId;
+                    // Use actual warehouseId from the inventoryItem record or fallback
+                    const actualWarehouseId = sourceStock?.warehouseId || request.fromWarehouseId || (await tx.warehouse.findFirst({ where: { isDeleted: false } }))?.id || null;
                     const transferRate = await this.getCurrentItemRate(tx, item.itemId);
 
                     // Create outbound ledger entry

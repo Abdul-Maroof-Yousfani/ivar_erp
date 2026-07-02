@@ -520,28 +520,43 @@ export default function StockTransferPage() {
             }));
 
             if (transferMode === 'WAREHOUSE_TO_OUTLET') {
-                await createTransferRequest({
+                const res = await createTransferRequest({
                     fromWarehouseId: selectedWarehouseId,
                     toLocationId: destLocationId,
                     items: itemsToTransfer,
                     notes: globalNotes
                 });
+                if (!res || !res.status) {
+                    toast.error(res?.message || 'Failed to create transfer request');
+                    setSubmitting(false);
+                    return;
+                }
                 toast.success('Transfer request created! Awaiting shop acceptance.');
             } else if (transferMode === 'OUTLET_TO_WAREHOUSE') {
-                await createReturnTransferRequest({
+                const res = await createReturnTransferRequest({
                     fromLocationId: destLocationId,
                     fromWarehouseId: selectedWarehouseId,
                     items: itemsToTransfer,
                     notes: globalNotes
                 });
+                if (!res || !res.status) {
+                    toast.error(res?.message || 'Failed to create return request');
+                    setSubmitting(false);
+                    return;
+                }
                 toast.success('Return request created! Awaiting outlet manager approval.');
             } else if (transferMode === 'OUTLET_TO_OUTLET') {
-                await createOutletToOutletTransferRequest({
+                const res = await createOutletToOutletTransferRequest({
                     fromLocationId: sourceLocationId,
                     toLocationId: destLocationId,
                     items: itemsToTransfer,
                     notes: globalNotes
                 });
+                if (!res || !res.status) {
+                    toast.error(res?.message || 'Failed to create outlet transfer request');
+                    setSubmitting(false);
+                    return;
+                }
                 toast.success('Outlet transfer request created! Awaiting dual approval.');
             }
 

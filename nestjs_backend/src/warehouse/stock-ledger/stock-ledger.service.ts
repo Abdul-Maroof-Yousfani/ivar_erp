@@ -272,7 +272,20 @@ export class StockLedgerService {
 
       const operation = async (transaction: Prisma.TransactionClient) => {
         // Concurrency Safe Negative Stock Check for OUTBOUND
-        if (quantity.isNegative()) {
+        // Bypassed for transfers, returns, and POS sales to allow negative stock operations
+        const bypassNegativeCheck = [
+          'TRANSFER_REQUEST',
+          'OUTLET_TRANSFER_OUT',
+          'OUTLET_TRANSFER_IN',
+          'RETURN_REQUEST',
+          'CLAIM_RETURN_REQUEST',
+          'CLAIM_RETURN',
+          'POS_SALE',
+          'CLAIM_TO_PLM',
+          'POS_CLAIM_APPROVED',
+        ].includes(referenceType);
+
+        if (quantity.isNegative() && !bypassNegativeCheck) {
           const currentStock = await transaction.stockLedger.aggregate({
             where: {
               itemId,
