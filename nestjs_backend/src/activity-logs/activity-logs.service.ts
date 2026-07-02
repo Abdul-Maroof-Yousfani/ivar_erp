@@ -156,9 +156,8 @@ export class ActivityLogsService implements OnModuleInit {
     userAgent?: string;
     status: 'success' | 'failure';
   }) {
-    // Validate userId exists in User table if provided
     let validUserId: string | null = null;
-    let userRelation = null;
+    let userRelation: any = null;
     if (data.userId) {
       try {
         const user = await this.prismaMaster.user.findUnique({
