@@ -563,7 +563,10 @@ export class TransferRequestService {
                     }
 
                     // Use actual warehouseId from the inventoryItem record or fallback
-                    const actualWarehouseId = sourceStock?.warehouseId || request.fromWarehouseId || (await tx.warehouse.findFirst({ where: { isDeleted: false } }))?.id || null;
+                    const actualWarehouseId = sourceStock?.warehouseId || request.fromWarehouseId || (await tx.warehouse.findFirst({ where: { isDeleted: false } }))?.id;
+                    if (!actualWarehouseId) {
+                        throw new BadRequestException('Source warehouse ID could not be resolved');
+                    }
                     const transferRate = await this.getCurrentItemRate(tx, item.itemId);
 
                     // Create outbound ledger entry
