@@ -1,9 +1,11 @@
 import { Controller, Post, Get, Patch, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { TransferRequestService } from './transfer-request.service';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { OptionalJwtAuth } from '../auth/auth.controller';
+import { CreateBypassedTransferRequestDto } from './dto/create-bypassed-transfer.dto';
 
 @ApiTags('Transfer Request')
 @ApiBearerAuth()
@@ -11,6 +13,19 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 @Controller('api/transfer-request')
 export class TransferRequestController {
     constructor(private readonly transferRequestService: TransferRequestService,) { }
+
+    @Post('bypass')
+    @OptionalJwtAuth()
+    @ApiOperation({ summary: 'Create a bypassed transfer request (Direct correction endpoint)' })
+    @ApiBody({ type: CreateBypassedTransferRequestDto })
+    async createBypassed(@Body() dto: CreateBypassedTransferRequestDto, @Req() req: any) {
+        const data = await this.transferRequestService.createBypassedRequest(dto, {
+            userId: req.user?.id,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+        });
+        return { status: true, data, message: 'Bypassed transfer request created successfully' };
+    }
 
     @Post()
     @Permissions('pos.inventory.transfer.create', 'erp.inventory.transfer.create')

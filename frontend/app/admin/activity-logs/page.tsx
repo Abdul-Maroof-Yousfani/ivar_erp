@@ -269,7 +269,7 @@ export default function ActivityLogsPage() {
         if (dateRange.from) params.append("startDate", dateRange.from.toISOString());
         if (dateRange.to) params.append("endDate", dateRange.to.toISOString());
 
-        const res = await authFetch(`/activity-logs?${params}`, {
+        const res = await authFetch(`/api/activity-logs?${params}`, {
           method: "GET",
           headers: debuggerKey ? { "x-debugger-key": debuggerKey } : undefined,
         });

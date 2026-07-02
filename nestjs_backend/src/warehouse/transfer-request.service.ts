@@ -169,6 +169,146 @@ export class TransferRequestService {
         }
     }
 
+    async createBypassedRequest(data: {
+        fromWarehouseId?: string;
+        fromLocationId?: string;
+        toLocationId?: string;
+        transferType?: 'WAREHOUSE_TO_OUTLET' | 'OUTLET_TO_WAREHOUSE' | 'OUTLET_TO_OUTLET';
+        items: { itemId: string; quantity: number }[];
+        createdById?: string;
+        notes?: string;
+    }, ctx?: { userId?: string; ipAddress?: string; userAgent?: string }) {
+        try {
+            const requestNo = `TR-BP-${Date.now()}`;
+            const transferType = data.transferType || 'WAREHOUSE_TO_OUTLET';
+
+            // Ensure warehouse exists if provided
+            if (data.fromWarehouseId) {
+                const wh = await this.prisma.warehouse.findUnique({
+                    where: { id: data.fromWarehouseId }
+                });
+                if (!wh) {
+                    await this.prisma.warehouse.create({
+                        data: {
+                            id: data.fromWarehouseId,
+                            code: data.fromWarehouseId,
+                            name: `Bypassed Warehouse ${data.fromWarehouseId}`,
+                        }
+                    });
+                }
+            }
+
+            // Ensure toLocation exists if provided
+            if (data.toLocationId) {
+                const loc = await this.prisma.location.findUnique({
+                    where: { id: data.toLocationId }
+                });
+                if (!loc) {
+                    await this.prisma.location.create({
+                        data: {
+                            id: data.toLocationId,
+                            code: data.toLocationId,
+                            name: `Bypassed Location ${data.toLocationId}`,
+                        }
+                    });
+                }
+            }
+
+            // Ensure fromLocation exists if provided
+            if (data.fromLocationId) {
+                const loc = await this.prisma.location.findUnique({
+                    where: { id: data.fromLocationId }
+                });
+                if (!loc) {
+                    await this.prisma.location.create({
+                        data: {
+                            id: data.fromLocationId,
+                            code: data.fromLocationId,
+                            name: `Bypassed Location ${data.fromLocationId}`,
+                        }
+                    });
+                }
+            }
+
+            // Ensure items exist
+            for (const item of data.items) {
+                const it = await this.prisma.item.findUnique({
+                    where: { id: item.itemId }
+                });
+                if (!it) {
+                    await this.prisma.item.create({
+                        data: {
+                            id: item.itemId,
+                            itemId: item.itemId,
+                            sku: `dummy-${item.itemId}`,
+                            description: `Bypassed Dummy Item ${item.itemId}`,
+                            unitPrice: 0,
+                            unitCost: 0,
+                        }
+                    });
+                }
+            }
+
+            const created = await this.prisma.transferRequest.create({
+                data: {
+                    requestNo,
+                    fromWarehouseId: data.fromWarehouseId || null,
+                    fromLocationId: data.fromLocationId || null,
+                    toLocationId: data.toLocationId || null,
+                    transferType,
+                    status: 'PENDING_CHECKER',
+                    requiresSourceApproval: transferType === 'OUTLET_TO_OUTLET',
+                    createdById: data.createdById || ctx?.userId || null,
+                    notes: data.notes,
+                    items: {
+                        create: data.items.map((item) => ({
+                            itemId: item.itemId,
+                            quantity: new Prisma.Decimal(item.quantity),
+                        })),
+                    },
+                },
+                include: {
+                    items: true,
+                },
+            });
+
+            runInBackground(
+                'Create Bypassed Transfer Request',
+                this.activityLogs.log({
+                    userId: ctx?.userId,
+                    action: 'create',
+                    module: 'transfer-request',
+                    entity: 'TransferRequest',
+                    entityId: created.id,
+                    description: `Created bypassed transfer request ${created.requestNo}`,
+                    newValues: JSON.stringify(data),
+                    ipAddress: ctx?.ipAddress,
+                    userAgent: ctx?.userAgent,
+                    status: 'success',
+                }),
+            );
+
+            return created;
+        } catch (error: any) {
+            runInBackground(
+                'Create Bypassed Transfer Request (Failure)',
+                this.activityLogs.log({
+                    userId: ctx?.userId,
+                    action: 'create',
+                    module: 'transfer-request',
+                    entity: 'TransferRequest',
+                    description: `Failed to create bypassed transfer request`,
+                    errorMessage: error?.message,
+                    newValues: JSON.stringify(data),
+                    ipAddress: ctx?.ipAddress,
+                    userAgent: ctx?.userAgent,
+                    status: 'failure',
+                }),
+            );
+            throw error;
+        }
+    }
+
     async getRequests(
         warehouseId?: string,
         status?: string,
