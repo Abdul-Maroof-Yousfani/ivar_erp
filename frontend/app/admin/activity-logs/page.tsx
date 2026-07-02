@@ -39,13 +39,25 @@ import {
   Trash2,
   KeyRound,
   MonitorX,
+  Eye,
+  Lock,
+  Unlock,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useSocket } from "@/components/providers/socket-provider";
 import { authFetch } from "@/lib/auth";
 import { DateRangePicker, type DateRange } from "@/components/ui/date-range-picker";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+
 
 interface ActivityLog {
   id: string;
@@ -186,6 +198,16 @@ function ActionBadge({ action }: { action: string }) {
   );
 }
 
+const formatJSON = (val: string | null) => {
+  if (!val) return "—";
+  try {
+    const parsed = JSON.parse(val);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return val;
+  }
+};
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ActivityLogsPage() {
   const [data, setData] = useState<PaginationData | null>(null);
@@ -199,6 +221,21 @@ export default function ActivityLogsPage() {
   const [availableModules, setAvailableModules] = useState<string[]>([]);
   const [availableActions, setAvailableActions] = useState<string[]>([]);
   const { socket } = useSocket();
+
+  const [debuggerKey, setDebuggerKey] = useState<string>("");
+  const [isKeyDialogOpen, setIsKeyDialogOpen] = useState(false);
+  const [tempKey, setTempKey] = useState("");
+  const [selectedLog, setSelectedLog] = useState<ActivityLog | null>(null);
+
+  // Load debugger key on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedKey = localStorage.getItem("debugger_key") || "";
+      if (savedKey) {
+        setDebuggerKey(savedKey);
+      }
+    }
+  }, []);
 
   // ── Fetch filter options once on mount ────────────────────────────────────
   useEffect(() => {
@@ -232,7 +269,10 @@ export default function ActivityLogsPage() {
         if (dateRange.from) params.append("startDate", dateRange.from.toISOString());
         if (dateRange.to) params.append("endDate", dateRange.to.toISOString());
 
-        const res = await authFetch(`/activity-logs?${params}`, { method: "GET" });
+        const res = await authFetch(`/activity-logs?${params}`, {
+          method: "GET",
+          headers: debuggerKey ? { "x-debugger-key": debuggerKey } : undefined,
+        });
 
         if (!res.ok) throw new Error("Failed to fetch logs");
 
@@ -244,14 +284,14 @@ export default function ActivityLogsPage() {
         setLoading(false);
       }
     },
-    [page, actionFilter, moduleFilter, search, dateRange],
+    [page, actionFilter, moduleFilter, search, dateRange, debuggerKey],
   );
 
   // Fetch on filter / page changes (except search — that's manual via button)
   useEffect(() => {
     fetchLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, actionFilter, moduleFilter, dateRange]);
+  }, [page, actionFilter, moduleFilter, dateRange, debuggerKey]);
 
   // ── Socket ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -420,6 +460,35 @@ export default function ActivityLogsPage() {
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button
+            variant={debuggerKey ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              if (debuggerKey) {
+                setDebuggerKey("");
+                localStorage.removeItem("debugger_key");
+                toast.success("Debugger mode disabled");
+              } else {
+                setTempKey("");
+                setIsKeyDialogOpen(true);
+              }
+            }}
+            className={cn(
+              debuggerKey && "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600"
+            )}
+          >
+            {debuggerKey ? (
+              <>
+                <Unlock className="h-4 w-4 mr-1.5 animate-pulse text-white" />
+                Exit Debugger
+              </>
+            ) : (
+              <>
+                <Lock className="h-4 w-4 mr-1.5" />
+                Unlock Debugger
+              </>
+            )}
+          </Button>
+          <Button
             variant="outline"
             size="sm"
             onClick={handleExportCSV}
@@ -586,18 +655,19 @@ export default function ActivityLogsPage() {
                 <TableHead>Description</TableHead>
                 <TableHead className="w-[130px]">IP Address</TableHead>
                 <TableHead className="w-[100px]">Status</TableHead>
+                <TableHead className="w-[80px] text-right">Inspect</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && !data ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center">
+                  <TableCell colSpan={8} className="h-32 text-center">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
                   </TableCell>
                 </TableRow>
               ) : !data?.logs.length ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center">
+                  <TableCell colSpan={8} className="h-32 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <Activity className="h-8 w-8 opacity-30" />
                       <p className="text-sm">No activity logs found</p>
@@ -688,6 +758,19 @@ export default function ActivityLogsPage() {
                         </Badge>
                       )}
                     </TableCell>
+
+                    {/* Actions */}
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={() => setSelectedLog(log)}
+                      >
+                        <Eye className="h-4 w-4" />
+                        <span className="sr-only">Inspect log</span>
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -734,6 +817,237 @@ export default function ActivityLogsPage() {
           </div>
         )}
       </Card>
+
+      {/* Debugger Key Dialog */}
+      <Dialog open={isKeyDialogOpen} onOpenChange={setIsKeyDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5 text-primary" />
+              Unlock Developer Debugger
+            </DialogTitle>
+            <DialogDescription>
+              Enter the debugger secret key to view sensitive data such as old/new values, IP addresses, and user agents.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <Input
+              type="password"
+              placeholder="Enter Debugger Key"
+              value={tempKey}
+              onChange={(e) => setTempKey(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  if (tempKey.trim()) {
+                    setDebuggerKey(tempKey.trim());
+                    localStorage.setItem("debugger_key", tempKey.trim());
+                    setIsKeyDialogOpen(false);
+                    toast.success("Debugger key applied");
+                  }
+                }
+              }}
+            />
+          </div>
+          <DialogFooter className="flex sm:justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsKeyDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (tempKey.trim()) {
+                  setDebuggerKey(tempKey.trim());
+                  localStorage.setItem("debugger_key", tempKey.trim());
+                  setIsKeyDialogOpen(false);
+                  toast.success("Debugger key applied");
+                } else {
+                  toast.error("Please enter a key");
+                }
+              }}
+            >
+              Unlock
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Log Details Inspector Dialog */}
+      <Dialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <Activity className="h-5 w-5 text-primary animate-pulse" />
+              Activity Log Details
+            </DialogTitle>
+            <DialogDescription>
+              Detailed view of the system action and modified values.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedLog && (
+            <div className="space-y-6 py-4">
+              {/* Basic Meta Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-muted/40 p-4 rounded-lg border text-sm">
+                <div>
+                  <span className="text-muted-foreground font-medium block">Action / Module</span>
+                  <span className="font-semibold text-foreground flex items-center gap-2 mt-0.5">
+                    <ActionBadge action={selectedLog.action} />
+                    {selectedLog.module && (
+                      <Badge variant="outline" className="capitalize">
+                        {selectedLog.module}
+                      </Badge>
+                    )}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground font-medium block">Timestamp</span>
+                  <span className="text-foreground font-medium mt-0.5 block">
+                    {format(new Date(selectedLog.createdAt), "PPP hh:mm:ss a")}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground font-medium block">Performed By</span>
+                  <span className="text-foreground font-medium mt-0.5 block">
+                    {selectedLog.user ? (
+                      <>
+                        {selectedLog.user.firstName} {selectedLog.user.lastName}
+                        <code className="text-xs text-muted-foreground block font-mono">({selectedLog.user.email})</code>
+                      </>
+                    ) : (
+                      <span className="italic text-muted-foreground">System / Background Job</span>
+                    )}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground font-medium block">Status</span>
+                  <span className="font-medium mt-0.5 block">
+                    {selectedLog.status === "success" ? (
+                      <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800">
+                        Success
+                      </Badge>
+                    ) : (
+                      <Badge variant="destructive">Failed</Badge>
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {/* Description & Target Info */}
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold text-foreground">Action Summary</h4>
+                <p className="text-sm text-muted-foreground bg-background p-3 rounded-lg border">
+                  {selectedLog.description || "No description provided"}
+                </p>
+                {selectedLog.entity && (
+                  <div className="text-xs text-muted-foreground flex gap-4 bg-muted/20 p-2 rounded border">
+                    <span><strong>Entity:</strong> {selectedLog.entity}</span>
+                    <span><strong>Entity ID:</strong> {selectedLog.entityId || "N/A"}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Error details if failed */}
+              {selectedLog.status !== "success" && selectedLog.errorMessage && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-red-600 dark:text-red-400">Error Information</h4>
+                  <pre className="bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300 p-3 rounded-lg overflow-auto font-mono text-xs max-h-32 border border-red-200 dark:border-red-900">
+                    {selectedLog.errorMessage}
+                  </pre>
+                </div>
+              )}
+
+              {/* Sensitive Debug Details Section */}
+              <div className="space-y-4 border-t pt-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                    <KeyRound className="h-4 w-4 text-muted-foreground" />
+                    Debugging Metadata
+                  </h4>
+                  {debuggerKey ? (
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">
+                      Decrypted
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0 flex items-center gap-1">
+                      <Lock className="h-2.5 w-2.5" />
+                      Locked
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm bg-muted/20 p-3 rounded border">
+                  <div>
+                    <span className="text-muted-foreground font-medium block">Client IP Address</span>
+                    <code className="text-xs font-mono font-medium block mt-1">
+                      {selectedLog.ipAddress || "—"}
+                    </code>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground font-medium block">User Agent</span>
+                    <span className="text-xs font-medium block mt-1 break-all">
+                      {selectedLog.userAgent || "—"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Old & New Values */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Old Values</h5>
+                    {debuggerKey ? (
+                      <pre className="bg-slate-900 text-slate-100 p-3 rounded-lg overflow-auto font-mono text-xs h-48 border">
+                        {formatJSON(selectedLog.oldValues)}
+                      </pre>
+                    ) : (
+                      <div className="bg-muted flex flex-col items-center justify-center h-48 rounded-lg border border-dashed text-center p-4">
+                        <Lock className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                        <span className="text-xs text-muted-foreground">Old values are secure</span>
+                        <Button
+                          variant="link"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedLog(null);
+                            setIsKeyDialogOpen(true);
+                          }}
+                          className="text-xs mt-1 h-auto p-0"
+                        >
+                          Unlock details
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">New Values</h5>
+                    {debuggerKey ? (
+                      <pre className="bg-slate-900 text-slate-100 p-3 rounded-lg overflow-auto font-mono text-xs h-48 border">
+                        {formatJSON(selectedLog.newValues)}
+                      </pre>
+                    ) : (
+                      <div className="bg-muted flex flex-col items-center justify-center h-48 rounded-lg border border-dashed text-center p-4">
+                        <Lock className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                        <span className="text-xs text-muted-foreground">New values are secure</span>
+                        <Button
+                          variant="link"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedLog(null);
+                            setIsKeyDialogOpen(true);
+                          }}
+                          className="text-xs mt-1 h-auto p-0"
+                        >
+                          Unlock details
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setSelectedLog(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

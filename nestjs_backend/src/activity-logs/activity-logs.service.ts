@@ -41,15 +41,18 @@ export class ActivityLogsService implements OnModuleInit {
     };
   }
 
-  async findAll(query: {
-    page?: number;
-    limit?: number;
-    action?: string;
-    module?: string;
-    search?: string;
-    startDate?: string;
-    endDate?: string;
-  }) {
+  async findAll(
+    query: {
+      page?: number;
+      limit?: number;
+      action?: string;
+      module?: string;
+      search?: string;
+      startDate?: string;
+      endDate?: string;
+    },
+    debuggerKey?: string,
+  ) {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 20;
     const skip = (page - 1) * limit;
@@ -111,8 +114,27 @@ export class ActivityLogsService implements OnModuleInit {
       this.prismaMaster.activityLog.count({ where }),
     ]);
 
+    const isDebugger =
+      debuggerKey &&
+      process.env.DEBUGGER_KEY &&
+      debuggerKey === process.env.DEBUGGER_KEY;
+
+    const sanitizedLogs = logs.map((log) => {
+      if (isDebugger) {
+        return log;
+      }
+      return {
+        ...log,
+        oldValues: null,
+        newValues: null,
+        ipAddress: log.ipAddress ? '***.***.***.***' : null,
+        userAgent: log.userAgent ? 'Hidden (Requires Debugger Key)' : null,
+        metadata: null,
+      };
+    });
+
     return {
-      logs,
+      logs: sanitizedLogs,
       total,
       page,
       limit,
@@ -136,14 +158,21 @@ export class ActivityLogsService implements OnModuleInit {
   }) {
     // Validate userId exists in User table if provided
     let validUserId: string | null = null;
+    let userRelation = null;
     if (data.userId) {
       try {
         const user = await this.prismaMaster.user.findUnique({
           where: { id: data.userId },
-          select: { id: true },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
         });
         if (user) {
           validUserId = data.userId;
+          userRelation = user;
         }
       } catch (error) {
         // If userId is invalid, set to null
@@ -168,7 +197,17 @@ export class ActivityLogsService implements OnModuleInit {
       },
     });
 
-    this.gateway.emitActivityLog(created);
+    const sanitizedEmit = {
+      ...created,
+      user: userRelation,
+      oldValues: null,
+      newValues: null,
+      ipAddress: created.ipAddress ? '***.***.***.***' : null,
+      userAgent: created.userAgent ? 'Hidden (Requires Debugger Key)' : null,
+      metadata: null,
+    };
+
+    this.gateway.emitActivityLog(sanitizedEmit);
     return created;
   }
 }

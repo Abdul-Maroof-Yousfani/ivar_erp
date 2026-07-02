@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Headers } from '@nestjs/common';
 import { ActivityLogsService } from './activity-logs.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
@@ -13,7 +13,12 @@ export class ActivityLogsController {
   }
 
   @Get()
-  findAll(@Query() query: any) {
-    return this.activityLogsService.findAll(query);
+  findAll(
+    @Query() query: any,
+    @Headers('x-debugger-key') debuggerHeader?: string,
+  ) {
+    const debuggerKey = debuggerHeader || query.debuggerKey;
+    return this.activityLogsService.findAll(query, debuggerKey);
   }
 }
+
