@@ -173,7 +173,26 @@ export function StockTransferHistoryList({
     };
 
     const getStatusBadge = (status: string) => {
-        switch (status.toUpperCase()) {
+        const s = status.toUpperCase();
+        switch (s) {
+            case 'PENDING_CHECKER':
+                return (
+                    <Badge variant="secondary" className="bg-amber-100 text-amber-700 hover:bg-amber-100/80 border-amber-200 gap-1 capitalize">
+                        <Clock className="h-3 w-3" /> pending checker
+                    </Badge>
+                );
+            case 'PENDING_AUTHORIZER':
+                return (
+                    <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100/80 border-blue-200 gap-1 capitalize">
+                        <Clock className="h-3 w-3" /> pending authorizer
+                    </Badge>
+                );
+            case 'SOURCE_APPROVED':
+                return (
+                    <Badge variant="secondary" className="bg-purple-100 text-purple-700 hover:bg-purple-100/80 border-purple-200 gap-1 capitalize">
+                        <CheckCircle2 className="h-3 w-3" /> source approved
+                    </Badge>
+                );
             case 'PENDING':
                 return (
                     <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-100/80 border-orange-200 gap-1 capitalize">
@@ -184,6 +203,12 @@ export function StockTransferHistoryList({
                 return (
                     <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-100/80 border-green-200 gap-1 capitalize">
                         <CheckCircle2 className="h-3 w-3" /> {status.toLowerCase()}
+                    </Badge>
+                );
+            case 'REJECTED':
+                return (
+                    <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100/80 border-red-200 gap-1 capitalize">
+                        <XCircle className="h-3 w-3" /> rejected
                     </Badge>
                 );
             case 'CANCELLED':
@@ -225,7 +250,10 @@ export function StockTransferHistoryList({
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">All Statuses</SelectItem>
-                                    <SelectItem value="PENDING">Pending</SelectItem>
+                                    <SelectItem value="PENDING">Pending (All)</SelectItem>
+                                    <SelectItem value="PENDING_CHECKER">Pending Checker</SelectItem>
+                                    <SelectItem value="PENDING_AUTHORIZER">Pending Authorizer</SelectItem>
+                                    <SelectItem value="SOURCE_APPROVED">Source Approved</SelectItem>
                                     <SelectItem value="COMPLETED">Completed</SelectItem>
                                     <SelectItem value="CANCELLED">Cancelled</SelectItem>
                                 </SelectContent>

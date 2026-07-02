@@ -185,7 +185,15 @@ export class TransferRequestService {
             andClauses.push({ fromWarehouseId: warehouseId });
         }
         if (status && status !== 'all') {
-            andClauses.push({ status });
+            if (status === 'PENDING') {
+                andClauses.push({
+                    status: {
+                        in: ['PENDING', 'PENDING_CHECKER', 'PENDING_AUTHORIZER', 'SOURCE_APPROVED']
+                    }
+                });
+            } else {
+                andClauses.push({ status });
+            }
         }
         if (transferType && transferType !== 'all') {
             andClauses.push({ transferType });
