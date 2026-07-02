@@ -490,7 +490,14 @@ export default function CheckoutPage() {
 
     const addTender = () => {
         if (!tenderAmount || tenderAmount <= 0) return;
-        
+
+        // Prevent total tender from exceeding the invoice amount
+        const alreadyPaid = tenders.reduce((a, t) => a + t.amount, 0);
+        if (alreadyPaid + tenderAmount > grandTotal) {
+            toast.error(`Tender amount exceeds the invoice total of ${fmtCurrency(grandTotal)}. Maximum allowed: ${fmtCurrency(Math.max(0, grandTotal - alreadyPaid))}.`);
+            return;
+        }
+
         if (discountMode === "alliance" && selectedAlliance) {
             if (tenderMethod === "cash") {
                 toast.error("Cash payment is not allowed when Alliance is selected.");
@@ -574,6 +581,12 @@ export default function CheckoutPage() {
         if (!validatedVoucher || !tenderAmount || tenderAmount <= 0) return;
         if (appliedVouchers.some(v => v.voucherId === validatedVoucher.id)) {
             toast.error("This voucher is already added");
+            return;
+        }
+        const alreadyPaid = tenders.reduce((a, t) => a + t.amount, 0);
+        const maxAllowed = Math.max(0, grandTotal - alreadyPaid);
+        if (tenderAmount > maxAllowed) {
+            toast.error(`Voucher amount exceeds the invoice total of ${fmtCurrency(grandTotal)}. Maximum allowed: ${fmtCurrency(maxAllowed)}.`);
             return;
         }
         const amount = Math.min(tenderAmount, validatedVoucher.faceValue);

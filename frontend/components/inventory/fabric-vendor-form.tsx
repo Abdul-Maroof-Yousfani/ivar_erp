@@ -228,12 +228,12 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
               <div className="space-y-2">
                 <label className="text-sm font-semibold flex items-center gap-1.5">
                   Qty Returned <span className="text-xs text-muted-foreground">(Meters)</span>
+                  <span className="text-[10px] text-muted-foreground font-normal italic">(Optional)</span>
                 </label>
                 <Input
                   type="number"
                   min="0"
                   step="0.0001"
-                  required
                   value={qtyReturned || ''}
                   onChange={(e) => setQtyReturned(Number(e.target.value))}
                   placeholder="e.g. 3"
@@ -245,12 +245,12 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
               <div className="space-y-2">
                 <label className="text-sm font-semibold flex items-center gap-1.5">
                   Qty Shortage <span className="text-xs text-muted-foreground">(Meters)</span>
+                  <span className="text-[10px] text-muted-foreground font-normal italic">(Optional)</span>
                 </label>
                 <Input
                   type="number"
                   min="0"
                   step="0.0001"
-                  required
                   value={qtyShortage || ''}
                   onChange={(e) => setQtyShortage(Number(e.target.value))}
                   placeholder="e.g. 2"
