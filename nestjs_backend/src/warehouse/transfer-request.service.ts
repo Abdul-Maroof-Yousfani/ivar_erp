@@ -906,9 +906,9 @@ export class TransferRequestService {
       return this.prisma.$transaction(async (tx) => {
         if (request.transferType === 'WAREHOUSE_TO_OUTLET') {
           // Normal transfer: Warehouse → Outlet
-          if (request.status !== 'PENDING') {
+          if (request.status !== 'PENDING' && request.status !== 'APPROVED') {
             throw new BadRequestException(
-              `Request is not in PENDING status (Current: ${request.status})`,
+              `Request is not in PENDING or APPROVED status (Current: ${request.status})`,
             );
           }
 
@@ -926,9 +926,9 @@ export class TransferRequestService {
           }
         } else if (request.transferType === 'OUTLET_TO_WAREHOUSE') {
           // Return transfer: Outlet → Warehouse
-          if (request.status !== 'PENDING') {
+          if (request.status !== 'PENDING' && request.status !== 'APPROVED') {
             throw new BadRequestException(
-              `Request is not in PENDING status (Current: ${request.status})`,
+              `Request is not in PENDING or APPROVED status (Current: ${request.status})`,
             );
           }
 
@@ -1147,9 +1147,9 @@ export class TransferRequestService {
         );
       }
 
-      if (request.status !== 'PENDING') {
+      if (request.status !== 'PENDING' && request.status !== 'APPROVED') {
         throw new BadRequestException(
-          `Request is not in PENDING status (Current: ${request.status})`,
+          `Request is not in PENDING or APPROVED status (Current: ${request.status})`,
         );
       }
 
