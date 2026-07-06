@@ -72,10 +72,12 @@ export function TotalsPanel({
             )}
 
             {/* FBR POS Fee */}
-            <div className="flex justify-between text-amber-600 dark:text-amber-400">
-                <span>FBR POS Fee</span>
-                <span className="font-mono">+{fmtCurrency(fbrPosFee)}</span>
-            </div>
+            {fbrPosFee > 0 && (
+                <div className="flex justify-between text-amber-600 dark:text-amber-400">
+                    <span>FBR POS Fee</span>
+                    <span className="font-mono">+{fmtCurrency(fbrPosFee)}</span>
+                </div>
+            )}
 
             <Separator />
 

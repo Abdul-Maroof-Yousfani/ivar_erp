@@ -14,30 +14,29 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 model MerchantConfig {
-  id               String   @id @default(uuid())
+  id             String  @id @default(uuid())
   /// Human-readable label, e.g. "C&K-CENTAURUS MALL | HBL"
-  description      String
+  description    String
   /// Cost centre tag, e.g. "C&K-CENTAURUS MALL"
-  costCentreTag    String   @map("cost_centre_tag")
+  costCentreTag  String  @map("cost_centre_tag")
   /// Short tag ID, e.g. "CK1006"
-  tagId            String   @map("tag_id")
+  tagId          String  @map("tag_id")
   /// Bank / acquirer name, e.g. "HBL", "AL-Falah", "Keenu", "Allied Bank", "Meezan"
-  bankName         String   @map("bank_name")
+  bankName       String  @map("bank_name")
   /// Numeric priority / merchant code (1=HBL, 2=AL-Falah, 3=Keenu, 4=AMEX, 5=ABL, 6=Meezan, 7=HBL IPG, 8=BAFL IPG)
-  merchantCode     Int      @map("merchant_code")
+  merchantCode   Int     @map("merchant_code")
   /// Commission rate as decimal, e.g. 0.011 for 1.1%
-  commissionRate   Decimal  @map("commission_rate") @db.Decimal(8, 6)
+  commissionRate Decimal @map("commission_rate") @db.Decimal(8, 6)
   /// Bank GL account code, e.g. "31100005"
-  bankGlCode       String   @map("bank_gl_code")
+  bankGlCode     String  @map("bank_gl_code")
 
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  isActive         Boolean  @default(true) @map("is_active")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-
-  locations    MerchantConfigLocation[]
-  salesOrders  SalesOrder[]
-  vouchers     Voucher[]
+  locations   MerchantConfigLocation[]
+  salesOrders SalesOrder[]
+  vouchers    Voucher[]
 
   @@index([tagId])
   @@index([bankName])
@@ -68,6 +67,7 @@ model SalesOrder {
   customerId            String?             @map("customer_id")
   customer              Customer?           @relation(fields: [customerId], references: [id])
   cashierUserId         String?             @map("cashier_user_id")
+  createdById           String?             @map("created_by_id")
   subtotal              Decimal             @default(0) @db.Decimal(15, 2)
   discountAmount        Decimal             @default(0) @db.Decimal(15, 2)
   taxAmount             Decimal             @default(0) @db.Decimal(15, 2)
@@ -128,7 +128,6 @@ model SalesOrderItem {
   taxPercent              Decimal    @default(0) @db.Decimal(5, 2)
   taxAmount               Decimal    @default(0) @db.Decimal(15, 2)
   lineTotal               Decimal    @db.Decimal(15, 2)
-  isStockInTransit        Boolean    @default(false) @map("is_stock_in_transit")
   createdAt               DateTime   @default(now()) @map("created_at")
   item                    Item       @relation(fields: [itemId], references: [id])
   salesOrder              SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
@@ -267,16 +266,16 @@ model VoucherAuditLog {
 model Voucher {
   isDeleted   Boolean   @default(false)
   deletedAt   DateTime? @map("deleted_at")
-  id          String  @id @default(uuid())
-  code        String  @unique
-  voucherType String  @map("voucher_type") // GIFT | EXCHANGE | CREDIT | CORPORATE | OUTLET_GIFT | REFUND
-  faceValue   Decimal @map("face_value") @db.Decimal(15, 2)
+  id          String    @id @default(uuid())
+  code        String    @unique
+  voucherType String    @map("voucher_type") // GIFT | EXCHANGE | CREDIT | CORPORATE | OUTLET_GIFT | REFUND
+  faceValue   Decimal   @map("face_value") @db.Decimal(15, 2)
   description String?
 
   // Ownership / binding
   customerId           String? @map("customer_id") // CREDIT vouchers
   companyName          String? @map("company_name") // CORPORATE vouchers
-  companyGlCode        String? 
+  companyGlCode        String?
   requireCustomerMatch Boolean @default(false) @map("require_customer_match")
 
   // Issuance context

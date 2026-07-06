@@ -9,7 +9,14 @@ import { PrismaMasterService } from '../database/prisma-master.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { runInBackground } from '../common/utils/run-in-background.util';
 import { JournalVoucherService } from '../finance/journal-voucher/journal-voucher.service';
+import { ReceiptVoucherService } from '../finance/receipt-voucher/receipt-voucher.service';
 import { Logger } from '@nestjs/common';
+import * as ExcelJS from 'exceljs';
+import { InjectQueue } from '@nestjs/bull';
+import type { Queue } from 'bull';
+import { v4 as uuidv4 } from 'uuid';
+import * as fs from 'fs';
+import * as path from 'path';
 @Injectable()
 export class PosSessionService {
   private readonly logger = new Logger(PosSessionService.name);
@@ -19,7 +26,9 @@ export class PosSessionService {
     private readonly prismaMaster: PrismaMasterService,
     private activityLogs: ActivityLogsService,
     private readonly journalVoucherService: JournalVoucherService,
-  ) { }
+    private readonly receiptVoucherService: ReceiptVoucherService,
+    @InjectQueue('reconciliation-export') private readonly exportQueue?: Queue,
+  ) {}
 
   /**
    * Get the active session for the provided terminal (UUID),
@@ -310,14 +319,14 @@ export class PosSessionService {
       );
 
       runInBackground(
-        'Generate POS Journal Voucher',
+        'Generate POS Receipt Voucher',
         this.generateReconciliationVoucher(
           currentStatus.session.id,
           closedSession.posId,
           ctx,
         ).catch((err) =>
           this.logger.error(
-            `Failed to generate JV for session ${currentStatus.session.id}`,
+            `Failed to generate RV for session ${currentStatus.session.id}`,
             err,
           ),
         ),
@@ -445,10 +454,10 @@ export class PosSessionService {
 
     if (session.status === 'closed' && !skipJvRegen) {
       runInBackground(
-        'Regenerate POS Journal Voucher on fetch',
+        'Regenerate POS RS-RV Voucher on fetch',
         this.generateReconciliationVoucher(session.id, session.posId).catch((err) =>
           this.logger.error(
-            `Failed to regenerate JV for session ${session.id}`,
+            `Failed to regenerate RS-RV for session ${session.id}`,
             err,
           ),
         ),
@@ -458,13 +467,13 @@ export class PosSessionService {
     // Fetch Cashier Profile from Central/Master DB
     const cashier = session.userId
       ? await this.prismaMaster.user.findUnique({
-        where: { id: session.userId },
-        select: {
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      })
+          where: { id: session.userId },
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        })
       : null;
 
     const toLocalDateString = (d: Date) => {
@@ -588,26 +597,43 @@ export class PosSessionService {
       totalTaxes += taxAmount;
       totalDiscounts += discountAmount + globalDiscountAmount;
 
-      const isLegacy =
-        order.voucherAmount === null || order.voucherAmount === undefined;
       const voucherRedemptionsSum =
         order.voucherRedemptions?.reduce(
           (sum, r) => sum + Number(r.amountUsed),
           0,
         ) ?? 0;
 
-      const cash = Number(order.cashAmount ?? 0);
-      const card = isLegacy
-        ? Math.max(
-          0,
-          Number(order.cardAmount ?? 0) -
-          voucherRedemptionsSum -
-          Number(order.changeAmount ?? 0),
-        )
-        : Number(order.cardAmount ?? 0);
-      const voucher = isLegacy
-        ? voucherRedemptionsSum
-        : Number(order.voucherAmount ?? 0);
+      const rawCash = Number(order.cashAmount ?? 0);
+      const rawCard = Number(order.cardAmount ?? 0);
+      const change = Number(order.changeAmount ?? 0);
+
+      // Determine if voucher redemption is double-counted within card/cash amounts
+      const excess = Math.max(
+        0,
+        rawCash + rawCard + voucherRedemptionsSum - (grandTotal + change),
+      );
+
+      let cash = rawCash;
+      let card = rawCard;
+      if (excess > 0) {
+        if (card > 0) {
+          card = Math.max(0, card - excess);
+        } else {
+          cash = Math.max(0, cash - excess);
+        }
+      }
+
+      // Fallback for non-split orders with empty cash/card amounts in DB
+      if (order.tenderType !== 'split' && order.paymentMethod) {
+        if (order.paymentMethod === 'cash') {
+          if (cash === 0) cash = Math.max(0, grandTotal - voucherRedemptionsSum);
+        } else if (order.paymentMethod === 'card' || order.paymentMethod === 'bank_transfer') {
+          if (card === 0) card = Math.max(0, grandTotal - voucherRedemptionsSum);
+        }
+      }
+
+      const voucher = voucherRedemptionsSum;
+
 
       if (cash > 0) {
         cashSalesCount++;
@@ -674,9 +700,9 @@ export class PosSessionService {
       if (order.voucherRedemptions && order.voucherRedemptions.length > 0) {
         for (const redemption of order.voucherRedemptions) {
           const amountUsed = Number(redemption.amountUsed);
-          totalVouchersReceivedAmt += amountUsed;
-
           const v = redemption.voucher;
+          let amountToUse = amountUsed;
+
           let type = 'Vouchers';
           if (v.voucherType === 'CORPORATE') {
             type = 'Gift Vouchers Corporate';
@@ -684,19 +710,23 @@ export class PosSessionService {
             type = 'Gift Vouchers';
           } else if (v.voucherType === 'CREDIT') {
             type = 'Credit Vouchers';
+            amountToUse = Number(v.faceValue);
           } else if (v.voucherType === 'EXCHANGE') {
             if (v.claims && v.claims.length > 0) {
               type = 'Claim Vouchers';
             } else {
               type = 'Exchange Vouchers';
             }
+            amountToUse = Number(v.faceValue);
           } else if (v.voucherType === 'OUTLET_GIFT') {
             type = 'Outlet Gift Vouchers';
           }
 
+          totalVouchersReceivedAmt += amountToUse;
+
           redeemedVouchersList.push({
             type,
-            amount: amountUsed,
+            amount: amountToUse,
             from: v.code,
           });
         }
@@ -750,9 +780,14 @@ export class PosSessionService {
     let cashGiftVouchersAmt = 0;
     let cardGiftVouchersAmt = 0;
     let totalGiftVoucherDiscount = 0;
+    let unusedBalanceVouchersTotal = 0;
 
     for (const v of issuedVouchers) {
       const faceValue = Number(v.faceValue);
+
+      if (v.description && v.description.includes('unused balance from')) {
+        unusedBalanceVouchersTotal += faceValue;
+      }
 
       if (v.voucherType === 'EXCHANGE') {
         const type =
@@ -896,12 +931,12 @@ export class PosSessionService {
       { type: 'Cash', amount: cashSaleAmt, from: '-' },
       ...(cashGiftVouchersAmt > 0
         ? [
-          {
-            type: 'Cash - Gift Vouchers Issued',
-            amount: cashGiftVouchersAmt,
-            from: '-',
-          },
-        ]
+            {
+              type: 'Cash - Gift Vouchers Issued',
+              amount: cashGiftVouchersAmt,
+              from: '-',
+            },
+          ]
         : []),
       ...redeemedVouchersList,
     ];
@@ -932,7 +967,8 @@ export class PosSessionService {
       creditCardGiftVouchersTotal +
       (totalReceived - cashGiftVouchersTotal) +
       totalReceivable -
-      fbrTotal;
+      fbrTotal -
+      unusedBalanceVouchersTotal;
 
     const totalIssued =
       exchangeAndClaims.reduce((sum, v) => sum + v.amount, 0) +
@@ -943,7 +979,7 @@ export class PosSessionService {
     const returnAmount =
       exchangeAndClaims.reduce((sum, v) => sum + v.amount, 0) +
       refundVouchers.reduce((sum, v) => sum + v.amount, 0);
-
+      
     const creditVouchersTotal = creditVouchers.reduce(
       (sum, v) => sum + v.amount,
       0,
@@ -1074,7 +1110,7 @@ export class PosSessionService {
         : `${formatDate(startRangeStr)} - ${formatDate(endRangeStr)}`;
 
     return {
-      companyName: "IVAR",
+      companyName: 'Speed (Private) Limited',
       locationName: session.pos.location?.name ?? 'Nike-Dolmen Clifton',
       reportTitle: 'Sales Reconciliation',
       dateRange: dateRange,
@@ -1101,13 +1137,13 @@ export class PosSessionService {
         },
         cashier: cashier
           ? {
-            fullName: `${cashier.firstName} ${cashier.lastName}`.trim(),
-            email: cashier.email,
-          }
+              fullName: `${cashier.firstName} ${cashier.lastName}`.trim(),
+              email: cashier.email,
+            }
           : {
-            fullName: 'N/A',
-            email: 'N/A',
-          },
+              fullName: 'N/A',
+              email: 'N/A',
+            },
       },
       metrics: {
         grossSales: financials.sale,
@@ -1133,6 +1169,525 @@ export class PosSessionService {
         giftVouchers,
         refundVouchers,
         totalGiftVoucherDiscount,
+        unusedBalanceVouchersTotal,
+      },
+      fbrCharges,
+      financials,
+      cashBreakdown: {
+        sale: cashSaleAmt,
+        giftVouchers: cashGiftVouchersAmt,
+        refundVouchers: refundVouchersTotal,
+        total: totalCashReceived - refundVouchersTotal,
+      },
+      cardBreakdown: {
+        sale: cardSaleAmt,
+        giftVouchers: cardGiftVouchersAmt,
+        total: totalCardReceived,
+  }}}
+
+  async getDaywiseReconciliation(locationId: string, date: string) {
+    const location = await this.prisma.location.findUnique({
+      where: { id: locationId },
+      select: { name: true, code: true },
+    });
+    if (!location) {
+      throw new NotFoundException('Location not found.');
+    }
+
+    const startOfDay = new Date(date + 'T00:00:00');
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(date + 'T00:00:00');
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const timeFilter = {
+      gte: startOfDay,
+      lte: endOfDay,
+    };
+
+    const orders = await this.prisma.salesOrder.findMany({
+      where: {
+        locationId: locationId,
+        createdAt: timeFilter,
+      },
+      include: {
+        merchant: true,
+        voucherRedemptions: {
+          include: {
+            voucher: {
+              include: {
+                claims: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const issuedVouchers = await this.prisma.voucher.findMany({
+      where: {
+        createdAt: timeFilter,
+        issuedByLocationId: locationId,
+      },
+      include: {
+        claims: true,
+        merchant: true,
+      },
+    });
+
+    let grossSales = 0;
+    let totalTaxes = 0;
+    let totalDiscounts = 0;
+
+    let totalCashReceived = 0;
+    let totalCardReceived = 0;
+    let cashSalesCount = 0;
+    let cardSalesCount = 0;
+    let voucherSalesCount = 0;
+    let totalVouchersReceivedAmt = 0;
+
+    const cardGroup: Record<
+      string,
+      { bank: string; amount: number; rate: number; commission: number }
+    > = {};
+    const cardVoucherGroup: Record<
+      string,
+      { bank: string; amount: number; rate: number; commission: number }
+    > = {};
+
+    const redeemedVouchersList: Array<{
+      type: string;
+      amount: number;
+      from: string;
+    }> = [];
+
+    let totalCreditAmount = 0;
+
+    for (const order of orders) {
+      const subtotal = Number(order.subtotal ?? 0);
+      const discountAmount = Number(order.discountAmount ?? 0);
+      const globalDiscountAmount = Number(order.globalDiscountAmount ?? 0);
+      const taxAmount = Number(order.taxAmount ?? 0);
+      const grandTotal = Number(order.grandTotal ?? 0);
+
+      grossSales += subtotal;
+      totalTaxes += taxAmount;
+      totalDiscounts += discountAmount + globalDiscountAmount;
+
+      const voucherRedemptionsSum =
+        order.voucherRedemptions?.reduce(
+          (sum, r) => sum + Number(r.amountUsed),
+          0,
+        ) ?? 0;
+
+      const rawCash = Number(order.cashAmount ?? 0);
+      const rawCard = Number(order.cardAmount ?? 0);
+      const change = Number(order.changeAmount ?? 0);
+
+      // Determine if voucher redemption is double-counted within card/cash amounts
+      const excess = Math.max(
+        0,
+        rawCash + rawCard + voucherRedemptionsSum - (grandTotal + change),
+      );
+
+      let cash = rawCash;
+      let card = rawCard;
+      if (excess > 0) {
+        if (card > 0) {
+          card = Math.max(0, card - excess);
+        } else {
+          cash = Math.max(0, cash - excess);
+        }
+      }
+
+      // Fallback for non-split orders with empty cash/card amounts in DB
+      if (order.tenderType !== 'split' && order.paymentMethod) {
+        if (order.paymentMethod === 'cash') {
+          if (cash === 0) cash = Math.max(0, grandTotal - voucherRedemptionsSum);
+        } else if (order.paymentMethod === 'card' || order.paymentMethod === 'bank_transfer') {
+          if (card === 0) card = Math.max(0, grandTotal - voucherRedemptionsSum);
+        }
+      }
+
+      const voucher = voucherRedemptionsSum;
+
+
+      if (cash > 0) {
+        cashSalesCount++;
+        totalCashReceived += cash;
+      }
+      if (card > 0) {
+        cardSalesCount++;
+        totalCardReceived += card;
+
+        const bankName = order.merchant?.bankName || 'Unknown Bank';
+        const rateDecimal = Number(order.merchant?.commissionRate ?? 0);
+        const ratePct = rateDecimal * 100;
+
+        const orderIssuedVouchers = issuedVouchers.filter(
+          (v) =>
+            v.sourceOrderId === order.id &&
+            (v.voucherType === 'GIFT' || v.voucherType === 'CORPORATE'),
+        );
+        const vouchersValue = orderIssuedVouchers.reduce(
+          (sum, v) => {
+            const fVal = Number(v.faceValue);
+            const discAmt = Number(v.discount ?? 0);
+            return sum + (fVal - discAmt);
+          },
+          0,
+        );
+
+        const voucherCardAmt = Math.min(card, vouchersValue);
+        const regularCardAmt = card - voucherCardAmt;
+
+        if (regularCardAmt > 0) {
+          if (!cardGroup[bankName]) {
+            cardGroup[bankName] = {
+              bank: bankName,
+              amount: 0,
+              rate: ratePct,
+              commission: 0,
+            };
+          }
+          cardGroup[bankName].amount += regularCardAmt;
+          cardGroup[bankName].commission += regularCardAmt * rateDecimal;
+        }
+
+        if (voucherCardAmt > 0) {
+          if (!cardVoucherGroup[bankName]) {
+            cardVoucherGroup[bankName] = {
+              bank: bankName,
+              amount: 0,
+              rate: ratePct,
+              commission: 0,
+            };
+          }
+          cardVoucherGroup[bankName].amount += voucherCardAmt;
+          cardVoucherGroup[bankName].commission += voucherCardAmt * rateDecimal;
+        }
+      }
+      if (voucher > 0) {
+        voucherSalesCount++;
+      }
+
+      if (order.voucherRedemptions && order.voucherRedemptions.length > 0) {
+        for (const redemption of order.voucherRedemptions) {
+          const amountUsed = Number(redemption.amountUsed);
+          const v = redemption.voucher;
+          let amountToUse = amountUsed;
+
+          let type = 'Vouchers';
+          if (v.voucherType === 'CORPORATE') {
+            type = 'Gift Vouchers Corporate';
+          } else if (v.voucherType === 'GIFT') {
+            type = 'Gift Vouchers';
+          } else if (v.voucherType === 'CREDIT') {
+            type = 'Credit Vouchers';
+            amountToUse = Number(v.faceValue);
+          } else if (v.voucherType === 'EXCHANGE') {
+            if (v.claims && v.claims.length > 0) {
+              type = 'Claim Vouchers';
+            } else {
+              type = 'Exchange Vouchers';
+            }
+            amountToUse = Number(v.faceValue);
+          } else if (v.voucherType === 'OUTLET_GIFT') {
+            type = 'Outlet Gift Vouchers';
+          }
+
+          totalVouchersReceivedAmt += amountToUse;
+
+          redeemedVouchersList.push({
+            type,
+            amount: amountToUse,
+            from: v.code,
+          });
+        }
+      }
+
+      if (
+        order.paymentMethod === 'credit_account' ||
+        order.tenderType === 'credit_account' ||
+        order.paymentMethod === 'split' ||
+        order.tenderType === 'split'
+      ) {
+        const change = Number(order.changeAmount ?? 0);
+        const netCash = Math.max(0, cash - change);
+
+        const creditAmt = Math.max(
+          0,
+          Number((grandTotal - netCash - card - voucher).toFixed(2)),
+        );
+        if (creditAmt > 0) {
+          totalCreditAmount += creditAmt;
+        }
+      }
+    }
+
+    const exchangeAndClaims: Array<{
+      type: string;
+      amount: number;
+      from: string;
+    }> = [];
+    const creditVouchers: Array<{
+      type: string;
+      amount: number;
+      from: string;
+      to: string;
+    }> = [];
+    const giftVouchers: Array<{
+      type: string;
+      amount: number;
+      from: string;
+      to: string;
+    }> = [];
+    const refundVouchers: Array<{
+      type: string;
+      amount: number;
+      from: string;
+    }> = [];
+
+    let cashGiftVouchersAmt = 0;
+    let cardGiftVouchersAmt = 0;
+    let totalGiftVoucherDiscount = 0;
+    let unusedBalanceVouchersTotal = 0;
+
+    for (const v of issuedVouchers) {
+      const faceValue = Number(v.faceValue);
+
+      if (v.description && v.description.includes('unused balance from')) {
+        unusedBalanceVouchersTotal += faceValue;
+      }
+
+      if (v.voucherType === 'EXCHANGE') {
+        const type =
+          v.claims && v.claims.length > 0
+            ? 'Claim Vouchers'
+            : 'Exchange Vouchers';
+        exchangeAndClaims.push({
+          type,
+          amount: faceValue,
+          from: v.code,
+        });
+      } else if (v.voucherType === 'CREDIT') {
+        let fromCode = '-';
+        if (v.description && v.description.includes('unused balance from')) {
+          const parts = v.description.split('from ');
+          if (parts.length > 1) fromCode = parts[1].trim();
+        }
+        creditVouchers.push({
+          type: 'Credit Vouchers',
+          amount: faceValue,
+          from: fromCode,
+          to: v.code,
+        });
+      } else if (v.voucherType === 'REFUND') {
+        refundVouchers.push({
+          type: 'Refund Vouchers',
+          amount: faceValue,
+          from: v.code,
+        });
+      } else if (v.voucherType === 'GIFT' || v.voucherType === 'CORPORATE') {
+        const type =
+          v.voucherType === 'CORPORATE'
+            ? 'Gift Vouchers Corporate'
+            : 'Gift Vouchers';
+
+        const discountAmount = Number(v.discount ?? 0);
+        const netAmount = faceValue - discountAmount;
+        totalGiftVoucherDiscount += discountAmount;
+
+        let isCard = false;
+        let isCash = false;
+        let fromDetail = '-';
+
+        if (v.paymentMode === 'CARD') {
+          isCard = true;
+          const bank = v.merchant?.bankName || 'Card';
+          const last4 = v.cardLast4 ? ` - ****${v.cardLast4}` : '';
+          fromDetail = `${bank}${last4}`;
+        } else if (v.paymentMode === 'CASH') {
+          isCash = true;
+          fromDetail = 'Cash';
+        }
+
+        if (!isCard && !isCash && v.sourceOrderId) {
+          const purchaseOrder = orders.find((o) => o.id === v.sourceOrderId);
+          if (purchaseOrder) {
+            const cashPay = Number(purchaseOrder.cashAmount ?? 0);
+            const cardPay = Number(purchaseOrder.cardAmount ?? 0);
+            if (cardPay > 0) {
+              isCard = true;
+              const bank = purchaseOrder.merchant?.bankName || 'Card';
+              fromDetail = bank;
+            } else if (cashPay > 0) {
+              isCash = true;
+              fromDetail = 'Cash';
+            }
+          }
+        }
+
+        if (isCard) {
+          cardGiftVouchersAmt += netAmount;
+
+          const isLinkedToOrder =
+            v.sourceOrderId && orders.some((o) => o.id === v.sourceOrderId);
+          if (!isLinkedToOrder) {
+            totalCardReceived += netAmount;
+            cardSalesCount++;
+
+            const bankName = v.merchant?.bankName || 'Unknown Bank';
+            const rateDecimal = Number(v.merchant?.commissionRate ?? 0);
+            const ratePct = rateDecimal * 100;
+
+            if (!cardVoucherGroup[bankName]) {
+              cardVoucherGroup[bankName] = {
+                bank: bankName,
+                amount: 0,
+                rate: ratePct,
+                commission: 0,
+              };
+            }
+            cardVoucherGroup[bankName].amount += netAmount;
+            cardVoucherGroup[bankName].commission += netAmount * rateDecimal;
+          }
+        } else if (isCash) {
+          cashGiftVouchersAmt += netAmount;
+
+          const isLinkedToOrder =
+            v.sourceOrderId && orders.some((o) => o.id === v.sourceOrderId);
+          if (!isLinkedToOrder) {
+            totalCashReceived += netAmount;
+            cashSalesCount++;
+          }
+        }
+
+        giftVouchers.push({
+          type,
+          amount: faceValue,
+          from: fromDetail,
+          to: v.code,
+        });
+      }
+    }
+
+    let fbrCashCount = 0;
+    let fbrCardCount = 0;
+    for (const order of orders) {
+      if (order.cardAmount && Number(order.cardAmount) > 0) {
+        fbrCardCount++;
+      } else {
+        fbrCashCount++;
+      }
+    }
+
+    const fbrCharges = [
+      { type: 'Cash', amount: fbrCashCount },
+      { type: 'Card', amount: fbrCardCount },
+    ];
+
+    const cashSaleAmt = Math.max(0, totalCashReceived - cashGiftVouchersAmt);
+    const cardSaleAmt = Math.max(0, totalCardReceived - cardGiftVouchersAmt);
+
+    const receivedVouchers = [
+      { type: 'Cash', amount: cashSaleAmt, from: '-' },
+      ...(cashGiftVouchersAmt > 0
+        ? [
+            {
+              type: 'Cash - Gift Vouchers Issued',
+              amount: cashGiftVouchersAmt,
+              from: '-',
+            },
+          ]
+        : []),
+      ...redeemedVouchersList,
+    ];
+
+    const cardPayments = Object.values(cardGroup);
+    const cardGiftVouchers = Object.values(cardVoucherGroup);
+
+    const receivables = [
+      { description: 'On Credit', amount: totalCreditAmount },
+    ];
+
+    const totalCards = totalCardReceived;
+    const totalReceived = totalCashReceived + totalVouchersReceivedAmt;
+    const totalReceivable = totalCreditAmount;
+    const fbrTotal = fbrCharges.reduce((sum, f) => sum + f.amount, 0);
+
+    const creditCardGiftVouchersTotal = cardGiftVouchers.reduce(
+      (sum, v) => sum + v.amount,
+      0,
+    );
+    const cashGiftVouchersTotal = cashGiftVouchersAmt;
+
+    const computedSale =
+      totalCards -
+      creditCardGiftVouchersTotal +
+      (totalReceived - cashGiftVouchersTotal) +
+      totalReceivable -
+      fbrTotal -
+      unusedBalanceVouchersTotal;
+
+    const returnAmount =
+      exchangeAndClaims.reduce((sum, v) => sum + v.amount, 0) +
+      refundVouchers.reduce((sum, v) => sum + v.amount, 0);
+
+    const refundVouchersTotal = refundVouchers.reduce(
+      (sum, v) => sum + v.amount,
+      0,
+    );
+
+    const financials = {
+      sale: computedSale,
+      salesReturn: returnAmount,
+      netSales: computedSale - returnAmount,
+    };
+
+    const formatDate = (dateStr: string) => {
+      const d = new Date(dateStr);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    };
+
+    const dateRange = formatDate(date + 'T00:00:00');
+
+    return {
+      companyName: 'Speed (Private) Limited',
+      locationName: location.name ?? 'Unknown Location',
+      reportTitle: 'Sales Reconciliation',
+      dateRange: dateRange,
+      documentNumber: `REC-${date.replace(/-/g, '')}`,
+      selectedDate: date,
+      session: null,
+      metrics: {
+        grossSales: financials.sale,
+        netSales: financials.netSales,
+        totalTaxes,
+        totalDiscounts,
+        orderCount: orders.length,
+        averageOrderValue:
+          orders.length > 0 ? financials.netSales / orders.length : 0,
+      },
+      paymentBreakdown: {
+        cash: { count: cashSalesCount, amount: totalCashReceived },
+        card: { count: cardSalesCount, amount: totalCardReceived },
+        voucher: { count: voucherSalesCount, amount: totalVouchersReceivedAmt },
+      },
+      cardPayments,
+      cardGiftVouchers,
+      receivedVouchers,
+      receivables,
+      issuedVouchers: {
+        exchangeAndClaims,
+        creditVouchers,
+        giftVouchers,
+        refundVouchers,
+        totalGiftVoucherDiscount,
+        unusedBalanceVouchersTotal,
       },
       fbrCharges,
       financials,
@@ -1149,6 +1704,326 @@ export class PosSessionService {
       },
     };
   }
+
+  async exportDaywiseReconciliationExcel(locationId: string, date: string, res: any) {
+    const data = await this.getDaywiseReconciliation(locationId, date);
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Sales Reconciliation');
+
+    sheet.columns = [
+      { key: 'colA', width: 35 },
+      { key: 'colB', width: 18 },
+      { key: 'colC', width: 12 },
+      { key: 'colD', width: 18 },
+      { key: 'colE', width: 15 },
+      { key: 'colF', width: 15 },
+    ];
+
+    const BORDER_THIN: Partial<ExcelJS.Borders> = {
+      top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    };
+
+    sheet.addRow([data.companyName]).font = { bold: true, size: 14 };
+    sheet.addRow([data.locationName]);
+    sheet.addRow([data.reportTitle]);
+    sheet.addRow([`Period: ${data.dateRange}`]);
+    sheet.addRow([`Document #: ${data.documentNumber}`]);
+    sheet.addRow([]);
+
+    const addSectionHeader = (title: string) => {
+      const row = sheet.addRow([title]);
+      row.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+      row.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF1E3A5F' },
+        };
+      });
+      sheet.mergeCells(row.number, 1, row.number, 6);
+    };
+
+    const addTableHeader = (headers: string[]) => {
+      const row = sheet.addRow(headers);
+      row.font = { bold: true, size: 10 };
+      row.eachCell((cell) => {
+        cell.border = BORDER_THIN;
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF1F5F9' },
+        };
+      });
+    };
+
+    const formatCurrencyCell = (val: number) => {
+      return val === 0 ? '-' : val;
+    };
+
+    // 1. Cards
+    addSectionHeader('CREDIT | DEBIT CARDS');
+    addTableHeader(['Bank', 'Amount', 'Rate %', 'Bank Comm.', '', '']);
+    let cardPaymentsAmountSum = 0;
+    let cardPaymentsCommSum = 0;
+    for (const card of data.cardPayments) {
+      sheet.addRow([
+        card.bank,
+        formatCurrencyCell(card.amount),
+        card.rate.toFixed(3),
+        formatCurrencyCell(card.commission),
+      ]);
+      cardPaymentsAmountSum += card.amount;
+      cardPaymentsCommSum += card.commission;
+    }
+    const cardSubRow = sheet.addRow([
+      'SUBTOTAL',
+      formatCurrencyCell(cardPaymentsAmountSum),
+      '',
+      formatCurrencyCell(cardPaymentsCommSum),
+    ]);
+    cardSubRow.font = { bold: true };
+    cardSubRow.eachCell((cell) => (cell.border = BORDER_THIN));
+    sheet.addRow([]);
+
+    // 2. Gift Cards
+    addSectionHeader('CREDIT CARD - GIFT VOUCHERS ISSUED');
+    addTableHeader(['Bank', 'Amount', 'Rate %', 'Bank Comm.', '', '']);
+    let cardGiftVouchersAmountSum = 0;
+    let cardGiftVouchersCommSum = 0;
+    if (data.cardGiftVouchers && data.cardGiftVouchers.length > 0) {
+      for (const card of data.cardGiftVouchers) {
+        sheet.addRow([
+          card.bank,
+          formatCurrencyCell(card.amount),
+          card.rate.toFixed(3),
+          formatCurrencyCell(card.commission),
+        ]);
+        cardGiftVouchersAmountSum += card.amount;
+        cardGiftVouchersCommSum += card.commission;
+      }
+      const subRow = sheet.addRow([
+        'SUBTOTAL',
+        formatCurrencyCell(cardGiftVouchersAmountSum),
+        '',
+        formatCurrencyCell(cardGiftVouchersCommSum),
+      ]);
+      subRow.font = { bold: true };
+      subRow.eachCell((cell) => (cell.border = BORDER_THIN));
+    } else {
+      sheet.addRow(['No vouchers issued on card payments.']);
+    }
+    sheet.addRow([]);
+
+    // Total Cards
+    const totalCardsRow = sheet.addRow([
+      'TOTAL CREDIT/DEBIT CARDS',
+      formatCurrencyCell(cardPaymentsAmountSum + cardGiftVouchersAmountSum),
+      '',
+      formatCurrencyCell(cardPaymentsCommSum + cardGiftVouchersCommSum),
+    ]);
+    totalCardsRow.font = { bold: true, size: 11 };
+    totalCardsRow.eachCell((cell) => {
+      cell.border = BORDER_THIN;
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE2E8F0' },
+      };
+    });
+    sheet.addRow([]);
+
+    // 3. Received
+    addSectionHeader('RECEIVED');
+    addTableHeader(['Type', 'Amount', '', '', 'From', '']);
+    let receivedSubtotal = 0;
+    for (const v of data.receivedVouchers) {
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '']);
+      receivedSubtotal += v.amount;
+    }
+    const recSubRow = sheet.addRow(['RECEIVED SUBTOTAL', formatCurrencyCell(receivedSubtotal)]);
+    recSubRow.font = { bold: true };
+    recSubRow.eachCell((cell) => (cell.border = BORDER_THIN));
+    sheet.addRow([]);
+
+    // 4. Receivable
+    addSectionHeader('RECEIVABLE');
+    addTableHeader(['Description', 'Amount', '', '', '', '']);
+    let receivablesSubtotal = 0;
+    for (const r of data.receivables) {
+      sheet.addRow([r.description, formatCurrencyCell(r.amount)]);
+      receivablesSubtotal += r.amount;
+    }
+    const receivableSubRow = sheet.addRow(['RECEIVABLE SUBTOTAL', formatCurrencyCell(receivablesSubtotal)]);
+    receivableSubRow.font = { bold: true };
+    receivableSubRow.eachCell((cell) => (cell.border = BORDER_THIN));
+    sheet.addRow([]);
+
+    // 5. Issued
+    addSectionHeader('ISSUED VOUCHERS');
+    addTableHeader(['Voucher Type', 'Amount', '', '', 'From', 'To']);
+    const issuedExchangeSubtotal = data.issuedVouchers.exchangeAndClaims?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
+    const issuedCreditSubtotal = data.issuedVouchers.creditVouchers?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
+    const issuedGiftSubtotal = data.issuedVouchers.giftVouchers?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
+    const issuedRefundSubtotal = data.issuedVouchers.refundVouchers?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
+    const totalIssuedSubtotal = issuedExchangeSubtotal + issuedGiftSubtotal + issuedRefundSubtotal;
+
+    for (const v of data.issuedVouchers.exchangeAndClaims || []) {
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '']);
+    }
+    for (const v of data.issuedVouchers.creditVouchers || []) {
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', v.to || '-']);
+    }
+    for (const v of data.issuedVouchers.giftVouchers || []) {
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', v.to || '-']);
+    }
+    if (data.issuedVouchers.totalGiftVoucherDiscount > 0) {
+      sheet.addRow(['Gift Vouchers Discount', formatCurrencyCell(data.issuedVouchers.totalGiftVoucherDiscount)]);
+    }
+    for (const v of data.issuedVouchers.refundVouchers || []) {
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '']);
+    }
+
+    const issuedSubRow = sheet.addRow(['TOTAL ISSUED', formatCurrencyCell(totalIssuedSubtotal)]);
+    issuedSubRow.font = { bold: true };
+    issuedSubRow.eachCell((cell) => (cell.border = BORDER_THIN));
+    sheet.addRow([]);
+
+    // 6. FBR Charges
+    addSectionHeader('FBR POS SERVICE CHARGES');
+    addTableHeader(['Type', 'Amount', '', '', '', '']);
+    let fbrSubtotal = 0;
+    for (const f of data.fbrCharges) {
+      sheet.addRow([f.type, formatCurrencyCell(f.amount)]);
+      fbrSubtotal += f.amount;
+    }
+    const fbrSubRow = sheet.addRow(['FBR SUBTOTAL', formatCurrencyCell(fbrSubtotal)]);
+    fbrSubRow.font = { bold: true };
+    fbrSubRow.eachCell((cell) => (cell.border = BORDER_THIN));
+    sheet.addRow([]);
+
+    // 7. Financials
+    addSectionHeader('FINANCIALS');
+    sheet.addRow(['Sale', formatCurrencyCell(data.financials.sale)]);
+    sheet.addRow(['Sales Return', formatCurrencyCell(data.financials.salesReturn)]);
+    const netSalesRow = sheet.addRow(['NET SALES', formatCurrencyCell(data.financials.netSales)]);
+    netSalesRow.font = { bold: true };
+    netSalesRow.eachCell((cell) => {
+      cell.border = BORDER_THIN;
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE2E8F0' },
+      };
+    });
+    sheet.addRow([]);
+
+    // 8. Flow summaries
+    addSectionHeader('FLOW SUMMARIES');
+    sheet.addRow(['CASH FLOW DETAILS']);
+    sheet.addRow(['  Net Cash Sales', formatCurrencyCell(data.cashBreakdown.sale)]);
+    sheet.addRow(['  Cash Gift Vouchers', formatCurrencyCell(data.cashBreakdown.giftVouchers)]);
+    sheet.addRow(['  Refund Vouchers', formatCurrencyCell(-data.cashBreakdown.refundVouchers)]);
+    const totalCashRow = sheet.addRow(['  TOTAL CASH FLOW', formatCurrencyCell(data.cashBreakdown.total)]);
+    totalCashRow.font = { bold: true };
+
+    sheet.addRow([]);
+    sheet.addRow(['CARD SALES DETAILS']);
+    sheet.addRow(['  Net Card Sales', formatCurrencyCell(data.cardBreakdown.sale)]);
+    sheet.addRow(['  Card Gift Vouchers', formatCurrencyCell(data.cardBreakdown.giftVouchers)]);
+    const totalCardRow = sheet.addRow(['  TOTAL CARD PAYMENTS', formatCurrencyCell(data.cardBreakdown.total)]);
+    totalCardRow.font = { bold: true };
+
+    sheet.eachRow((row) => {
+      const cellB = row.getCell(2);
+      const cellD = row.getCell(4);
+      if (typeof cellB.value === 'number') {
+        cellB.numFmt = '#,##0.00';
+      }
+      if (typeof cellD.value === 'number') {
+        cellD.numFmt = '#,##0.00';
+      }
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.header('Content-Disposition', `attachment; filename=reconciliation_${date}.xlsx`);
+    res.send(buffer);
+  }
+
+  async queueDaywiseReconciliationExcel(userId: string, locationId: string, date: string): Promise<{ jobId: string }> {
+    const jobId = uuidv4();
+    const tenantId = this.prisma.getTenantId() ?? '';
+    const tenantDbUrl = this.prisma.getTenantDbUrl() ?? '';
+
+    if (!this.exportQueue) {
+      throw new Error('Export queue is not initialized');
+    }
+
+    await this.exportQueue.add(
+      {
+        jobId,
+        userId,
+        tenantId,
+        tenantDbUrl,
+        locationId,
+        date,
+      },
+      {
+        jobId,
+        attempts: 1,
+        removeOnComplete: false,
+        removeOnFail: false,
+        timeout: 30 * 60 * 1000,
+      },
+    );
+
+    this.logger.log(`[ReconciliationExport] Queued job ${jobId} for user ${userId} on date ${date}`);
+    return { jobId };
+  }
+
+  async getDaywiseReconciliationExportStatus(jobId: string): Promise<{ state: string; progress: number }> {
+    if (!this.exportQueue) {
+      throw new Error('Export queue is not initialized');
+    }
+    const job = await this.exportQueue.getJob(jobId);
+    if (!job) throw new NotFoundException(`Export job ${jobId} not found`);
+    const state = await job.getState();
+    const progress = typeof job.progress() === 'number' ? (job.progress() as number) : 0;
+    return { state, progress };
+  }
+
+  async streamDaywiseReconciliationExcelFile(jobId: string, res: any): Promise<void> {
+    const filePath = path.join(process.cwd(), 'uploads', 'exports', `export-${jobId}.xlsx`);
+
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundException('Export file not found. It may have expired or the job is still running.');
+    }
+
+    const stat = fs.statSync(filePath);
+    const filename = `reconciliation-${jobId}.xlsx`;
+
+    const stream = fs.createReadStream(filePath);
+    stream.on('close', () => {
+      fs.unlink(filePath, (err) => {
+        if (err) this.logger.warn(`Could not delete export file: ${err.message}`);
+        else     this.logger.log(`[ReconciliationExport] Cleaned up ${filePath}`);
+      });
+    });
+    stream.on('error', (err) => {
+      this.logger.error(`[ReconciliationExport] Stream error: ${err.message}`);
+    });
+
+    res.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.header('Content-Disposition', `attachment; filename="${filename}"`);
+    res.header('Content-Length', stat.size);
+    res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.send(stream);
+  }
+
   /**
    * Generates a Journal Voucher for a closed session based on reconciliation details.
    */
@@ -1158,18 +2033,22 @@ export class PosSessionService {
     ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
-      const session = await this.prisma.posSession.findUnique({
+      const sessionData = await this.prisma.posSession.findUnique({
         where: { id: sessionId },
+        include: { pos: { include: { location: true } } },
       });
-      if (!session) return;
+      if (!sessionData) return;
+      const session = sessionData;
+
+      const locationShortCode = sessionData?.pos?.location?.shortCode || sessionData?.pos?.location?.code || 'LOC';
 
       // Clean up all existing pending JVs for this session first (both old format and new format)
-      const sessionPrefix = `RS RV-${sessionId.substring(0, 8).toUpperCase()}`;
+      const oldSessionPrefix = `RS RV-${sessionId.substring(0, 8).toUpperCase()}`;
       const existingJvs = await this.prisma.journalVoucher.findMany({
         where: {
           OR: [
-            { jvNo: { startsWith: sessionPrefix } },
-            { jvNo: sessionPrefix }
+            { jvNo: { startsWith: oldSessionPrefix } },
+            { jvNo: oldSessionPrefix }
           ]
         }
       });
@@ -1185,6 +2064,33 @@ export class PosSessionService {
             });
           });
           this.logger.log(`Cleaned up existing pending JV: ${existingJv.jvNo}`);
+        }
+      }
+
+      // Clean up all existing pending RVs for this session first (both old format and new format)
+      const newSessionPrefix = `RS-RV-${locationShortCode}-`;
+      const existingRvs = await this.prisma.receiptVoucher.findMany({
+        where: {
+          OR: [
+            { rvNo: { startsWith: oldSessionPrefix } },
+            { rvNo: oldSessionPrefix },
+            { rvNo: { startsWith: newSessionPrefix } },
+            { rvNo: newSessionPrefix }
+          ]
+        }
+      });
+
+      for (const existingRv of existingRvs) {
+        if (existingRv.status === 'pending') {
+          await this.prisma.$transaction(async (tx) => {
+            await tx.receiptVoucherDetail.deleteMany({
+              where: { receiptVoucherId: existingRv.id },
+            });
+            await tx.receiptVoucher.delete({
+              where: { id: existingRv.id },
+            });
+          });
+          this.logger.log(`Cleaned up existing pending RV: ${existingRv.rvNo}`);
         }
       }
 
@@ -1321,17 +2227,14 @@ export class PosSessionService {
         );
 
         // 3. Cash && Cash - Gift Vouchers Issued
-        const sessionData = await this.prisma.posSession.findUnique({
-          where: { id: sessionId },
-          include: { pos: { include: { location: true } } },
-        });
         const cashGl = sessionData?.pos?.location?.cashGLCode || '31090001';
         if (cashGl) {
           // Cash Sales entry
+          const netCashSale = metrics.cashBreakdown.sale - metrics.cashBreakdown.refundVouchers;
           await addLine(
             cashGl,
             locationCode,
-            metrics.cashBreakdown.sale,
+            netCashSale,
             0,
             `CASH SALES | ${jvDateStr}`,
           );
@@ -1457,6 +2360,16 @@ export class PosSessionService {
             );
           }
         }
+
+        // Gift Voucher Discount
+        const giftVoucherDiscountAmt = metrics.issuedVouchers.totalGiftVoucherDiscount || 0;
+        await addLine(
+          '80180012',
+          locationCode,
+          giftVoucherDiscountAmt,
+          0,
+          `Gift Voucher Discount | ${jvDateStr}`,
+        );
         for (const rv of metrics.issuedVouchers.refundVouchers) {
           await addLine(
             '12070002',
@@ -1500,10 +2413,7 @@ export class PosSessionService {
         const totalReceived = metrics.cashBreakdown.total + metrics.paymentBreakdown.voucher.amount;
         const netReceivedCard = metrics.cardBreakdown.total;
 
-        const creditVouchersAmt = metrics.issuedVouchers.creditVouchers.reduce(
-          (s, v) => s + v.amount,
-          0,
-        );
+        const unusedBalanceVouchersAmt = metrics.issuedVouchers.unusedBalanceVouchersTotal || 0;
         const cashGiftVouchersAmt = metrics.cashBreakdown.giftVouchers;
         const cardGiftVouchersAmt = metrics.cardBreakdown.giftVouchers;
         const receivablesAmt = metrics.receivables.reduce(
@@ -1512,11 +2422,11 @@ export class PosSessionService {
         );
 
         // AC: 12070002 -> Transfer Current A/c Cash
-        // Credit = Total Received + Receivables - Credit Vouchers - Cash Gift Vouchers - On Cash FBR
+        // Credit = Total Received + Receivables - Unused Balance Vouchers - Cash Gift Vouchers - On Cash FBR
         const transferCash =
           totalReceived +
           receivablesAmt -
-          creditVouchersAmt -
+          unusedBalanceVouchersAmt -
           cashGiftVouchersAmt -
           fbrCash;
 
@@ -1541,13 +2451,13 @@ export class PosSessionService {
 
         if (details.length === 0) {
           this.logger.log(
-            `No entries to generate JV for session ${sessionId} on ${dateStr}`,
+            `No entries to generate RV for session ${sessionId} on ${dateStr}`,
           );
           continue;
         }
 
-        // Generate JV
-        const jvNo = `RS RV-${sessionId.substring(0, 8).toUpperCase()}-${dateStr}`;
+        // Generate RV
+        const rvNo = `RS-RV-${locationShortCode}-${dateStr}`;
 
         // Auto-balance the voucher if debits and credits do not match
         let totalDebit = 0;
@@ -1579,37 +2489,63 @@ export class PosSessionService {
             tagAccountId: null,
             debit: balDebit,
             credit: balCredit,
-            narration: `[AUTO-BALANCING LINE] To balance JV. Total Debit was ${totalDebit.toFixed(2)}, Total Credit was ${totalCredit.toFixed(2)}`,
+            narration: `[AUTO-BALANCING LINE] To balance RV. Total Debit was ${totalDebit.toFixed(2)}, Total Credit was ${totalCredit.toFixed(2)}`,
           });
           description += `\n\nATTENTION: Voucher was unbalanced by ${diff.toFixed(2)}. An auto-balancing line was added. Please review and correct.`;
+
+          // Re-calculate totals
+          totalDebit = 0;
+          totalCredit = 0;
+          details.forEach((d) => {
+            totalDebit += d.debit;
+            totalCredit += d.credit;
+          });
         }
 
-        // Check if JV already exists (it would only exist if it's approved and was not deleted)
-        const approvedJv = await this.prisma.journalVoucher.findUnique({
-          where: { jvNo },
-        });
-
-        if (approvedJv) {
-          this.logger.log(`Journal Voucher ${jvNo} already exists and is not pending. Skipping.`);
+        if (totalDebit === 0) {
+          this.logger.log(
+            `Total debit is 0 for session ${sessionId} on ${dateStr}, skipping Receipt Voucher generation.`,
+          );
           continue;
         }
 
-        await this.journalVoucherService.create(
-          {
-            jvNo,
-            jvDate: date,
-            description,
-            status: 'pending',
-            details,
-          },
-          ctx,
-        );
+        // Check if RV already exists (it would only exist if it's approved and was not deleted)
+        const approvedRv = await this.prisma.receiptVoucher.findUnique({
+          where: { rvNo },
+        });
 
-        this.logger.log(`Generated JV ${jvNo} for session ${sessionId}`);
+        if (approvedRv) {
+          this.logger.log(`Receipt Voucher ${rvNo} already exists and is not pending. Skipping.`);
+          continue;
+        }
+
+        const firstDebitLine = details.find((d) => d.debit > 0);
+        const debitAccountId = firstDebitLine
+          ? firstDebitLine.accountId
+          : (await this.prisma.chartOfAccount.findFirst())?.id || 'MISSING';
+
+        await this.receiptVoucherService.create({
+          type: 'cash',
+          rvNo,
+          rvDate: date,
+          debitAccountId,
+          debitAmount: totalDebit,
+          description,
+          status: 'pending',
+          details: details.map((d) => ({
+            accountId: d.accountId,
+            tagAccountId: d.tagAccountId || undefined,
+            debit: d.debit,
+            credit: d.credit,
+            narration: d.narration,
+          })),
+        });
+
+        this.logger.log(`Generated RV ${rvNo} for session ${sessionId}`);
       }
     } catch (error) {
       this.logger.error(
-        `Error generating Reconciliation JV for session ${sessionId}:`,
+        `Error generating Reconciliation RV for session ${sessionId}:`,
         error,
       );
     }

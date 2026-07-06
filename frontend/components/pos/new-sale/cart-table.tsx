@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Minus, Plus, Trash2, CircleDot, Truck } from "lucide-react";
+import { Minus, Plus, Trash2, CircleDot } from "lucide-react";
 import { formatCurrency, cn } from "@/lib/utils";
 import { ManagerVerificationDialog } from "@/components/auth/manager-verification-dialog";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -36,7 +36,6 @@ export interface CartItem {
     total: number;
     inStock: boolean;
     stockQty: number;
-    isStockInTransit?: boolean;
 }
 
 interface CartTableProps {
@@ -44,7 +43,6 @@ interface CartTableProps {
     onQuantityChange: (id: string, quantity: number) => void;
     onDiscountChange?: (id: string, discountPercent: number, note?: string) => void;
     onRemoveItem: (id: string) => void;
-    onToggleTransit?: (id: string) => void;
     focusedIndex?: number;
 }
 
@@ -53,7 +51,6 @@ export function CartTable({
     onQuantityChange,
     onDiscountChange,
     onRemoveItem,
-    onToggleTransit,
     focusedIndex = -1,
 }: CartTableProps) {
     const { user } = useAuth();
@@ -260,44 +257,25 @@ export function CartTable({
 
                                 {/* Stock status */}
                                 <TableCell className="text-center">
-                                    <div className="flex flex-col items-center gap-1">
+                                                                    <div className="flex flex-col items-center gap-1">
                                         <div className="flex items-center gap-1">
                                             <CircleDot
-                                                className={`h-3 w-3 ${item.isStockInTransit
-                                                    ? "text-amber-500"
-                                                    : item.stockQty > 0
+                                                className={`h-3 w-3 ${item.stockQty > 0
                                                         ? "text-emerald-500"
                                                         : "text-red-500"
                                                     }`}
                                             />
                                             <span
-                                                className={`text-[11px] font-medium ${item.isStockInTransit
-                                                    ? "text-amber-600 dark:text-amber-400"
-                                                    : item.stockQty > 0
+                                                className={`text-[11px] font-medium ${item.stockQty > 0
                                                         ? "text-emerald-600 dark:text-emerald-400"
                                                         : "text-red-600 dark:text-red-400"
                                                     }`}
                                             >
-                                                {item.isStockInTransit
-                                                    ? "In Transit"
-                                                    : item.stockQty > 0
+                                                {item.stockQty > 0
                                                         ? `Qty: ${item.stockQty}`
                                                         : "Out of Stock"}
                                             </span>
                                         </div>
-                                        {onToggleTransit && (
-                                            <button
-                                                onClick={() => onToggleTransit(item.id)}
-                                                title={item.isStockInTransit ? "Remove transit flag" : "Mark as stock in transit"}
-                                                className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded transition-colors ${item.isStockInTransit
-                                                    ? "bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400"
-                                                    : "bg-muted text-muted-foreground hover:bg-amber-100 hover:text-amber-700"
-                                                    }`}
-                                            >
-                                                <Truck className="h-2.5 w-2.5" />
-                                                Transit
-                                            </button>
-                                        )}
                                     </div>
                                 </TableCell>
 

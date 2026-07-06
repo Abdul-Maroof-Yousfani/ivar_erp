@@ -20,7 +20,7 @@ interface HoldOrderModalProps {
 }
 
 const QUICK_DURATIONS = [
-    { label: '1 min', minutes: 1 },
+    // { label: '1 min', minutes: 1 },
     { label: '30 min', minutes: 30 },
     { label: '1 hr', minutes: 60 },
     { label: '2 hrs', minutes: 120 },

@@ -41,7 +41,7 @@ export function ActionButtons({
                     />
                     <div className="flex-1">
                         <Label htmlFor="gift-receipt" className="text-sm font-semibold cursor-pointer">
-                            Gift Receipt
+                            Gift Receipt <span className="text-xs text-primary font-mono ml-1 font-bold">[Alt+G]</span>
                         </Label>
                         <p className="text-xs text-muted-foreground">
                             Print receipt without price information
@@ -59,13 +59,13 @@ export function ActionButtons({
                             <Button
                                 variant="outline"
                                 size="lg"
-                                className="h-12 flex-1 font-bold gap-2 rounded-xl border-amber-300 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                                className="h-12 flex-1 font-bold gap-1.5 rounded-xl border-amber-300 text-amber-600 hover:bg-amber-50 hover:text-amber-700 text-xs"
                                 onClick={onHold}
                                 disabled={isSubmitting || isHolding || cartItemCount === 0}
                             >
                                 {isHolding
                                     ? <><Loader2 className="h-4 w-4 animate-spin" /> Holding...</>
-                                    : <><PauseCircle className="h-4 w-4" /> Hold</>
+                                    : <><PauseCircle className="h-4 w-4 shrink-0" /> Hold <span className="opacity-80 font-mono text-[10px] bg-amber-100 dark:bg-amber-900/40 px-1 py-0.5 rounded">Alt+H</span></>
                                 }
                             </Button>
                         )}
@@ -75,13 +75,13 @@ export function ActionButtons({
                             <Button
                                 variant="outline"
                                 size="lg"
-                                className="h-12 flex-1 font-bold gap-2 rounded-xl border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                                className="h-12 flex-1 font-bold gap-1.5 rounded-xl border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700 text-xs"
                                 onClick={onCreditSale}
                                 disabled={isSubmitting || cartItemCount === 0}
                             >
                                 {isSubmitting
                                     ? <><Loader2 className="h-4 w-4 animate-spin" /> Processing...</>
-                                    : <><BookOpen className="h-4 w-4" /> Credit Sale</>
+                                    : <><BookOpen className="h-4 w-4 shrink-0" /> Credit <span className="opacity-80 font-mono text-[10px] bg-blue-100 dark:bg-blue-900/40 px-1 py-0.5 rounded">Alt+R</span></>
                                 }
                             </Button>
                         )}
@@ -91,11 +91,11 @@ export function ActionButtons({
                             <Button
                                 variant="outline"
                                 size="lg"
-                                className="h-12 flex-1 font-bold gap-2 rounded-xl border-purple-300 text-purple-600 hover:bg-purple-50 hover:text-purple-700"
+                                className="h-12 flex-1 font-bold gap-1.5 rounded-xl border-purple-300 text-purple-600 hover:bg-purple-50 hover:text-purple-700 text-xs"
                                 onClick={onPreviewReceipt}
                                 disabled={isSubmitting}
                             >
-                                <Receipt className="h-4 w-4" /> Preview Receipt
+                                <Receipt className="h-4 w-4 shrink-0" /> Preview <span className="opacity-80 font-mono text-[10px] bg-purple-100 dark:bg-purple-900/40 px-1 py-0.5 rounded">Alt+V</span>
                             </Button>
                         )}
                     </div>
@@ -112,7 +112,7 @@ export function ActionButtons({
                         ? <><Loader2 className="h-5 w-5 animate-spin" /> Processing...</>
                         : balanceDue > 0
                             ? `Balance Due: ${fmtCurrency(balanceDue)}`
-                            : <><Printer className="h-5 w-5" /> Complete Sale &amp; Print Receipt</>
+                            : <><Printer className="h-5 w-5" /> Complete &amp; Print <span className="font-mono text-xs bg-primary-foreground/25 px-1.5 py-0.5 rounded ml-1">F12</span></>
                     }
                 </Button>
             </div>

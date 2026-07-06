@@ -48,6 +48,48 @@ export function OrderSummary({
     onAddCustomer, onClearCustomer,
     cartItems, discountMode, orderDiscount, allianceSharePerItem, fmtCurrency,
 }: OrderSummaryProps) {
+    const [showDropdown, setShowDropdown] = React.useState(false);
+    const [activeIndex, setActiveIndex] = React.useState(-1);
+    const customerSearchRef = React.useRef<HTMLInputElement>(null);
+
+    // Reset active index when customers change
+    React.useEffect(() => {
+        setActiveIndex(-1);
+    }, [customers]);
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (!showDropdown) {
+            if (e.key === "ArrowDown" || e.key === "Enter") {
+                setShowDropdown(true);
+                e.preventDefault();
+            }
+            return;
+        }
+
+        // Options: Walk-in + matches
+        const options = ["walk-in", ...customers.map(c => c.id)];
+
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActiveIndex(prev => (prev + 1) % options.length);
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActiveIndex(prev => (prev - 1 + options.length) % options.length);
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            const idx = activeIndex >= 0 ? activeIndex : 0;
+            if (idx < options.length) {
+                onCustomerChange(options[idx]);
+                setShowDropdown(false);
+                customerSearchRef.current?.blur();
+            }
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            setShowDropdown(false);
+            customerSearchRef.current?.blur();
+        }
+    };
+
     return (
         <div className="rounded-xl border bg-card flex flex-col overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/30">
@@ -55,14 +97,17 @@ export function OrderSummary({
                 <span className="font-semibold text-sm">Order Summary</span>
             </div>
 
-            {/* Cashier Selection */}
+            {/* Salesman Selection */}
             <div className="px-4 py-4 border-b space-y-3 bg-muted/5">
                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                    <UserRound className="h-3 w-3" /> Cashier / Employee
+                    <UserRound className="h-3 w-3" /> Salesman
                 </Label>
                 <Select value={selectedCashierId} onValueChange={onCashierChange}>
-                    <SelectTrigger className="w-full bg-muted/20 border-none h-10 px-3 font-medium">
-                        <SelectValue placeholder={isLoadingCashiers ? "Loading cashiers..." : "Select Cashier"} />
+                    <SelectTrigger 
+                        id="cashier-select-trigger"
+                        className="w-full bg-muted/20 border-none h-10 px-3 font-medium"
+                    >
+                        <SelectValue placeholder={isLoadingCashiers ? "Loading salesmen..." : "Select Salesman"} />
                     </SelectTrigger>
                     <SelectContent>
                         {isLoadingCashiers ? (
@@ -71,7 +116,7 @@ export function OrderSummary({
                             </div>
                         ) : cashiers.length === 0 ? (
                             <div className="p-4 text-center text-xs text-muted-foreground">
-                                No cashiers found for this location
+                                No salesmen found for this location
                             </div>
                         ) : (
                             cashiers.map((c) => (
@@ -89,47 +134,76 @@ export function OrderSummary({
 
             {/* Customer Section */}
             <div className="px-4 py-4 border-b space-y-3">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Customer{requireCustomer && <span className="text-destructive ml-1">*</span>}
-                </Label>
-                <div className="flex gap-2">
+                <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        Customer{requireCustomer && <span className="text-destructive ml-1">*</span>}
+                    </Label>
+                    <span className="text-[9px] font-mono text-primary font-bold uppercase">[F6] Search</span>
+                </div>
+                <div className="flex gap-2 relative">
                     <div className="flex-1 relative">
-                        <Select
-                            value={selectedCustomer?.id || "walk-in"}
-                            onValueChange={onCustomerChange}
-                        >
-                            <SelectTrigger className="w-full bg-muted/20 border-none h-10 px-3">
-                                <SelectValue placeholder="Select Customer" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <div className="p-2 border-b">
-                                    <div className="relative">
-                                        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                                        <Input
-                                            placeholder="Search customers..."
-                                            className="pl-8 h-8 text-xs"
-                                            value={customerSearch}
-                                            onChange={(e) => onCustomerSearch(e.target.value)}
-                                        />
-                                    </div>
-                                </div>
-                                <SelectItem value="walk-in">Walk-in Customer</SelectItem>
-                                {isLoadingCustomers ? (
-                                    <div className="p-4 text-center text-xs text-muted-foreground">
-                                        <Loader2 className="h-4 w-4 animate-spin mx-auto mb-1" /> Loading...
-                                    </div>
-                                ) : (
-                                    customers.map((c) => (
-                                        <SelectItem key={c.id} value={c.id}>
-                                            <div className="flex flex-col">
-                                                <span className="font-medium">{c.name}</span>
-                                                <span className="text-[10px] opacity-70">{c.contactNo || c.code}</span>
-                                            </div>
-                                        </SelectItem>
-                                    ))
-                                )}
-                            </SelectContent>
-                        </Select>
+                        <Input
+                            id="customer-search-input"
+                            ref={customerSearchRef}
+                            placeholder="Search name, phone or code... (F6)"
+                            value={customerSearch}
+                            onChange={(e) => {
+                                onCustomerSearch(e.target.value);
+                                setShowDropdown(true);
+                            }}
+                            onFocus={() => setShowDropdown(true)}
+                            onBlur={() => {
+                                // Delay blur to allow item click selection
+                                setTimeout(() => setShowDropdown(false), 200);
+                            }}
+                            onKeyDown={handleKeyDown}
+                            className="w-full bg-muted/20 border-none h-10 px-3 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+                        />
+
+                        {showDropdown && (
+                            <div className="absolute left-0 right-0 top-11 bg-popover border border-border shadow-md rounded-md overflow-hidden z-[500] max-h-64 overflow-y-auto">
+                                <ul className="flex flex-col">
+                                    <li
+                                        className={cn(
+                                            "px-4 py-2 hover:bg-muted cursor-pointer flex items-center justify-between border-b border-border/50 transition-colors text-xs font-semibold",
+                                            (activeIndex === 0) && "bg-primary/10 border-l-4 border-l-primary"
+                                        )}
+                                        onMouseDown={() => {
+                                            onCustomerChange("walk-in");
+                                            setShowDropdown(false);
+                                        }}
+                                    >
+                                        Walk-in Customer
+                                    </li>
+                                    {isLoadingCustomers ? (
+                                        <div className="p-3 text-center text-xs text-muted-foreground flex items-center justify-center">
+                                            <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> Loading...
+                                        </div>
+                                    ) : customers.length === 0 ? (
+                                        <div className="p-3 text-center text-xs text-muted-foreground italic">
+                                            No matching customers
+                                        </div>
+                                    ) : (
+                                        customers.map((c, idx) => (
+                                            <li
+                                                key={c.id}
+                                                className={cn(
+                                                    "px-4 py-2 hover:bg-muted cursor-pointer flex flex-col border-b border-border/50 last:border-0 transition-colors text-left",
+                                                    (idx + 1 === activeIndex) && "bg-primary/10 border-l-4 border-l-primary"
+                                                )}
+                                                onMouseDown={() => {
+                                                    onCustomerChange(c.id);
+                                                    setShowDropdown(false);
+                                                }}
+                                            >
+                                                <span className="font-semibold text-xs">{c.name}</span>
+                                                <span className="text-[10px] text-muted-foreground">{c.contactNo || c.code}</span>
+                                            </li>
+                                        ))
+                                    )}
+                                </ul>
+                            </div>
+                        )}
                     </div>
                     <Button
                         variant="outline"
@@ -137,6 +211,7 @@ export function OrderSummary({
                         className="h-10 w-10 shrink-0 bg-muted/20 border-none hover:bg-muted/40"
                         disabled={!canAddCustomer}
                         onClick={onAddCustomer}
+                        title="Add Customer (Alt+N)"
                     >
                         <Plus className="h-4 w-4" />
                     </Button>

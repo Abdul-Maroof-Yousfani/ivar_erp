@@ -19,7 +19,6 @@ import * as htmlToImage from "html-to-image";
 import { cn } from "@/lib/utils";
 import { printThermal } from "@/lib/utils/print";
 import { usePosSettings } from "@/hooks/use-pos-settings";
-import { COMPANY_NAME } from "../../lib/utils";
 
 interface PrintReconciliationProps {
     sessionId: string | null;
@@ -29,7 +28,7 @@ interface PrintReconciliationProps {
 
 // Exact static figures from the prompt for testing or reference
 const SAMPLE_DATA = {
-    companyName: COMPANY_NAME,
+    companyName: "Speed (Private) Limited",
     locationName: "Nike-Dolmen Clifton",
     reportTitle: "Sales Reconciliation",
     dateRange: "20/05/2026 - 20/05/2026",
@@ -313,7 +312,7 @@ export function PrintReconciliation({ sessionId, open, onOpenChange }: PrintReco
         const dateRange = openedStr === closedStr ? openedStr : `${openedStr} - ${closedStr}`;
 
         return {
-            companyName: COMPANY_NAME || "IVAR",
+            companyName: "Speed (Private) Limited",
             locationName: session.terminal?.locationName || "Nike-Dolmen Clifton",
             reportTitle: "Sales Reconciliation",
             dateRange: dateRange,
@@ -364,7 +363,7 @@ export function PrintReconciliation({ sessionId, open, onOpenChange }: PrintReco
     const receivedSubtotal = activeReport.receivedVouchers.reduce((acc, v) => acc + v.amount, 0);
     const receivablesSubtotal = activeReport.receivables.reduce((acc, r) => acc + r.amount, 0);
 
-    const totalGiftVoucherDiscount = activeReport.issuedVouchers.totalGiftVoucherDiscount ?? 0;
+    const totalGiftVoucherDiscount = (activeReport.issuedVouchers as any).totalGiftVoucherDiscount ?? 0;
     const issuedExchangeSubtotal = activeReport.issuedVouchers.exchangeAndClaims?.reduce((acc, v) => acc + v.amount, 0) ?? 0;
     const issuedCreditSubtotal = activeReport.issuedVouchers.creditVouchers?.reduce((acc, v) => acc + v.amount, 0) ?? 0;
     const issuedGiftSubtotal = activeReport.issuedVouchers.giftVouchers?.reduce((acc, v) => acc + v.amount, 0) ?? 0;
@@ -1059,6 +1058,16 @@ export function PrintReconciliation({ sessionId, open, onOpenChange }: PrintReco
                                                         <td className="py-1 px-1 text-center font-mono">-</td>
                                                     </tr>
                                                 )}
+                                                {activeReport.issuedVouchers.giftVouchers.length > 0 && (
+                                                    <tr className="font-bold border-b border-gray-200">
+                                                        <td className="py-1 px-1 text-left pl-4"></td>
+                                                        <td className="py-1 px-1 text-right border-t border-dashed border-black/60">{formatVal(issuedGiftSubtotal)}</td>
+                                                        <td className="py-1 px-1 text-right"></td>
+                                                        <td className="py-1 px-1 text-right"></td>
+                                                        <td className="py-1 px-1 text-center"></td>
+                                                        <td className="py-1 px-1 text-center"></td>
+                                                    </tr>
+                                                )}
 
                                                 {/* Issued sub-category 4: Refund Vouchers */}
                                                 {activeReport.issuedVouchers.refundVouchers?.map((v: any, i: number) => (
@@ -1306,13 +1315,16 @@ export function PrintReconciliation({ sessionId, open, onOpenChange }: PrintReco
                 {/* Print Stylesheet injection (Visibility targets only print container) */}
                 <style jsx global>{`
                     @media print {
-                        /* Hide everything in page body */
-                        body *:not(#reconciliation-print-container):not(#reconciliation-print-container *) {
-                            visibility: hidden !important;
-                            height: 0 !important;
-                            padding: 0 !important;
-                            margin: 0 !important;
-                            border: none !important;
+                        /* Force visible page properties to avoid screen height clipping */
+                        html, body {
+                            height: auto !important;
+                            overflow: visible !important;
+                            background: white !important;
+                        }
+
+                        /* Hide everything in page body using clean display: none on direct children */
+                        body > *:not(#reconciliation-print-container) {
+                            display: none !important;
                         }
                         
                         /* Make print container and all children visible */
@@ -1321,10 +1333,10 @@ export function PrintReconciliation({ sessionId, open, onOpenChange }: PrintReco
                             visibility: visible !important;
                         }
                         
-                        /* Anchor print container top-left */
+                        /* Anchor print container top-left and flow naturally */
                         #reconciliation-print-container {
                             display: block !important;
-                            position: absolute !important;
+                            position: relative !important;
                             left: 0 !important;
                             top: 0 !important;
                             width: 100% !important;
@@ -1347,6 +1359,11 @@ export function PrintReconciliation({ sessionId, open, onOpenChange }: PrintReco
                             max-width: 210mm !important; /* A4 width */
                             margin: 0 auto !important;
                             padding: 12mm !important;
+                        }
+
+                        .print-layout-desktop > div {
+                            page-break-inside: avoid;
+                            break-inside: avoid;
                         }
 
                         @page {
@@ -1608,6 +1625,28 @@ export function PrintReconciliation({ sessionId, open, onOpenChange }: PrintReco
                                         <td className="py-1 px-0.5 text-center"></td>
                                     </tr>
                                 )}
+
+                                {/* Issued sub-category 4: Refund Vouchers */}
+                                {activeReport.issuedVouchers.refundVouchers?.map((v: any, i: number) => (
+                                    <tr key={`print-iss-rv-${i}`} className="border-b border-gray-300">
+                                        <td className="py-1 px-0.5 text-left pl-3">{v.type}</td>
+                                        <td className="py-1 px-0.5 text-right">{formatVal(v.amount)}</td>
+                                        <td className="py-1 px-0.5 text-right">-</td>
+                                        <td className="py-1 px-0.5 text-right">-</td>
+                                        <td className="py-1 px-0.5 text-center font-mono">{v.from || "-"}</td>
+                                        <td className="py-1 px-0.5 text-center">-</td>
+                                    </tr>
+                                ))}
+
+                                {/* Total Issued Section Row */}
+                                <tr className="font-extrabold border-y border-black bg-gray-50">
+                                    <td className="py-1 px-0.5 text-left">Total Issued</td>
+                                    <td className="py-1 px-0.5 text-right">{formatVal(totalIssuedSubtotal)}</td>
+                                    <td className="py-1 px-0.5 text-right"></td>
+                                    <td className="py-1 px-0.5 text-right"></td>
+                                    <td className="py-1 px-0.5 text-center"></td>
+                                    <td className="py-1 px-0.5 text-center"></td>
+                                </tr>
 
                                 <tr className="h-1"></tr>
 

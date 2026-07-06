@@ -109,3 +109,112 @@ export async function queuePosSalesExport(params?: {
     }
 }
 
+export async function getNetSalesSummaryReport(filters: {
+    locationId: string;
+    startDate?: string;
+    endDate?: string;
+    cashierUserId?: string;
+    summaryOnly?: boolean;
+    showSalesperson?: boolean;
+    showYear?: boolean;
+    showMonth?: boolean;
+    showDay?: boolean;
+    showDocument?: boolean;
+    showBrand?: boolean;
+    showDivision?: boolean;
+    showSalesTax?: boolean;
+    showCategory?: boolean;
+    showGender?: boolean;
+    showSilhouette?: boolean;
+    showArticle?: boolean;
+    showVariant?: boolean;
+}) {
+    try {
+        const queryParams = new URLSearchParams();
+        queryParams.append("locationId", filters.locationId);
+        if (filters.startDate) queryParams.append("startDate", filters.startDate);
+        if (filters.endDate) queryParams.append("endDate", filters.endDate);
+        if (filters.cashierUserId) queryParams.append("cashierUserId", filters.cashierUserId);
+        if (filters.summaryOnly !== undefined) queryParams.append("summaryOnly", String(filters.summaryOnly));
+        if (filters.showSalesperson !== undefined) queryParams.append("showSalesperson", String(filters.showSalesperson));
+        if (filters.showYear !== undefined) queryParams.append("showYear", String(filters.showYear));
+        if (filters.showMonth !== undefined) queryParams.append("showMonth", String(filters.showMonth));
+        if (filters.showDay !== undefined) queryParams.append("showDay", String(filters.showDay));
+        if (filters.showDocument !== undefined) queryParams.append("showDocument", String(filters.showDocument));
+        if (filters.showBrand !== undefined) queryParams.append("showBrand", String(filters.showBrand));
+        if (filters.showDivision !== undefined) queryParams.append("showDivision", String(filters.showDivision));
+        if (filters.showSalesTax !== undefined) queryParams.append("showSalesTax", String(filters.showSalesTax));
+        if (filters.showCategory !== undefined) queryParams.append("showCategory", String(filters.showCategory));
+        if (filters.showGender !== undefined) queryParams.append("showGender", String(filters.showGender));
+        if (filters.showSilhouette !== undefined) queryParams.append("showSilhouette", String(filters.showSilhouette));
+        if (filters.showArticle !== undefined) queryParams.append("showArticle", String(filters.showArticle));
+        if (filters.showVariant !== undefined) queryParams.append("showVariant", String(filters.showVariant));
+
+        const queryString = queryParams.toString();
+        const url = `/pos-sales/reports/net-sales-summary${queryString ? `?${queryString}` : ""}`;
+
+        const response = await authFetch(url, { method: "GET" });
+        return response.data;
+    } catch (error) {
+        console.error("Get net sales summary report error:", error);
+        return { status: false, data: [], message: "Failed to fetch net sales summary report" };
+    }
+}
+
+export async function queueNetSalesSummaryReportExport(filters: {
+    locationId: string;
+    startDate?: string;
+    endDate?: string;
+    cashierUserId?: string;
+    format: "xlsx" | "pdf";
+    summaryOnly?: boolean;
+    showSalesperson?: boolean;
+    showYear?: boolean;
+    showMonth?: boolean;
+    showDay?: boolean;
+    showDocument?: boolean;
+    showBrand?: boolean;
+    showDivision?: boolean;
+    showSalesTax?: boolean;
+    showCategory?: boolean;
+    showGender?: boolean;
+    showSilhouette?: boolean;
+    showArticle?: boolean;
+    showVariant?: boolean;
+}) {
+    try {
+        const response = await authFetch("/pos-sales/reports/net-sales-summary/export/queue", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Queue net sales summary report export error:", error);
+        return { status: false, message: "Failed to queue net sales summary report export" };
+    }
+}
+
+export async function getNetSalesSummaryReportExportStatus(jobId: string) {
+    try {
+        const response = await authFetch(`/pos-sales/reports/net-sales-summary/export/${jobId}/status`, {
+            method: "GET",
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Get net sales summary report export status error:", error);
+        return { status: false, message: "Failed to get net sales summary report export status" };
+    }
+}
+
+export async function getSalespersons(locationId: string) {
+    try {
+        const response = await authFetch(`/pos-sales/cashiers?locationId=${locationId}`, {
+            method: "GET",
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Get salespersons error:", error);
+        return { status: false, data: [], message: "Failed to fetch salespersons" };
+    }
+}
+

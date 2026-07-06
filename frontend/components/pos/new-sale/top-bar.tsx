@@ -1,11 +1,12 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import {
     ScanBarcode,
     ShoppingCart,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, cn } from "@/lib/utils";
 
 interface TopBarProps {
     itemCount: number;
@@ -28,15 +29,51 @@ export function NewSaleTopBar({
     onSelectProduct,
     searchInputRef,
 }: TopBarProps) {
+    const [activeIndex, setActiveIndex] = useState<number>(-1);
+
+    // Reset active index when search results or query change
+    useEffect(() => {
+        setActiveIndex(-1);
+    }, [searchResults, searchQuery]);
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (searchResults.length === 0) return;
+
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActiveIndex((prev) => (prev + 1) % searchResults.length);
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActiveIndex((prev) => (prev - 1 + searchResults.length) % searchResults.length);
+        } else if (e.key === "Enter") {
+            if (activeIndex >= 0 && activeIndex < searchResults.length) {
+                e.preventDefault();
+                onSelectProduct(searchResults[activeIndex]);
+                setActiveIndex(-1);
+            } else {
+                onSearchSubmit();
+            }
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            onSearchChange("");
+            setActiveIndex(-1);
+        }
+    };
+
     return (
         <div className="rounded-xl border-2 border-primary/30 bg-card p-4 shadow-sm relative z-50">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 {/* Left section: Label + Search + Actions */}
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-3 flex-1">
                     {/* PRODUCT ENTRY label */}
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                        Product Entry
-                    </span>
+                    <div className="flex flex-col">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                            Product Entry
+                        </span>
+                        <span className="text-[9px] font-medium text-primary uppercase font-mono mt-0.5">
+                            [F2] Search · [Arrows / Enter] Select
+                        </span>
+                    </div>
 
                     {/* Search Input with Autocomplete */}
                     <div className="relative flex-1 max-w-lg">
@@ -46,11 +83,7 @@ export function NewSaleTopBar({
                             placeholder="Scan Barcode / Search Product by Name or SKU..."
                             value={searchQuery}
                             onChange={(e) => onSearchChange(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                    onSearchSubmit();
-                                }
-                            }}
+                            onKeyDown={handleKeyDown}
                             className="pl-9 bg-muted/50 border-input h-10 w-full"
                         />
 
@@ -63,10 +96,13 @@ export function NewSaleTopBar({
                                     </div>
                                 ) : (
                                     <ul className="flex flex-col">
-                                        {searchResults.map((product) => (
+                                        {searchResults.map((product, idx) => (
                                             <li
                                                 key={product.id}
-                                                className="px-4 py-2 hover:bg-muted cursor-pointer flex items-center justify-between border-b border-border/50 last:border-0"
+                                                className={cn(
+                                                    "px-4 py-2 hover:bg-muted cursor-pointer flex items-center justify-between border-b border-border/50 last:border-0 transition-colors",
+                                                    idx === activeIndex && "bg-primary/10 border-l-4 border-l-primary"
+                                                )}
                                                 onClick={() => onSelectProduct(product)}
                                             >
                                                 <div className="flex flex-col">
@@ -107,7 +143,7 @@ export function NewSaleTopBar({
                     </div>
                 </div>
 
-                {/* Right section: Items Count (Stock Status and Tender Button removed) */}
+                {/* Right section: Items Count */}
                 <div className="flex items-center gap-6">
                     {/* Items in Cart */}
                     <div className="flex flex-col items-center gap-0.5 ml-auto">

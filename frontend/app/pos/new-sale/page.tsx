@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { PauseCircle, Clock, Truck, RotateCcw } from "lucide-react";
+import { PauseCircle, Clock, RotateCcw } from "lucide-react";
 import { HoldOrderModal } from "@/components/pos/hold-order-modal";
 import { usePosSettings } from "@/hooks/use-pos-settings";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -24,7 +24,6 @@ function computeLineItem(
     product: any,
     quantity: number,
     discountPercent: number,
-    isStockInTransit = false,
     defaultTaxPercent = 0,
 ): CartItem {
     // Step 1: Retail price is the unit price
@@ -63,7 +62,6 @@ function computeLineItem(
         total,
         inStock: product.inStock ?? true,
         stockQty: product.stockQty ?? 0,
-        isStockInTransit,
     };
 }
 
@@ -81,7 +79,6 @@ export default function NewSalePage() {
     const { settings } = usePosSettings();
     const { hasPermission } = useAuth();
     const canDiscount = hasPermission('pos.sale.item-discount');
-    const canTransit = hasPermission('pos.sale.transit-override');
     const canHold = hasPermission('pos.hold.create');
     const canViewHolds = hasPermission('pos.hold.view');
     const canResumeHold = hasPermission('pos.hold.resume');
@@ -127,14 +124,22 @@ export default function NewSalePage() {
         }
         setIsHolding(true);
         try {
+            let holdExpiresAt: string | undefined = undefined;
+            if (holdUntilTime) {
+                const [h, m] = holdUntilTime.split(':').map(Number);
+                const target = new Date();
+                target.setHours(h, m, 0, 0);
+                holdExpiresAt = target.toISOString();
+            }
+
             const payload = {
+                holdExpiresAt,
                 items: cartItems.map(item => ({
                     itemId: item.id,
                     quantity: item.quantity,
                     unitPrice: item.price,
                     discountPercent: item.discountPercent,
                     taxPercent: item.taxPercent,
-                    isStockInTransit: item.isStockInTransit || false,
                 })),
             };
             const res = await authFetch("/pos-sales/orders/hold", { method: "POST", body: payload });
@@ -180,7 +185,6 @@ export default function NewSalePage() {
                     total: Number(oi.lineTotal),
                     inStock: true,
                     stockQty: 999,
-                    isStockInTransit: oi.isStockInTransit || false,
                 }));
                 setCartItems(resumedItems);
                 setResumedHoldOrderId(order.id);
@@ -232,19 +236,19 @@ export default function NewSalePage() {
                     const existingIndex = prev.findIndex((i) => i.id === product.id);
                     if (existingIndex > -1) {
                         const existing = prev[existingIndex];
-                        if (existing.quantity + 1 > product.stockQty && !existing.isStockInTransit) {
+                        if (existing.quantity + 1 > product.stockQty) {
                             toast.error(`Only ${product.stockQty} units available in stock`);
                             return prev;
                         }
                         setTimeout(() => setFocusedCartIndex(existingIndex), 0);
                         return prev.map((i) =>
                             i.id === product.id
-                                ? computeLineItem(product, i.quantity + 1, i.discountPercent, i.isStockInTransit, defTax)
+                                ? computeLineItem(product, i.quantity + 1, i.discountPercent, defTax)
                                 : i
                         );
                     }
                     setTimeout(() => setFocusedCartIndex(prev.length), 0);
-                    return [...prev, computeLineItem(product, 1, Number(product.effectiveDiscountPercent ?? product.discountRate) || 0, false, defTax)];
+                    return [...prev, computeLineItem(product, 1, Number(product.effectiveDiscountPercent ?? product.discountRate) || 0, defTax)];
                 });
             } else {
                 toast.error(res.data?.message || "Item not found");
@@ -263,19 +267,19 @@ export default function NewSalePage() {
             const existingIndex = prev.findIndex((i) => i.id === product.id);
             if (existingIndex > -1) {
                 const existing = prev[existingIndex];
-                if (existing.quantity + 1 > product.stockQty && !existing.isStockInTransit) {
+                if (existing.quantity + 1 > product.stockQty) {
                     toast.error(`Only ${product.stockQty} units available in stock`);
                     return prev;
                 }
                 setTimeout(() => setFocusedCartIndex(existingIndex), 0);
                 return prev.map((i) =>
                     i.id === product.id
-                        ? computeLineItem(product, i.quantity + 1, i.discountPercent, i.isStockInTransit, defTax)
+                        ? computeLineItem(product, i.quantity + 1, i.discountPercent, defTax)
                         : i
                 );
             }
             setTimeout(() => setFocusedCartIndex(prev.length), 0);
-            return [...prev, computeLineItem(product, 1, Number(product.effectiveDiscountPercent ?? product.discountRate) || 0, false, defTax)];
+            return [...prev, computeLineItem(product, 1, Number(product.effectiveDiscountPercent ?? product.discountRate) || 0, defTax)];
         });
         setSearchQuery("");
         setSearchResults([]);
@@ -287,7 +291,7 @@ export default function NewSalePage() {
         setCartItems((prev) =>
             prev.map((item) => {
                 if (item.id !== id) return item;
-                if (quantity > item.stockQty && !item.isStockInTransit) {
+                if (quantity > item.stockQty) {
                     toast.error(`Only ${item.stockQty} units available in stock`);
                     return item;
                 }
@@ -371,16 +375,6 @@ export default function NewSalePage() {
         setCartItems((prev) => prev.filter((item) => item.id !== id));
     }, []);
 
-    // ─── Toggle stock-in-transit ────────────────────────────────────
-    const handleToggleTransit = useCallback((id: string) => {
-        setCartItems((prev) =>
-            prev.map((item) =>
-                item.id === id
-                    ? { ...item, isStockInTransit: !item.isStockInTransit }
-                    : item
-            )
-        );
-    }, []);
 
     // ─── Checkout ───────────────────────────────────────────────────
     const handleCheckout = useCallback(() => {
@@ -562,20 +556,13 @@ export default function NewSalePage() {
                         return;
                     }
 
-                    // T or t -> Toggle transit flag
-                    if ((e.key === "t" || e.key === "T") && canTransit) {
-                        e.preventDefault();
-                        handleToggleTransit(item.id);
-                        toast.success(`Toggled transit for ${item.name}`);
-                        return;
-                    }
                 }
             }
         };
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [cartItems, isProcessing, showHoldOrders, showShortcutsHelp, focusedCartIndex, handleHold, loadHoldOrders, handleQuantityChange, handleRemoveItem, handleToggleTransit, canTransit, canHold, canViewHolds, handleCheckout]);
+    }, [cartItems, isProcessing, showHoldOrders, showShortcutsHelp, focusedCartIndex, handleHold, loadHoldOrders, handleQuantityChange, handleRemoveItem, canHold, canViewHolds, handleCheckout]);
 
     // ─── Debounced Live Search ──────────────────────────────────────
     useEffect(() => {
@@ -606,7 +593,6 @@ export default function NewSalePage() {
     const totalDiscount = cartItems.reduce((acc, item) => acc + item.discountAmount, 0);
     const totalTax = cartItems.reduce((acc, item) => acc + item.taxAmount, 0);
     const grandTotal = cartItems.reduce((acc, item) => acc + item.total, 0);
-    const hasTransitItems = cartItems.some(i => i.isStockInTransit);
 
     return (
         <div className="space-y-4 mt-4">
@@ -635,15 +621,6 @@ export default function NewSalePage() {
                 <span className="text-border">|</span>
                 <span className="px-1.5 py-0.5 rounded bg-muted">+/-</span>
                 <span>Qty</span>
-                {hasTransitItems && (
-                    <>
-                        <span className="text-border">|</span>
-                        <span className="flex items-center gap-1 text-amber-600">
-                            <Truck className="h-3 w-3" />
-                            {cartItems.filter(i => i.isStockInTransit).length} item(s) in transit
-                        </span>
-                    </>
-                )}
             </div>
 
             {/* Top bar */}
@@ -664,7 +641,6 @@ export default function NewSalePage() {
                 onQuantityChange={handleQuantityChange}
                 onDiscountChange={canDiscount ? handleDiscountChange : undefined}
                 onRemoveItem={handleRemoveItem}
-                onToggleTransit={canTransit ? handleToggleTransit : undefined}
                 focusedIndex={focusedCartIndex}
             />
 
@@ -706,12 +682,6 @@ export default function NewSalePage() {
                                     </div>
                                     <div className="text-xs text-muted-foreground">
                                         {order.items?.length || 0} item(s) · Total: {formatCurrency(Number(order.grandTotal))}
-                                        {order.items?.some((i: any) => i.isStockInTransit) && (
-                                            <Badge variant="outline" className="ml-2 text-amber-600 border-amber-400 text-[10px]">
-                                                <Truck className="h-2.5 w-2.5 mr-1" />
-                                                Transit
-                                            </Badge>
-                                        )}
                                     </div>
                                     <div className="flex gap-2">
                                         <Button
@@ -783,7 +753,6 @@ export default function NewSalePage() {
                             <div className="flex justify-between items-center"><span className="text-muted-foreground">Decrement Qty</span><kbd className="px-1.5 py-0.5 bg-muted border rounded text-[10px] font-mono">-</kbd></div>
                             <div className="flex justify-between items-center"><span className="text-muted-foreground">Delete Item</span><kbd className="px-1.5 py-0.5 bg-muted border rounded text-[10px] font-mono">Del / Backspace</kbd></div>
                             <div className="flex justify-between items-center"><span className="text-muted-foreground">Edit Item Discount %</span><kbd className="px-1.5 py-0.5 bg-muted border rounded text-[10px] font-mono">*</kbd></div>
-                            {canTransit && <div className="flex justify-between items-center"><span className="text-muted-foreground">Toggle Stock Transit</span><kbd className="px-1.5 py-0.5 bg-muted border rounded text-[10px] font-mono">T</kbd></div>}
                         </div>
                     </div>
                     <div className="border-t pt-2.5 text-[10px] text-muted-foreground text-center">

@@ -134,7 +134,7 @@ const quickActions = [
     color: "from-purple-600 to-pink-600",
   },
   {
-    title: "Stock Check",
+    title: "Outlet Request",
     description: "View product availability",
     icon: Package,
     href: "/pos/inventory/view",

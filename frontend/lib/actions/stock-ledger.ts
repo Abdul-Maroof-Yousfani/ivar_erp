@@ -75,6 +75,14 @@ export async function getStockActivityReport(filters: {
     startDate?: string;
     endDate?: string;
     search?: string;
+    summaryOnly?: boolean;
+    showBrand?: boolean;
+    showDivision?: boolean;
+    showCategory?: boolean;
+    showGender?: boolean;
+    showSilhouette?: boolean;
+    showArticle?: boolean;
+    showVariant?: boolean;
 }) {
     try {
         const queryParams = new URLSearchParams();
@@ -82,6 +90,14 @@ export async function getStockActivityReport(filters: {
         if (filters.startDate) queryParams.append("startDate", filters.startDate);
         if (filters.endDate) queryParams.append("endDate", filters.endDate);
         if (filters.search) queryParams.append("search", filters.search);
+        if (filters.summaryOnly !== undefined) queryParams.append("summaryOnly", String(filters.summaryOnly));
+        if (filters.showBrand !== undefined) queryParams.append("showBrand", String(filters.showBrand));
+        if (filters.showDivision !== undefined) queryParams.append("showDivision", String(filters.showDivision));
+        if (filters.showCategory !== undefined) queryParams.append("showCategory", String(filters.showCategory));
+        if (filters.showGender !== undefined) queryParams.append("showGender", String(filters.showGender));
+        if (filters.showSilhouette !== undefined) queryParams.append("showSilhouette", String(filters.showSilhouette));
+        if (filters.showArticle !== undefined) queryParams.append("showArticle", String(filters.showArticle));
+        if (filters.showVariant !== undefined) queryParams.append("showVariant", String(filters.showVariant));
 
         const queryString = queryParams.toString();
         const url = `/stock-ledger/activity-report${queryString ? `?${queryString}` : ""}`;
@@ -91,5 +107,43 @@ export async function getStockActivityReport(filters: {
     } catch (error) {
         console.error("Get stock activity report error:", error);
         return { status: false, data: [], message: "Failed to fetch stock activity report" };
+    }
+}
+
+export async function queueStockActivityReportExport(filters: {
+    locationId: string;
+    startDate?: string;
+    endDate?: string;
+    format: "xlsx" | "pdf";
+    summaryOnly?: boolean;
+    showBrand?: boolean;
+    showDivision?: boolean;
+    showCategory?: boolean;
+    showGender?: boolean;
+    showSilhouette?: boolean;
+    showArticle?: boolean;
+    showVariant?: boolean;
+}) {
+    try {
+        const response = await authFetch("/stock-ledger/activity-report/export/queue", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Queue stock activity report export error:", error);
+        return { status: false, message: "Failed to queue stock activity report export" };
+    }
+}
+
+export async function getStockActivityReportExportStatus(jobId: string) {
+    try {
+        const response = await authFetch(`/stock-ledger/activity-report/export/${jobId}/status`, {
+            method: "GET",
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Get stock activity report export status error:", error);
+        return { status: false, message: "Failed to get stock activity report export status" };
     }
 }

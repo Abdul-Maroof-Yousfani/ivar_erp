@@ -14,9 +14,10 @@ import { FbrService } from './fbr.service';
 import { CustomerModule } from '../sales/customer/customer.module';
 import { PosConfigModule } from '../pos-config/pos-config.module';
 import { NotificationsModule } from '../notifications/notifications.module';
-import { PosSalesExportController } from './pos-sales-export.controller';
-import { PosSalesExportService } from './pos-sales-export.service';
-import { PosSalesExportProcessor } from './pos-sales-export.processor';
+import { ExportHistoryModule } from '../warehouse/export-history/export-history.module';
+import { UploadModule } from '../upload/upload.module';
+import { NetSalesSummaryExportService } from './net-sales-summary-export.service';
+import { NetSalesSummaryExportProcessor } from './net-sales-summary-export.processor';
 
 @Module({
     imports: [
@@ -25,16 +26,14 @@ import { PosSalesExportProcessor } from './pos-sales-export.processor';
         CustomerModule,
         PosConfigModule,
         NotificationsModule,
+        ExportHistoryModule,
+        UploadModule,
         BullModule.registerQueue(
             { name: 'sales-history-upload' },
-            { name: 'pos-sales-export' }
+            { name: 'net-sales-summary-export' }
         ),
     ],
-    controllers: [
-        PosSalesController,
-        SalesHistoryBulkUploadController,
-        PosSalesExportController
-    ],
+    controllers: [PosSalesController, SalesHistoryBulkUploadController],
     providers: [
         PosSalesService,
         FbrService,
@@ -43,10 +42,10 @@ import { PosSalesExportProcessor } from './pos-sales-export.processor';
         SalesHistoryCsvParserService,
         SalesHistoryValidatorService,
         UploadEventsService,
-        PosSalesExportService,
-        PosSalesExportProcessor,
+        NetSalesSummaryExportService,
+        NetSalesSummaryExportProcessor,
     ],
-    exports: [PosSalesService],
+    exports: [PosSalesService, NetSalesSummaryExportService],
 })
 export class PosSalesModule { }
 

@@ -55,6 +55,14 @@ const VOUCHER_TYPES: { value: VoucherType; label: string; icon: React.ElementTyp
 // Types available for manual issuance (EXCHANGE and REFUND are system-only)
 const ISSUABLE_TYPES = VOUCHER_TYPES.filter(t => t.value !== "EXCHANGE" && t.value !== "REFUND");
 
+const isClaimVoucher = (v: Voucher) => {
+    if (v.claims && v.claims.length > 0) return true;
+    if (v.description && /approved claim/i.test(v.description)) return true;
+    return false;
+};
+
+const CLAIM_TYPE_INFO = { value: "CLAIM" as any, label: "Claim", icon: Ticket, color: "text-purple-600" };
+
 function voucherStatus(v: Voucher) {
     if (v.voucherType === "REFUND") return { label: "Cash Refunded", cls: "bg-red-500/10 text-red-700 border-red-300" };
     if (v.isDeleted) return { label: "Voided", cls: "bg-muted text-muted-foreground border-border" };
@@ -181,7 +189,14 @@ export default function PosVouchersPage() {
 
     const filtered = activeTab === "ALL"
         ? vouchers
-        : vouchers.filter(v => v.voucherType === activeTab);
+        : activeTab === "CLAIM"
+        ? vouchers.filter(isClaimVoucher)
+        : vouchers.filter(v => {
+            if (activeTab === "EXCHANGE") {
+                return v.voucherType === "EXCHANGE" && !isClaimVoucher(v);
+            }
+            return v.voucherType === activeTab;
+        });
 
     // ── Handlers ─────────────────────────────────────────────────
     const handleSingleIssue = async () => {
@@ -428,11 +443,22 @@ export default function PosVouchersPage() {
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-3">
                     <TabsList className="w-full md:w-auto flex flex-wrap h-auto">
                         <TabsTrigger value="ALL">All ({vouchers.length})</TabsTrigger>
-                        {VOUCHER_TYPES.map(({ value, label }) => (
-                            <TabsTrigger key={value} value={value}>
-                                {label} ({vouchers.filter(v => v.voucherType === value).length})
-                            </TabsTrigger>
-                        ))}
+                        {VOUCHER_TYPES.map(({ value, label }) => {
+                            const count = vouchers.filter(v => {
+                                if (value === "EXCHANGE") {
+                                    return v.voucherType === "EXCHANGE" && !isClaimVoucher(v);
+                                }
+                                return v.voucherType === value;
+                            }).length;
+                            return (
+                                <TabsTrigger key={value} value={value}>
+                                    {label} ({count})
+                                </TabsTrigger>
+                            );
+                        })}
+                        <TabsTrigger value="CLAIM">
+                            Claim ({vouchers.filter(isClaimVoucher).length})
+                        </TabsTrigger>
                     </TabsList>
                     
                     <div className="flex items-center gap-2 self-end md:self-auto px-1">
@@ -463,6 +489,7 @@ export default function PosVouchersPage() {
                                         <TableHead>Code</TableHead>
                                         <TableHead>Type</TableHead>
                                         <TableHead>Description</TableHead>
+                                        <TableHead>Issued From</TableHead>
                                         <TableHead className="text-right">Value</TableHead>
                                         <TableHead>Expires</TableHead>
                                         <TableHead>Issued</TableHead>
@@ -473,7 +500,8 @@ export default function PosVouchersPage() {
                                 <TableBody>
                                     {filtered.map((v) => {
                                         const st       = voucherStatus(v);
-                                        const typeInfo = VOUCHER_TYPES.find(t => t.value === v.voucherType);
+                                        const isClaim  = isClaimVoucher(v);
+                                        const typeInfo = isClaim ? CLAIM_TYPE_INFO : VOUCHER_TYPES.find(t => t.value === v.voucherType);
                                         const Icon     = typeInfo?.icon ?? Ticket;
                                         return (
                                             <TableRow key={v.id}>
@@ -494,6 +522,16 @@ export default function PosVouchersPage() {
                                                 </TableCell>
                                                 <TableCell className="text-sm text-muted-foreground max-w-40 truncate">
                                                     {v.description ? v.description : v.companyName ? `${v.companyName}${v.companyGlCode ? ` (${v.companyGlCode})` : ""}` : "—"}
+                                                </TableCell>
+                                                <TableCell className="text-sm">
+                                                    {v.issuedByLocation ? (
+                                                        <div className="space-y-0.5">
+                                                            <div className="font-semibold text-foreground truncate max-w-40">{v.issuedByLocation.name}</div>
+                                                            <div className="text-[10px] text-muted-foreground font-mono">{v.issuedByLocation.code}</div>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-muted-foreground italic text-xs">Global</span>
+                                                    )}
                                                 </TableCell>
                                                  <TableCell className="text-right font-mono">
                                                      <div className="font-semibold">{formatCurrency(Number(v.faceValue))}</div>

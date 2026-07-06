@@ -49,6 +49,11 @@ interface PrintVoucherReceiptProps {
         expiresAt?: string | null;
         createdAt?: string;
         locations?: Array<{ location: { name: string; code: string } }>;
+        sourceOrder?: {
+            orderNumber: string;
+            returnNumber?: string | null;
+            refundNumber?: string | null;
+        } | null;
     };
     vouchers?: Array<{
         code: string;
@@ -60,6 +65,11 @@ interface PrintVoucherReceiptProps {
         expiresAt?: string | null;
         createdAt?: string;
         locations?: Array<{ location: { name: string; code: string } }>;
+        sourceOrder?: {
+            orderNumber: string;
+            returnNumber?: string | null;
+            refundNumber?: string | null;
+        } | null;
     }>;
     isLoading?: boolean;
     autoPrint?: boolean;
@@ -306,8 +316,6 @@ export function PrintVoucherReceipt({
     );
 }
 
-// ── VoucherReceiptBody ────────────────────────────────────────────────────────
-
 interface VoucherReceiptBodyProps {
     storeName: string;
     storeAddress: string;
@@ -323,6 +331,11 @@ interface VoucherReceiptBodyProps {
         expiresAt?: string | null;
         createdAt?: string;
         locations?: Array<{ location: { name: string; code: string } }>;
+        sourceOrder?: {
+            orderNumber: string;
+            returnNumber?: string | null;
+            refundNumber?: string | null;
+        } | null;
     };
 }
 
@@ -348,21 +361,18 @@ function VoucherReceiptBody({
 
     const voucherTypeLabel = voucher.voucherType.replace(/_/g, " ");
 
-    // Always show the exact locations the voucher is valid at.
-    // "All Locations" only when zero restrictions are set — never collapse
-    // a restricted list, as that causes customer disputes at non-valid outlets.
     const locationList = voucher.locations ?? [];
     const isUnrestricted = locationList.length === 0;
     const locationNames  = locationList.map(l => l.location.name);
 
     return (
-        <div className="font-mono text-xs w-full max-w-[72.1mm] mx-auto space-y-2">
+        <div className="font-mono text-xs w-full max-w-[72.1mm] mx-auto space-y-1.5">
 
             {/* ── Store Header ── */}
             <div className="text-center space-y-0.5">
-                <p className="font-black text-sm leading-tight uppercase tracking-wide">{storeName}</p>
+                <p className="font-black text-xs leading-tight uppercase tracking-wide">{storeName}</p>
                 {(storeAddress || storePhone) && (
-                    <p className="text-[11px] leading-snug">
+                    <p className="text-[10px] leading-tight opacity-80">
                         {storeAddress}{storeAddress && storePhone ? " | " : ""}{storePhone}
                     </p>
                 )}
@@ -371,45 +381,37 @@ function VoucherReceiptBody({
             <Separator />
 
             {/* ── Voucher Title ── */}
-            <div className="text-center space-y-2 py-2">
-                <div className="flex items-center justify-center gap-2">
-                    <Gift className="h-6 w-6 text-zinc-950" />
-                    <p className="font-bold text-base tracking-widest uppercase">{voucherTypeLabel} Voucher</p>
+            <div className="text-center py-0.5">
+                <div className="flex items-center justify-center gap-1.5">
+                    <Gift className="h-4 w-4 text-zinc-950" />
+                    <p className="font-bold text-sm tracking-wider uppercase">{voucherTypeLabel} Voucher</p>
                 </div>
             </div>
 
             <Separator />
 
             {/* ── Voucher Code (Large & Prominent) ── */}
-            <div className="text-center space-y-3 py-4 border-2 border-dashed border-zinc-950 rounded-lg bg-zinc-50">
-                <p className="text-[10px] text-zinc-800 uppercase tracking-wide">Voucher Code</p>
-                <p className="font-black text-3xl tracking-widest text-zinc-950">{voucher.code}</p>
+            <div className="text-center space-y-2 py-3 border border-dashed border-zinc-950 rounded bg-zinc-50">
+                <p className="text-[9px] text-zinc-800 uppercase tracking-wide">Voucher Code</p>
+                <p className="font-black text-xl tracking-widest text-zinc-955">{voucher.code}</p>
                 
                 {/* QR Code for easy scanning */}
-                <div className="flex justify-center pt-2">
+                <div className="flex justify-center pt-0.5">
                     <QRCodeSVG
                         value={voucher.code}
-                        size={120}
+                        size={100}
                         level="M"
                         includeMargin={false}
                     />
                 </div>
-                <p className="text-[9px] text-zinc-800">Scan or enter code at checkout</p>
             </div>
 
             <Separator />
 
             {/* ── Voucher Value ── */}
-            <div className="text-center space-y-1 py-3 bg-zinc-100 rounded-lg border border-zinc-200">
-                <p className="text-[10px] text-zinc-800 uppercase tracking-wide">Voucher Value</p>
-                <p className="font-black text-4xl tracking-wider text-zinc-950">Rs. {fmt(Number(voucher.faceValue))}</p>
-                {/* {voucher.discount !== undefined && Number(voucher.discount) > 0 && (
-                    <div className="text-[10px] text-muted-foreground mt-1 flex justify-center gap-2 font-bold">
-                        <span>Disc: Rs. {fmt(Number(voucher.discount))}</span>
-                        <span>•</span>
-                        <span>Paid: Rs. {fmt(Number(voucher.faceValue) - Number(voucher.discount))}</span>
-                    </div>
-                )} */}
+            <div className="text-center py-2 bg-zinc-100 rounded border border-zinc-200">
+                <p className="text-[9px] text-zinc-800 uppercase tracking-wide">Voucher Value</p>
+                <p className="font-black text-2xl tracking-wider text-zinc-955">Rs. {fmt(Number(voucher.faceValue))}</p>
             </div>
 
             <Separator />
@@ -418,10 +420,22 @@ function VoucherReceiptBody({
             <div className="space-y-0.5 text-[11px]">
                 <Row label="Issued On" value={fmtDate(voucher.createdAt)} />
                 <Row label="Expires On" value={voucher.expiresAt ? fmtDate(voucher.expiresAt) : "No Expiry"} />
+                
+                {/* Source return / sales invoice details */}
+                {voucher.sourceOrder?.orderNumber && (
+                    <Row label="Against Invoice" value={voucher.sourceOrder.orderNumber} />
+                )}
+                {voucher.sourceOrder?.returnNumber && (
+                    <Row label="Against Return" value={voucher.sourceOrder.returnNumber} />
+                )}
+                {voucher.sourceOrder?.refundNumber && (
+                    <Row label="Against Refund" value={voucher.sourceOrder.refundNumber} />
+                )}
+
                 {terminalName && <Row label="Terminal" value={terminalName} />}
                 {voucher.companyName && <Row label="Company" value={voucher.companyName} />}
                 {voucher.description && (
-                    <div className="pt-1">
+                    <div className="pt-0.5">
                         <p className="text-[10px] text-zinc-800">Note:</p>
                         <p className="text-[11px] leading-snug">{voucher.description}</p>
                     </div>
@@ -431,14 +445,14 @@ function VoucherReceiptBody({
             <Separator />
 
             {/* ── Redemption Locations ── */}
-            <div className="space-y-1">
+            <div className="space-y-0.5">
                 <p className="text-[10px] text-zinc-800 uppercase tracking-wide">
                     Valid At {!isUnrestricted && <span className="normal-case">({locationNames.length} outlets)</span>}
                 </p>
                 {isUnrestricted ? (
                     <p className="text-[11px] font-semibold">All Locations</p>
                 ) : (
-                    <ul className="space-y-0" style={{ columns: locationNames.length > 10 ? 2 : 1, columnGap: "4px" }}>
+                    <ul className="space-y-0" style={{ columns: locationNames.length > 5 ? 2 : 1, columnGap: "4px" }}>
                         {locationNames.map(name => (
                             <li
                                 key={name}
@@ -454,49 +468,17 @@ function VoucherReceiptBody({
 
             <Separator />
 
-            {/* ── Terms & Conditions ── */}
-            <div className="space-y-1 text-[9px] text-zinc-800 leading-snug">
-                <p className="font-bold text-[10px] text-foreground uppercase tracking-wide">Terms & Conditions</p>
-                <ul className="list-disc list-inside space-y-0.5 pl-1">
-                    {voucher.voucherType === "REFUND" ? (
-                        <>
-                            <li>This is a RECORD-ONLY voucher for cash refund</li>
-                            <li>Cash has already been refunded to customer</li>
-                            <li>This voucher CANNOT be redeemed or used</li>
-                            <li>Keep for your records only</li>
-                        </>
-                    ) : (
-                        <>
-                            <li>This voucher can be redeemed for merchandise only</li>
-                            <li>Cannot be exchanged for cash</li>
-                            {voucher.voucherType === "EXCHANGE" ? (
-                                <>
-                                    <li>Valid only at the issuing location</li>
-                                    <li>No credit voucher will be issued for unused balance</li>
-                                </>
-                            ) : (
-                                <li>Unused balance will be issued as a credit voucher</li>
-                            )}
-                            <li>Not valid with other promotions unless specified</li>
-                            {voucher.expiresAt && <li>Must be used before expiry date</li>}
-                            <li>Lost or stolen vouchers cannot be replaced</li>
-                        </>
-                    )}
-                </ul>
-            </div>
-
-            <Separator />
-
             {/* ── Footer Message ── */}
-            <div className="text-center space-y-1 pt-2">
-                <p className="text-[11px] font-semibold">Thank you for choosing us!</p>
+            <div className="text-center space-y-0.5 pt-1">
+                <p className="text-[10px] font-semibold">Thank you for choosing us!</p>
                 <p className="text-[9px] text-zinc-800">
                     For assistance, please contact the store
                 </p>
+                <p className="text-[9px] text-zinc-500 pt-0.5">Software by Innovative Network</p>
             </div>
 
             {/* ── Decorative border ── */}
-            <div className="text-center text-[10px] text-zinc-800 pt-2">
+            <div className="text-center text-[10px] text-zinc-800 pt-1">
                 ═══════════════════════════════
             </div>
         </div>

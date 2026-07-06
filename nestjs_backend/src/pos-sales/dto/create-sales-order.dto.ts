@@ -58,10 +58,6 @@ export class SalesOrderItemDto {
     @IsNumber()
     @Min(0)
     promoDiscountAmount?: number;
-
-    @ApiPropertyOptional({ description: 'Mark item as stock in transit (customer ordered but stock not yet at location)' })
-    @IsOptional()
-    isStockInTransit?: boolean;
 }
 
 // ── Multi-tender item ────────────────────────────────────────────────────
@@ -90,6 +86,12 @@ export class TenderItemDto {
     @IsOptional()
     @IsString()
     voucherId?: string;
+
+    @ApiPropertyOptional({ description: 'Voucher face value (total amount of the voucher)' })
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    voucherFaceValue?: number;
 }
 
 // ── Alliance / bank card meta ─────────────────────────────────────────────
@@ -248,6 +250,11 @@ export class CreateSalesOrderDto {
     @IsOptional()
     @IsString()
     holdOrderId?: string;
+
+    @ApiPropertyOptional({ description: 'Specific time at which hold expires' })
+    @IsOptional()
+    @IsString()
+    holdExpiresAt?: string;
 
     @ApiPropertyOptional({ description: 'Flag to indicate this is a credit sale (customer will pay later)' })
     @IsOptional()

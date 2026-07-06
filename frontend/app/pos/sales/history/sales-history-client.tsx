@@ -362,7 +362,6 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
                     taxAmount:       Number(oi.taxAmount),
                     total:           Number(oi.lineTotal),
                     inStock: true, stockQty: 999,
-                    isStockInTransit: oi.isStockInTransit || false,
                 }));
                 sessionStorage.setItem("pos_resume_cart", JSON.stringify(cartItems));
                 toast.success(`Resuming ${resumed.orderNumber}`);
@@ -686,7 +685,11 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
             {/* ── Return slip ── */}
             {showReturnPrint && selectedOrder && (
                 <PrintReturnReceipt
-                    returnRef={selectedOrder?.orderNumber ?? ""}
+                    returnRef={
+                        isRefundPrint
+                            ? (returnDetails?.refundNumber || selectedOrder?.refundNumber || selectedOrder?.orderNumber || "")
+                            : (returnDetails?.returnNumber || selectedOrder?.returnNumber || selectedOrder?.orderNumber || "")
+                    }
                     isRefund={isRefundPrint}
                     isAlliance={!!selectedOrder?.alliance}
                     originalOrders={[{ orderNumber: selectedOrder?.orderNumber ?? "", grandTotal: Number(selectedOrder?.grandTotal ?? 0) }]}

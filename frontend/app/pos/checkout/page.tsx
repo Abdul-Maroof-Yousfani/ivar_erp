@@ -45,7 +45,7 @@ export interface AppliedCoupon {
     id: string; code: string; discountType: string;
     discountValue: number; discountAmount: number; description?: string;
 }
-export interface Tender { method: string; amount: number; cardLast4?: string; slipNo?: string; voucherId?: string; }
+export interface Tender { method: string; amount: number; cardLast4?: string; slipNo?: string; voucherId?: string; voucherFaceValue?: number; }
 export interface Customer { id: string; name: string; code: string; contactNo?: string; address?: string; }
 export type DiscountMode = "none" | "promo" | "coupon" | "alliance" | "manual";
 
@@ -345,7 +345,7 @@ export default function CheckoutPage() {
     }, 0);
 
     const subtotalAfterItems = subtotal - itemDiscounts;
-    
+
     const defaultItemTax = cartItems.reduce((acc, i) => {
         const taxDivisor = 1 + (i.taxPercent / 100);
         const wostPerUnit = i.price / taxDivisor;
@@ -356,7 +356,10 @@ export default function CheckoutPage() {
         return acc + (Math.round(afterDiscount * (i.taxPercent / 100) * 100) / 100);
     }, 0);
 
-    const grandTotalBeforeManual = Math.round(subtotal - itemDiscounts + defaultItemTax + FBR_POS_FEE);
+    const hasFbrInfo = !!(user?.terminal?.location?.fbrEnabled && user?.terminal?.location?.fbrNtn);
+    const activeFbrFee = hasFbrInfo ? FBR_POS_FEE : 0;
+
+    const grandTotalBeforeManual = Math.round(subtotal - itemDiscounts + defaultItemTax + activeFbrFee);
 
     let orderDiscount = 0;
     let finalItemDiscounts = itemDiscounts;
@@ -448,7 +451,7 @@ export default function CheckoutPage() {
     }
 
     // Grand total includes FBR POS Fee
-    const grandTotal = Math.round(Math.max(0, subtotal - totalDiscount + itemTax) + FBR_POS_FEE);
+    const grandTotal = Math.round(Math.max(0, subtotal - totalDiscount + itemTax) + activeFbrFee);
     const totalPaid = tenders.reduce((a, t) => a + t.amount, 0);
     const balanceDue = Math.max(0, grandTotal - totalPaid);
     const changeAmount = Math.max(0, totalPaid - grandTotal);
@@ -591,7 +594,13 @@ export default function CheckoutPage() {
         }
         const amount = Math.min(tenderAmount, validatedVoucher.faceValue);
         setAppliedVouchers(prev => [...prev, { voucherId: validatedVoucher.id, code: validatedVoucher.code, amount }]);
-        setTenders(prev => [...prev, { method: "voucher", amount, slipNo: validatedVoucher.code, voucherId: validatedVoucher.id }]);
+        setTenders(prev => [...prev, { 
+            method: "voucher", 
+            amount, 
+            slipNo: validatedVoucher.code, 
+            voucherId: validatedVoucher.id,
+            voucherFaceValue: validatedVoucher.faceValue
+        }]);
         setVoucherCode("");
         setValidatedVoucher(null);
         setTenderAmount(0);
@@ -614,7 +623,6 @@ export default function CheckoutPage() {
                 items: cartItems.map(item => ({
                     itemId: item.id, quantity: item.quantity, unitPrice: item.price,
                     discountPercent: item.discountPercent, taxPercent: item.taxPercent,
-                    isStockInTransit: item.isStockInTransit || false,
                 })),
             };
             const res = await authFetch("/pos-sales/orders/hold", { method: "POST", body: payload });
@@ -836,8 +844,8 @@ export default function CheckoutPage() {
         const handler = (e: KeyboardEvent) => {
             const activeEl = document.activeElement;
             const isInput = activeEl && (
-                activeEl.tagName === "INPUT" || 
-                activeEl.tagName === "TEXTAREA" || 
+                activeEl.tagName === "INPUT" ||
+                activeEl.tagName === "TEXTAREA" ||
                 activeEl.tagName === "SELECT" ||
                 activeEl.getAttribute("contenteditable") === "true"
             );
@@ -1040,9 +1048,9 @@ export default function CheckoutPage() {
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
     }, [
-        balanceDue, isSubmitting, handleConfirm, clearDiscount, tenderMethod, 
-        discountMode, selectedAlliance, isGiftReceipt, canHold, cartItems, 
-        isHolding, handleHold, selectedCustomer, handleCreditSale, 
+        balanceDue, isSubmitting, handleConfirm, clearDiscount, tenderMethod,
+        discountMode, selectedAlliance, isGiftReceipt, canHold, cartItems,
+        isHolding, handleHold, selectedCustomer, handleCreditSale,
         showShortcutsHelp, showReceiptPreview, showHoldModal, router
     ]);
 
@@ -1148,6 +1156,11 @@ export default function CheckoutPage() {
                                 toast.error("Alliance discount cannot be applied when cash payment is added.");
                                 return;
                             }
+                            // Clear any previously added tenders (e.g. bank_transfer) so the
+                            // amount resets against the new alliance-discounted grand total
+                            setTenders([]);
+                            setAppliedVouchers([]);
+                            setTenderAmount(0);
                             clearDiscount();
                             setSelectedAlliance(a);
                             setDiscountMode("alliance");
@@ -1199,7 +1212,7 @@ export default function CheckoutPage() {
                             selectedAlliance={selectedAlliance}
                             orderDiscount={orderDiscount}
                             itemTax={itemTax}
-                            fbrPosFee={FBR_POS_FEE}
+                            fbrPosFee={activeFbrFee}
                             grandTotal={grandTotal}
                             fmtCurrency={fmtCurrency}
                         />
@@ -1270,7 +1283,7 @@ export default function CheckoutPage() {
                         taxAmount: itemTax,
                         globalDiscountAmount: orderDiscount,
                         grandTotal,
-                        fbrPosFee: FBR_POS_FEE,
+                        fbrPosFee: activeFbrFee,
                         changeAmount,
                         isGiftReceipt: false,
                         promo: selectedPromo ? { code: selectedPromo.code } : undefined,
@@ -1292,7 +1305,7 @@ export default function CheckoutPage() {
             {/* Sale completed — show receipt */}
             {completedOrder && !showGiftReceiptAfterSales && (
                 <PrintReceipt
-                    order={{ ...completedOrder, fbrPosFee: FBR_POS_FEE, isGiftReceipt: false }}
+                    order={{ ...completedOrder, fbrPosFee: activeFbrFee, isGiftReceipt: false }}
                     cartItems={cartItems}
                     tenders={tenders}
                     discountMode={discountMode}
@@ -1315,7 +1328,7 @@ export default function CheckoutPage() {
             {/* Gift receipt */}
             {completedOrder && showGiftReceiptAfterSales && (
                 <PrintReceipt
-                    order={{ ...completedOrder, fbrPosFee: FBR_POS_FEE, isGiftReceipt: true }}
+                    order={{ ...completedOrder, fbrPosFee: activeFbrFee, isGiftReceipt: true }}
                     cartItems={cartItems}
                     tenders={tenders}
                     discountMode={discountMode}
@@ -1371,7 +1384,7 @@ export default function CheckoutPage() {
                         <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                         <span className="font-semibold text-xs uppercase tracking-wider text-foreground">Checkout Guide</span>
                     </div>
-                    <button 
+                    <button
                         onClick={() => setShowShortcutsHelp(false)}
                         className="text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground transition-colors font-mono"
                     >
@@ -1383,7 +1396,7 @@ export default function CheckoutPage() {
                         <p className="font-bold text-[10px] uppercase tracking-wider text-primary mb-1.5 text-left">Navigation & Customer</p>
                         <div className="space-y-1.5 font-medium">
                             <div className="flex justify-between items-center"><span className="text-muted-foreground">Search/Select Customer</span><kbd className="px-1.5 py-0.5 bg-muted border rounded text-[10px] font-mono">F6</kbd></div>
-                            <div className="flex justify-between items-center"><span className="text-muted-foreground">Select Cashier</span><kbd className="px-1.5 py-0.5 bg-muted border rounded text-[10px] font-mono">Alt + A</kbd></div>
+                            <div className="flex justify-between items-center"><span className="text-muted-foreground">Select Salesman</span><kbd className="px-1.5 py-0.5 bg-muted border rounded text-[10px] font-mono">Alt + A</kbd></div>
                             <div className="flex justify-between items-center"><span className="text-muted-foreground">Add New Customer</span><kbd className="px-1.5 py-0.5 bg-muted border rounded text-[10px] font-mono">Alt + N</kbd></div>
                             <div className="flex justify-between items-center"><span className="text-muted-foreground">Go Back to Cart</span><kbd className="px-1.5 py-0.5 bg-muted border rounded text-[10px] font-mono">Esc</kbd></div>
                         </div>

@@ -14,6 +14,7 @@ import {
     ArrowLeft, Printer, ShoppingCart, Wallet, Calendar as CalendarIcon,
     PauseCircle, RotateCcw, Clock, Pencil,
     Banknote, CreditCard, Building2, Ticket, BookOpen,
+    UserRound, QrCode, CheckCircle2,
 } from "lucide-react";
 import { PrintReceipt } from "@/components/pos/print-receipt";
 import { PrintReturnReceipt } from "@/components/pos/print-return-receipt";
@@ -22,6 +23,8 @@ import { cn } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
 
 import { formatCurrency } from "@/lib/utils";
+
+const fmtCurrency = formatCurrency;
 
 function isSameDay(date: Date) {
     const now = new Date();
@@ -205,297 +208,454 @@ export default function OrderDetailsPage() {
                 </div>
             </div>
 
-            {/* Content */}
             <ScrollArea className="flex-1">
-                <div className="max-w-7xl mx-auto p-6 space-y-6">
-                    {/* Summary Cards */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <div className="bg-muted/50 px-4 py-3 rounded-xl border border-border/50">
-                            <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Subtotal</p>
-                            <p className="text-lg font-black tracking-tight">{formatCurrency(order.subtotal || 0)}</p>
-                        </div>
-                        <div className="bg-primary/5 px-4 py-3 rounded-xl border border-primary/20">
-                            <p className="text-[9px] font-black text-primary uppercase tracking-widest mb-1.5">Discount</p>
-                            <p className="text-lg font-black tracking-tight text-primary">{formatCurrency(order.discountAmount || 0)}</p>
-                        </div>
-                        <div className="bg-primary px-4 py-3 rounded-xl shadow-lg shadow-primary/20">
-                            <p className="text-[9px] font-black text-primary-foreground/70 uppercase tracking-widest mb-1.5">Grand Total</p>
-                            <p className="text-lg font-black tracking-tight text-primary-foreground">{formatCurrency(order.grandTotal || 0)}</p>
-                        </div>
-                        {!isHold && (
-                            <div className={cn("px-4 py-3 rounded-xl border shadow-lg",
-                                balanceDue > 0 ? "bg-orange-500/10 border-orange-500/30 text-orange-600" : "bg-emerald-500/10 border-emerald-500/30 text-emerald-600")}>
-                                <p className="text-[9px] font-black uppercase tracking-widest mb-1.5 opacity-80">{balanceDue > 0 ? "Balance Due" : "Settled"}</p>
-                                <p className="text-lg font-black tracking-tight">{formatCurrency(balanceDue)}</p>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Promo/Coupon/Alliance */}
-                    {(order.promo || order.coupon || order.alliance || order.notes) && (
-                        <div className="bg-muted/30 rounded-2xl p-4 border border-border/40 space-y-3">
-                            <div className="flex flex-wrap gap-2">
-                                {order.promo && (
-                                    <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 gap-1.5 py-1 px-3 rounded-lg">
-                                        <ShoppingCart className="h-3 w-3" />
-                                        Promo: <span className="font-black">{order.promo.name || order.promo.code}</span>
-                                    </Badge>
-                                )}
-                                {order.coupon && (
-                                    <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 border-blue-500/20 gap-1.5 py-1 px-3 rounded-lg">
-                                        <Wallet className="h-3 w-3" />
-                                        Coupon: <span className="font-black">{order.coupon.code}</span>
-                                    </Badge>
-                                )}
-                                {order.alliance && (
-                                    <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1.5 py-1 px-3 rounded-lg">
-                                        <CalendarIcon className="h-3 w-3" />
-                                        Alliance: <span className="font-black">{order.alliance.partnerName}</span>
-                                    </Badge>
-                                )}
-                            </div>
-                            {order.notes && (
-                                <div className="text-xs text-muted-foreground bg-background/50 p-2.5 rounded-xl border border-border/30 italic">
-                                    "{order.notes}"
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* Items Table */}
-                    <div className="space-y-3">
-                        <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-foreground/70">
-                            <ShoppingCart className="h-5 w-5 text-muted-foreground" /> Items Breakdown
-                        </h3>
-                        <div className="rounded-2xl border border-border/60 overflow-hidden shadow-sm bg-card">
-                            <Table>
-                                <TableHeader className="bg-muted/40">
-                                    <TableRow>
-                                        <TableHead className="text-xs font-bold uppercase text-muted-foreground px-4">Item</TableHead>
-                                        <TableHead className="text-center text-xs font-bold uppercase text-muted-foreground w-24">Size</TableHead>
-                                        <TableHead className="text-center text-xs font-bold uppercase text-muted-foreground w-24">Color</TableHead>
-                                        <TableHead className="text-center text-xs font-bold uppercase text-muted-foreground w-20">Qty</TableHead>
-                                        {(order.status === 'returned' || order.status === 'partially_returned') && (
-                                            <>
-                                                <TableHead className="text-center text-xs font-bold uppercase text-destructive w-20">Ret</TableHead>
-                                                <TableHead className="text-center text-xs font-bold uppercase text-emerald-600 w-20">Rem</TableHead>
-                                            </>
-                                        )}
-                                        <TableHead className="text-right text-xs font-bold uppercase text-muted-foreground w-32">Price</TableHead>
-                                        <TableHead className="text-right text-xs font-bold uppercase text-muted-foreground w-28">Disc</TableHead>
-                                        <TableHead className="text-right text-xs font-bold uppercase text-muted-foreground pr-4 w-32">Total</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
+                <div className="max-w-7xl mx-auto p-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2 space-y-6">
+                            <div className="space-y-3">
+                                <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-foreground/70">
+                                    <ShoppingCart className="h-5 w-5 text-muted-foreground" /> Items Breakdown
+                                </h3>
+                                <div className="grid grid-cols-1 gap-4">
                                     {order.items?.map((item: any, i: number) => {
-                                        const orderedQty = Number(item.quantity);
+                                        const retailPrice = Number(item.unitPrice);
+                                        const qty = Number(item.quantity);
+                                        const totalRetail = retailPrice * qty;
+                                        const taxPercent = Number(item.taxPercent || 0);
+                                        const taxDivisor = 1 + (taxPercent / 100);
+                                        const wostPerUnit = retailPrice / taxDivisor;
+                                        const totalWost = wostPerUnit * qty;
+                                        const discountAmount = Number(item.discountAmount || 0);
+                                        const afterDiscount = totalWost - discountAmount;
+                                        const taxAmount = Number(item.taxAmount || 0);
+                                        const lineTotal = Number(item.lineTotal || 0);
+
                                         const returnedQty = Number(item.returnedQty || 0);
-                                        const remainingQty = orderedQty - returnedQty;
+                                        const remainingQty = qty - returnedQty;
                                         const isFullyReturned = remainingQty === 0;
                                         const isPartiallyReturned = returnedQty > 0 && remainingQty > 0;
 
                                         return (
-                                            <TableRow key={i} className={cn(
-                                                "hover:bg-muted/10",
-                                                isFullyReturned && "bg-destructive/5"
+                                            <div key={i} className={cn(
+                                                "bg-card border rounded-2xl p-4 shadow-sm relative overflow-hidden transition-all hover:shadow-md",
+                                                isFullyReturned ? "border-destructive/30 bg-destructive/5" : "border-border/60"
                                             )}>
-                                                <TableCell className="px-4 py-3">
-                                                    <div className="flex items-start gap-2">
-                                                        <div className="flex-1">
-                                                            <p className="font-bold text-sm">
-                                                                {item.item?.description}
-                                                            </p>
-                                                            <p className="text-xs text-muted-foreground font-mono">{item.item?.sku}</p>
-                                                        </div>
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <div>
+                                                        <h4 className="font-bold text-sm text-foreground">{item.item?.description}</h4>
+                                                        <p className="text-xs text-muted-foreground font-mono mt-0.5">{item.item?.sku}</p>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-1.5 justify-end">
+                                                        {item.item?.size?.name && (
+                                                            <Badge variant="secondary" className="text-[10px] py-0 px-2 font-bold bg-muted/65">
+                                                                Size: {item.item.size.name}
+                                                            </Badge>
+                                                        )}
+                                                        {item.item?.color?.name && (
+                                                            <Badge variant="secondary" className="text-[10px] py-0 px-2 font-bold bg-muted/65">
+                                                                Color: {item.item.color.name}
+                                                            </Badge>
+                                                        )}
+                                                        <Badge variant="outline" className="text-[10px] py-0 px-2 font-bold border-primary/20 text-primary">
+                                                            Qty: {qty}
+                                                        </Badge>
                                                         {isPartiallyReturned && (
-                                                            <Badge variant="outline" className="text-[8px] px-1 py-0 h-4 bg-amber-500/10 text-amber-600 border-amber-500/30">
-                                                                Partial
+                                                            <Badge variant="outline" className="text-[10px] py-0 px-2 font-bold bg-amber-500/10 text-amber-600 border-amber-500/30">
+                                                                Returned: {returnedQty}
                                                             </Badge>
                                                         )}
                                                         {isFullyReturned && (
-                                                            <Badge variant="outline" className="text-[8px] px-1 py-0 h-4 bg-destructive/10 text-destructive border-destructive/30">
+                                                            <Badge variant="outline" className="text-[10px] py-0 px-2 font-bold bg-destructive/10 text-destructive border-destructive/30">
                                                                 Returned
                                                             </Badge>
                                                         )}
                                                     </div>
-                                                </TableCell>
-                                                <TableCell className="text-center">
-                                                    <span className="inline-block px-2 py-0.5 rounded text-sm font-bold bg-muted/50">{item.item?.size?.name || "—"}</span>
-                                                </TableCell>
-                                                <TableCell className="text-center">
-                                                    <span className="inline-block px-2 py-0.5 rounded text-sm font-bold bg-muted/50">{item.item?.color?.name || "—"}</span>
-                                                </TableCell>
-                                                <TableCell className="text-center">
-                                                    <span className="inline-block px-2 py-0.5 rounded text-sm font-bold bg-muted/50">{orderedQty}</span>
-                                                </TableCell>
-                                                {(order.status === 'returned' || order.status === 'partially_returned') && (
-                                                    <>
-                                                        <TableCell className="text-center">
-                                                            {returnedQty > 0 ? (
-                                                                <span className="inline-block px-2 py-0.5 rounded text-sm font-bold bg-destructive/10 text-destructive">{returnedQty}</span>
-                                                            ) : (
-                                                                <span className="text-muted-foreground text-sm">—</span>
-                                                            )}
-                                                        </TableCell>
-                                                        <TableCell className="text-center">
-                                                            {remainingQty > 0 ? (
-                                                                <span className="inline-block px-2 py-0.5 rounded text-sm font-bold bg-emerald-500/10 text-emerald-600">{remainingQty}</span>
-                                                            ) : (
-                                                                <span className="text-muted-foreground text-sm">—</span>
-                                                            )}
-                                                        </TableCell>
-                                                    </>
-                                                )}
-                                                <TableCell className="text-right text-sm font-mono">{formatCurrency(item.unitPrice)}</TableCell>
-                                                <TableCell className="text-right text-sm font-mono text-destructive">
-                                                    {Number(item.discountAmount) > 0 ? `-${formatCurrency(item.discountAmount)}` : "—"}
-                                                </TableCell>
-                                                <TableCell className="text-right font-bold text-sm font-mono pr-4">
-                                                    {formatCurrency(item.lineTotal ?? (item.unitPrice - (item.discountAmount || 0)) * item.quantity)}
-                                                </TableCell>
-                                            </TableRow>
+                                                </div>
+
+                                                <Separator className="my-3 opacity-60" />
+
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-2 gap-x-4 text-xs font-mono text-muted-foreground">
+                                                    <div>
+                                                        <span className="block text-[10px] uppercase font-bold tracking-wider text-muted-foreground/60 mb-0.5">Retail Price (Inc. Tax)</span>
+                                                        <span className="text-foreground font-semibold">{formatCurrency(retailPrice)}</span>
+                                                        <span className="text-[10px] block opacity-70">Total: {formatCurrency(totalRetail)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="block text-[10px] uppercase font-bold tracking-wider text-muted-foreground/60 mb-0.5">WOST (Excl. Tax)</span>
+                                                        <span className="text-foreground font-semibold">{formatCurrency(wostPerUnit)}</span>
+                                                        <span className="text-[10px] block opacity-70">Total: {formatCurrency(totalWost)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="block text-[10px] uppercase font-bold tracking-wider text-muted-foreground/60 mb-0.5">Discount</span>
+                                                        <span className={cn("font-semibold", discountAmount > 0 ? "text-destructive" : "text-foreground")}>
+                                                            {discountAmount > 0 ? `−${formatCurrency(discountAmount)}` : "—"}
+                                                        </span>
+                                                        {discountAmount > 0 && <span className="text-[10px] block opacity-70">Pct: {item.discountPercent}%</span>}
+                                                    </div>
+                                                    <div>
+                                                        <span className="block text-[10px] uppercase font-bold tracking-wider text-muted-foreground/60 mb-0.5">After Discount</span>
+                                                        <span className="text-foreground font-semibold">{formatCurrency(afterDiscount)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="block text-[10px] uppercase font-bold tracking-wider text-muted-foreground/60 mb-0.5">Tax ({taxPercent}%)</span>
+                                                        <span className={cn("font-semibold", taxAmount > 0 ? "text-amber-600 dark:text-amber-400" : "text-foreground")}>
+                                                            {taxAmount > 0 ? `+${formatCurrency(taxAmount)}` : "—"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="border-l pl-3 sm:border-none sm:pl-0">
+                                                        <span className="block text-[10px] uppercase font-bold tracking-wider text-muted-foreground/60 mb-0.5">Line Total</span>
+                                                        <span className="text-sm text-foreground font-bold">{formatCurrency(lineTotal)}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         );
                                     })}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    </div>
-
-                    {/* Payment Information */}
-                    {!isHold && (
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                                <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-foreground/70">
-                                    <Wallet className="h-5 w-5 text-muted-foreground" /> Payment Information
-                                </h3>
-                                <span className="text-xs font-black uppercase text-muted-foreground px-3 py-1 bg-muted/50 rounded-lg">
-                                    Total Paid: <span className="text-foreground ml-1">{formatCurrency(totalPaid)}</span>
-                                </span>
+                                </div>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                {order.tenders?.map((t: any, i: number) => (
-                                    <div key={i} className="flex items-center justify-between px-4 py-3 rounded-2xl border border-border/80 bg-card shadow-sm">
-                                        <div className="flex items-center gap-2.5">
-                                            <div className="p-1.5 bg-background border border-border/40 rounded-lg shadow-sm">
-                                                <Wallet className="h-4 w-4 text-primary" />
+
+                            {!isHold && (
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-foreground/70">
+                                            <Wallet className="h-5 w-5 text-muted-foreground" /> Payment Information
+                                        </h3>
+                                        <span className="text-xs font-black uppercase text-muted-foreground px-3 py-1 bg-muted/50 rounded-lg">
+                                            Total Paid: <span className="text-foreground ml-1">{formatCurrency(totalPaid)}</span>
+                                        </span>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {order.tenders?.map((t: any, i: number) => (
+                                            <div key={i} className="flex items-center justify-between px-4 py-3 rounded-2xl border border-border/80 bg-card shadow-sm">
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="p-1.5 bg-background border border-border/40 rounded-lg shadow-sm">
+                                                        <Wallet className="h-4 w-4 text-primary" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[9px] font-black text-muted-foreground uppercase">Method</p>
+                                                        <p className="text-xs font-black capitalize">{t.method.replace("_", " ")}</p>
+                                                    </div>
+                                                    {t.cardLast4 && <span className="text-[9px] font-mono font-black text-primary ring-1 ring-primary/20 px-1.5 py-0.5 rounded-md bg-primary/5">••••{t.cardLast4}</span>}
+                                                    {t.slipNo && <span className="text-[9px] font-mono font-black text-muted-foreground ring-1 ring-border px-1.5 py-0.5 rounded-md bg-muted/30">{t.method === "voucher" ? `#${t.slipNo}` : t.slipNo}</span>}
+                                                    {t.voucherFaceValue && <span className="text-[9px] font-mono font-black text-amber-600 ring-1 ring-amber-500/20 px-1.5 py-0.5 rounded-md bg-amber-500/5">Val: {formatCurrency(t.voucherFaceValue)}</span>}
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-[9px] font-black text-muted-foreground uppercase">Paid</p>
+                                                    <p className="text-sm font-black font-mono">{formatCurrency(t.amount)}</p>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <p className="text-[9px] font-black text-muted-foreground uppercase">Method</p>
-                                                <p className="text-xs font-black capitalize">{t.method.replace("_", " ")}</p>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {order.claims && order.claims.length > 0 && (
+                                <div className="space-y-3">
+                                    <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-foreground/70">
+                                        <RotateCcw className="h-5 w-5 text-muted-foreground" /> Warranty Claims
+                                    </h3>
+                                    <div className="space-y-3">
+                                        {order.claims.map((claim: any, idx: number) => {
+                                            const statusColors: Record<string, string> = {
+                                                SUBMITTED: "bg-blue-500/10 text-blue-700 border-blue-300",
+                                                UNDER_REVIEW: "bg-amber-500/10 text-amber-700 border-amber-300",
+                                                APPROVED: "bg-green-500/10 text-green-700 border-green-300",
+                                                PARTIALLY_APPROVED: "bg-emerald-500/10 text-emerald-700 border-emerald-300",
+                                                REJECTED: "bg-red-500/10 text-red-700 border-red-300",
+                                                CANCELLED: "bg-gray-500/10 text-gray-700 border-gray-300",
+                                            };
+
+                                            return (
+                                                <div key={idx} className="rounded-2xl border border-border/60 overflow-hidden shadow-sm bg-card">
+                                                    <div className="bg-muted/40 px-4 py-3 flex items-center justify-between">
+                                                        <div className="flex items-center gap-3">
+                                                            <Badge variant="outline" className="font-mono text-xs">
+                                                                {claim.claimNumber}
+                                                            </Badge>
+                                                            <Badge variant="outline" className={cn("capitalize text-[10px] px-2 py-0.5", statusColors[claim.status] ?? "")}>
+                                                                {claim.status.replace(/_/g, " ")}
+                                                            </Badge>
+                                                            <Badge variant="outline" className="capitalize text-[10px] px-2 py-0.5 bg-purple-500/10 text-purple-700 border-purple-300">
+                                                                {claim.claimType}
+                                                            </Badge>
+                                                            {claim.transferRequestId && (
+                                                                <Badge variant="outline" className="capitalize text-[10px] px-2 py-0.5 bg-blue-500/10 text-blue-700 border-blue-300">
+                                                                    <ShoppingCart className="h-2.5 w-2.5 mr-1" />
+                                                                    Transfer Created
+                                                                </Badge>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-3">
+                                                            <Button 
+                                                                size="sm" 
+                                                                variant="outline" 
+                                                                className="gap-2 h-8"
+                                                                onClick={() => handlePrintClaim(claim.id)}
+                                                            >
+                                                                <Printer className="h-3.5 w-3.5" />
+                                                                Print Claim Receipt
+                                                            </Button>
+                                                            <div className="text-right">
+                                                                <p className="text-[9px] font-black text-muted-foreground uppercase">Submitted</p>
+                                                                <p className="text-xs font-mono">{new Date(claim.submittedAt).toLocaleDateString()}</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-4 space-y-3">
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <div>
+                                                                <p className="text-[9px] font-black text-muted-foreground uppercase mb-1">Claimed Amount</p>
+                                                                <p className="text-lg font-black font-mono">Rs. {fmtCurrency(claim.claimedAmount)}</p>
+                                                            </div>
+                                                            {(claim.status === 'APPROVED' || claim.status === 'PARTIALLY_APPROVED') && (
+                                                                <div>
+                                                                    <p className="text-[9px] font-black text-muted-foreground uppercase mb-1">Approved Amount</p>
+                                                                    <p className="text-lg font-black font-mono text-green-600">Rs. {fmtCurrency(claim.approvedAmount)}</p>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        {claim.items && claim.items.length > 0 && (
+                                                            <div className="space-y-2">
+                                                                <p className="text-[9px] font-black text-muted-foreground uppercase">Claimed Items</p>
+                                                                <div className="space-y-1.5">
+                                                                    {claim.items.map((item: any, i: number) => (
+                                                                        <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg bg-muted/30 border border-border/40">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="text-xs font-bold">Item #{i + 1}</span>
+                                                                                <Badge variant="outline" className={cn("text-[8px] px-1.5 py-0", statusColors[item.itemStatus] ?? "")}>
+                                                                                    {item.itemStatus}
+                                                                                </Badge>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-4 text-xs">
+                                                                                <span className="text-muted-foreground">Claimed: <span className="font-bold text-foreground">{item.claimedQty}</span></span>
+                                                                                {item.approvedQty > 0 && (
+                                                                                    <span className="text-muted-foreground">Approved: <span className="font-bold text-green-600">{item.approvedQty}</span></span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-6">
+                            {order.customer ? (
+                                <div className="bg-card border border-border/60 rounded-2xl p-4 shadow-sm space-y-3">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs font-bold uppercase tracking-wider">
+                                        <UserRound className="h-4 w-4 text-emerald-500" /> Customer Details
+                                    </div>
+                                    <div className="space-y-2">
+                                        <p className="text-sm font-bold text-foreground">{order.customer.name}</p>
+                                        <div className="text-xs text-muted-foreground space-y-1 font-mono">
+                                            <div className="flex justify-between">
+                                                <span>Code:</span>
+                                                <span className="text-foreground">{order.customer.code}</span>
                                             </div>
-                                            {t.cardLast4 && <span className="text-[9px] font-mono font-black text-primary ring-1 ring-primary/20 px-1.5 py-0.5 rounded-md bg-primary/5">••••{t.cardLast4}</span>}
-                                            {t.slipNo && <span className="text-[9px] font-mono font-black text-muted-foreground ring-1 ring-border px-1.5 py-0.5 rounded-md bg-muted/30">{t.method === "voucher" ? `#${t.slipNo}` : t.slipNo}</span>}
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-[9px] font-black text-muted-foreground uppercase">Paid</p>
-                                            <p className="text-sm font-black font-mono">{formatCurrency(t.amount)}</p>
+                                            {order.customer.contactNo && (
+                                                <div className="flex justify-between">
+                                                    <span>Phone:</span>
+                                                    <span className="text-foreground">{order.customer.contactNo}</span>
+                                                </div>
+                                            )}
+                                            {order.customer.email && (
+                                                <div className="flex justify-between">
+                                                    <span>Email:</span>
+                                                    <span className="text-foreground">{order.customer.email}</span>
+                                                </div>
+                                            )}
+                                            {order.customer.address && (
+                                                <div className="space-y-0.5 mt-1 border-t pt-1">
+                                                    <span className="text-[10px] block opacity-75">Address:</span>
+                                                    <span className="text-foreground block not-italic leading-normal">{order.customer.address}</span>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
+                                </div>
+                            ) : (
+                                <div className="bg-card border border-border/60 rounded-2xl p-4 shadow-sm space-y-3">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs font-bold uppercase tracking-wider">
+                                        <UserRound className="h-4 w-4 text-muted-foreground" /> Customer Details
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-xl">
+                                        <CheckCircle2 className="h-4 w-4" /> Walk-in Customer
+                                    </div>
+                                </div>
+                            )}
 
-                    {/* Claims Information */}
-                    {order.claims && order.claims.length > 0 && (
-                        <div className="space-y-3">
-                            <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-foreground/70">
-                                <RotateCcw className="h-5 w-5 text-muted-foreground" /> Warranty Claims
-                            </h3>
-                            <div className="space-y-3">
-                                {order.claims.map((claim: any, idx: number) => {
-                                    const statusColors: Record<string, string> = {
-                                        SUBMITTED: "bg-blue-500/10 text-blue-700 border-blue-300",
-                                        UNDER_REVIEW: "bg-amber-500/10 text-amber-700 border-amber-300",
-                                        APPROVED: "bg-green-500/10 text-green-700 border-green-300",
-                                        PARTIALLY_APPROVED: "bg-emerald-500/10 text-emerald-700 border-emerald-300",
-                                        REJECTED: "bg-red-500/10 text-red-700 border-red-300",
-                                        CANCELLED: "bg-gray-500/10 text-gray-700 border-gray-300",
-                                    };
-
-                                    return (
-                                        <div key={idx} className="rounded-2xl border border-border/60 overflow-hidden shadow-sm bg-card">
-                                            <div className="bg-muted/40 px-4 py-3 flex items-center justify-between">
-                                                <div className="flex items-center gap-3">
-                                                    <Badge variant="outline" className="font-mono text-xs">
-                                                        {claim.claimNumber}
-                                                    </Badge>
-                                                    <Badge variant="outline" className={cn("capitalize text-[10px] px-2 py-0.5", statusColors[claim.status] ?? "")}>
-                                                        {claim.status.replace(/_/g, " ")}
-                                                    </Badge>
-                                                    <Badge variant="outline" className="capitalize text-[10px] px-2 py-0.5 bg-purple-500/10 text-purple-700 border-purple-300">
-                                                        {claim.claimType}
-                                                    </Badge>
-                                                    {claim.transferRequestId && (
-                                                        <Badge variant="outline" className="capitalize text-[10px] px-2 py-0.5 bg-blue-500/10 text-blue-700 border-blue-300">
-                                                            <ShoppingCart className="h-2.5 w-2.5 mr-1" />
-                                                            Transfer Created
-                                                        </Badge>
-                                                    )}
+                            {order.cashier ? (
+                                <div className="bg-card border border-border/60 rounded-2xl p-4 shadow-sm space-y-3">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs font-bold uppercase tracking-wider">
+                                        <UserRound className="h-4 w-4 text-primary" /> Salesman / Cashier
+                                    </div>
+                                    <div className="space-y-2">
+                                        <p className="text-sm font-bold text-foreground">{order.cashier.name}</p>
+                                        <div className="text-xs text-muted-foreground space-y-1 font-mono">
+                                            {order.cashier.empCode && (
+                                                <div className="flex justify-between">
+                                                    <span>Employee ID:</span>
+                                                    <span className="text-foreground">{order.cashier.empCode}</span>
                                                 </div>
-                                                <div className="flex items-center gap-3">
-                                                    <Button 
-                                                        size="sm" 
-                                                        variant="outline" 
-                                                        className="gap-2 h-8"
-                                                        onClick={() => handlePrintClaim(claim.id)}
-                                                    >
-                                                        <Printer className="h-3.5 w-3.5" />
-                                                        Print Claim Receipt
-                                                    </Button>
-                                                    <div className="text-right">
-                                                        <p className="text-[9px] font-black text-muted-foreground uppercase">Submitted</p>
-                                                        <p className="text-xs font-mono">{new Date(claim.submittedAt).toLocaleDateString()}</p>
-                                                    </div>
+                                            )}
+                                            {order.cashier.email && (
+                                                <div className="flex justify-between">
+                                                    <span>Email:</span>
+                                                    <span className="text-foreground">{order.cashier.email}</span>
                                                 </div>
-                                            </div>
-                                            <div className="p-4 space-y-3">
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <p className="text-[9px] font-black text-muted-foreground uppercase mb-1">Claimed Amount</p>
-                                                        <p className="text-lg font-black font-mono">Rs. {fmtCurrency(claim.claimedAmount)}</p>
-                                                    </div>
-                                                    {(claim.status === 'APPROVED' || claim.status === 'PARTIALLY_APPROVED') && (
-                                                        <div>
-                                                            <p className="text-[9px] font-black text-muted-foreground uppercase mb-1">Approved Amount</p>
-                                                            <p className="text-lg font-black font-mono text-green-600">Rs. {fmtCurrency(claim.approvedAmount)}</p>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                {claim.items && claim.items.length > 0 && (
-                                                    <div className="space-y-2">
-                                                        <p className="text-[9px] font-black text-muted-foreground uppercase">Claimed Items</p>
-                                                        <div className="space-y-1.5">
-                                                            {claim.items.map((item: any, i: number) => (
-                                                                <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg bg-muted/30 border border-border/40">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-xs font-bold">Item #{i + 1}</span>
-                                                                        <Badge variant="outline" className={cn("text-[8px] px-1.5 py-0", statusColors[item.itemStatus] ?? "")}>
-                                                                            {item.itemStatus}
-                                                                        </Badge>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-4 text-xs">
-                                                                        <span className="text-muted-foreground">Claimed: <span className="font-bold text-foreground">{item.claimedQty}</span></span>
-                                                                        {item.approvedQty > 0 && (
-                                                                            <span className="text-muted-foreground">Approved: <span className="font-bold text-green-600">{item.approvedQty}</span></span>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
+                                            )}
                                         </div>
-                                    );
-                                })}
-                            </div>
+                                    </div>
+                                </div>
+                            ) : order.cashierUserId ? (
+                                <div className="bg-card border border-border/60 rounded-2xl p-4 shadow-sm space-y-3">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs font-bold uppercase tracking-wider">
+                                        <UserRound className="h-4 w-4 text-primary" /> Salesman / Cashier
+                                    </div>
+                                    <div className="text-xs text-muted-foreground font-mono">
+                                        <div className="flex justify-between">
+                                            <span>User ID:</span>
+                                            <span className="text-foreground font-semibold">{order.cashierUserId.slice(0, 8)}...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-card border border-border/60 rounded-2xl p-4 shadow-sm space-y-3">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs font-bold uppercase tracking-wider">
+                                        <UserRound className="h-4 w-4 text-muted-foreground" /> Salesman / Cashier
+                                    </div>
+                                    <p className="text-xs text-muted-foreground italic">Not Assigned</p>
+                                </div>
+                            )}
+
+                            {(() => {
+                                const subtotal = Number(order.subtotal || 0);
+                                const taxAmount = Number(order.taxAmount || 0);
+                                const grandTotal = Number(order.grandTotal || 0);
+                                const totalDiscount = Number(order.discountAmount || 0);
+                                const globalDiscount = Number(order.globalDiscountAmount || 0);
+                                const itemDiscounts = Math.max(0, totalDiscount - globalDiscount);
+
+                                const hasCoupon = !!order.coupon;
+                                const hasPromo = !!order.promo;
+                                const hasAlliance = !!order.alliance;
+                                const globalDiscountPercent = Number(order.globalDiscountPercent || 0);
+                                const isManualDiscount = globalDiscountPercent > 0 || (globalDiscount > 0 && !hasCoupon && !hasPromo && !hasAlliance);
+
+                                const fbrPosFee = order.fbrInvoiceNumber ? 1 : 0;
+                                const balanceDueValue = Math.max(0, grandTotal - totalPaid);
+                                const changeAmount = Number(order.changeAmount || 0);
+
+                                return (
+                                    <div className="bg-card border border-border/60 rounded-2xl p-4 shadow-sm space-y-4">
+                                        <div className="flex items-center gap-2 text-muted-foreground text-xs font-bold uppercase tracking-wider">
+                                            <ShoppingCart className="h-4 w-4 text-primary" /> Totals Summary
+                                        </div>
+                                        <div className="space-y-2 text-xs font-mono">
+                                            <div className="flex justify-between text-muted-foreground">
+                                                <span>Subtotal</span>
+                                                <span>{formatCurrency(subtotal)}</span>
+                                            </div>
+
+                                            {itemDiscounts > 0 && (
+                                                <div className="flex justify-between text-destructive">
+                                                    <span>Item Discounts</span>
+                                                    <span>−{formatCurrency(itemDiscounts)}</span>
+                                                </div>
+                                            )}
+
+                                            {globalDiscount > 0 && (
+                                                <div className="flex justify-between text-primary">
+                                                    <span>
+                                                        {hasPromo && `Promo: ${order.promo?.code || order.promo?.name}`}
+                                                        {hasCoupon && `Coupon: ${order.coupon?.code}`}
+                                                        {hasAlliance && `Alliance: ${order.alliance?.partnerName}`}
+                                                        {isManualDiscount && `Manual Discount${order.manualDiscountNote ? ` (${order.manualDiscountNote})` : ""}`}
+                                                    </span>
+                                                    <span>−{formatCurrency(globalDiscount)}</span>
+                                                </div>
+                                            )}
+
+                                            {taxAmount > 0 && (
+                                                <div className="flex justify-between text-amber-600 dark:text-amber-400">
+                                                    <span>Total Tax</span>
+                                                    <span>+{formatCurrency(taxAmount)}</span>
+                                                </div>
+                                            )}
+
+                                            {fbrPosFee > 0 && (
+                                                <div className="flex justify-between text-amber-600 dark:text-amber-400">
+                                                    <span>FBR POS Fee</span>
+                                                    <span>+{formatCurrency(fbrPosFee)}</span>
+                                                </div>
+                                            )}
+
+                                            <Separator />
+
+                                            <div className="flex justify-between text-base font-bold text-foreground pt-1">
+                                                <span className="font-sans">Grand Total</span>
+                                                <span>{formatCurrency(grandTotal)}</span>
+                                            </div>
+
+                                            <div className="flex justify-between text-muted-foreground">
+                                                <span>Total Paid</span>
+                                                <span>{formatCurrency(totalPaid)}</span>
+                                            </div>
+
+                                            {balanceDueValue > 0 && (
+                                                <div className="flex justify-between text-orange-600 font-bold">
+                                                    <span>Balance Due</span>
+                                                    <span>{formatCurrency(balanceDueValue)}</span>
+                                                </div>
+                                            )}
+
+                                            {changeAmount > 0 && (
+                                                <div className="flex justify-between text-emerald-600 font-bold">
+                                                    <span>Change Returned</span>
+                                                    <span>{formatCurrency(changeAmount)}</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {order.notes && (
+                                            <div className="text-[11px] text-muted-foreground bg-muted/40 p-2.5 rounded-xl border border-border/30 italic">
+                                                "{order.notes}"
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+
+                            {order.fbrInvoiceNumber && (
+                                <div className="bg-card border border-border/60 rounded-2xl p-4 shadow-sm space-y-3">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs font-bold uppercase tracking-wider">
+                                        <QrCode className="h-4 w-4 text-amber-500" /> FBR Verification
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between text-xs">
+                                            <span className="text-muted-foreground">Invoice Number:</span>
+                                            <span className="font-mono font-bold text-foreground">{order.fbrInvoiceNumber}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-xs">
+                                            <span className="text-muted-foreground">FBR Status:</span>
+                                            <Badge variant="outline" className="text-[9px] bg-emerald-500/10 text-emerald-700 border-emerald-300">
+                                                {order.fbrStatus || 'SYNCED'}
+                                            </Badge>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                    )}
+                    </div>
                 </div>
             </ScrollArea>
 
-            {/* Print Modals */}
             {showPrint && order && (
                 <PrintReceipt
                     order={{ ...order, isGiftReceipt: false }}
@@ -516,7 +676,11 @@ export default function OrderDetailsPage() {
 
             {showReturnPrint && order && (
                 <PrintReturnReceipt
-                    returnRef={order.orderNumber}
+                    returnRef={
+                        isRefundPrint
+                            ? (returnDetails?.refundNumber || order.refundNumber || order.orderNumber || "")
+                            : (returnDetails?.returnNumber || order.returnNumber || order.orderNumber || "")
+                    }
                     isRefund={isRefundPrint}
                     isAlliance={!!order.alliance}
                     originalOrders={[{ orderNumber: order.orderNumber, grandTotal: Number(order.grandTotal) }]}

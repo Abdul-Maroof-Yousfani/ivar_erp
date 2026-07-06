@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import * as ExcelJS from 'exceljs';
+import * as puppeteer from 'puppeteer';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MovementType, Prisma } from '@prisma/client';
 
@@ -272,20 +273,7 @@ export class StockLedgerService {
 
       const operation = async (transaction: Prisma.TransactionClient) => {
         // Concurrency Safe Negative Stock Check for OUTBOUND
-        // Bypassed for transfers, returns, and POS sales to allow negative stock operations
-        const bypassNegativeCheck = [
-          'TRANSFER_REQUEST',
-          'OUTLET_TRANSFER_OUT',
-          'OUTLET_TRANSFER_IN',
-          'RETURN_REQUEST',
-          'CLAIM_RETURN_REQUEST',
-          'CLAIM_RETURN',
-          'POS_SALE',
-          'CLAIM_TO_PLM',
-          'POS_CLAIM_APPROVED',
-        ].includes(referenceType);
-
-        if (quantity.isNegative() && !bypassNegativeCheck) {
+        if (quantity.isNegative()) {
           const currentStock = await transaction.stockLedger.aggregate({
             where: {
               itemId,
@@ -449,11 +437,39 @@ export class StockLedgerService {
     locationId: string;
     startDate?: string;
     endDate?: string;
-    search?: string;
+    summaryOnly?: boolean;
+    showBrand?: boolean;
+    showDivision?: boolean;
+    showCategory?: boolean;
+    showGender?: boolean;
+    showSilhouette?: boolean;
+    showArticle?: boolean;
+    showVariant?: boolean;
   }) {
-    const { locationId, startDate: startStr, endDate: endStr, search } = options;
+    const { locationId, startDate: startStr, endDate: endStr } = options;
     if (!locationId) {
       throw new BadRequestException('locationId is required');
+    }
+
+    const showBrand = options.showBrand !== false;
+    const showDivision = options.showDivision !== false;
+    const showCategory = options.showCategory !== false;
+    const showGender = options.showGender !== false;
+    const showSilhouette = options.showSilhouette !== false;
+    const showArticle = options.showArticle !== false;
+    const showVariant = options.showVariant !== undefined ? options.showVariant : !options.summaryOnly;
+
+    const levels: string[] = [];
+    if (showBrand) levels.push('brand');
+    if (showDivision) levels.push('division');
+    if (showCategory) levels.push('category');
+    if (showGender) levels.push('gender');
+    if (showSilhouette) levels.push('silhouette');
+    if (showArticle) levels.push('article');
+    if (showVariant) levels.push('variant');
+
+    if (levels.length === 0) {
+      levels.push('brand');
     }
 
     const now = new Date();
@@ -480,21 +496,16 @@ export class StockLedgerService {
       return [];
     }
 
-    const itemsWhere: any = {
-      id: { in: uniqueItemIds },
-    };
-    if (search) {
-      itemsWhere.OR = [
-        { sku: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
     const items = await this.prisma.item.findMany({
-      where: itemsWhere,
+      where: { id: { in: uniqueItemIds } },
       include: {
         color: true,
         size: true,
+        gender: true,
+        category: true,
+        division: true,
+        brand: true,
+        silhouette: true,
       },
     });
 
@@ -620,29 +631,39 @@ export class StockLedgerService {
       }
     }
 
-    const skuGroups = new Map<string, {
-      sku: string;
-      articleName: string;
-      variants: any[];
-    }>();
+    const root: any[] = [];
+
+    const createEmptyTotals = () => ({
+      bf: 0, fromWarehouse: 0, fromOutlet: 0, totalTrfIn: 0,
+      toWarehouse: 0, toOutlet: 0, totalTrfOut: 0, exchg: 0,
+      refund: 0, claim: 0, sales: 0, adj: 0, availableStock: 0,
+      transit: 0, balance: 0,
+    });
+
+    const addTotals = (target: any, source: any) => {
+      target.bf += source.bf;
+      target.fromWarehouse += source.fromWarehouse;
+      target.fromOutlet += source.fromOutlet;
+      target.totalTrfIn += source.totalTrfIn;
+      target.toWarehouse += source.toWarehouse;
+      target.toOutlet += source.toOutlet;
+      target.totalTrfOut += source.totalTrfOut;
+      target.exchg += source.exchg;
+      target.refund += source.refund;
+      target.claim += source.claim;
+      target.sales += source.sales;
+      target.adj += source.adj;
+      target.availableStock += source.availableStock;
+      target.transit += source.transit;
+      target.balance += source.balance;
+    };
 
     for (const item of items) {
-      const sku = item.sku;
-      const articleName = item.description || 'Unknown Article';
-      const itemId = item.id;
-
-      const bf = bfMap.get(itemId) || 0;
-      const transit = transitMap.get(itemId) || 0;
-      const m = itemMetricsMap.get(itemId) || {
-        fromWarehouse: 0,
-        fromOutlet: 0,
-        toWarehouse: 0,
-        toOutlet: 0,
-        exchg: 0,
-        refund: 0,
-        claim: 0,
-        sales: 0,
-        adj: 0,
+      const bf = bfMap.get(item.id) || 0;
+      const transit = transitMap.get(item.id) || 0;
+      const m = itemMetricsMap.get(item.id) || {
+        fromWarehouse: 0, fromOutlet: 0, toWarehouse: 0, toOutlet: 0,
+        exchg: 0, refund: 0, claim: 0, sales: 0, adj: 0,
       };
 
       const totalTrfIn = m.fromWarehouse + m.fromOutlet;
@@ -650,10 +671,7 @@ export class StockLedgerService {
       const availableStock = bf + totalTrfIn - totalTrfOut + m.exchg + m.refund + m.claim - m.sales + m.adj;
       const balance = availableStock + transit;
 
-      const variantData = {
-        itemId,
-        color: item.color?.name || 'Default',
-        size: item.size?.name || 'Default',
+      const variantMetrics = {
         bf,
         fromWarehouse: m.fromWarehouse,
         fromOutlet: m.fromOutlet,
@@ -671,260 +689,52 @@ export class StockLedgerService {
         balance,
       };
 
-      let group = skuGroups.get(sku);
-      if (!group) {
-        group = {
-          sku,
-          articleName,
-          variants: [],
-        };
-        skuGroups.set(sku, group);
-      }
-      group.variants.push(variantData);
-    }
+      let currentLevelNodes = root;
+      for (let i = 0; i < levels.length; i++) {
+        const levelName = levels[i];
+        let nodeVal = '';
+        let extraFields: any = {};
 
-    const reportData = Array.from(skuGroups.values()).map(group => {
-      const totals = {
-        bf: 0,
-        fromWarehouse: 0,
-        fromOutlet: 0,
-        totalTrfIn: 0,
-        toWarehouse: 0,
-        toOutlet: 0,
-        totalTrfOut: 0,
-        exchg: 0,
-        refund: 0,
-        claim: 0,
-        sales: 0,
-        adj: 0,
-        availableStock: 0,
-        transit: 0,
-        balance: 0,
-      };
-
-      for (const v of group.variants) {
-        totals.bf += v.bf;
-        totals.fromWarehouse += v.fromWarehouse;
-        totals.fromOutlet += v.fromOutlet;
-        totals.totalTrfIn += v.totalTrfIn;
-        totals.toWarehouse += v.toWarehouse;
-        totals.toOutlet += v.toOutlet;
-        totals.totalTrfOut += v.totalTrfOut;
-        totals.exchg += v.exchg;
-        totals.refund += v.refund;
-        totals.claim += v.claim;
-        totals.sales += v.sales;
-        totals.adj += v.adj;
-        totals.availableStock += v.availableStock;
-        totals.transit += v.transit;
-        totals.balance += v.balance;
-      }
-
-      return {
-        ...group,
-        totals,
-      };
-    });
-
-    return reportData;
-  }
-
-  async exportStockActivityReport(
-    options: {
-      locationId: string;
-      startDate?: string;
-      endDate?: string;
-      search?: string;
-    },
-    res: any,
-  ): Promise<void> {
-    const data = await this.getStockActivityReport(options);
-
-    const location = await this.prisma.location.findUnique({
-      where: { id: options.locationId },
-      select: { name: true },
-    });
-    const locationName = location?.name || 'Store';
-
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Stock Activity Report');
-
-    sheet.mergeCells('A1:S1');
-    const titleRow = sheet.getRow(1);
-    titleRow.values = [`Stock Activity Report - ${locationName}`];
-    titleRow.font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFF' } };
-    titleRow.alignment = { horizontal: 'center', vertical: 'middle' };
-    titleRow.height = 40;
-    
-    const titleCell = sheet.getCell('A1');
-    titleCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: '1E293B' },
-    };
-
-    sheet.mergeCells('A2:S2');
-    const subTitleRow = sheet.getRow(2);
-    const fromDateStr = options.startDate ? new Date(options.startDate).toLocaleDateString() : 'Beginning';
-    const toDateStr = options.endDate ? new Date(options.endDate).toLocaleDateString() : 'Present';
-    subTitleRow.values = [`Period: ${fromDateStr} to ${toDateStr}`];
-    subTitleRow.font = { name: 'Arial', size: 10, italic: true, color: { argb: '475569' } };
-    subTitleRow.alignment = { horizontal: 'center', vertical: 'middle' };
-    subTitleRow.height = 20;
-
-    sheet.getRow(3).height = 10;
-
-    sheet.mergeCells('F4:H4');
-    sheet.mergeCells('I4:K4');
-    const groupHeaderRow = sheet.getRow(4);
-    groupHeaderRow.getCell(6).value = 'Transfer IN';
-    groupHeaderRow.getCell(9).value = 'Transfer OUT';
-    
-    const headerGroupFillIn = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E2E8F0' } } as any;
-    const headerGroupFont = { name: 'Arial', size: 10, bold: true, color: { argb: '1E293B' } };
-    const centerAlign = { horizontal: 'center', vertical: 'middle' } as any;
-
-    groupHeaderRow.getCell(6).fill = headerGroupFillIn;
-    groupHeaderRow.getCell(6).font = headerGroupFont;
-    groupHeaderRow.getCell(6).alignment = centerAlign;
-    groupHeaderRow.getCell(9).fill = headerGroupFillIn;
-    groupHeaderRow.getCell(9).font = headerGroupFont;
-    groupHeaderRow.getCell(9).alignment = centerAlign;
-    groupHeaderRow.height = 22;
-
-    const headers = [
-      'SKU', 'Article Name', 'Color', 'Size', 'BF (Opening)',
-      'From Wh', 'From Outlet', 'Total IN',
-      'To Wh', 'To Outlet', 'Total OUT',
-      'Exchg', 'Refund', 'Claim', 'Sales', 'Adj',
-      'Available Stock', 'Transit', 'Closing Balance'
-    ];
-    const headerRow = sheet.getRow(5);
-    headerRow.values = headers;
-    headerRow.height = 28;
-
-    const columnHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '334155' } } as any;
-    const columnHeaderFont = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
-
-    for (let i = 1; i <= headers.length; i++) {
-      const cell = headerRow.getCell(i);
-      cell.fill = columnHeaderFill;
-      cell.font = columnHeaderFont;
-      cell.alignment = { horizontal: i <= 4 ? 'left' : 'right', vertical: 'middle' } as any;
-      cell.border = {
-        top: { style: 'thin', color: { argb: '475569' } },
-        bottom: { style: 'medium', color: { argb: '1E293B' } },
-        left: { style: 'thin', color: { argb: '475569' } },
-        right: { style: 'thin', color: { argb: '475569' } },
-      } as any;
-    }
-
-    let currentRow = 6;
-
-    const parentRowFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } } as any;
-    const parentFont = { name: 'Arial', size: 10, bold: true, color: { argb: '0F172A' } };
-    const childFont = { name: 'Arial', size: 10, color: { argb: '334155' } };
-    const borderThin = {
-      top: { style: 'thin', color: { argb: 'E2E8F0' } },
-      bottom: { style: 'thin', color: { argb: 'E2E8F0' } },
-      left: { style: 'thin', color: { argb: 'E2E8F0' } },
-      right: { style: 'thin', color: { argb: 'E2E8F0' } },
-    } as any;
-
-    for (const group of data) {
-      const pRow = sheet.getRow(currentRow);
-      pRow.values = [
-        group.sku,
-        group.articleName,
-        'ALL COLORS',
-        'ALL SIZES',
-        group.totals.bf,
-        group.totals.fromWarehouse,
-        group.totals.fromOutlet,
-        group.totals.totalTrfIn,
-        group.totals.toWarehouse,
-        group.totals.toOutlet,
-        group.totals.totalTrfOut,
-        group.totals.exchg,
-        group.totals.refund,
-        group.totals.claim,
-        group.totals.sales,
-        group.totals.adj,
-        group.totals.availableStock,
-        group.totals.transit,
-        group.totals.balance,
-      ];
-      pRow.height = 22;
-
-      for (let i = 1; i <= headers.length; i++) {
-        const cell = pRow.getCell(i);
-        cell.fill = parentRowFill;
-        cell.font = parentFont;
-        cell.alignment = { horizontal: i <= 4 ? 'left' : 'right', vertical: 'middle' } as any;
-        cell.border = borderThin;
-      }
-      currentRow++;
-
-      for (const v of group.variants) {
-        const cRow = sheet.getRow(currentRow);
-        cRow.values = [
-          '',
-          '',
-          v.color,
-          v.size,
-          v.bf,
-          v.fromWarehouse,
-          v.fromOutlet,
-          v.totalTrfIn,
-          v.toWarehouse,
-          v.toOutlet,
-          v.totalTrfOut,
-          v.exchg,
-          v.refund,
-          v.claim,
-          v.sales,
-          v.adj,
-          v.availableStock,
-          v.transit,
-          v.balance,
-        ];
-        cRow.height = 20;
-
-        for (let i = 1; i <= headers.length; i++) {
-          const cell = cRow.getCell(i);
-          cell.font = childFont;
-          cell.alignment = { horizontal: i <= 4 ? 'left' : 'right', vertical: 'middle' } as any;
-          cell.border = borderThin;
+        if (levelName === 'brand') {
+          nodeVal = item.brand?.name || 'No Brand';
+        } else if (levelName === 'division') {
+          nodeVal = item.division?.name || 'No Division';
+        } else if (levelName === 'category') {
+          nodeVal = item.category?.name || 'No Category';
+        } else if (levelName === 'gender') {
+          nodeVal = item.gender?.name || 'No Gender';
+        } else if (levelName === 'silhouette') {
+          nodeVal = item.silhouette?.name || 'No Silhouette';
+        } else if (levelName === 'article') {
+          nodeVal = item.sku;
+          extraFields.sku = item.sku;
+          extraFields.articleName = item.description || 'Unknown Article';
+        } else if (levelName === 'variant') {
+          nodeVal = `${item.color?.name || 'Default'}-${item.size?.name || 'Default'}`;
+          extraFields.color = item.color?.name || 'Default';
+          extraFields.size = item.size?.name || 'Default';
         }
-        currentRow++;
+
+        let existingNode = currentLevelNodes.find(n => n.level === levelName && n.value === nodeVal);
+        if (!existingNode) {
+          existingNode = {
+            level: levelName,
+            value: nodeVal,
+            totals: createEmptyTotals(),
+            ...extraFields,
+            children: [],
+          };
+          currentLevelNodes.push(existingNode);
+        }
+
+        addTotals(existingNode.totals, variantMetrics);
+
+        if (i < levels.length - 1) {
+          currentLevelNodes = existingNode.children;
+        }
       }
     }
 
-    sheet.columns.forEach((col, idx) => {
-      if (col) {
-        let maxLen = 0;
-        col.eachCell?.({ includeEmpty: false }, (cell, rowNumber) => {
-          if (rowNumber > 3) {
-            const val = cell.value ? cell.value.toString() : '';
-            if (val.length > maxLen) {
-              maxLen = val.length;
-            }
-          }
-        });
-        col.width = maxLen < 12 ? 12 : maxLen + 3;
-      }
-    });
-
-    if (sheet.getColumn(1)) sheet.getColumn(1).width = 18;
-    if (sheet.getColumn(2)) sheet.getColumn(2).width = 30;
-
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const filename = `stock-activity-report-${timestamp}.xlsx`;
-
-    res.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.header('Content-Disposition', `attachment; filename="${filename}"`);
-    res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
-
-    await workbook.xlsx.write(res);
+    return root;
   }
 }

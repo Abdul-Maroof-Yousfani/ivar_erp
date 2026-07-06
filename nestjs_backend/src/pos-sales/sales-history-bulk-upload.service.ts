@@ -14,7 +14,7 @@ export class SalesHistoryBulkUploadService {
         @InjectQueue('sales-history-upload') private uploadQueue: Queue,
         private prisma: PrismaService,
         private eventsService: UploadEventsService,
-    ) {}
+    ) { }
 
     async initiateValidation(
         fileBuffer: Buffer,

@@ -6,10 +6,12 @@ import {
     Param,
     Query,
     Req,
+    Res,
     UseGuards,
     BadRequestException,
     Patch,
 } from '@nestjs/common';
+import { NetSalesSummaryExportService } from './net-sales-summary-export.service';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PosSalesService } from './pos-sales.service';
 import { CreateSalesOrderDto } from './dto/create-sales-order.dto';
@@ -28,6 +30,7 @@ export class PosSalesController {
     constructor(
         private readonly posSalesService: PosSalesService,
         private readonly customerService: CustomerService,
+        private readonly netSalesSummaryExportService: NetSalesSummaryExportService,
     ) { }
 
     // ─── POS Customer Endpoints ────────────────────────────────────────
@@ -209,12 +212,62 @@ export class PosSalesController {
         );
     }
 
+    // ─── List sales activities (Activity Log) ─────────────────────────
+    @Get('activities')
+    @Permissions('pos.sales.history.view')
+    @ApiOperation({ summary: 'List sales activities (sales, returns, refunds, claims)' })
+    async listActivities(
+        @Req() req: any,
+        @Query('page') page?: number,
+        @Query('limit') limit?: number,
+        @Query('posId') posId?: string,
+        @Query('activityType') activityType?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('search') search?: string,
+    ) {
+        // Determine effective filtering context
+        let effectivePosId = posId;
+        let effectiveLocationId: string | undefined = undefined;
+
+        // 1. Context from logged-in user
+        if (req.user?.isPosUser || req.user?.isTerminal) {
+            if (!effectivePosId) effectivePosId = req.user.posId || req.user.terminalId;
+            effectiveLocationId = req.user.locationId;
+        }
+
+        // 2. Fallback to terminal cookie
+        if (!effectivePosId && req.cookies?.posTerminalToken) {
+            try {
+                const decoded: any = jwt.decode(req.cookies.posTerminalToken);
+                effectivePosId = decoded?.posId || decoded?.terminalId;
+                if (!effectiveLocationId) effectiveLocationId = decoded?.locationId;
+            } catch (e) { }
+        }
+
+        // 3. Fallback: any user with a locationId on their token
+        if (!effectiveLocationId && req.user?.locationId) {
+            effectiveLocationId = req.user.locationId;
+        }
+
+        return this.posSalesService.listSalesActivities(
+            req.user,
+            page ? Number(page) : 1,
+            limit ? Number(limit) : 20,
+            effectivePosId,
+            activityType,
+            { startDate, endDate, search },
+            effectiveLocationId,
+        );
+    }
+
+
     // ─── Get return details for printing return slip ──────────────────
     // IMPORTANT: This must come BEFORE @Get('orders/:id') to avoid route conflict
     @Get('orders/:id/return-details')
     @ApiOperation({ summary: 'Get return details for printing return slip' })
-    async getReturnDetails(@Param('id') id: string) {
-        return this.posSalesService.getReturnDetails(id);
+    async getReturnDetails(@Param('id') id: string, @Query('type') type?: 'return' | 'refund') {
+        return this.posSalesService.getReturnDetails(id, type);
     }
 
     // ─── List hold orders ─────────────────────────────────────────────
@@ -434,5 +487,121 @@ export class PosSalesController {
             limit: limit ? Number(limit) : 50,
             search,
         });
+    }
+
+    // ─── Net Sales Summary Endpoints ───────────────────────────────
+
+    @Get('reports/net-sales-summary')
+    @ApiOperation({ summary: 'Get Net Sales Summary Report' })
+    async getNetSalesSummary(
+        @Query('locationId') locationId: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('cashierUserId') cashierUserId?: string,
+        @Query('summaryOnly') summaryOnly?: string,
+        @Query('showSalesperson') showSalesperson?: string,
+        @Query('showYear') showYear?: string,
+        @Query('showMonth') showMonth?: string,
+        @Query('showDay') showDay?: string,
+        @Query('showDocument') showDocument?: string,
+        @Query('showBrand') showBrand?: string,
+        @Query('showDivision') showDivision?: string,
+        @Query('showSalesTax') showSalesTax?: string,
+        @Query('showCategory') showCategory?: string,
+        @Query('showGender') showGender?: string,
+        @Query('showSilhouette') showSilhouette?: string,
+        @Query('showArticle') showArticle?: string,
+        @Query('showVariant') showVariant?: string,
+    ) {
+        return this.posSalesService.getNetSalesSummaryReport({
+            locationId,
+            startDate,
+            endDate,
+            cashierUserId,
+            summaryOnly: summaryOnly === 'true',
+            showSalesperson: showSalesperson === 'true',
+            showYear: showYear === 'true',
+            showMonth: showMonth === 'true',
+            showDay: showDay === 'true',
+            showDocument: showDocument === 'true',
+            showBrand: showBrand !== undefined ? showBrand === 'true' : undefined,
+            showDivision: showDivision !== undefined ? showDivision === 'true' : undefined,
+            showSalesTax: showSalesTax === 'true',
+            showCategory: showCategory !== undefined ? showCategory === 'true' : undefined,
+            showGender: showGender !== undefined ? showGender === 'true' : undefined,
+            showSilhouette: showSilhouette !== undefined ? showSilhouette === 'true' : undefined,
+            showArticle: showArticle !== undefined ? showArticle === 'true' : undefined,
+            showVariant: showVariant !== undefined ? showVariant === 'true' : undefined,
+        });
+    }
+
+    @Post('reports/net-sales-summary/export/queue')
+    @ApiOperation({ summary: 'Queue Net Sales Summary Export' })
+    async queueNetSalesSummaryExport(
+        @Req() req: any,
+        @Body() body: {
+            locationId: string;
+            startDate?: string;
+            endDate?: string;
+            cashierUserId?: string;
+            format: 'xlsx' | 'pdf';
+            summaryOnly?: boolean;
+            showSalesperson?: boolean;
+            showYear?: boolean;
+            showMonth?: boolean;
+            showDay?: boolean;
+            showDocument?: boolean;
+            showBrand?: boolean;
+            showDivision?: boolean;
+            showSalesTax?: boolean;
+            showCategory?: boolean;
+            showGender?: boolean;
+            showSilhouette?: boolean;
+            showArticle?: boolean;
+            showVariant?: boolean;
+        },
+    ) {
+        const userId = req.user?.userId || req.user?.id;
+        const result = await this.netSalesSummaryExportService.queueExport({
+            userId,
+            locationId: body.locationId,
+            startDate: body.startDate,
+            endDate: body.endDate,
+            cashierUserId: body.cashierUserId,
+            format: body.format,
+            summaryOnly: body.summaryOnly,
+            showSalesperson: body.showSalesperson,
+            showYear: body.showYear,
+            showMonth: body.showMonth,
+            showDay: body.showDay,
+            showDocument: body.showDocument,
+            showBrand: body.showBrand,
+            showDivision: body.showDivision,
+            showSalesTax: body.showSalesTax,
+            showCategory: body.showCategory,
+            showGender: body.showGender,
+            showSilhouette: body.showSilhouette,
+            showArticle: body.showArticle,
+            showVariant: body.showVariant,
+        });
+        return { status: true, data: result };
+    }
+
+    @Get('reports/net-sales-summary/export/:jobId/status')
+    @ApiOperation({ summary: 'Get Net Sales Summary Export Status' })
+    async getNetSalesSummaryExportStatus(@Param('jobId') jobId: string) {
+        const result = await this.netSalesSummaryExportService.getJobStatus(jobId);
+        return { status: true, data: result };
+    }
+
+    @Get('reports/net-sales-summary/export/:jobId/download')
+    @ApiOperation({ summary: 'Download Net Sales Summary Export' })
+    async downloadNetSalesSummaryExport(@Param('jobId') jobId: string, @Res() res: any) {
+        try {
+            await this.netSalesSummaryExportService.streamExportFile(jobId, res);
+        } catch (err: any) {
+            const status = err?.status ?? 404;
+            res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });
+        }
     }
 }

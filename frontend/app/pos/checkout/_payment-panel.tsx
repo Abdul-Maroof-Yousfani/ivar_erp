@@ -37,11 +37,11 @@ interface ValidatedVoucher {
 }
 
 const TENDER_OPTIONS = [
-    { value: "cash", label: "Cash", icon: Banknote },
-    { value: "card", label: "Card", icon: CreditCard },
-    { value: "bank_transfer", label: "Bank Transfer", icon: Building2 },
-    { value: "voucher", label: "Voucher", icon: Ticket },
-    { value: "credit_account", label: "Credit Account", icon: BookOpen },
+    { value: "cash", label: "Cash (Alt+1)", icon: Banknote },
+    { value: "card", label: "Card (Alt+2)", icon: CreditCard },
+    { value: "bank_transfer", label: "Bank Transfer (Alt+3)", icon: Building2 },
+    { value: "voucher", label: "Voucher (Alt+4)", icon: Ticket },
+    { value: "credit_account", label: "Credit Account (Alt+5)", icon: BookOpen },
 ];
 
 interface PaymentPanelProps {
@@ -186,10 +186,13 @@ export function PaymentPanel({
                                         onMerchantChange(m || null);
                                     }}
                                 >
-                                    <SelectTrigger className={cn(
-                                        "mt-1 h-9",
-                                        !selectedMerchant && "border-amber-400 focus:ring-amber-400"
-                                    )}>
+                                    <SelectTrigger 
+                                        id="merchant-terminal-select"
+                                        className={cn(
+                                            "mt-1 h-9",
+                                            !selectedMerchant && "border-amber-400 focus:ring-amber-400"
+                                        )}
+                                    >
                                         {isLoadingMerchants ? (
                                             <span className="flex items-center gap-1.5 text-muted-foreground">
                                                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading merchants...
@@ -271,6 +274,7 @@ export function PaymentPanel({
                                 <Label className="text-xs text-muted-foreground uppercase tracking-wide">Voucher Code</Label>
                                 <div className="relative mt-1">
                                     <Input
+                                        id="voucher-code-input"
                                         className={cn(
                                             "font-mono uppercase pr-8 h-9 text-sm",
                                             validatedVoucher && "border-emerald-400 focus-visible:ring-emerald-400",

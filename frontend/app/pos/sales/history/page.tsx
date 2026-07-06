@@ -533,7 +533,6 @@ export default function SalesHistoryPage() {
                     taxAmount: Number(oi.taxAmount),
                     total: Number(oi.lineTotal),
                     inStock: true, stockQty: 999,
-                    isStockInTransit: oi.isStockInTransit || false,
                 }));
                 sessionStorage.setItem("pos_resume_cart", JSON.stringify(cartItems));
                 toast.success(`Resuming ${resumed.orderNumber}`);
@@ -1183,7 +1182,11 @@ export default function SalesHistoryPage() {
             {/* Print Return Receipt */}
             {showReturnPrint && selectedOrder && (
                 <PrintReturnReceipt
-                    returnRef={selectedOrder.orderNumber}
+                    returnRef={
+                        isRefundPrint
+                            ? (returnDetails?.refundNumber || selectedOrder.refundNumber || selectedOrder.orderNumber || "")
+                            : (returnDetails?.returnNumber || selectedOrder.returnNumber || selectedOrder.orderNumber || "")
+                    }
                     isRefund={isRefundPrint}
                     isAlliance={!!selectedOrder.alliance}
                     originalOrders={[{ orderNumber: selectedOrder.orderNumber, grandTotal: Number(selectedOrder.grandTotal) }]}

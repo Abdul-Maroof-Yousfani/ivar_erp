@@ -64,6 +64,7 @@ interface Tender {
   amount: number;
   cardLast4?: string;
   slipNo?: string;
+  voucherFaceValue?: number;
 }
 
 interface PrintReceiptProps {
@@ -224,6 +225,11 @@ export function PrintReceipt({
         const dataUrl = await htmlToImage.toPng(reportRef.current, {
           backgroundColor: "#ffffff",
           pixelRatio: 2,
+          style: {
+            position: "relative",
+            left: "0",
+            top: "0",
+          },
         });
 
         const imgProps = new jsPDF().getImageProperties(dataUrl);
@@ -388,10 +394,16 @@ export function PrintReceipt({
     ? Number(order.grandTotal)
     : valueForSales + totalTax;
 
-  const fbrPosFee = Number(order?.fbrPosFee ?? 0) || 1; // Default to 1 if not set
+  const hasFbrInfo = !!(
+    (user?.terminal?.location?.fbrEnabled &&
+      (user?.terminal?.location?.fbrNtn || settings.receiptNTN)) ||
+    order?.fbrInvoiceNumber
+  );
+
+  const fbrPosFee = hasFbrInfo ? (Number(order?.fbrPosFee ?? 0) || 1) : 0;
   const finalGrandTotal = isSavedOrder ? grandTotal : grandTotal + fbrPosFee;
   const changeAmount = Number(order?.changeAmount ?? 0);
-  const totalPaid = tenders.reduce((s, t) => s + t.amount, 0);
+  const totalPaid = tenders.reduce((s, t) => s + (t.method === "voucher" && t.voucherFaceValue ? t.voucherFaceValue : t.amount), 0);
 
   // Alliance distribution for display - proportional to item value
   const calculateProportionalDiscount = (
@@ -449,6 +461,7 @@ export function PrintReceipt({
     suppressItemDiscounts,
     suppressLabel,
     creditVouchers,
+    hasFbrInfo,
   };
 
   return (
@@ -680,6 +693,7 @@ interface ReceiptBodyProps {
     faceValue: number;
     expiresAt: Date | null;
   }[];
+  hasFbrInfo?: boolean;
 }
 
 function ReceiptBody({
@@ -710,14 +724,9 @@ function ReceiptBody({
   suppressItemDiscounts,
   suppressLabel = "Alliance Disc",
   creditVouchers,
+  hasFbrInfo,
 }: ReceiptBodyProps) {
   const isSavedOrder = !!(order && order.id);
-
-  // Normalize customer details
-  const customerName = order?.customer?.name || order?.customerName || "Walk-in Customer";
-  const customerPhone = order?.customer?.phone || order?.customerPhone || order?.customerMobile || "N/A";
-  const customerEmail = order?.customer?.email || order?.customerEmail || "";
-  const customerAddress = order?.customer?.address || order?.customerAddress || "";
 
   // Calculate total WOST value for proportional discount
   const totalWostValue = items.reduce((sum, item) => {
@@ -803,8 +812,10 @@ function ReceiptBody({
           <Row label="Date" value={fmtDate(order?.createdAt)} />
           {cashierName && <Row label="Sales By" value={cashierName} />}
           {terminalName && <Row label="Terminal" value={terminalName} />}
-          <Row label="Customer" value={customerName} bold />
-          {customerPhone && customerPhone !== "N/A" && <Row label="Phone" value={customerPhone} />}
+          <Row label="Customer" value={order?.customer?.name || order?.customerName || "Walk-in Customer"} bold />
+          {(order?.customer?.phone || order?.customerPhone || order?.customerMobile) && (order?.customer?.phone || order?.customerPhone || order?.customerMobile) !== "N/A" && (
+            <Row label="Phone" value={order?.customer?.phone || order?.customerPhone || order?.customerMobile} />
+          )}
         </div>
       </div>
 
@@ -834,8 +845,12 @@ function ReceiptBody({
       {/* ── Item lines ── */}
       {items.map((item: any, idx: number) => {
         const taxPct = item.taxPercent ?? 0;
-        const taxDivisor = 1 + taxPct / 100;
+        const taxDivisor = 1 + taxPct / 100; // e.g., 1.18 for 18%, 1.25 for 25%
+
+        // Step 1: Retail price is the unit price (item.price)
         const retailPrice = item.price;
+
+        // Step 2: WOST = Retail / (1 + tax%) - this removes the tax to get the base price
         const wostPerUnit = retailPrice / taxDivisor;
         const totalWost = wostPerUnit * item.quantity;
 
@@ -852,17 +867,38 @@ function ReceiptBody({
           tax = item.taxAmount ?? 0;
           valueIncludingTax = item.lineTotal ?? amtAfterDisc + tax;
         } else {
-          const itemDiscPct = item.overrideDiscountPercent ?? item.discountPercent ?? 0;
+          // Step 3: Discount % from item (use override if present)
+          const itemDiscPct =
+            item.overrideDiscountPercent ?? item.discountPercent ?? 0;
+          // Discount Amount = Total WOST × Discount %
           const rawDisc = totalWost * (itemDiscPct / 100);
+
+          // If alliance/coupon suppressed item discount, calculate proportional discount
           let disc = suppressItemDiscounts ? 0 : rawDisc;
           displayDisc = disc;
           displayDiscPct = suppressItemDiscounts ? 0 : itemDiscPct;
+
           if (suppressItemDiscounts) {
-            displayDisc = calculateProportionalDiscount(totalWost, totalWostValue, orderDiscount);
-            displayDiscPct = totalWost > 0 ? Math.round((displayDisc / totalWost) * 100 * 100) / 100 : 0;
+            // Proportional discount: (orderDiscount × itemWOST) / totalWOST
+            displayDisc = calculateProportionalDiscount(
+              totalWost,
+              totalWostValue,
+              orderDiscount,
+            );
+            displayDiscPct =
+              totalWost > 0
+                ? Math.round((displayDisc / totalWost) * 100 * 100) / 100
+                : 0;
           }
-          amtAfterDisc = totalWost - (suppressItemDiscounts ? displayDisc : disc);
+
+          // Step 4: Amount after Discount
+          amtAfterDisc =
+            totalWost - (suppressItemDiscounts ? displayDisc : disc);
+
+          // Step 5: Tax = Amount after Discount × tax%
           tax = amtAfterDisc * (taxPct / 100);
+
+          // Step 6: Value Including Tax
           valueIncludingTax = amtAfterDisc + tax;
         }
 
@@ -913,7 +949,7 @@ function ReceiptBody({
           <Row label="Value for Sales" value={fmt(Math.round(valueForSales))} />
           {settings.receiptShowTax && <Row label="Sales Tax" value={fmt(Math.round(totalTax))} />}
           <Row label="Total Incl. Tax" value={fmt(Math.round(finalGrandTotal - fbrPosFee))} bold />
-          <Row label="FBR POS Fee" value={fmt(Math.round(fbrPosFee))} />
+          {hasFbrInfo && fbrPosFee > 0 && <Row label="FBR POS Fee" value={fmt(Math.round(fbrPosFee))} />}
           <Row label="GRAND TOTAL" value={fmt(Math.round(finalGrandTotal))} bold />
         </div>
       ) : (
@@ -928,8 +964,8 @@ function ReceiptBody({
           {tenders.map((t, i) => (
             <Row
               key={i}
-              label={`${t.method.replace(/_/g, " ")}${t.cardLast4 ? ` ••••${t.cardLast4}` : ""}${t.slipNo ? ` (${t.slipNo})` : ""}`}
-              value={fmt(t.amount)}
+              label={`${t.method.replace(/_/g, " ")}${t.cardLast4 ? ` ••••${t.cardLast4}` : ""}${t.slipNo ? (t.method === "voucher" ? ` #${t.slipNo}` : ` (${t.slipNo})`) : ""}`}
+              value={t.method === "voucher" && t.voucherFaceValue ? fmt(t.voucherFaceValue) : fmt(t.amount)}
             />
           ))}
           {totalPaid > 0 && totalPaid !== finalGrandTotal && <Row label="Total Paid" value={fmt(totalPaid)} />}
@@ -952,7 +988,7 @@ function ReceiptBody({
       )}
 
       {/* ── FBR QR ── */}
-      {!isGiftReceipt && (
+      {!isGiftReceipt && hasFbrInfo && (
         <div className="py-1 border-b border-dashed border-zinc-400 flex items-center gap-2">
           <div style={{ flexShrink: 0 }}>
             <Image
@@ -977,7 +1013,7 @@ function ReceiptBody({
       {/* ── Terms ── */}
       <div className="py-1 border-b border-dashed border-zinc-400 text-[8px] leading-snug">
         <p className="font-bold text-[9px] uppercase">Terms &amp; Conditions</p>
-        <p>• No refund. Exchange within 4   days on unused items with invoice. Sale items non-exchangeable. Full-price items go on sale: exchanged at marked-down price.</p>
+        <p>• No refund. Exchange within 4 days on unused items with invoice. Sale items non-exchangeable. Full-price items go on sale: exchanged at marked-down price.</p>
       </div>
 
       {/* ── Footer ── */}
@@ -988,7 +1024,6 @@ function ReceiptBody({
     </div>
   );
 }
-
 
 function A4InvoiceBody({
   isGiftReceipt,
@@ -1018,6 +1053,7 @@ function A4InvoiceBody({
   suppressItemDiscounts,
   suppressLabel = "Alliance Disc",
   creditVouchers,
+  hasFbrInfo,
 }: ReceiptBodyProps) {
   const isSavedOrder = !!(order && order.id);
 
@@ -1053,16 +1089,7 @@ function A4InvoiceBody({
       {/* Top Header Section */}
       <div>
         <div className="flex justify-between items-start border-b-2 border-zinc-800 pb-5 mb-6">
-          <div className="space-y-2">
-            <Image
-              src={typeof window !== "undefined" ? `${window.location.origin}/image-v2.png` : "/image-v2.png"}
-              alt="Store Logo"
-              width={140}
-              height={50}
-              className="object-contain mb-1"
-              unoptimized
-              priority
-            />
+          <div className="space-y-1">
             <h1 className="text-xl font-extrabold tracking-tight uppercase text-zinc-900">
               {storeName}
             </h1>
@@ -1085,7 +1112,7 @@ function A4InvoiceBody({
             </div>
             <div className="text-[10px] text-zinc-500 space-y-0.5 pt-1">
               <p><span className="font-semibold text-zinc-700">Date:</span> {fmtDate(order?.createdAt)}</p>
-              {cashierName && <p><span className="font-semibold text-zinc-700">Cashier:</span> {cashierName}</p>}
+              {cashierName && <p><span className="font-semibold text-zinc-700">Salesman:</span> {cashierName}</p>}
               {terminalName && <p><span className="font-semibold text-zinc-700">Terminal:</span> {terminalName}</p>}
             </div>
           </div>
@@ -1238,7 +1265,9 @@ function A4InvoiceBody({
                         {t.cardLast4 ? ` •••• ${t.cardLast4}` : ""}
                         {t.slipNo ? ` (${t.slipNo})` : ""}
                       </span>
-                      <span className="font-bold text-zinc-800">Rs. {fmt(t.amount)}</span>
+                      <span className="font-bold text-zinc-800">
+                        Rs. {t.method === "voucher" && t.voucherFaceValue ? fmt(t.voucherFaceValue) : fmt(t.amount)}
+                      </span>
                     </div>
                   ))}
                   {changeAmount > 0 && (
@@ -1251,33 +1280,35 @@ function A4InvoiceBody({
               </div>
 
               {/* FBR integration info */}
-              <div className="flex gap-4 items-center bg-zinc-50 border border-zinc-200 rounded-lg p-3">
-                <div className="shrink-0 bg-white p-1 rounded border border-zinc-200">
-                  <Image
-                    src={
-                      typeof window !== "undefined"
-                        ? `${window.location.origin}/fbr_logo.png`
-                        : "/fbr_logo.png"
-                    }
-                    alt="FBR Logo"
-                    width={50}
-                    height={50}
-                    className="object-contain"
-                    unoptimized
-                  />
-                </div>
-                <div className="space-y-1 flex-1">
-                  <p className="text-[10px] text-zinc-600 leading-snug">
-                    This receipt is verified by FBR POS Invoicing System. Verify via FBR Tax Asaan App or SMS at <strong>9966</strong>.
-                  </p>
-                  <div className="flex items-center gap-1 text-[9px] text-zinc-400">
-                    <span>Scan verified QR to check invoicing status</span>
+              {hasFbrInfo && (
+                <div className="flex gap-4 items-center bg-zinc-50 border border-zinc-200 rounded-lg p-3">
+                  <div className="shrink-0 bg-white p-1 rounded border border-zinc-200">
+                    <Image
+                      src={
+                        typeof window !== "undefined"
+                          ? `${window.location.origin}/fbr_logo.png`
+                          : "/fbr_logo.png"
+                      }
+                      alt="FBR Logo"
+                      width={50}
+                      height={50}
+                      className="object-contain"
+                      unoptimized
+                    />
+                  </div>
+                  <div className="space-y-1 flex-1">
+                    <p className="text-[10px] text-zinc-600 leading-snug">
+                      This receipt is verified by FBR POS Invoicing System. Verify via FBR Tax Asaan App or SMS at <strong>9966</strong>.
+                    </p>
+                    <div className="flex items-center gap-1 text-[9px] text-zinc-400">
+                      <span>Scan verified QR to check invoicing status</span>
+                    </div>
+                  </div>
+                  <div className="shrink-0 bg-white p-1 rounded border border-zinc-200">
+                    <QRCodeSVG value={fbrVerifyUrl} size={48} level="M" />
                   </div>
                 </div>
-                <div className="shrink-0 bg-white p-1 rounded border border-zinc-200">
-                  <QRCodeSVG value={fbrVerifyUrl} size={48} level="M" />
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Right Column: Pricing Aggregations */}
@@ -1306,10 +1337,12 @@ function A4InvoiceBody({
                 </div>
               )}
 
-              <div className="flex justify-between text-zinc-550 py-0.5 text-[10px]">
-                <span>FBR POS Service Charge</span>
-                <span className="font-mono">{fmt(Math.round(fbrPosFee))}</span>
-              </div>
+              {hasFbrInfo && fbrPosFee > 0 && (
+                <div className="flex justify-between text-zinc-550 py-0.5 text-[10px]">
+                  <span>FBR POS Service Charge</span>
+                  <span className="font-mono">{fmt(Math.round(fbrPosFee))}</span>
+                </div>
+              )}
 
               <div className="flex justify-between items-center text-zinc-900 pt-3 mt-2 border-t-2 border-zinc-800">
                 <span className="font-black text-sm uppercase">Grand Total (Incl. Tax)</span>
@@ -1365,11 +1398,10 @@ function A4InvoiceBody({
                 Terms &amp; Conditions of Sale
               </p>
               <ul className="list-disc pl-3 space-y-0.5">
-                <li>No refund under any circumstances.</li>
-                <li>Exchange is allowed within 10 days of purchase only on unused items from the outlet where purchased.</li>
-                <li>Sales Tax Invoice must be presented for any exchange or claim.</li>
-                <li>Sales and promotional items are strictly non-exchangeable.</li>
-                <li>Items purchased at full price which go on sale will be exchanged at the marked down price.</li>
+                <li>Sales Tax Invoices must be presented for any queries or claims.</li>
+                <li>Exchange is allowed within 10 days of purchase only on unused items.</li>
+                <li>Items bought on sales and promotional campaigns are non-exchangeable.</li>
+                <li>Product returns and cash refunds are not available under any circumstances.</li>
               </ul>
             </div>
 
@@ -1397,6 +1429,7 @@ function A4InvoiceBody({
             <p className="text-[9px] text-zinc-400 font-mono mt-0.5">
               Invoice Ref: {order?.orderNumber}
             </p>
+            <p className="text-[9px] text-zinc-400 pt-0.5">Software by Innovative Network</p>
           </div>
         </div>
       </div>
