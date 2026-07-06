@@ -264,9 +264,9 @@ export default function SalesActivityPage() {
                             <div key={act.id} className={cn(
                                 "bg-card border rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-all duration-200 border-l-4",
                                 act.type === "sale" ? "border-l-emerald-500" :
-                                act.type === "return" ? "border-l-rose-500" :
-                                act.type === "refund" ? "border-l-purple-500" :
-                                "border-l-amber-500"
+                                    act.type === "return" ? "border-l-rose-500" :
+                                        act.type === "refund" ? "border-l-purple-500" :
+                                            "border-l-amber-500"
                             )}>
                                 {/* Card Header: Activity Summary */}
                                 <div className="bg-muted/30 border-b p-4 grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
@@ -318,7 +318,7 @@ export default function SalesActivityPage() {
                                                 Rs. {formatCurrency(act.approvedAmount ?? act.amount)}
                                             </div>
                                         </div>
-                                        
+
                                         {/* Print Action */}
                                         {canPrint && (
                                             <div className="flex items-center gap-1">
@@ -399,8 +399,8 @@ export default function SalesActivityPage() {
                                                                     <Badge variant="outline" className={cn(
                                                                         "text-[9px] uppercase px-1.5 py-0 h-4 font-mono",
                                                                         it.status === "APPROVED" ? "bg-emerald-500/10 text-emerald-700 border-emerald-300" :
-                                                                        it.status === "REJECTED" ? "bg-rose-500/10 text-rose-700 border-rose-300" :
-                                                                        "bg-amber-500/10 text-amber-700 border-amber-300"
+                                                                            it.status === "REJECTED" ? "bg-rose-500/10 text-rose-700 border-rose-300" :
+                                                                                "bg-amber-500/10 text-amber-700 border-amber-300"
                                                                     )}>
                                                                         {it.status || "Pending"}
                                                                     </Badge>
@@ -424,10 +424,10 @@ export default function SalesActivityPage() {
                                                         const TendIcon = TENDER_ICONS[tend.method] || Banknote;
                                                         return (
                                                             <Badge key={tIdx} variant="secondary" className="gap-1 font-mono text-[10px] capitalize">
-                                                                    <TendIcon className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />
-                                                                    {tend.method.replace("_", " ")}
-                                                                    {tend.slipNo && <span className="text-[9px] text-muted-foreground ml-0.5">#{tend.slipNo}</span>}
-                                                                    <span className="font-semibold text-foreground ml-1">Rs.{formatCurrency(tend.amount)}</span>
+                                                                <TendIcon className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />
+                                                                {tend.method.replace("_", " ")}
+                                                                {tend.slipNo && <span className="text-[9px] text-muted-foreground ml-0.5">#{tend.slipNo}</span>}
+                                                                <span className="font-semibold text-foreground ml-1">Rs.{formatCurrency(tend.amount)}</span>
                                                             </Badge>
                                                         );
                                                     })}
@@ -533,21 +533,21 @@ export default function SalesActivityPage() {
                     originalOrders={[{ orderNumber: selectedOrder?.orderNumber ?? "", grandTotal: Number(selectedOrder?.grandTotal ?? 0) }]}
                     returnedLines={
                         (returnDetails?.items ?? []).map((item: any) => ({
-                            name:            item.item?.description ?? "Item",
-                            sku:             item.item?.sku ?? "",
-                            size:            item.item?.size?.name ?? "",
-                            brand:           item.item?.brand?.name ?? "",
-                            returnQty:       item.returnableQty ?? item.quantity ?? 1,
-                            paidPerUnit:     item.originalPaidPerUnit ?? Number(item.unitPrice ?? 0),
-                            refundAmount:    item.refundAmount ?? 0,
-                            orderNumber:     selectedOrder?.orderNumber ?? "",
-                            unitPrice:       Number(item.unitPrice ?? 0),
-                            discountAmount:  Number(item.discountAmount ?? 0),
+                            name: item.item?.description ?? "Item",
+                            sku: item.item?.sku ?? "",
+                            size: item.item?.size?.name ?? "",
+                            brand: item.item?.brand?.name ?? "",
+                            returnQty: item.returnableQty ?? item.quantity ?? 1,
+                            paidPerUnit: item.originalPaidPerUnit ?? Number(item.unitPrice ?? 0),
+                            refundAmount: item.refundAmount ?? 0,
+                            orderNumber: selectedOrder?.orderNumber ?? "",
+                            unitPrice: Number(item.unitPrice ?? 0),
+                            discountAmount: Number(item.discountAmount ?? 0),
                             discountPercent: Number(item.discountPercent ?? 0),
-                            taxAmount:       Number(item.taxAmount ?? 0),
-                            taxPercent:      Number(item.taxPercent ?? 0),
-                            refundPerUnit:   item.refundPerUnit,
-                            priceAdjusted:   item.priceAdjusted,
+                            taxAmount: Number(item.taxAmount ?? 0),
+                            taxPercent: Number(item.taxPercent ?? 0),
+                            refundPerUnit: item.refundPerUnit,
+                            priceAdjusted: item.priceAdjusted,
                             originalPaidPerUnit: item.originalPaidPerUnit,
                             couponDeduction: item.couponDeduction,
                         }))
