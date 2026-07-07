@@ -28,7 +28,7 @@ interface PrintReconciliationProps {
 
 // Exact static figures from the prompt for testing or reference
 const SAMPLE_DATA = {
-    companyName: "Speed (Private) Limited",
+    companyName: "IVAR",
     locationName: "Nike-Dolmen Clifton",
     reportTitle: "Sales Reconciliation",
     dateRange: "20/05/2026 - 20/05/2026",

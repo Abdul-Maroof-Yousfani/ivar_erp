@@ -21,7 +21,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 
 // Exact static figures for reference fallback
 const SAMPLE_DATA = {
-    companyName: "Speed (Private) Limited",
+    companyName: "IVAR",
     locationName: "Nike-Dolmen Clifton",
     reportTitle: "Sales Reconciliation",
     dateRange: "",
