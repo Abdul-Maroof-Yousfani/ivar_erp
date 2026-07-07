@@ -10,7 +10,8 @@ import {
     Search,
     Clock,
     CheckCircle2,
-    FileText
+    FileText,
+    Printer
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -22,7 +23,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
-import Link from "next/link";
+import { COMPANY_NAME } from "@/lib/utils";
 
 export default function StockReceivingPage() {
     const { user, hasPermission } = useAuth();
@@ -30,6 +31,7 @@ export default function StockReceivingPage() {
     const [requests, setRequests] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isAccepting, setIsAccepting] = useState<string | null>(null);
+    const [printingId, setPrintingId] = useState<string | null>(null);
 
     const locationId = user?.terminal?.location?.id || user?.locationId;
 
@@ -68,6 +70,174 @@ export default function StockReceivingPage() {
         } finally {
             setIsAccepting(null);
         }
+    };
+
+    const handlePrint = (request: any) => {
+        setPrintingId(request.id);
+        setTimeout(() => {
+            const win = window.open("", "_blank", "width=800,height=800");
+            if (!win) {
+                toast.error("Allow popups to print");
+                setPrintingId(null);
+                return;
+            }
+            win.document.write(`
+                <html>
+                <head>
+                    <title>Delivery Challan - ${request.requestNo}</title>
+                    <style>
+                        * { box-sizing: border-box; margin: 0; padding: 0; }
+                        body { font-family: 'Courier New', Courier, monospace; color: #000; padding: 20px; line-height: 1.4; font-size: 13px; }
+                        .header { display: flex; justify-content: space-between; border-b: 2px solid #000; padding-bottom: 12px; margin-bottom: 20px; }
+                        .logo-section h1 { font-size: 24px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+                        .logo-section p { font-size: 11px; text-transform: uppercase; color: #555; font-weight: bold; }
+                        .company-details { text-align: right; }
+                        .company-name { font-size: 18px; font-weight: bold; }
+                        .company-sub { font-size: 11px; color: #555; }
+                        
+                        .info-grid { display: flex; justify-content: space-between; margin-bottom: 24px; gap: 20px; }
+                        .info-card { border: 1px solid #000; padding: 12px; flex: 1; }
+                        .info-card h3 { font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 6px; border-b: 1px solid #000; padding-bottom: 4px; }
+                        .info-row { display: flex; margin-bottom: 4px; }
+                        .info-label { width: 90px; font-weight: bold; }
+                        .info-value { flex: 1; }
+                        .info-value-bold { font-weight: bold; }
+                        
+                        .loc-grid { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+                        .loc-card { border: 1px solid #000; padding: 8px 12px; }
+                        .loc-title { font-size: 10px; font-weight: bold; text-transform: uppercase; color: #555; }
+                        .loc-name { font-size: 13px; font-weight: bold; }
+                        
+                        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+                        th { background: #eee; color: #000; font-weight: bold; padding: 8px; text-align: left; border: 1px solid #000; font-size: 12px; }
+                        td { padding: 8px; border: 1px solid #000; }
+                        .col-num { text-align: center; width: 30px; }
+                        .col-sku { font-family: monospace; font-weight: bold; }
+                        .col-qty { text-align: right; font-weight: bold; width: 80px; }
+                        
+                        .total-row { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-bottom: 40px; font-size: 14px; font-weight: bold; }
+                        .total-val { font-size: 18px; border-bottom: 2px double #000; padding: 0 4px; }
+                        
+                        .notes-section { border: 1px dashed #000; padding: 10px; margin-bottom: 40px; font-size: 12px; }
+                        .notes-title { font-weight: bold; text-transform: uppercase; margin-bottom: 4px; font-size: 10px; }
+                        
+                        .signatures { display: flex; justify-content: space-between; margin-top: 50px; }
+                        .sig-line { text-align: center; flex: 1; }
+                        .sig-placeholder { border-bottom: 1px solid #000; width: 80%; margin: 0 auto 6px; height: 30px; }
+                        .sig-title { font-size: 11px; font-weight: bold; text-transform: uppercase; }
+                        .sig-subtitle { font-size: 9px; color: #555; }
+                        
+                        .footer-note { text-align: center; font-size: 10px; color: #555; margin-top: 40px; border-top: 1px solid #eee; padding-top: 12px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <div class="logo-section">
+                            <h1>DELIVERY CHALLAN</h1>
+                            <p>Internal Stock Transfer</p>
+                        </div>
+                        <div class="company-details">
+                            <div class="company-name">${COMPANY_NAME}</div>
+                            <div class="company-sub">Company Standard Template</div>
+                        </div>
+                    </div>
+                    
+                    <div class="info-grid">
+                        <div class="info-card">
+                            <h3>Dispatch Details</h3>
+                            <div class="info-row">
+                                <span class="info-label">Challan No:</span>
+                                <span class="info-value info-value-bold">${request.requestNo}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Date:</span>
+                                <span class="info-value">${format(new Date(request.createdAt), "dd MMM yyyy HH:mm")}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Status:</span>
+                                <span class="info-value" style="text-transform: uppercase;">${request.status}</span>
+                            </div>
+                        </div>
+                        
+                        <div class="loc-grid">
+                            <div class="loc-card">
+                                <div class="loc-title">From (Origin)</div>
+                                <div class="loc-name">${request.fromWarehouse?.name || request.fromLocation?.name || "Main Warehouse"}</div>
+                            </div>
+                            <div class="loc-card">
+                                <div class="loc-title">To (Destination)</div>
+                                <div class="loc-name">${request.toLocation?.name || "Outlet Location"}</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="col-num">#</th>
+                                <th>SKU</th>
+                                <th>Description</th>
+                                <th style="text-align: right;">Qty</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${request.items.map((item: any, index: number) => `
+                                <tr>
+                                    <td class="col-num">${index + 1}</td>
+                                    <td class="col-sku">${item.item?.sku || "—"}</td>
+                                    <td>${item.item?.description || "Item"}</td>
+                                    <td class="col-qty">${Number(item.quantity)}</td>
+                                </tr>
+                            `).join("")}
+                        </tbody>
+                    </table>
+                    
+                    <div class="total-row">
+                        <span class="total-label">Total Quantities Dispatched:</span>
+                        <span class="total-val">${request.items.reduce((sum: number, item: any) => sum + Number(item.quantity), 0)}</span>
+                    </div>
+                    
+                    ${request.notes ? `
+                        <div class="notes-section">
+                            <div class="notes-title">Notes</div>
+                            <div>${request.notes}</div>
+                        </div>
+                    ` : ""}
+                    
+                    <div class="signatures">
+                        <div class="sig-line">
+                            <div class="sig-placeholder"></div>
+                            <div class="sig-title">Prepared By</div>
+                            <div class="sig-subtitle">Warehouse / Sign & Stamp</div>
+                        </div>
+                        <div class="sig-line">
+                            <div class="sig-placeholder"></div>
+                            <div class="sig-title">Delivered By</div>
+                            <div class="sig-subtitle">Driver / Vehicle No. & Sign</div>
+                        </div>
+                        <div class="sig-line">
+                            <div class="sig-placeholder"></div>
+                            <div class="sig-title">Received By</div>
+                            <div class="sig-subtitle">Shop Manager / Name & Sign</div>
+                        </div>
+                    </div>
+                    
+                    <div class="footer-note">
+                        This is a computer-generated document. Ensure strict physical verification against quantities mentioned before signing.
+                    </div>
+                    <script>
+                        window.onload = function() {
+                            window.focus();
+                            window.print();
+                            window.close();
+                        };
+                    </script>
+                </body>
+                </html>
+            `);
+            win.document.close();
+            setPrintingId(null);
+        }, 100);
     };
 
     return (
@@ -179,10 +349,18 @@ export default function StockReceivingPage() {
                                                     )}
                                                     {isAccepting === request.id ? "Accepting..." : "Accept"}
                                                 </Button>
-                                                <Button variant="outline" className="w-full md:w-40 h-10 font-semibold text-primary" asChild>
-                                                    <Link href={`/erp/inventory/transactions/stock-transfer/slip/${request.id}`} target="_blank">
-                                                        <FileText className="h-4 w-4 mr-2" /> View Slip
-                                                    </Link>
+                                                <Button
+                                                    variant="outline"
+                                                    className="w-full md:w-40 h-10 font-semibold text-primary gap-2"
+                                                    onClick={() => handlePrint(request)}
+                                                    disabled={printingId === request.id}
+                                                >
+                                                    {printingId === request.id ? (
+                                                        <RefreshCcw className="h-4 w-4 animate-spin" />
+                                                    ) : (
+                                                        <Printer className="h-4 w-4" />
+                                                    )}
+                                                    Print Slip
                                                 </Button>
                                             </div>
                                         </CardContent>

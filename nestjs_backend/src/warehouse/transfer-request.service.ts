@@ -433,6 +433,10 @@ export class TransferRequestService {
             },
           },
         },
+        fromWarehouse: { select: { name: true, code: true } },
+        toWarehouse: { select: { name: true, code: true } },
+        fromLocation: { select: { name: true, code: true } },
+        toLocation: { select: { name: true, code: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -458,6 +462,10 @@ export class TransferRequestService {
             },
           },
         },
+        fromWarehouse: { select: { name: true, code: true } },
+        toWarehouse: { select: { name: true, code: true } },
+        fromLocation: { select: { name: true, code: true } },
+        toLocation: { select: { name: true, code: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -486,6 +494,10 @@ export class TransferRequestService {
             },
           },
         },
+        fromWarehouse: { select: { name: true, code: true } },
+        toWarehouse: { select: { name: true, code: true } },
+        fromLocation: { select: { name: true, code: true } },
+        toLocation: { select: { name: true, code: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -512,6 +524,10 @@ export class TransferRequestService {
             },
           },
         },
+        fromWarehouse: { select: { name: true, code: true } },
+        toWarehouse: { select: { name: true, code: true } },
+        fromLocation: { select: { name: true, code: true } },
+        toLocation: { select: { name: true, code: true } },
       },
       orderBy: { createdAt: 'desc' },
     });

@@ -147,6 +147,7 @@ export class StockMovementService {
       referenceType: 'TRANSFER_REQUEST',
       referenceId: dto.referenceId || movementId,
       rate: itemRate,
+      allowNegativeStock: true,
     }, tx);
 
     // Decrement stock in warehouse (InventoryItem)
