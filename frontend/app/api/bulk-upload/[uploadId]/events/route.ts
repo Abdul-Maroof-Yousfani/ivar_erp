@@ -39,6 +39,8 @@ export async function GET(
             backendPath = `${API_URL}/pos-sales/bulk-upload/${uploadId}/events`;
         } else if (uploadType === "stock") {
             backendPath = `${API_URL}/warehouse/stock/bulk-upload/${uploadId}/events`;
+        } else if (uploadType === "transfer") {
+            backendPath = `${API_URL}/warehouse/stock-transfer/bulk-upload/${uploadId}/events`;
         } else {
             backendPath = `${API_URL}/items/bulk-upload/${uploadId}/events`;
         }

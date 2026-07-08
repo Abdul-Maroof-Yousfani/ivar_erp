@@ -11,6 +11,7 @@ import { TransferRequestService } from './transfer-request.service';
 import { StockLedgerModule } from './stock-ledger/stock-ledger.module';
 import { StockUploadModule } from './stock-upload/stock-upload.module';
 import { StockAdjustmentModule } from './stock-adjustment/stock-adjustment.module';
+import { TransferBulkUploadModule } from './transfer-bulk-upload/transfer-bulk-upload.module';
 import { BullModule } from '@nestjs/bull';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { DeliveryNoteExportController } from './delivery-note-export.controller';
@@ -23,6 +24,7 @@ import { DeliveryNoteExportProcessor } from './delivery-note-export.processor';
     StockLedgerModule,
     StockUploadModule,
     StockAdjustmentModule,
+    TransferBulkUploadModule,
     NotificationsModule,
     BullModule.registerQueue({ name: 'delivery-note-export' }),
   ],

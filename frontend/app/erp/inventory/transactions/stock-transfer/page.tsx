@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { warehouseApi, inventoryApi, locationApi, brandApi, categoryApi, silhouetteApi, genderApi, Warehouse, WarehouseLocation } from '@/lib/api';
 import { createTransferRequest, createReturnTransferRequest, createOutletToOutletTransferRequest } from '@/lib/actions/transfer-request';
 import { toast } from 'sonner';
-import { ArrowLeft, ArrowRightLeft, Search, Package, Save, History, RotateCcw, Trash2, Plus, CheckCircle2, Info, Loader2, WarehouseIcon, ArrowDown, Filter, X, ChevronDown, ChevronRight, ScanBarcode, Volume2, VolumeX, Keyboard, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRightLeft, Search, Package, Save, History, RotateCcw, Trash2, Plus, CheckCircle2, Info, Loader2, WarehouseIcon, ArrowDown, Filter, X, ChevronDown, ChevronRight, ScanBarcode, Volume2, VolumeX, Keyboard, Sparkles, Upload } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { PermissionGuard } from '@/components/auth/permission-guard';
+import { TransferBulkUploadModal } from '@/components/inventory/transfer-bulk-upload-modal';
 
 export default function StockTransferPage() {
     const router = useRouter();
@@ -30,6 +31,72 @@ export default function StockTransferPage() {
     const [masterLocations, setMasterLocations] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+
+    // Bulk upload state
+    const STORAGE_KEY = "active_transfer_upload_id";
+    const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+    const [activeUploadId, setActiveUploadId] = useState<string | null>(null);
+
+    // Restore persisted upload ID on mount
+    useEffect(() => {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) setActiveUploadId(stored);
+    }, []);
+
+    const handleUploadIdChange = (id: string | null) => {
+        setActiveUploadId(id);
+        if (id) {
+            localStorage.setItem(STORAGE_KEY, id);
+        } else {
+            localStorage.removeItem(STORAGE_KEY);
+        }
+    };
+
+    const handleBulkUploadSuccess = (resolvedItems: any[]) => {
+        if (resolvedItems.length === 0) return;
+
+        let warningTriggered = false;
+
+        setSelectedItems(prev => {
+            const updated = [...prev];
+            let addedCount = 0;
+            let incrementedCount = 0;
+
+            for (const newItem of resolvedItems) {
+                const existingIndex = updated.findIndex(i => i.id === newItem.id);
+                const newQty = existingIndex > -1 ? updated[existingIndex].quantity + newItem.quantity : newItem.quantity;
+
+                if (newQty > newItem.availableStock && transferMode !== 'WAREHOUSE_TO_OUTLET') {
+                    warningTriggered = true;
+                }
+
+                if (existingIndex > -1) {
+                    updated[existingIndex].quantity = newQty;
+                    incrementedCount++;
+                } else {
+                    updated.push({
+                        id: newItem.id,
+                        sku: newItem.sku,
+                        description: newItem.description,
+                        color: newItem.color,
+                        size: newItem.size,
+                        quantity: newItem.quantity,
+                        notes: '',
+                        availableStock: newItem.availableStock,
+                    });
+                    addedCount++;
+                }
+            }
+
+            toast.success(`Successfully loaded bulk items: ${addedCount} added, ${incrementedCount} incremented.`);
+            if (warningTriggered) {
+                toast.warning("One or more imported items exceed available stock at source.");
+            }
+            return updated;
+        });
+
+        handleUploadIdChange(null);
+    };
 
     // Form State
     const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
@@ -633,6 +700,33 @@ export default function StockTransferPage() {
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent>Transfer stock between two outlets (requires dual approval)</TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="outline"
+                                onClick={() => setIsUploadModalOpen(true)}
+                                className="border-2 font-bold shadow-sm border-primary/20 hover:border-primary/40 hover:bg-primary/5"
+                                disabled={
+                                    transferMode === 'WAREHOUSE_TO_OUTLET'
+                                        ? !selectedWarehouseId
+                                        : transferMode === 'OUTLET_TO_WAREHOUSE'
+                                        ? !destLocationId
+                                        : !sourceLocationId
+                                }
+                            >
+                                <Upload className="h-4 w-4 mr-2" /> Bulk Upload
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            {transferMode === 'WAREHOUSE_TO_OUTLET'
+                                ? (selectedWarehouseId ? "Bulk upload items from CSV/Excel" : "Select warehouse first")
+                                : transferMode === 'OUTLET_TO_WAREHOUSE'
+                                ? (destLocationId ? "Bulk upload items from CSV/Excel" : "Select source outlet first")
+                                : (sourceLocationId ? "Bulk upload items from CSV/Excel" : "Select source outlet first")
+                            }
+                        </TooltipContent>
                     </Tooltip>
 
                     <Tooltip>
@@ -1411,6 +1505,22 @@ export default function StockTransferPage() {
                 </Card>
             </div>
             </div>
+
+            <TransferBulkUploadModal
+                open={isUploadModalOpen}
+                onOpenChange={setIsUploadModalOpen}
+                uploadId={activeUploadId}
+                onUploadIdChange={handleUploadIdChange}
+                onSuccess={handleBulkUploadSuccess}
+                warehouseId={transferMode === 'WAREHOUSE_TO_OUTLET' ? selectedWarehouseId : ''}
+                locationId={
+                    transferMode === 'OUTLET_TO_WAREHOUSE'
+                        ? destLocationId
+                        : transferMode === 'OUTLET_TO_OUTLET'
+                        ? sourceLocationId
+                        : undefined
+                }
+            />
         </PermissionGuard>
     );
 }
