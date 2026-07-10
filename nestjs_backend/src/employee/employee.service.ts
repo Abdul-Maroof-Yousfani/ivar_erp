@@ -530,10 +530,6 @@ export class EmployeeService {
       if (!(body as { leavesPolicy?: unknown }).leavesPolicy) {
         throw new Error('Leaves Policy is required');
       }
-      if (!(body as { allocation?: unknown }).allocation) {
-        throw new Error('Allocation is required');
-      }
-
       // Resolve department (handle both ID and name)
       const departmentValue = String(
         (body as { department?: unknown }).department,
@@ -1292,6 +1288,9 @@ export class EmployeeService {
         | undefined;
       const leavesPolicyValue = (body as { leavesPolicy?: unknown })
         .leavesPolicy as string | undefined;
+      const allocationValue = (body as { allocation?: unknown }).allocation as
+        | string
+        | undefined;
       const allowRemoteAttendanceValue = (
         body as {
           allowRemoteAttendance?: unknown;
@@ -1407,6 +1406,20 @@ export class EmployeeService {
           );
         } else {
           resolvedLocationId = locationValue;
+        }
+      }
+
+      let resolvedAllocationId: string | null | undefined = undefined;
+      if (allocationValue !== undefined) {
+        if (!allocationValue) {
+          resolvedAllocationId = null;
+        } else if (!isUUID(allocationValue)) {
+          resolvedAllocationId = await this.findOrCreateAllocation(
+            allocationValue,
+            ctx,
+          );
+        } else {
+          resolvedAllocationId = allocationValue;
         }
       }
 
@@ -1544,6 +1557,10 @@ export class EmployeeService {
             resolvedLocationId !== undefined
               ? resolvedLocationId
               : existing?.locationId,
+          allocationId:
+            resolvedAllocationId !== undefined
+              ? resolvedAllocationId
+              : existing?.allocationId,
           leavesPolicyId: resolvedLeavesPolicyId ?? existing?.leavesPolicyId,
           allowRemoteAttendance:
             allowRemoteAttendanceValue ?? existing?.allowRemoteAttendance,

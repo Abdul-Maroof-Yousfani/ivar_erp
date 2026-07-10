@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { CreateItemDto, UpdateItemDto, BulkDiscountDto, RollbackCampaignDto, BulkSalePriceDto } from './dto/item.dto';
+import {
+  CreateItemDto,
+  UpdateItemDto,
+  BulkDiscountDto,
+  RollbackCampaignDto,
+  BulkSalePriceDto,
+} from './dto/item.dto';
 
 import { ActivityLogsService } from '../../activity-logs/activity-logs.service';
 import { runInBackground } from '../../common/utils/run-in-background.util';
@@ -17,6 +23,8 @@ const includeMasterData = {
   color: true,
   itemClass: true,
   itemSubclass: true,
+  hsCode: true,
+  segment: true,
 };
 
 @Injectable()
@@ -42,15 +50,16 @@ export class ItemService {
   }
 
   private async generateNextItemId(): Promise<string> {
-    const last = await this.prisma.item.findFirst({
-      orderBy: { itemId: 'desc' },
-      select: { itemId: true },
-    });
-    const lastNum =
-      last && /^\d{6}$/.test(last.itemId) ? parseInt(last.itemId, 10) : 0;
+    const last = await this.prisma.$queryRaw<{ itemId: string }[]>`
+      SELECT "itemId" FROM "Item"
+      WHERE "itemId" ~ '^[0-9]+$'
+      ORDER BY CAST("itemId" AS INTEGER) DESC
+      LIMIT 1
+    `;
+    const lastNum = last && last[0] ? parseInt(last[0].itemId, 10) : 0;
     const next = lastNum + 1;
-    if (next > 999999) {
-      throw new Error('Item ID sequence exceeded maximum 999999');
+    if (next > 99999999) {
+      throw new Error('Item ID sequence exceeded maximum 99999999');
     }
     return String(next).padStart(6, '0');
   }
@@ -108,8 +117,15 @@ export class ItemService {
 
     // ── Allowed sortable columns (direct item fields) ──────────────────
     const directSortFields = new Set([
-      'itemId', 'sku', 'unitPrice', 'isActive', 'createdAt',
-      'updatedAt', 'description', 'barCode', 'hsCode',
+      'itemId',
+      'sku',
+      'unitPrice',
+      'isActive',
+      'createdAt',
+      'updatedAt',
+      'description',
+      'barCode',
+      'hsCode',
     ]);
 
     const relationalSortFields: Record<string, string> = {
@@ -170,7 +186,13 @@ export class ItemService {
 
     // ── Query ──────────────────────────────────────────────────────────
     const [items, total] = await Promise.all([
-      this.prisma.item.findMany({ where, skip, take: limit, orderBy, include: includeMasterData }),
+      this.prisma.item.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy,
+        include: includeMasterData,
+      }),
       this.prisma.item.count({ where }),
     ]);
 
@@ -253,25 +275,44 @@ export class ItemService {
       // ── 2. Build shared item update payload ────────────────────────────
       const sharedData: any = dto.clearDiscount
         ? {
-            discountRate: 0,
-            discountAmount: 0,
-            discountStartDate: null,
-            discountEndDate: null,
-          }
+          discountRate: 0,
+          discountAmount: 0,
+          discountStartDate: null,
+          discountEndDate: null,
+        }
         : {
-            ...(dto.discountRate !== undefined && { discountRate: dto.discountRate }),
-            ...(dto.discountAmount !== undefined && { discountAmount: dto.discountAmount }),
-            ...(dto.discountStartDate !== undefined && { discountStartDate: dto.discountStartDate }),
-            ...(dto.discountEndDate !== undefined && { discountEndDate: dto.discountEndDate }),
-          };
+          ...(dto.discountRate !== undefined && {
+            discountRate: dto.discountRate,
+            discountAmount: 0,
+          }),
+          ...(dto.discountAmount !== undefined && {
+            discountAmount: dto.discountAmount,
+            discountRate: 0,
+          }),
+          ...(dto.discountStartDate !== undefined && {
+            discountStartDate: dto.discountStartDate,
+          }),
+          ...(dto.discountEndDate !== undefined && {
+            discountEndDate: dto.discountEndDate,
+          }),
+        };
 
       // ── 3. Build per-item override map ─────────────────────────────────
-      const overrideMap = new Map<string, { discountRate?: number; discountAmount?: number }>();
+      const overrideMap = new Map<
+        string,
+        { discountRate?: number; discountAmount?: number }
+      >();
       if (!dto.clearDiscount && dto.overrides?.length) {
         for (const ov of dto.overrides) {
           overrideMap.set(ov.id, {
-            ...(ov.discountRate !== undefined && { discountRate: ov.discountRate }),
-            ...(ov.discountAmount !== undefined && { discountAmount: ov.discountAmount }),
+            ...(ov.discountRate !== undefined && {
+              discountRate: ov.discountRate,
+              discountAmount: 0,
+            }),
+            ...(ov.discountAmount !== undefined && {
+              discountAmount: ov.discountAmount,
+              discountRate: 0,
+            }),
           });
         }
       }
@@ -279,8 +320,14 @@ export class ItemService {
       // ── 4. Apply item updates + persist campaign atomically ───────────
       const overriddenIds = new Set(overrideMap.keys());
       const bulkIds = dto.itemIds.filter((id) => !overriddenIds.has(id));
-      const overriddenItemIds = dto.itemIds.filter((id) => overriddenIds.has(id));
-      const discountType = dto.clearDiscount ? 'clear' : dto.discountRate !== undefined ? 'percent' : 'fixed';
+      const overriddenItemIds = dto.itemIds.filter((id) =>
+        overriddenIds.has(id),
+      );
+      const discountType = dto.clearDiscount
+        ? 'clear'
+        : dto.discountRate !== undefined
+          ? 'percent'
+          : 'fixed';
 
       const campaign = await this.prisma.$transaction(async (tx) => {
         // Fast path: single updateMany for items with no override
@@ -330,13 +377,13 @@ export class ItemService {
             },
             ...(dto.locationIds?.length
               ? {
-                  locations: {
-                    create: dto.locationIds.map((locationId, idx) => ({
-                      locationId,
-                      locationName: dto.locationNames?.[idx] ?? null,
-                    })),
-                  },
-                }
+                locations: {
+                  create: dto.locationIds.map((locationId, idx) => ({
+                    locationId,
+                    locationName: dto.locationNames?.[idx] ?? null,
+                  })),
+                },
+              }
               : {}),
           },
           include: { locations: true },
@@ -365,11 +412,17 @@ export class ItemService {
       });
 
       if (!campaign) {
-        return { status: false, message: `Campaign ${dto.campaignId} not found` };
+        return {
+          status: false,
+          message: `Campaign ${dto.campaignId} not found`,
+        };
       }
 
       if (!campaign.items.length) {
-        return { status: false, message: 'No snapshot data available for rollback' };
+        return {
+          status: false,
+          message: 'No snapshot data available for rollback',
+        };
       }
 
       // Restore each item to its pre-campaign discount state, then delete campaign — atomically
@@ -407,8 +460,14 @@ export class ItemService {
       if (!dto.itemIds || dto.itemIds.length === 0) {
         return { status: false, message: 'No item IDs provided' };
       }
-      if (dto.unitPrice === undefined && (!dto.overrides || dto.overrides.length === 0)) {
-        return { status: false, message: 'Provide a unitPrice or per-item overrides' };
+      if (
+        dto.unitPrice === undefined &&
+        (!dto.overrides || dto.overrides.length === 0)
+      ) {
+        return {
+          status: false,
+          message: 'Provide a unitPrice or per-item overrides',
+        };
       }
 
       // Build override map for O(1) lookup
@@ -419,7 +478,9 @@ export class ItemService {
 
       const overriddenIds = new Set(overrideMap.keys());
       const bulkIds = dto.itemIds.filter((id) => !overriddenIds.has(id));
-      const overriddenItemIds = dto.itemIds.filter((id) => overriddenIds.has(id));
+      const overriddenItemIds = dto.itemIds.filter((id) =>
+        overriddenIds.has(id),
+      );
 
       await this.prisma.$transaction(async (tx) => {
         // Single updateMany for items with no override
@@ -516,7 +577,7 @@ export class ItemService {
           OR: [
             { barCode: { in: barcodes } },
             { sku: { in: barcodes } },
-            { itemId: { in: barcodes } }
+            { itemId: { in: barcodes } },
           ],
         },
         include: includeMasterData,
@@ -563,7 +624,6 @@ export class ItemService {
     const hsCodeIds = [
       ...new Set(items.map((i) => i.hsCodeId).filter(Boolean)),
     ];
-
 
     const [
       brands,
@@ -659,7 +719,6 @@ export class ItemService {
             where: { id: { in: hsCodeIds as string[] } },
           })
           : [],
-
       ]);
 
     return items.map((item) => ({
@@ -680,7 +739,6 @@ export class ItemService {
       itemSubclass:
         itemSubclasses.find((x) => x.id === item.itemSubclassId) || null,
       hsCode: hsCodes.find((x) => x.id === item.hsCodeId) || null,
-
     }));
   }
 }

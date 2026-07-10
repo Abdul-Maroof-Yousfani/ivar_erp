@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { ColumnDef, PaginationState, SortingState } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Upload, Loader2, Eye, Edit, Trash2, Sparkles, Filter, X, ChevronRight, Search, Download } from "lucide-react";
+import { Plus, Upload, Loader2, Eye, Edit, Trash2, Sparkles, Filter, X, ChevronRight, Search, Download, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -718,11 +718,25 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
                         </Link>
                     )}
                     {canCreate && (
-                        <Link href="/erp/items/create" transitionTypes={["nav-forward"]}>
-                            <Button>
-                                <Plus className="mr-2 h-4 w-4" /> Add Item
-                            </Button>
-                        </Link>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90">
+                                    <Plus className="h-4 w-4" /> Add Item <ChevronDown className="h-3.5 w-3.5 opacity-80" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-52">
+                                <DropdownMenuItem asChild>
+                                    <Link href="/erp/items/create" transitionTypes={["nav-forward"]} className="w-full cursor-pointer">
+                                        <Plus className="mr-2 h-4 w-4" /> Finished Good
+                                    </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuItem asChild>
+                                    <Link href="/erp/items/create-fabric" transitionTypes={["nav-forward"]} className="w-full cursor-pointer">
+                                        <Plus className="mr-2 h-4 w-4 text-blue-500" /> <span className="text-blue-600 font-medium">Production Fabric</span>
+                                    </Link>
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     )}
                 </div>
             </CardHeader>

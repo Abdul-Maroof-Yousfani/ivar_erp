@@ -35,7 +35,7 @@ export interface UploadStatusResponse {
     completedAt: string | null;
 }
 
-export function useUploadProgress(uploadId: string | null, uploadType: 'item' | 'item-update' | 'hscode' | 'employee' | 'attendance' | 'coa' | 'alliance' | 'sales-history' | 'stock' | 'merchant' | 'transfer' = 'item') {
+export function useUploadProgress(uploadId: string | null, uploadType: 'item' | 'item-update' | 'hscode' | 'employee' | 'attendance' | 'coa' | 'alliance' | 'sales-history' | 'stock' | 'merchant' | 'srn' | 'po' = 'item') {
     const [data, setData] = useState<UploadStatusResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -89,8 +89,11 @@ export function useUploadProgress(uploadId: string | null, uploadType: 'item' | 
         if (uploadType === 'stock') {
             return `${baseUrl}/warehouse/stock/bulk-upload/${endpoint}`;
         }
-        if (uploadType === 'transfer') {
-            return `${baseUrl}/warehouse/stock-transfer/bulk-upload/${endpoint}`;
+        if (uploadType === 'srn') {
+            return `${baseUrl}/stock-requisition/bulk-upload/${endpoint}`;
+        }
+        if (uploadType === 'po') {
+            return `${baseUrl}/purchase-order/bulk-upload/${endpoint}`;
         }
         return `${baseUrl}/items/bulk-upload/${endpoint}`;
     }, [uploadType]);

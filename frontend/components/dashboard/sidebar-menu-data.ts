@@ -782,8 +782,13 @@ export const menuData: MenuItem[] = [
         permissions: ["erp.item.read", "erp.item.create", "erp.item.update"],
         children: [
           {
-            title: "Create",
+            title: "Create Finished Good",
             href: "/erp/items/create",
+            permissions: ["erp.item.create"],
+          },
+          {
+            title: "Create Production Fabric",
+            href: "/erp/items/create-fabric",
             permissions: ["erp.item.create"],
           },
           {

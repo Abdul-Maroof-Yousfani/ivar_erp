@@ -547,6 +547,15 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
                                             <p className="text-green-600/80 font-medium">
                                                 {data?.successRecords} items have been added to your inventory.
                                             </p>
+                                            <div className="pt-2">
+                                                <Button
+                                                    onClick={() => window.open(`${getApiBaseUrl()}/items/bulk-upload/${activeId}/success-report`, '_blank')}
+                                                    variant="outline"
+                                                    className="font-bold border-green-500/30 hover:bg-green-500/10"
+                                                >
+                                                    <Download className="h-4 w-4 mr-2" /> Download Export Report
+                                                </Button>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
