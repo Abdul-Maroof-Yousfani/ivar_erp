@@ -1,15 +1,14 @@
 import 'dotenv/config';
 import { Client } from 'pg';
 import * as XLSX from 'xlsx';
-
 import * as path from 'path';
+import * as crypto from 'crypto';
 
 // =========================================================================
 // CONFIGURATION: Enter your target Location ID and Excel path here
 // =========================================================================
 const TARGET_LOCATION_ID = process.env.TARGET_LOCATION_ID || '229c1ecd-11f0-43dd-94f6-17c165a3003d';
 const EXCEL_FILE_PATH = process.env.EXCEL_FILE_PATH || path.join(__dirname, '..', '..', 'sales-history.xlsx');
-
 
 // Excel Date Converter
 function parseExcelDate(val: any): Date {
@@ -28,6 +27,20 @@ function generateUUID(): string {
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+// Decryption helper matching EncryptionService and seed-vendors
+function decrypt(encryptedText: string, masterKeyString: string): string {
+  const masterKey = Buffer.from(masterKeyString.slice(0, 32), 'utf-8');
+  const parts = encryptedText.split(':');
+  if (parts.length !== 3) throw new Error('Invalid encrypted text format');
+  const iv = Buffer.from(parts[0], 'hex');
+  const authTag = Buffer.from(parts[1], 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', masterKey, iv);
+  decipher.setAuthTag(authTag);
+  let decrypted = decipher.update(parts[2], 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
 }
 
 async function main() {
@@ -60,42 +73,53 @@ async function main() {
 
   // 2. Connect to Management DB and get tenant DBs
   const managementConnectionString = process.env.DATABASE_URL_MANAGEMENT || process.env.DATABASE_URL;
-  if (!managementConnectionString) {
-    console.error('DATABASE_URL_MANAGEMENT or DATABASE_URL not set in .env');
+  const masterKey = process.env.MASTER_ENCRYPTION_KEY;
+  if (!managementConnectionString || !masterKey) {
+    console.error('DATABASE_URL_MANAGEMENT (or DATABASE_URL) and MASTER_ENCRYPTION_KEY required in .env');
     return;
   }
 
-  const managementUrl = new URL(managementConnectionString);
-  const dbHost = managementUrl.hostname || 'localhost';
-  const dbPort = managementUrl.port || '5432';
-  const dbUser = managementUrl.username;
-  const dbPassword = managementUrl.password;
-
   const managementClient = new Client({ connectionString: managementConnectionString });
   await managementClient.connect();
-  let databases: string[] = [];
+  
+  let companies: any[] = [];
   try {
     const res = await managementClient.query(`
-      SELECT datname 
-      FROM pg_database 
-      WHERE datistemplate = false AND datname LIKE 'tenant_%'
-      ORDER BY datname;
+      SELECT id, name, code, "dbName", "dbUrl", "dbHost", "dbPort", "dbUser", "dbPassword"
+      FROM "Company"
+      WHERE status = 'active';
     `);
-    databases = res.rows.map(r => r.datname);
+    companies = res.rows;
   } catch (err: any) {
-    console.error(`Error listing databases: ${err.message}`);
+    console.error(`Error querying Company table: ${err.message}`);
     await managementClient.end();
     return;
   } finally {
     await managementClient.end();
   }
 
-  // 3. Find correct tenant DB (fallback to tenant_june_6_mqawmlin if not found)
+  console.log(`Found ${companies.length} active company databases in master records.`);
+
+  // 3. Find correct tenant DB containing TARGET_LOCATION_ID by connecting exactly like seed-vendors
   let targetDbName: string | null = null;
+  let targetConnectionString: string | null = null;
   let warehouseId: string | null = null;
 
-  for (const dbName of databases) {
-    const connectionString = `postgresql://${dbUser}:${encodeURIComponent(dbPassword)}@${dbHost}:${dbPort}/${dbName}?schema=public`;
+  for (const company of companies) {
+    let connectionString = company.dbUrl;
+    if (company.dbPassword) {
+      try {
+        const decPassword = encodeURIComponent(decrypt(company.dbPassword, masterKey));
+        connectionString = `postgresql://${company.dbUser}:${decPassword}@${company.dbHost || 'localhost'}:${company.dbPort || 5432}/${company.dbName}?schema=public`;
+      } catch (e: any) {
+        console.warn(`  ⚠️ Decryption failed for ${company.name}, using stored dbUrl if available: ${e.message}`);
+      }
+    }
+
+    if (!connectionString) {
+      continue;
+    }
+
     const client = new Client({ connectionString });
     try {
       await client.connect();
@@ -104,32 +128,47 @@ async function main() {
       `, [TARGET_LOCATION_ID]);
 
       if (locRes.rowCount > 0) {
-        targetDbName = dbName;
+        targetDbName = company.dbName;
+        targetConnectionString = connectionString;
         warehouseId = locRes.rows[0].warehouse_id;
+        console.log(`🎯 Found location in active tenant: ${company.name} (${company.code})`);
         await client.end();
         break;
       }
       await client.end();
-    } catch (e) {
+    } catch (e: any) {
       // ignore
     }
   }
 
-  if (!targetDbName) {
-    if (databases.includes('tenant_june_6_mqawmlin')) {
-      targetDbName = 'tenant_june_6_mqawmlin';
-      console.log(`ℹ️ Location ID not found on any DB. Defaulting target to active DB: "tenant_june_6_mqawmlin"`);
-    } else if (databases.length > 0) {
-      targetDbName = databases[0];
-      console.log(`ℹ️ Location ID not found on any DB. Defaulting target to first DB: "${targetDbName}"`);
+  // Fallback if not found in any tenant DB matching the location ID
+  if (!targetConnectionString) {
+    console.log(`⚠️ Location ID ${TARGET_LOCATION_ID} not found in any registered database.`);
+    if (companies.length > 0) {
+      // Default to the first active company
+      const company = companies[0];
+      targetDbName = company.dbName;
+      let connectionString = company.dbUrl;
+      if (company.dbPassword) {
+        try {
+          const decPassword = encodeURIComponent(decrypt(company.dbPassword, masterKey));
+          connectionString = `postgresql://${company.dbUser}:${decPassword}@${company.dbHost || 'localhost'}:${company.dbPort || 5432}/${company.dbName}?schema=public`;
+        } catch {}
+      }
+      targetConnectionString = connectionString;
+      console.log(`ℹ️ Defaulting target to first active company DB: "${targetDbName}"`);
     } else {
-      console.error(`❌ No tenant databases found on the server.`);
+      console.error(`❌ No active company databases found on the server.`);
       return;
     }
   }
 
+  if (!targetConnectionString) {
+    console.error('❌ Could not resolve connection string for target database');
+    return;
+  }
+
   // 4. Connect to target database
-  const targetConnectionString = `postgresql://${dbUser}:${encodeURIComponent(dbPassword)}@${dbHost}:${dbPort}/${targetDbName}?schema=public`;
   const db = new Client({ connectionString: targetConnectionString });
   await db.connect();
 
