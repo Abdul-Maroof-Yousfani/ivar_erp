@@ -239,7 +239,7 @@ export default function ActivityLogsPage() {
 
   // ── Fetch filter options once on mount ────────────────────────────────────
   useEffect(() => {
-    authFetch("/api/activity-logs/filters", { method: "GET" }).then((res) => {
+    authFetch("/activity-logs/filters", { method: "GET" }).then((res) => {
       if (res.ok) {
         setAvailableModules(res.data.modules ?? []);
         setAvailableActions(res.data.actions ?? []);
@@ -270,7 +270,7 @@ export default function ActivityLogsPage() {
         if (dateRange.to) params.append("endDate", dateRange.to.toISOString());
         if (debuggerKey) params.append("debuggerKey", debuggerKey);
 
-        const res = await authFetch(`/api/activity-logs?${params}`, {
+        const res = await authFetch(`/activity-logs?${params}`, {
           method: "GET",
           headers: debuggerKey ? { "x-debugger-key": debuggerKey } : undefined,
         });
