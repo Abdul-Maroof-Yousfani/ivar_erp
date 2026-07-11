@@ -41,10 +41,12 @@ export class UserService {
 
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
+    const { roleId, ...rest } = createUserDto;
     const user = await this.prismaMaster.user.create({
       data: {
-        ...createUserDto,
+        ...rest,
         password: hashedPassword,
+        ...(roleId ? { role: { connect: { id: roleId } } } : {}),
       },
       include: {
         role: true,
