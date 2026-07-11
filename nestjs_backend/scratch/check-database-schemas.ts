@@ -29,7 +29,7 @@ async function main() {
         FROM information_schema.tables 
         WHERE table_schema = 'public' AND table_name = 'pos_vouchers';
       `);
-      if (tableRes.rowCount > 0) {
+      if (tableRes.rowCount && tableRes.rowCount > 0) {
         console.log(`✅ Database ${dbName} HAS 'pos_vouchers' table.`);
         // Let's print all tables with voucher or claim in the name
         const allVoucherRes = await client.query(`

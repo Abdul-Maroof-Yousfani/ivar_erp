@@ -64,7 +64,7 @@ async function main() {
     try {
       await client.connect();
       const locRes = await client.query(`SELECT id FROM "Location" WHERE id = $1;`, [TARGET_LOCATION_ID]);
-      if (locRes.rowCount > 0) {
+      if (locRes.rowCount && locRes.rowCount > 0) {
         targetDbName = company.dbName;
         targetConnectionString = connectionString;
         await client.end();

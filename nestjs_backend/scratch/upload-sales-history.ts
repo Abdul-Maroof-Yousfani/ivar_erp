@@ -127,7 +127,7 @@ async function main() {
         SELECT id, name, code, warehouse_id FROM "Location" WHERE id = $1;
       `, [TARGET_LOCATION_ID]);
 
-      if (locRes.rowCount > 0) {
+      if (locRes.rowCount && locRes.rowCount > 0) {
         targetDbName = company.dbName;
         targetConnectionString = connectionString;
         warehouseId = locRes.rows[0].warehouse_id;
@@ -177,9 +177,9 @@ async function main() {
     // Check if location exists in this target DB. If not, create it.
     const locCheck = await db.query(`SELECT id, warehouse_id FROM "Location" WHERE id = $1;`, [TARGET_LOCATION_ID]);
     
-    if (locCheck.rowCount === 0) {
+    if (!locCheck.rowCount || locCheck.rowCount === 0) {
       const whRes = await db.query(`SELECT id FROM "Warehouse" WHERE "isDeleted" = false LIMIT 1;`);
-      if (whRes.rowCount > 0) {
+      if (whRes.rowCount && whRes.rowCount > 0) {
         warehouseId = whRes.rows[0].id;
       } else {
         throw new Error('No active warehouse found in the database. Cannot create Location.');
@@ -298,7 +298,7 @@ async function main() {
         SELECT id FROM sales_orders WHERE "orderNumber" = $1;
       `, [orderNumber]);
 
-      if (existsRes.rowCount > 0) {
+      if (existsRes.rowCount && existsRes.rowCount > 0) {
         skippedOrdersCount++;
         continue;
       }
