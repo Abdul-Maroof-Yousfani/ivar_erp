@@ -92,7 +92,7 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
         {errors?.fatherHusbandName && <p className="text-xs text-red-500">{errors.fatherHusbandName.message}</p>}
       </div>
       <div className="space-y-2">
-        <Label>Allocation <span className="text-destructive">*</span></Label>
+        <Label>Allocation</Label>
         <Controller name="allocation" control={control} render={({ field }) => (
           <Autocomplete
             options={allocations.map(a => ({ value: a.id, label: a.name }))}
@@ -120,8 +120,8 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
               // Reset dependent field
               form.setValue("subDepartment", "");
             }}
-            placeholder={allocation || mode === "edit" ? "Select Department" : "Select Allocation first"}
-            disabled={isPending || (!allocation && mode !== "edit") || loadingData}
+            placeholder="Select Department"
+            disabled={isPending || loadingData}
           />
         )} />
         {errors?.department && <p className="text-xs text-red-500">{errors.department.message}</p>}

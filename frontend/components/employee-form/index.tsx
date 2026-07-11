@@ -299,7 +299,8 @@ const employeeFormSchema = z.object({
 
   allocation: z
     .string()
-    .min(1, "Allocation is required"),
+    .optional()
+    .or(z.literal("")),
   socialSecurityInstitutionId: z.string().optional(),
 
   allowRemoteAttendance: z

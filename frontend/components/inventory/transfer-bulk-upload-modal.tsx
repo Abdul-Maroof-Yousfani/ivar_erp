@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
     Dialog,
     DialogContent,
@@ -16,16 +16,15 @@ import {
     Upload,
     FileText,
     CheckCircle2,
-    XCircle,
-    AlertCircle,
     Loader2,
     Download,
     X,
-    History,
     Info,
-    Database
+    Warehouse,
+    MapPin,
+    BarChart3,
 } from 'lucide-react';
-import { useUploadProgress, UploadError } from '@/hooks/use-upload-progress';
+import { useUploadProgress } from '@/hooks/use-upload-progress';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -36,49 +35,47 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import {
-    Collapsible,
-    CollapsibleContent,
-    CollapsibleTrigger
-} from '@/components/ui/collapsible';
-import { format } from 'date-fns';
 import { getApiBaseUrl } from '@/lib/utils';
 
-interface BulkUploadModalProps {
+interface TransferBulkUploadModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    onSuccess?: () => void;
+    onSuccess?: (resolvedItems: any[]) => void;
     uploadId?: string | null;
     onUploadIdChange?: (id: string | null) => void;
+    warehouseId: string;
+    locationId?: string;
 }
 
-export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUploadIdChange }: BulkUploadModalProps) {
+export function TransferBulkUploadModal({
+    open,
+    onOpenChange,
+    onSuccess,
+    uploadId,
+    onUploadIdChange,
+    warehouseId,
+    locationId,
+}: TransferBulkUploadModalProps) {
     const [file, setFile] = useState<File | null>(null);
     const [internalUploadId, setInternalUploadId] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [isConfirming, setIsConfirming] = useState(false);
     const [showErrors, setShowErrors] = useState(false);
-    const hasAutoConfirmed = React.useRef(false);
+    const hasAutoConfirmed = useRef(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const errorEndRef = useRef<HTMLDivElement>(null);
 
     // Sync internal state with prop
     React.useEffect(() => {
-        if (uploadId !== undefined) {
-            setInternalUploadId(uploadId);
-        }
+        if (uploadId !== undefined) setInternalUploadId(uploadId ?? null);
     }, [uploadId]);
 
-    // Drive the hook from internal state — never from the prop directly.
-    // The prop is only used to restore state on mount (e.g. after page refresh).
-    // Using the prop directly causes the view to flicker back to the file picker
-    // during the brief window where onUploadIdChange(null) is called before the
-    // new uploadId comes back, which kills the SSE connection mid-job.
-    const activeId = internalUploadId ?? null;
+    const activeId = (internalUploadId || uploadId) ?? null;
 
-    const { data, speed, isComplete, isValidated, isValidating, isFailed, isProcessing, isCancelled } = useUploadProgress(activeId);
+    const { data, speed, isComplete, isValidated, isValidating, isFailed, isProcessing, isCancelled } =
+        useUploadProgress(activeId, 'transfer');
 
-    // Auto-scroll to latest errors
-    const errorEndRef = useRef<HTMLDivElement>(null);
+    // Auto-scroll errors
     React.useEffect(() => {
         if (showErrors && errorEndRef.current) {
             errorEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -86,41 +83,38 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
     }, [data?.errors?.length, showErrors]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const selectedFile = e.target.files?.[0];
-        if (selectedFile) {
-            const ext = selectedFile.name.split('.').pop()?.toLowerCase();
-            if (['csv', 'xlsx', 'xls'].includes(ext || '')) {
-                setFile(selectedFile);
-            } else {
-                toast.error('Invalid file type. Please upload CSV or Excel files.');
-            }
+        const selected = e.target.files?.[0];
+        if (!selected) return;
+        const ext = selected.name.split('.').pop()?.toLowerCase();
+        if (['csv', 'xlsx', 'xls'].includes(ext || '')) {
+            setFile(selected);
+        } else {
+            toast.error('Invalid file type. Please upload CSV or Excel files.');
         }
     };
 
     const handleUpload = async () => {
         if (!file) return;
-
         setIsUploading(true);
-        // Reset internal state only — don't touch the prop until we have a new ID
         setInternalUploadId(null);
+        onUploadIdChange?.(null);
+
         const formData = new FormData();
         formData.append('file', file);
 
         try {
-            const response = await fetch(`${getApiBaseUrl()}/items/bulk-upload`, {
+            const response = await fetch(`${getApiBaseUrl()}/warehouse/stock-transfer/bulk-upload`, {
                 method: 'POST',
                 body: formData,
                 credentials: 'include',
             });
-
             const result = await response.json();
-
             if (result.status && result.data?.uploadId) {
                 setInternalUploadId(result.data.uploadId);
                 onUploadIdChange?.(result.data.uploadId);
-                toast.success('File uploaded. Validation started...');
+                toast.success('File uploaded. Transfer validation started...');
             } else {
-                toast.error(result.message || 'Failed to initiate upload');
+                toast.error(result.message || 'Failed to initiate transfer upload');
             }
         } catch (error) {
             console.error('Upload failed:', error);
@@ -132,18 +126,17 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
 
     const handleConfirm = async () => {
         if (!activeId || isConfirming) return;
-
         setIsConfirming(true);
         try {
-            const response = await fetch(`${getApiBaseUrl()}/items/bulk-upload/${activeId}/confirm`, {
-                method: 'POST',
-                credentials: 'include',
-            });
+            const response = await fetch(
+                `${getApiBaseUrl()}/warehouse/stock-transfer/bulk-upload/${activeId}/confirm`,
+                { method: 'POST', credentials: 'include' },
+            );
             const result = await response.json();
             if (result.status) {
-                toast.success('Import started');
+                toast.success('Transfer resolution started');
             } else {
-                toast.error(result.message || 'Failed to start import');
+                toast.error(result.message || 'Failed to start transfer import');
                 setIsConfirming(false);
             }
         } catch (error) {
@@ -155,16 +148,14 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
 
     const handleCancel = async () => {
         if (!activeId) return;
-
         try {
-            const response = await fetch(`${getApiBaseUrl()}/items/bulk-upload/${activeId}`, {
-                method: 'DELETE',
-                credentials: 'include',
-            });
-
+            const response = await fetch(
+                `${getApiBaseUrl()}/warehouse/stock-transfer/bulk-upload/${activeId}`,
+                { method: 'DELETE', credentials: 'include' },
+            );
             const result = await response.json();
             if (result.status) {
-                toast.info('Job cancelled');
+                toast.info('Stock transfer upload cancelled');
                 onUploadIdChange?.(null);
                 setInternalUploadId(null);
             }
@@ -174,53 +165,16 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
     };
 
     const downloadTemplate = () => {
-        window.open(`${getApiBaseUrl()}/items/bulk-upload/template/download`, '_blank');
+        window.open(`${getApiBaseUrl()}/warehouse/stock-transfer/bulk-upload/template/download`, '_blank');
     };
 
-    const [isPreparingReport, setIsPreparingReport] = useState(false);
-    const reportPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-    // React to SSE report generation events from the backend
-    React.useEffect(() => {
-        if (!data) return;
-        const d = data as any;
-        if (d.reportReady === true && isPreparingReport) {
-            setIsPreparingReport(false);
-            if (reportPollRef.current) { clearInterval(reportPollRef.current); reportPollRef.current = null; }
-            toast.success('Error report ready. Downloading...');
-            window.open(`${getApiBaseUrl()}/items/bulk-upload/${activeId}/error-report`, '_blank');
-        }
-    }, [(data as any)?.reportReady, (data as any)?.reportGenerating]);
-
-    const downloadErrorReport = async () => {
-        if (!activeId || isPreparingReport) return;
-
-        setIsPreparingReport(true);
-        try {
-            const res = await fetch(`${getApiBaseUrl()}/items/bulk-upload/${activeId}/error-report?prepare=true`, {
-                credentials: 'include',
-            });
-            const result = await res.json();
-
-            if (result.data?.ready) {
-                // JSONL already on disk — download immediately
-                window.open(`${getApiBaseUrl()}/items/bulk-upload/${activeId}/error-report`, '_blank');
-                setIsPreparingReport(false);
-                return;
-            }
-
-            // Generation kicked off in background — SSE will fire reportReady when done
-            toast.info('Generating error report in background. You\'ll be notified when it\'s ready...');
-        } catch {
-            toast.error('Failed to prepare error report');
-            setIsPreparingReport(false);
-        }
+    const downloadErrorReport = () => {
+        if (!activeId) return;
+        window.open(
+            `${getApiBaseUrl()}/warehouse/stock-transfer/bulk-upload/${activeId}/error-report`,
+            '_blank',
+        );
     };
-
-    // Cleanup poll on unmount
-    React.useEffect(() => {
-        return () => { if (reportPollRef.current) clearInterval(reportPollRef.current); };
-    }, []);
 
     const reset = () => {
         setFile(null);
@@ -233,28 +187,44 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    // Auto-confirm if 100% valid
+    // Auto-confirm when 0 errors
     React.useEffect(() => {
-        if (isValidated && data?.failedRecords === 0 && !isProcessing && data?.status === 'validated' && !hasAutoConfirmed.current && !isConfirming) {
+        if (
+            isValidated &&
+            data?.failedRecords === 0 &&
+            !isProcessing &&
+            data?.status === 'validated' &&
+            !hasAutoConfirmed.current &&
+            !isConfirming
+        ) {
             hasAutoConfirmed.current = true;
             handleConfirm();
         }
     }, [isValidated, data?.failedRecords, data?.status, isProcessing, isConfirming]);
 
-    const handleClose = () => {
-        // Just hide the modal, don't reset if processing
-        if (isProcessing) {
-            onOpenChange(false);
-            return;
-        }
-
+    const handleClose = async () => {
+        if (isProcessing) { onOpenChange(false); return; }
         if (data?.status === 'completed' && onSuccess) {
-            onSuccess();
+            // Fetch resolved items list from the backend
+            try {
+                let url = `${getApiBaseUrl()}/warehouse/stock-transfer/bulk-upload/${activeId}/resolved?warehouseId=${warehouseId}`;
+                if (locationId) {
+                    url += `&locationId=${locationId}`;
+                }
+                const response = await fetch(url, { credentials: 'include' });
+                const result = await response.json();
+                if (result.status && result.data) {
+                    onSuccess(result.data);
+                } else {
+                    toast.error(result.message || 'Failed to retrieve resolved items');
+                }
+            } catch (err) {
+                console.error('Failed to fetch resolved items:', err);
+                toast.error('An error occurred while loading resolved items');
+            }
             onUploadIdChange?.(null);
         }
-
         onOpenChange(false);
-        // Only reset if we are done or failed
         if (data?.status === 'completed' || isFailed || isCancelled || !activeId) {
             setTimeout(reset, 300);
         }
@@ -265,15 +235,14 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
             <DialogContent
                 showCloseButton={false}
                 noScroll
-                onInteractOutside={(e) => {
-                    if (isProcessing) e.preventDefault();
-                }}
+                onInteractOutside={(e) => { if (isProcessing) e.preventDefault(); }}
                 className="sm:max-w-[750px] w-full flex flex-col p-0 bg-card max-h-[90vh]"
             >
+                {/* ── Header ── */}
                 <DialogHeader className="p-6 pb-2 border-b bg-muted/30 shrink-0">
                     <DialogTitle className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-                        <Upload className="h-6 w-6 text-primary" />
-                        Bulk Item Management
+                        <Warehouse className="h-6 w-6 text-primary" />
+                        Stock Transfer Bulk Upload
                         {data?.status && (
                             <Badge variant="outline" className="ml-2 capitalize">
                                 {data.status}
@@ -281,23 +250,30 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
                         )}
                     </DialogTitle>
                     <DialogDescription className="text-sm">
-                        Follow the two-step process: Validate your data, then commit to the database.
+                        Upload a CSV/Excel sheet to import high-volume transfer requests (Barcode, SKU, Quantity).
                     </DialogDescription>
                 </DialogHeader>
 
+                {/* ── Body ── */}
                 <ScrollArea className="flex-1 w-full overflow-y-auto">
                     <div className="p-6 space-y-6">
+
+                        {/* ── VIEW 1: File picker ── */}
                         {!activeId ? (
                             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                {/* File Dropzone */}
+
+                                {/* Dropzone */}
                                 <div
                                     onClick={() => fileInputRef.current?.click()}
                                     className={`
-                                    border-2 border-dashed rounded-2xl p-12
-                                    flex flex-col items-center justify-center gap-4 cursor-pointer
-                                    transition-all duration-300 relative group
-                                    ${file ? 'border-primary/50 bg-primary/5' : 'border-muted-foreground/20 hover:border-primary/40 hover:bg-muted/50'}
-                                `}
+                                        border-2 border-dashed rounded-2xl p-12
+                                        flex flex-col items-center justify-center gap-4 cursor-pointer
+                                        transition-all duration-300 relative group
+                                        ${file
+                                            ? 'border-primary/50 bg-primary/5'
+                                            : 'border-muted-foreground/20 hover:border-primary/40 hover:bg-muted/50'
+                                        }
+                                    `}
                                 >
                                     <input
                                         type="file"
@@ -306,7 +282,6 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
                                         accept=".csv,.xlsx,.xls"
                                         className="hidden"
                                     />
-
                                     {file ? (
                                         <>
                                             <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform">
@@ -315,7 +290,9 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
                                             <div className="text-center space-y-1">
                                                 <p className="font-bold text-xl">{file.name}</p>
                                                 <p className="text-sm text-muted-foreground flex items-center justify-center gap-2">
-                                                    <Badge variant="secondary" className="font-mono">{(file.size / 1024 / 1024).toFixed(2)} MB</Badge>
+                                                    <Badge variant="secondary" className="font-mono">
+                                                        {(file.size / 1024 / 1024).toFixed(2)} MB
+                                                    </Badge>
                                                     Ready for validation
                                                 </p>
                                             </div>
@@ -338,9 +315,9 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
                                                 <Upload className="h-10 w-10 text-muted-foreground group-hover:text-primary transition-colors" />
                                             </div>
                                             <div className="text-center space-y-2">
-                                                <p className="font-bold text-xl">Upload items list</p>
-                                                <p className="text-sm text-muted-foreground max-w-[300px]">
-                                                    Drag and drop your CSV or Excel file here, or click to browse.
+                                                <p className="font-bold text-xl">Upload Transfer Sheet</p>
+                                                <p className="text-sm text-muted-foreground max-w-[360px]">
+                                                    CSV/Excel containing: Barcode, SKU, Quantity columns.
                                                 </p>
                                             </div>
                                             <div className="flex gap-2 mt-2">
@@ -352,63 +329,72 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
                                     )}
                                 </div>
 
-                                {/* Template Download */}
+                                {/* Template download */}
                                 <div className="flex items-center justify-between p-4 bg-primary/5 rounded-xl border border-primary/10 shadow-sm transition-all hover:shadow-md">
                                     <div className="flex items-center gap-4">
                                         <div className="h-12 w-12 rounded-lg bg-background flex items-center justify-center border shadow-sm">
                                             <Download className="h-6 w-6 text-primary" />
                                         </div>
                                         <div>
-                                            <p className="font-bold text-sm">Download Template</p>
-                                            <p className="text-xs text-muted-foreground">Ensure your data matches the system requirements.</p>
+                                            <p className="font-bold text-sm">Download Transfer Template</p>
+                                            <p className="text-xs text-muted-foreground">
+                                                Columns: Barcode, SKU, Quantity.
+                                            </p>
                                         </div>
                                     </div>
                                     <Button variant="secondary" size="sm" onClick={downloadTemplate} className="font-semibold shadow-sm">
-                                        Get CSV Template
+                                        Get Template
                                     </Button>
                                 </div>
 
-                                {/* Features List */}
+                                {/* Feature cards */}
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="flex gap-4 p-4 rounded-xl border bg-card/50 transition-colors hover:bg-card">
-                                        <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
-                                            <CheckCircle2 className="h-5 w-5 text-green-600" />
+                                        <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+                                            <MapPin className="h-5 w-5 text-blue-600" />
                                         </div>
                                         <div className="space-y-1">
-                                            <p className="text-sm font-bold">Smart Validation</p>
-                                            <p className="text-xs text-muted-foreground leading-relaxed">Instantly identifies formatting errors and duplicates before DB entry.</p>
+                                            <p className="text-sm font-bold">System Barcode Resolution</p>
+                                            <p className="text-xs text-muted-foreground leading-relaxed">
+                                                Automatically resolves barcodes and SKUs to internal items.
+                                            </p>
                                         </div>
                                     </div>
                                     <div className="flex gap-4 p-4 rounded-xl border bg-card/50 transition-colors hover:bg-card">
-                                        <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center shrink-0">
-                                            <Loader2 className="h-5 w-5 text-amber-600" />
+                                        <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
+                                            <BarChart3 className="h-5 w-5 text-green-600" />
                                         </div>
                                         <div className="space-y-1">
-                                            <p className="text-sm font-bold">SSE Streaming</p>
-                                            <p className="text-xs text-muted-foreground leading-relaxed">Real-time progress updates with instant feedback on every row.</p>
+                                            <p className="text-sm font-bold">Stock Verification</p>
+                                            <p className="text-xs text-muted-foreground leading-relaxed">
+                                                Validates availability against the source location.
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
                             </div>
+
                         ) : (
+                        /* ── VIEW 2: Progress ── */
                             <div className="space-y-8 animate-in fade-in duration-500">
-                                {/* Progress Section */}
+
+                                {/* Progress header */}
                                 <div className="space-y-4">
                                     <div className="flex justify-between items-end">
                                         <div className="space-y-2">
                                             <div className="flex items-center gap-2">
                                                 {isProcessing && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
                                                 <p className="text-sm font-bold text-primary uppercase tracking-widest">
-                                                    {isValidating ? 'Phase 1: Validating' : data?.status === 'processing' ? 'Phase 2: Importing' : 'Status'}
+                                                    {isValidating
+                                                        ? 'Phase 1: Validating Transfer Data'
+                                                        : data?.status === 'processing'
+                                                        ? 'Phase 2: Importing Items'
+                                                        : 'Status'}
                                                 </p>
                                             </div>
                                             <h3 className="text-2xl font-black truncate max-w-[400px]">{data?.filename}</h3>
                                             <p className="text-sm text-muted-foreground italic font-medium">
-                                                {isValidating
-                                                    ? (data?.processedRecords ?? 0) > 0
-                                                        ? `Scanning row ${data!.processedRecords.toLocaleString()}...`
-                                                        : (data?.message || 'Preparing...')
-                                                    : (data?.message || 'Preparing...')}
+                                                {data?.message || 'Preparing...'}
                                             </p>
                                         </div>
                                         <div className="text-right space-y-1">
@@ -416,16 +402,11 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
                                                 <span className="text-4xl font-black text-primary">{data?.progress ?? 0}</span>
                                                 <span className="text-xl font-bold text-primary/70">%</span>
                                             </div>
-                                            {isProcessing && (speed > 0 || isValidating) && (
+                                            {isProcessing && speed > 0 && (
                                                 <div className="flex flex-col items-end gap-1">
                                                     <Badge variant="secondary" className="font-mono text-[10px] py-0 px-2">
-                                                        {isValidating ? 'Validating' : `${data?.recsPerSec || speed} recs/sec`}
+                                                        {data?.recsPerSec || speed} recs/sec
                                                     </Badge>
-                                                    {data?.memoryUsageMB && (
-                                                        <Badge variant="outline" className="font-mono text-[10px] py-0 px-2 bg-background/50">
-                                                            Server Mem: {data.memoryUsageMB}MB
-                                                        </Badge>
-                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -439,10 +420,10 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
                                     </div>
                                 </div>
 
-                                {/* Stats Grid */}
+                                {/* Stats grid */}
                                 <div className="grid grid-cols-4 gap-4">
                                     <div className="bg-muted/40 p-5 rounded-2xl border flex flex-col items-center justify-center shadow-sm">
-                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Total Rows</span>
+                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Total</span>
                                         <span className="text-3xl font-black">{(data?.totalRecords ?? 0).toLocaleString()}</span>
                                     </div>
                                     <div className="bg-green-500/10 p-5 rounded-2xl border border-green-500/20 flex flex-col items-center justify-center shadow-sm">
@@ -459,7 +440,7 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
                                     </div>
                                 </div>
 
-                                {/* Validation Results UI */}
+                                {/* Validation results */}
                                 {isValidated && (
                                     <div className="p-6 rounded-2xl border-2 border-dashed bg-card space-y-4 animate-in zoom-in-95 duration-500">
                                         <div className="flex items-center gap-4">
@@ -467,25 +448,32 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
                                                 <CheckCircle2 className="h-7 w-7 text-green-600" />
                                             </div>
                                             <div>
-                                                <h4 className="font-black text-lg">Validation Complete</h4>
+                                                <h4 className="font-black text-lg">Transfer Validation Complete</h4>
                                                 <p className="text-sm text-muted-foreground">
                                                     {data?.failedRecords === 0
-                                                        ? "Excellent! Your file is perfect and ready to be imported."
-                                                        : `Attention: ${data?.failedRecords} rows have issues and will be SKIPPED during import.`}
+                                                        ? 'All records are valid and ready to resolve.'
+                                                        : `${data?.failedRecords} records have issues and will be skipped.`}
                                                 </p>
                                             </div>
                                         </div>
 
                                         {(data?.failedRecords ?? 0) > 0 && (
                                             <div className="flex gap-2">
-                                                <Button variant="outline" size="sm" onClick={() => setShowErrors(!showErrors)} className="h-9 font-bold bg-background">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setShowErrors(!showErrors)}
+                                                    className="h-9 font-bold bg-background"
+                                                >
                                                     {showErrors ? 'Hide Error Details' : 'View Error Details'}
                                                 </Button>
-                                                <Button variant="ghost" size="sm" onClick={downloadErrorReport} disabled={isPreparingReport} className="h-9 font-bold text-destructive hover:bg-destructive/5">
-                                                    {isPreparingReport
-                                                        ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {(data as any)?.reportGenerating ? ((data as any)?.message || 'Generating...') : 'Preparing...'}</>
-                                                        : <><Download className="h-4 w-4 mr-2" /> Download Full Report</>
-                                                    }
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={downloadErrorReport}
+                                                    className="h-9 font-bold text-destructive hover:bg-destructive/5"
+                                                >
+                                                    <Download className="h-4 w-4 mr-2" /> Download Full Report
                                                 </Button>
                                             </div>
                                         )}
@@ -498,65 +486,39 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
                                                             <TableRow>
                                                                 <TableHead className="w-[60px] font-black uppercase text-[10px]">Row</TableHead>
                                                                 <TableHead className="w-[100px] font-black uppercase text-[10px]">Field</TableHead>
-                                                                <TableHead className="font-black uppercase text-[10px]">Issue Description</TableHead>
-                                                                <TableHead className="font-black uppercase text-[10px]">Item ID</TableHead>
-                                                                <TableHead className="font-black uppercase text-[10px]">BarCode</TableHead>
+                                                                <TableHead className="font-black uppercase text-[10px]">Issue</TableHead>
+                                                                <TableHead className="text-right font-black uppercase text-[10px]">Value</TableHead>
                                                             </TableRow>
                                                         </TableHeader>
                                                         <TableBody>
-                                                            {data?.errors?.slice(0, 100).map((err, i) => (
+                                                            {data.errors.slice(0, 100).map((err, i) => (
                                                                 <TableRow key={i} className="hover:bg-muted/20 transition-colors">
                                                                     <TableCell className="font-mono text-xs font-bold text-muted-foreground">{err.row}</TableCell>
-                                                                    <TableCell className="text-xs font-bold capitalize">{err.data?.field || (err as any).field || 'unknown'}</TableCell>
+                                                                    <TableCell className="text-xs font-bold capitalize">{err.field || 'unknown'}</TableCell>
                                                                     <TableCell className="text-xs text-destructive font-semibold">{err.reason}</TableCell>
-                                                                    <TableCell className="text-xs font-mono">{(err as any).itemId || '—'}</TableCell>
-                                                                    <TableCell className="text-xs font-mono">{(err as any).barCode || '—'}</TableCell>
+                                                                    <TableCell className="text-right">
+                                                                        <Badge variant="outline" className="text-[10px] font-mono font-bold bg-background">
+                                                                            {String(err.value || 'N/A')}
+                                                                        </Badge>
+                                                                    </TableCell>
                                                                 </TableRow>
                                                             ))}
-                                                            {data?.errors && data.errors.length > 100 && (
+                                                            {data.errors.length > 100 && (
                                                                 <TableRow>
                                                                     <TableCell colSpan={4} className="text-center py-4 bg-muted/10">
-                                                                        <div className="flex flex-col items-center gap-1">
-                                                                            <p className="text-sm font-bold text-muted-foreground">
-                                                                                Showing first 100 of {data.errors.length} errors
-                                                                            </p>
-                                                                            <p className="text-xs text-muted-foreground">
-                                                                                Please download the full report to see all issues.
-                                                                            </p>
-                                                                        </div>
+                                                                        <p className="text-sm font-bold text-muted-foreground">
+                                                                            Showing first 100 of {data.errors.length} errors
+                                                                        </p>
+                                                                        <p className="text-xs text-muted-foreground">Download the full report to see all issues.</p>
                                                                     </TableCell>
                                                                 </TableRow>
                                                             )}
-                                                            <div ref={errorEndRef} />
                                                         </TableBody>
                                                     </Table>
+                                                    <div ref={errorEndRef} />
                                                 </ScrollArea>
                                             </div>
                                         )}
-                                    </div>
-                                )}
-
-                                {/* Final Completion State */}
-                                {data?.status === 'completed' && (
-                                    <div className="p-8 bg-green-500/5 border-2 border-green-500/20 rounded-3xl flex flex-col items-center gap-4 text-center animate-in zoom-in-95 duration-500">
-                                        <div className="h-16 w-16 rounded-full bg-green-500/20 flex items-center justify-center shadow-lg shadow-green-500/10">
-                                            <CheckCircle2 className="h-10 w-10 text-green-600" />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <h3 className="text-2xl font-black text-green-700">Import Successful!</h3>
-                                            <p className="text-green-600/80 font-medium">
-                                                {data?.successRecords} items have been added to your inventory.
-                                            </p>
-                                            <div className="pt-2">
-                                                <Button
-                                                    onClick={() => window.open(`${getApiBaseUrl()}/items/bulk-upload/${activeId}/success-report`, '_blank')}
-                                                    variant="outline"
-                                                    className="font-bold border-green-500/30 hover:bg-green-500/10"
-                                                >
-                                                    <Download className="h-4 w-4 mr-2" /> Download Export Report
-                                                </Button>
-                                            </div>
-                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -564,78 +526,64 @@ export function BulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUpl
                     </div>
                 </ScrollArea>
 
-                <DialogFooter className="p-6 border-t bg-muted/30 shrink-0">
-                    <div className="flex justify-between w-full items-center">
-                        <div className="max-w-[300px]">
-                            {isProcessing && (
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground font-semibold italic">
-                                    <Info className="h-3 w-3" />
-                                    System is processing in the background...
-                                </div>
-                            )}
-                        </div>
-                        <div className="flex gap-3">
-                            {!activeId ? (
-                                <>
-                                    <Button variant="ghost" onClick={() => onOpenChange(false)} className="font-bold">
-                                        Cancel
-                                    </Button>
-                                    <Button disabled={!file || isUploading} onClick={handleUpload} className="px-8 font-black shadow-lg shadow-primary/20">
-                                        {isUploading ? (
-                                            <>
-                                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                                Queuing...
-                                            </>
+                {/* ── Footer ── */}
+                <DialogFooter className="p-6 border-t bg-muted/30 flex items-center justify-between shrink-0">
+                    <div>
+                        {activeId && !isComplete && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleCancel}
+                                disabled={isProcessing && data?.status !== 'pending'}
+                                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 font-bold"
+                            >
+                                Cancel Import
+                            </Button>
+                        )}
+                    </div>
+                    <div className="flex gap-2">
+                        {!activeId ? (
+                            <>
+                                <Button variant="outline" onClick={handleClose} className="font-bold">
+                                    Close
+                                </Button>
+                                <Button
+                                    onClick={handleUpload}
+                                    disabled={!file || isUploading}
+                                    className="font-bold shadow-sm"
+                                >
+                                    {isUploading ? (
+                                        <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Uploading...</>
+                                    ) : (
+                                        <><Upload className="h-4 w-4 mr-2" /> Upload & Validate</>
+                                    )}
+                                </Button>
+                            </>
+                        ) : (
+                            <>
+                                {isValidated && (data?.failedRecords ?? 0) > 0 && (
+                                    <Button
+                                        onClick={handleConfirm}
+                                        disabled={isConfirming}
+                                        className="font-bold shadow-md bg-amber-600 hover:bg-amber-700 text-white"
+                                    >
+                                        {isConfirming ? (
+                                            <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Confoming...</>
                                         ) : (
-                                            <>
-                                                <Upload className="h-4 w-4 mr-2" />
-                                                Start Validation
-                                            </>
+                                            'Resolve Valid Items'
                                         )}
                                     </Button>
-                                </>
-                            ) : (
-                                <>
-                                    {isProcessing ? (
-                                        <Button variant="destructive" onClick={handleCancel} className="font-bold">
-                                            Abort Job
-                                        </Button>
-                                    ) : isValidated ? (
-                                        <div className="flex gap-3">
-                                            <Button variant="outline" onClick={reset} className="font-bold">
-                                                Re-upload Corrected File
-                                            </Button>
-                                            <Button
-                                                onClick={handleConfirm}
-                                                disabled={isProcessing || isConfirming}
-                                                className="px-10 font-black bg-green-600 hover:bg-green-700 shadow-lg shadow-green-600/20"
-                                            >
-                                                {isConfirming ? (
-                                                    <>
-                                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                        Starting...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Database className="mr-2 h-4 w-4" />
-                                                        Confirm & Start Import
-                                                    </>
-                                                )}
-                                            </Button>
-                                        </div>
-                                    ) : (
-                                        <Button variant="outline" onClick={reset} className="font-bold">
-                                            Upload Another
-                                        </Button>
-                                    )}
-                                    {(data?.status === 'completed' || isFailed || isCancelled) && (
-                                        <Button onClick={handleClose} className="font-black px-8">
-                                            Done
-                                        </Button>
-                                    )}
-                                </>
-                            )}
-                        </div>
+                                )}
+                                {(isComplete || isFailed || isCancelled) && (
+                                    <Button
+                                        onClick={handleClose}
+                                        className="font-bold shadow-md"
+                                    >
+                                        {data?.status === 'completed' ? 'Load Items into List' : 'Close'}
+                                    </Button>
+                                )}
+                            </>
+                        )}
                     </div>
                 </DialogFooter>
             </DialogContent>
