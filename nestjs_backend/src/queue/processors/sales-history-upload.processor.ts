@@ -480,6 +480,7 @@ export class SalesHistoryUploadProcessor {
                 }[] = [];
 
                 let hasItemError = false;
+                let totalWostSum = 0;
 
                 for (const row of rows) {
                     const d = row.data;
@@ -499,12 +500,22 @@ export class SalesHistoryUploadProcessor {
                     const qty = d.quantity || 1;
                     const unitPrice = d.unitPrice ?? Number(item.unitPrice);
                     const discPct = d.discountPercent || 0;
-                    const subtotal = unitPrice * qty;
-                    const discAmt = d.discountAmount ?? Math.round(subtotal * (discPct / 100) * 100) / 100;
-                    const afterDisc = subtotal - discAmt;
+
+                    // 1. Calculate tax-inclusive line total first (what the customer paid)
+                    const subtotalTaxIncl = unitPrice * qty;
+                    const discAmtTaxIncl = d.discountAmount ?? Math.round(subtotalTaxIncl * (discPct / 100) * 100) / 100;
+                    const lineTotal = d.totalPriceWithTax ?? Math.max(0, Math.round((subtotalTaxIncl - discAmtTaxIncl) * 100) / 100);
+
+                    // 2. Extract tax-exclusive and tax amounts from the line total
                     const taxPct = Number(item.taxRate1 || 0);
-                    const taxAmt = d.salesTax ?? Math.round(afterDisc * (taxPct / 100) * 100) / 100;
-                    const lineTotal = d.totalPriceWithTax ?? Math.round((afterDisc + taxAmt) * 100) / 100;
+                    const taxDivisor = 1 + (taxPct / 100);
+
+                    const afterDisc = Math.round((lineTotal / taxDivisor) * 100) / 100;
+                    const taxAmt = d.salesTax ?? Math.round((lineTotal - afterDisc) * 100) / 100;
+                    const discAmt = Math.round((discAmtTaxIncl / taxDivisor) * 100) / 100;
+                    const totalWost = afterDisc + discAmt;
+
+                    totalWostSum += totalWost;
 
                     lineItems.push({
                         itemId: item.id,
@@ -524,7 +535,7 @@ export class SalesHistoryUploadProcessor {
                     continue;
                 }
 
-                const subtotal = lineItems.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+                const subtotal = totalWostSum;
                 const totalDiscount = lineItems.reduce((s, i) => s + i.discountAmount, 0);
                 const totalTax = lineItems.reduce((s, i) => s + i.taxAmount, 0);
                 const grandTotal = lineItems.reduce((s, i) => s + i.lineTotal, 0);
