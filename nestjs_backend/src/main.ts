@@ -54,6 +54,8 @@ async function bootstrap() {
       'X-New-Refresh-Token',
       'X-Tenant-Id',
       'X-Company-Id',
+      'x-debugger-key',
+      'X-Debugger-Key',
     ],
     exposedHeaders: ['X-New-Access-Token', 'X-New-Refresh-Token'],
     preflight: true,

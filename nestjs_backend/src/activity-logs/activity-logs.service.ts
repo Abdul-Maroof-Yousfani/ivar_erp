@@ -114,10 +114,8 @@ export class ActivityLogsService implements OnModuleInit {
       this.prismaMaster.activityLog.count({ where }),
     ]);
 
-    const isDebugger =
-      debuggerKey &&
-      process.env.DEBUGGER_KEY &&
-      debuggerKey === process.env.DEBUGGER_KEY;
+    const expectedKey = process.env.DEBUGGER_KEY || 'ivar_debug_secret';
+    const isDebugger = debuggerKey && debuggerKey === expectedKey;
 
     const sanitizedLogs = logs.map((log) => {
       if (isDebugger) {

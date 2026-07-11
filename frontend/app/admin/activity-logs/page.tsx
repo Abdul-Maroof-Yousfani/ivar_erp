@@ -268,6 +268,7 @@ export default function ActivityLogsPage() {
         if (search.trim()) params.append("search", search.trim());
         if (dateRange.from) params.append("startDate", dateRange.from.toISOString());
         if (dateRange.to) params.append("endDate", dateRange.to.toISOString());
+        if (debuggerKey) params.append("debuggerKey", debuggerKey);
 
         const res = await authFetch(`/api/activity-logs?${params}`, {
           method: "GET",
