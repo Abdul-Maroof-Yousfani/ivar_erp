@@ -145,7 +145,6 @@ async function main() {
   if (!targetConnectionString) {
     console.log(`⚠️ Location ID ${TARGET_LOCATION_ID} not found in any registered database.`);
     if (companies.length > 0) {
-      // Default to the first active company
       const company = companies[0];
       targetDbName = company.dbName;
       let connectionString = company.dbUrl;
@@ -179,7 +178,6 @@ async function main() {
     const locCheck = await db.query(`SELECT id, warehouse_id FROM "Location" WHERE id = $1;`, [TARGET_LOCATION_ID]);
     
     if (locCheck.rowCount === 0) {
-      // Find first warehouse in DB to link to the new location
       const whRes = await db.query(`SELECT id FROM "Warehouse" WHERE "isDeleted" = false LIMIT 1;`);
       if (whRes.rowCount > 0) {
         warehouseId = whRes.rows[0].id;
@@ -195,15 +193,6 @@ async function main() {
       `, [TARGET_LOCATION_ID, 'DHA Z Block Lahore', 'DHAZ', 'active', warehouseId]);
     } else {
       warehouseId = locCheck.rows[0].warehouse_id;
-    }
-
-    if (!warehouseId) {
-      const whRes = await db.query(`SELECT id FROM "Warehouse" WHERE "isDeleted" = false LIMIT 1;`);
-      if (whRes.rowCount > 0) {
-        warehouseId = whRes.rows[0].id;
-      } else {
-        throw new Error('No active warehouse found in the database. Cannot create stock ledgers.');
-      }
     }
 
     // 5. Group rows by Order ID (ID column in Excel)
@@ -297,7 +286,7 @@ async function main() {
       }
     }
 
-    // 9. Process and insert orders inside a single transaction
+    // 9. Process and insert orders inside a single transaction (ONLY sales_orders and sales_order_items, NO stock ledgers or inventory updates)
     await db.query('BEGIN');
 
     let createdOrdersCount = 0;
@@ -324,9 +313,7 @@ async function main() {
 
       // Calculate totals
       let subtotal = 0;
-      
       const lineItemCreates: any[] = [];
-      const stockLedgerCreates: any[] = [];
 
       for (const row of rows) {
         const barcode = String(row['Barcode (POS Invoice Item)']).trim();
@@ -342,34 +329,13 @@ async function main() {
 
         subtotal += lineTotal;
 
-        const itemId = item.id;
-        const lineItemId = generateUUID();
-
-        // Stock Ledger entry properties
-        const movementQty = lineAmount >= 0 ? -1 : 1; // OUTBOUND reduces stock (-1), INBOUND increases stock (+1)
-        const movementType = lineAmount >= 0 ? 'OUTBOUND' : 'INBOUND';
-
         lineItemCreates.push({
-          id: lineItemId,
+          id: generateUUID(),
           salesOrderId,
-          itemId,
+          itemId: item.id,
           quantity,
           unitPrice,
           lineTotal,
-          createdAt: orderDate
-        });
-
-        stockLedgerCreates.push({
-          id: generateUUID(),
-          itemId,
-          warehouseId,
-          qty: movementQty,
-          referenceType: 'POS_SALE',
-          referenceId: salesOrderId,
-          locationId: TARGET_LOCATION_ID,
-          movementType,
-          rate: Math.abs(unitPrice),
-          unitCost: Math.abs(unitPrice),
           createdAt: orderDate
         });
       }
@@ -429,57 +395,13 @@ async function main() {
         ]);
       }
 
-      // Insert Stock Ledgers and Update InventoryItem
-      for (const sl of stockLedgerCreates) {
-        await db.query(`
-          INSERT INTO stock_ledgers (
-            id, item_id, warehouse_id, qty, reference_type, 
-            reference_id, location_id, movement_type, rate, 
-            unit_cost, created_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
-        `, [
-          sl.id,
-          sl.itemId,
-          sl.warehouseId,
-          sl.qty,
-          sl.referenceType,
-          sl.referenceId,
-          sl.locationId,
-          sl.movementType,
-          sl.rate,
-          sl.unitCost,
-          sl.createdAt
-        ]);
-
-        // Update InventoryItem
-        const invRes = await db.query(`
-          SELECT id, quantity 
-          FROM "InventoryItem" 
-          WHERE "locationId" = $1 AND "itemId" = $2 AND "warehouseId" = $3 AND status = 'AVAILABLE';
-        `, [TARGET_LOCATION_ID, sl.itemId, warehouseId]);
-
-        if (invRes.rowCount > 0) {
-          await db.query(`
-            UPDATE "InventoryItem" 
-            SET quantity = quantity + $1, "updatedAt" = NOW() 
-            WHERE id = $2;
-          `, [sl.qty, invRes.rows[0].id]);
-        } else {
-          await db.query(`
-            INSERT INTO "InventoryItem" (
-              id, "warehouseId", "locationId", "itemId", quantity, status, "createdAt", "updatedAt"
-            ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW());
-          `, [generateUUID(), warehouseId, TARGET_LOCATION_ID, sl.itemId, sl.qty, 'AVAILABLE']);
-        }
-      }
-
       createdOrdersCount++;
     }
 
     await db.query('COMMIT');
     
     console.log(`\n============================================================`);
-    console.log(`🚀 IMPORT FINISHED SUCCESSFULLY!`);
+    console.log(`🚀 IMPORT FINISHED SUCCESSFULLY! (Pure Sales History)`);
     console.log(`   Created Orders: ${createdOrdersCount}`);
     console.log(`   Skipped/Existing Orders: ${skippedOrdersCount}`);
     console.log(`============================================================`);
