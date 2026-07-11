@@ -15,9 +15,9 @@ export class ActivityLogsController {
   @Get()
   findAll(
     @Query() query: any,
-    @Headers('x-debugger-key') debuggerHeader?: string,
+    @Headers() headers: Record<string, string>,
   ) {
-    const debuggerKey = debuggerHeader || query.debuggerKey;
+    const debuggerKey = headers['x-debugger-key'] || headers['X-Debugger-Key'] || query.debuggerKey || query.debuggerkey;
     return this.activityLogsService.findAll(query, debuggerKey);
   }
 }
