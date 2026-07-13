@@ -246,10 +246,16 @@ export class ExportHistoryService {
         if (s3Key) {
           await this.uploadService.deleteS3Object(s3Key);
         }
-      } else {
-        const fullPath = path.isAbsolute(record.filePath)
+        let fullPath = path.isAbsolute(record.filePath)
           ? record.filePath
           : path.join(process.cwd(), record.filePath);
+
+        if (!path.isAbsolute(record.filePath) && !fs.existsSync(fullPath)) {
+          const publicPath = path.join(process.cwd(), 'public', record.filePath);
+          if (fs.existsSync(publicPath)) {
+            fullPath = publicPath;
+          }
+        }
         
         try {
           if (fs.existsSync(fullPath)) {
@@ -294,9 +300,16 @@ export class ExportHistoryService {
       return res.redirect(record.filePath, 302);
     }
 
-    const filePath = path.isAbsolute(record.filePath)
+    let filePath = path.isAbsolute(record.filePath)
       ? record.filePath
       : path.join(process.cwd(), record.filePath);
+
+    if (!path.isAbsolute(record.filePath) && !fs.existsSync(filePath)) {
+      const publicPath = path.join(process.cwd(), 'public', record.filePath);
+      if (fs.existsSync(publicPath)) {
+        filePath = publicPath;
+      }
+    }
 
     if (!fs.existsSync(filePath)) {
       throw new NotFoundException('Export file not found on server disk.');
@@ -363,9 +376,15 @@ export class ExportHistoryService {
             await this.uploadService.deleteS3Object(s3Key);
           }
         } else {
-          const fullPath = path.isAbsolute(record.filePath)
+          let fullPath = path.isAbsolute(record.filePath)
             ? record.filePath
             : path.join(process.cwd(), record.filePath);
+          if (!path.isAbsolute(record.filePath) && !fs.existsSync(fullPath)) {
+            const publicPath = path.join(process.cwd(), 'public', record.filePath);
+            if (fs.existsSync(publicPath)) {
+              fullPath = publicPath;
+            }
+          }
           try {
             if (fs.existsSync(fullPath)) {
               fs.unlinkSync(fullPath);

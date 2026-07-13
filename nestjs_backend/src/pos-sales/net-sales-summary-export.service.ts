@@ -137,10 +137,15 @@ export class NetSalesSummaryExportService {
       return res.redirect(record.filePath, 302);
     }
 
-    const filePath = path.join(process.cwd(), record.filePath);
+    let filePath = path.join(process.cwd(), record.filePath);
 
     if (!fs.existsSync(filePath)) {
-      throw new NotFoundException('Export file not found. It may have expired or the job is still running.');
+      const publicPath = path.join(process.cwd(), 'public', record.filePath);
+      if (fs.existsSync(publicPath)) {
+        filePath = publicPath;
+      } else {
+        throw new NotFoundException('Export file not found. It may have expired or the job is still running.');
+      }
     }
 
     const stat = fs.statSync(filePath);
