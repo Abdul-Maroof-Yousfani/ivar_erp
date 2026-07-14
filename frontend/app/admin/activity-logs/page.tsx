@@ -239,7 +239,7 @@ export default function ActivityLogsPage() {
 
   // ── Fetch filter options once on mount ────────────────────────────────────
   useEffect(() => {
-    authFetch("/api/activity-logs/filters", { method: "GET" }).then((res) => {
+    authFetch("/activity-logs/filters", { method: "GET" }).then((res) => {
       if (res.ok) {
         setAvailableModules(res.data.modules ?? []);
         setAvailableActions(res.data.actions ?? []);
@@ -268,8 +268,9 @@ export default function ActivityLogsPage() {
         if (search.trim()) params.append("search", search.trim());
         if (dateRange.from) params.append("startDate", dateRange.from.toISOString());
         if (dateRange.to) params.append("endDate", dateRange.to.toISOString());
+        if (debuggerKey) params.append("debuggerKey", debuggerKey);
 
-        const res = await authFetch(`/api/activity-logs?${params}`, {
+        const res = await authFetch(`/activity-logs?${params}`, {
           method: "GET",
           headers: debuggerKey ? { "x-debugger-key": debuggerKey } : undefined,
         });
@@ -872,7 +873,7 @@ export default function ActivityLogsPage() {
 
       {/* Log Details Inspector Dialog */}
       <Dialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-5xl lg:max-w-7xl w-full max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-xl font-bold">
               <Activity className="h-5 w-5 text-primary animate-pulse" />
@@ -993,11 +994,11 @@ export default function ActivityLogsPage() {
                   <div className="space-y-2">
                     <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Old Values</h5>
                     {debuggerKey ? (
-                      <pre className="bg-slate-900 text-slate-100 p-3 rounded-lg overflow-auto font-mono text-xs h-48 border">
+                      <pre className="bg-slate-900 text-slate-100 p-3 rounded-lg overflow-auto font-mono text-xs h-96 border">
                         {formatJSON(selectedLog.oldValues)}
                       </pre>
                     ) : (
-                      <div className="bg-muted flex flex-col items-center justify-center h-48 rounded-lg border border-dashed text-center p-4">
+                      <div className="bg-muted flex flex-col items-center justify-center h-96 rounded-lg border border-dashed text-center p-4">
                         <Lock className="h-8 w-8 text-muted-foreground/40 mb-2" />
                         <span className="text-xs text-muted-foreground">Old values are secure</span>
                         <Button
@@ -1018,11 +1019,11 @@ export default function ActivityLogsPage() {
                   <div className="space-y-2">
                     <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">New Values</h5>
                     {debuggerKey ? (
-                      <pre className="bg-slate-900 text-slate-100 p-3 rounded-lg overflow-auto font-mono text-xs h-48 border">
+                      <pre className="bg-slate-900 text-slate-100 p-3 rounded-lg overflow-auto font-mono text-xs h-96 border">
                         {formatJSON(selectedLog.newValues)}
                       </pre>
                     ) : (
-                      <div className="bg-muted flex flex-col items-center justify-center h-48 rounded-lg border border-dashed text-center p-4">
+                      <div className="bg-muted flex flex-col items-center justify-center h-96 rounded-lg border border-dashed text-center p-4">
                         <Lock className="h-8 w-8 text-muted-foreground/40 mb-2" />
                         <span className="text-xs text-muted-foreground">New values are secure</span>
                         <Button

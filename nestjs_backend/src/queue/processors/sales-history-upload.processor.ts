@@ -417,28 +417,19 @@ export class SalesHistoryUploadProcessor {
             }
         }
 
-        // Check which DocumentNumbers already exist to avoid duplicates
+        // Check which DocumentNumbers already exist to update them
         const docNumbers = batch.map(([docNum]) => docNum);
         const existingOrders = await prisma.salesOrder.findMany({
             where: { orderNumber: { in: docNumbers } },
-            select: { orderNumber: true },
+            select: { id: true, orderNumber: true },
         });
-        const existingSet = new Set(existingOrders.map((o) => o.orderNumber));
+        const existingOrderMap = new Map(existingOrders.map((o) => [o.orderNumber, o.id]));
 
         for (const [documentNumber, rows] of batch) {
             // Count all rows in this group as processed
             progress.processedRecords += rows.length;
 
-            if (existingSet.has(documentNumber)) {
-                this.logger.warn(`Order "${documentNumber}" already exists — skipping.`);
-                progress.skippedRecords += rows.length;
-                progress.errors.push({
-                    row: rows[0].row,
-                    reason: `Order "${documentNumber}" already exists in the database.`,
-                    data: { documentNumber },
-                });
-                continue;
-            }
+            const existingOrderId = existingOrderMap.get(documentNumber);
 
             try {
                 // Use the first row for order-level fields
@@ -480,6 +471,7 @@ export class SalesHistoryUploadProcessor {
                 }[] = [];
 
                 let hasItemError = false;
+                let totalWostSum = 0;
 
                 for (const row of rows) {
                     const d = row.data;
@@ -499,12 +491,22 @@ export class SalesHistoryUploadProcessor {
                     const qty = d.quantity || 1;
                     const unitPrice = d.unitPrice ?? Number(item.unitPrice);
                     const discPct = d.discountPercent || 0;
-                    const subtotal = unitPrice * qty;
-                    const discAmt = d.discountAmount ?? Math.round(subtotal * (discPct / 100) * 100) / 100;
-                    const afterDisc = subtotal - discAmt;
+
+                    // 1. Calculate tax-inclusive line total first (what the customer paid)
+                    const subtotalTaxIncl = unitPrice * qty;
+                    const discAmtTaxIncl = d.discountAmount ?? Math.round(subtotalTaxIncl * (discPct / 100) * 100) / 100;
+                    const lineTotal = d.totalPriceWithTax ?? Math.max(0, Math.round((subtotalTaxIncl - discAmtTaxIncl) * 100) / 100);
+
+                    // 2. Extract tax-exclusive and tax amounts from the line total
                     const taxPct = Number(item.taxRate1 || 0);
-                    const taxAmt = d.salesTax ?? Math.round(afterDisc * (taxPct / 100) * 100) / 100;
-                    const lineTotal = d.totalPriceWithTax ?? Math.round((afterDisc + taxAmt) * 100) / 100;
+                    const taxDivisor = 1 + (taxPct / 100);
+
+                    const afterDisc = Math.round((lineTotal / taxDivisor) * 100) / 100;
+                    const taxAmt = d.salesTax ?? Math.round((lineTotal - afterDisc) * 100) / 100;
+                    const discAmt = Math.round((discAmtTaxIncl / taxDivisor) * 100) / 100;
+                    const totalWost = afterDisc + discAmt;
+
+                    totalWostSum += totalWost;
 
                     lineItems.push({
                         itemId: item.id,
@@ -524,7 +526,7 @@ export class SalesHistoryUploadProcessor {
                     continue;
                 }
 
-                const subtotal = lineItems.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+                const subtotal = totalWostSum;
                 const totalDiscount = lineItems.reduce((s, i) => s + i.discountAmount, 0);
                 const totalTax = lineItems.reduce((s, i) => s + i.taxAmount, 0);
                 const grandTotal = lineItems.reduce((s, i) => s + i.lineTotal, 0);
@@ -541,32 +543,55 @@ export class SalesHistoryUploadProcessor {
                 if (firstRow.isAllianceDiscount) notesParts.push('[Alliance Discount]');
                 if (firstRow.salesPerson) notesParts.push(`SP: ${firstRow.salesPerson}`);
 
-                await prisma.salesOrder.create({
-                    data: {
-                        orderNumber: documentNumber,
-                        posId: terminalCtx.posId || undefined,
-                        terminalId: terminalCtx.terminalId || undefined,
-                        locationId: terminalCtx.locationId || undefined,
-                        paymentMethod,
-                        paymentStatus,
-                        status: 'completed',
-                        subtotal,
-                        discountAmount: totalDiscount,
-                        taxAmount: totalTax,
-                        grandTotal,
-                        cashAmount: cashSale || undefined,
-                        cardAmount: cardSale || undefined,
-                        voucherAmount: voucherAmount || undefined,
-                        tenderType: paymentMethod,
-                        fbrInvoiceNumber: fbrInvoiceNumber || undefined,
-                        fbrStatus: fbrInvoiceNumber ? 'SYNCED' : 'PENDING',
-                        notes: notesParts.join(' | ') || undefined,
-                        createdAt: createdAt || undefined,
-                        items: {
-                            create: lineItems,
+                const orderData = {
+                    posId: terminalCtx.posId || null,
+                    terminalId: terminalCtx.terminalId || null,
+                    locationId: terminalCtx.locationId || null,
+                    paymentMethod,
+                    paymentStatus,
+                    status: 'completed',
+                    subtotal,
+                    discountAmount: totalDiscount,
+                    taxAmount: totalTax,
+                    grandTotal,
+                    cashAmount: cashSale || null,
+                    cardAmount: cardSale || null,
+                    voucherAmount: voucherAmount || null,
+                    tenderType: paymentMethod,
+                    fbrInvoiceNumber: fbrInvoiceNumber || null,
+                    fbrStatus: fbrInvoiceNumber ? 'SYNCED' : 'PENDING',
+                    notes: notesParts.join(' | ') || null,
+                    createdAt: createdAt || undefined,
+                };
+
+                if (existingOrderId) {
+                    await prisma.$transaction(async (tx) => {
+                        // Delete existing items
+                        await tx.salesOrderItem.deleteMany({
+                            where: { salesOrderId: existingOrderId },
+                        });
+                        // Update order and recreate items
+                        await tx.salesOrder.update({
+                            where: { id: existingOrderId },
+                            data: {
+                                ...orderData,
+                                items: {
+                                    create: lineItems,
+                                },
+                            },
+                        });
+                    });
+                } else {
+                    await prisma.salesOrder.create({
+                        data: {
+                            ...orderData,
+                            orderNumber: documentNumber,
+                            items: {
+                                create: lineItems,
+                            },
                         },
-                    },
-                });
+                    });
+                }
 
                 // Count each successfully created line item as a success
                 progress.successRecords += lineItems.length;
@@ -578,7 +603,7 @@ export class SalesHistoryUploadProcessor {
                 }
             } catch (error) {
                 this.logger.error(
-                    `Failed to create order "${documentNumber}": ${error.message}`,
+                    `Failed to save order "${documentNumber}": ${error.message}`,
                 );
                 progress.failedRecords += rows.length;
                 progress.errors.push({
