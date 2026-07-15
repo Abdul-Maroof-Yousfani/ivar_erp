@@ -1000,7 +1000,7 @@ export default function DataTable<TData extends DataTableRow>({
                 <SelectValue placeholder="Select" />
               </SelectTrigger>
               <SelectContent>
-                {[10, 25, 50, 100].map((size) => (
+                {[10, 25, 50, 100, 250, 500, 1000].map((size) => (
                   <SelectItem key={size} value={size.toString()}>
                     {size}
                   </SelectItem>

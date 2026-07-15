@@ -49,6 +49,13 @@ export interface CoaRawRow {
     glDesc?:     string; // GL Description (name for leaf or tag)
     leafDebit?:  number;
     leafCredit?: number;
+
+    // --- New format support ---
+    isNewFormat?: boolean;
+    mainHead?: string;
+    subHead?: string;
+    accountName?: string;
+    balance?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,8 +133,8 @@ export class CoaCsvParserService {
             case '1': return 'EQUITY';
             case '2': return 'LIABILITY';
             case '3': return 'ASSET';
-            case '4': case '5': case '6': case '7': return 'INCOME';
-            case '8': case '9': return 'EXPENSE';
+            case '4': case '6': case '7': return 'INCOME';
+            case '5': case '8': case '9': return 'EXPENSE';
             default:  return 'ASSET';
         }
     }
@@ -154,6 +161,81 @@ export class CoaCsvParserService {
             return worksheet[ref]?.v ?? null;
         };
 
+        // Scan the first few rows to look for the headers "MAIN HEAD", "SUB HEAD", "ACCOUNT NAME"
+        let isNewFormat = false;
+        let headerRowIndex = -1;
+        
+        for (let r = range.s.r; r <= Math.min(range.s.r + 5, range.e.r); r++) {
+            let hasMainHead = false;
+            let hasSubHead = false;
+            let hasAccountName = false;
+            
+            for (let c = range.s.c; c <= range.e.c; c++) {
+                const val = this.str(cellVal(r, c));
+                if (val) {
+                    const norm = val.toUpperCase().replace(/\s+/g, ' ');
+                    if (norm.includes('MAIN HEAD')) hasMainHead = true;
+                    if (norm.includes('SUB HEAD')) hasSubHead = true;
+                    if (norm.includes('ACCOUNT NAME')) hasAccountName = true;
+                }
+            }
+            
+            if (hasMainHead && hasSubHead && hasAccountName) {
+                isNewFormat = true;
+                headerRowIndex = r;
+                break;
+            }
+        }
+
+        if (isNewFormat) {
+            let colMainHead = 1;
+            let colSubHead = 2;
+            let colAccountName = 3;
+            let colBalance = 4;
+
+            for (let c = range.s.c; c <= range.e.c; c++) {
+                const val = this.str(cellVal(headerRowIndex, c));
+                if (val) {
+                    const norm = val.toUpperCase().replace(/\s+/g, ' ');
+                    if (norm.includes('MAIN HEAD')) colMainHead = c;
+                    else if (norm.includes('SUB HEAD')) colSubHead = c;
+                    else if (norm.includes('ACCOUNT NAME')) colAccountName = c;
+                    else if (norm.includes('BALANCE')) colBalance = c;
+                }
+            }
+
+            const rows: CoaRawRow[] = [];
+            let currentMainHead = '';
+            let currentSubHead = '';
+
+            for (let r = headerRowIndex + 1; r <= range.e.r; r++) {
+                const mainHead = this.str(cellVal(r, colMainHead));
+                const subHead = this.str(cellVal(r, colSubHead));
+                const accountName = this.str(cellVal(r, colAccountName));
+                const balance = this.num(cellVal(r, colBalance));
+
+                if (!accountName) {
+                    continue;
+                }
+
+                if (mainHead) currentMainHead = mainHead;
+                if (subHead) currentSubHead = subHead;
+
+                rows.push({
+                    excelRow: r + 1,
+                    isNewFormat: true,
+                    mainHead: currentMainHead,
+                    subHead: currentSubHead,
+                    accountName,
+                    balance
+                });
+            }
+
+            this.logger.log(`Read ${rows.length} raw rows from Excel (New Format)`);
+            return rows;
+        }
+
+        // --- Fallback to Old Format ---
         // Auto-detect column offset by finding where "MAIN" header appears
         // Some files have an extra leading column (offset = 1)
         let offset = 0;
@@ -203,7 +285,7 @@ export class CoaCsvParserService {
             if (hasAny) rows.push(row);
         }
 
-        this.logger.log(`Read ${rows.length} raw rows from Excel`);
+        this.logger.log(`Read ${rows.length} raw rows from Excel (Old Format)`);
         return rows;
     }
 
@@ -218,6 +300,10 @@ export class CoaCsvParserService {
     // This guarantees every parent exists before its children are processed.
 
     rawRowsToRecords(rawRows: CoaRawRow[]): CoaParsedRecord[] {
+        if (rawRows.length > 0 && rawRows[0].isNewFormat) {
+            return this.rawRowsToRecordsNew(rawRows);
+        }
+
         const records: CoaParsedRecord[] = [];
 
         // ── Pass 1: Main accounts ─────────────────────────────────────────────
@@ -341,6 +427,138 @@ export class CoaCsvParserService {
             `${records.length - seenMain.size - seenCtrl.size - seenSub.size - seenLeaf.size} tags`
         );
 
+        return records;
+    }
+
+    private rawRowsToRecordsNew(rawRows: CoaRawRow[]): CoaParsedRecord[] {
+        const records: CoaParsedRecord[] = [];
+
+        const seenMains = new Set<string>();
+        const seenCtrls = new Set<string>();
+        const seenSubs = new Set<string>();
+
+        const mainHeadToControlCount = new Map<string, number>();
+        const subHeadToCode = new Map<string, string>();
+        const subControlCodeToLeafCount = new Map<string, number>();
+
+        const getMainHeadInfo = (name: string) => {
+            const norm = name.toUpperCase().replace(/\s+/g, ' ').trim();
+            if (norm.includes('ASSETS') || norm === 'ASSET') return { code: '3', type: 'ASSET' as const };
+            if (norm.includes('LIABILITIES') || norm === 'LIABILITY') return { code: '2', type: 'LIABILITY' as const };
+            if (norm.includes('CAPITAL') || norm.includes('EQUITY')) return { code: '1', type: 'EQUITY' as const };
+            if (norm.includes('INCOME') || norm === 'REVENUE') return { code: '4', type: 'INCOME' as const };
+            if (norm.includes('EXPENSES') || norm === 'EXPENSE') return { code: '5', type: 'EXPENSE' as const };
+            return null;
+        };
+
+        // Pass 1: Main heads
+        for (const r of rawRows) {
+            if (!r.mainHead) continue;
+            const info = getMainHeadInfo(r.mainHead);
+            if (!info) continue;
+            const key = info.code;
+            if (seenMains.has(key)) continue;
+            seenMains.add(key);
+            records.push({
+                row: r.excelRow,
+                data: {
+                    code: info.code,
+                    name: r.mainHead.toUpperCase(),
+                    type: info.type,
+                    isGroup: true,
+                    parentCode: undefined,
+                    isTagEntry: false
+                }
+            });
+        }
+
+        // Pass 2: Control heads (Sub Head)
+        for (const r of rawRows) {
+            if (!r.mainHead || !r.subHead) continue;
+            const mainInfo = getMainHeadInfo(r.mainHead);
+            if (!mainInfo) continue;
+            const mainHeadCode = mainInfo.code;
+            
+            const subKey = `${mainHeadCode}_${r.subHead.toLowerCase()}`;
+            if (seenCtrls.has(subKey)) continue;
+            seenCtrls.add(subKey);
+
+            let count = mainHeadToControlCount.get(mainHeadCode) || 0;
+            const controlCode = `${mainHeadCode}${count}`;
+            mainHeadToControlCount.set(mainHeadCode, count + 1);
+            subHeadToCode.set(subKey, controlCode);
+
+            records.push({
+                row: r.excelRow,
+                data: {
+                    code: controlCode,
+                    name: r.subHead,
+                    type: mainInfo.type,
+                    isGroup: true,
+                    parentCode: mainHeadCode,
+                    isTagEntry: false
+                }
+            });
+        }
+
+        // Pass 3: Sub-controls (4-digit)
+        for (const r of rawRows) {
+            if (!r.mainHead || !r.subHead) continue;
+            const mainInfo = getMainHeadInfo(r.mainHead);
+            if (!mainInfo) continue;
+            const mainHeadCode = mainInfo.code;
+            const subKey = `${mainHeadCode}_${r.subHead.toLowerCase()}`;
+            const controlCode = subHeadToCode.get(subKey);
+            if (!controlCode) continue;
+
+            const subControlCode = `${controlCode}01`;
+            if (seenSubs.has(subControlCode)) continue;
+            seenSubs.add(subControlCode);
+
+            records.push({
+                row: r.excelRow,
+                data: {
+                    code: subControlCode,
+                    name: r.subHead,
+                    type: mainInfo.type,
+                    isGroup: true,
+                    parentCode: controlCode,
+                    isTagEntry: false
+                }
+            });
+        }
+
+        // Pass 4: Leaf accounts (8-digit)
+        for (const r of rawRows) {
+            if (!r.mainHead || !r.subHead || !r.accountName) continue;
+            const mainInfo = getMainHeadInfo(r.mainHead);
+            if (!mainInfo) continue;
+            const mainHeadCode = mainInfo.code;
+            const subKey = `${mainHeadCode}_${r.subHead.toLowerCase()}`;
+            const controlCode = subHeadToCode.get(subKey);
+            if (!controlCode) continue;
+
+            const subControlCode = `${controlCode}01`;
+            let leafCount = subControlCodeToLeafCount.get(subControlCode) || 1;
+            const leafCode = `${subControlCode}${String(leafCount).padStart(4, '0')}`;
+            subControlCodeToLeafCount.set(subControlCode, leafCount + 1);
+
+            records.push({
+                row: r.excelRow,
+                data: {
+                    code: leafCode,
+                    name: r.accountName,
+                    type: mainInfo.type,
+                    isGroup: false,
+                    parentCode: subControlCode,
+                    isTagEntry: false,
+                    debit: r.balance && r.balance > 0 ? r.balance : undefined,
+                    credit: r.balance && r.balance < 0 ? Math.abs(r.balance) : undefined
+                }
+            });
+        }
+
+        this.logger.log(`Converted to ${records.length} records (New Format)`);
         return records;
     }
 

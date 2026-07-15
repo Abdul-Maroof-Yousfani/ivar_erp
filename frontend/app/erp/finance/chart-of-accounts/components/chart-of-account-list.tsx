@@ -77,7 +77,29 @@ function buildTree(flat: ChartOfAccount[]): ChartOfAccount[] {
     }
   });
 
-  return roots;
+  // Contract/bypass redundant nested group nodes with the exact same name (case-insensitive)
+  const contract = (nodes: ChartOfAccount[], parentName?: string): ChartOfAccount[] => {
+    const result: ChartOfAccount[] = [];
+    for (const node of nodes) {
+      if (node.children && node.children.length > 0) {
+        node.children = contract(node.children, node.name);
+      }
+      if (
+        parentName &&
+        node.isGroup &&
+        node.name.toLowerCase().replace(/\s+/g, ' ').trim() === parentName.toLowerCase().replace(/\s+/g, ' ').trim()
+      ) {
+        if (node.children) {
+          result.push(...node.children);
+        }
+      } else {
+        result.push(node);
+      }
+    }
+    return result;
+  };
+
+  return contract(roots);
 }
 
 // Helper to find all ancestors of an account
@@ -728,7 +750,7 @@ export function ChartOfAccountList({ initialData }: ChartOfAccountListProps) {
         canBulkDelete={false}
         canRowEdit={false}
         canRowDelete={false}
-        initialPageSize={1000}
+        initialPageSize={50}
       />
 
       {/* ── Bulk Upload Modal ── */}
