@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Upload } from 'lucide-react';
 import { CoaBulkUploadModal } from '@/components/finance/coa-bulk-upload-modal';
 import { useRouter } from 'next/navigation';
+import { clearCachedTree } from '@/components/ui/chart-of-account-select';
 
 export function CoaBulkUploadButton() {
     const [open, setOpen] = useState(false);
@@ -12,6 +13,7 @@ export function CoaBulkUploadButton() {
     const router = useRouter();
 
     const handleSuccess = () => {
+        clearCachedTree();
         router.refresh();
     };
 

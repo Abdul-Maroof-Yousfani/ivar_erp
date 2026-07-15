@@ -515,13 +515,25 @@ export class CoaCsvParserService {
             if (seenSubs.has(subControlCode)) continue;
             seenSubs.add(subControlCode);
 
+            // Determine if this subhead should be a tag-bearing leaf account
+            const normSub = r.subHead.toUpperCase().replace(/\s+/g, ' ').trim();
+            const isTagParent = normSub.includes("PARTNERS' CAPITAL") ||
+                               normSub.includes("PARTNER CAPITAL") ||
+                               normSub.includes("DRAWING") ||
+                               normSub.includes("DEBTOR") ||
+                               normSub.includes("CREDITOR") ||
+                               normSub.includes("PAYABLE") ||
+                               normSub.includes("RECEIVABLE") ||
+                               normSub.includes("SUPPLIER") ||
+                               normSub.includes("CUSTOMER");
+
             records.push({
                 row: r.excelRow,
                 data: {
                     code: subControlCode,
                     name: r.subHead,
                     type: mainInfo.type,
-                    isGroup: true,
+                    isGroup: !isTagParent, // If tag parent, it is a Leaf Account (isGroup: false)
                     parentCode: controlCode,
                     isTagEntry: false
                 }
@@ -543,6 +555,18 @@ export class CoaCsvParserService {
             const leafCode = `${subControlCode}${String(leafCount).padStart(4, '0')}`;
             subControlCodeToLeafCount.set(subControlCode, leafCount + 1);
 
+            // Determine if parent is a tag parent
+            const normSub = r.subHead.toUpperCase().replace(/\s+/g, ' ').trim();
+            const isTagParent = normSub.includes("PARTNERS' CAPITAL") ||
+                               normSub.includes("PARTNER CAPITAL") ||
+                               normSub.includes("DRAWING") ||
+                               normSub.includes("DEBTOR") ||
+                               normSub.includes("CREDITOR") ||
+                               normSub.includes("PAYABLE") ||
+                               normSub.includes("RECEIVABLE") ||
+                               normSub.includes("SUPPLIER") ||
+                               normSub.includes("CUSTOMER");
+
             records.push({
                 row: r.excelRow,
                 data: {
@@ -551,7 +575,7 @@ export class CoaCsvParserService {
                     type: mainInfo.type,
                     isGroup: false,
                     parentCode: subControlCode,
-                    isTagEntry: false,
+                    isTagEntry: isTagParent, // If parent is tag parent, these are Tag Accounts (isTagEntry: true)
                     debit: r.balance && r.balance > 0 ? r.balance : undefined,
                     credit: r.balance && r.balance < 0 ? Math.abs(r.balance) : undefined
                 }

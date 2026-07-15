@@ -470,8 +470,10 @@ export class CoaUploadProcessor {
 
                 // ── Opening balance ──────────────────────────────────────────
                 if (!isGroup && (debit || credit)) {
+                    const postAccountId = isTagEntry && parentId ? parentId : created.id;
+                    const postTagAccountId = isTagEntry ? created.id : undefined;
                     await this.accountingService.postLines(
-                        [{ accountId: created.id, debit: debit || 0, credit: credit || 0 }],
+                        [{ accountId: postAccountId, tagAccountId: postTagAccountId, debit: debit || 0, credit: credit || 0 }],
                         {
                             sourceType: 'OPENING_BALANCE',
                             sourceId: created.id,
