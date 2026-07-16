@@ -29,7 +29,7 @@ export function TaxSlabList({ initialTaxSlabs, newItemId }: TaxSlabListProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
-  const [editRows, setEditRows] = useState<{ id: string; name: string; minAmount: number; maxAmount: number; rate: number }[]>([]);
+  const [editRows, setEditRows] = useState<{ id: string; name: string; minAmount: number; maxAmount: number; fixedAmount: number; rate: number }[]>([]);
   const { hasPermission } = useAuth();
   const showAddAction = hasPermission("master.tax-slab.create");
   const canBulkEdit = hasPermission("master.tax-slab.update");
@@ -55,7 +55,7 @@ export function TaxSlabList({ initialTaxSlabs, newItemId }: TaxSlabListProps) {
   };
 
   const handleBulkEdit = (items: TaxSlabRow[]) => {
-    setEditRows(items.map((item) => ({ id: item.id, name: item.name, minAmount: item.minAmount, maxAmount: item.maxAmount, rate: item.rate })));
+    setEditRows(items.map((item) => ({ id: item.id, name: item.name, minAmount: item.minAmount, maxAmount: item.maxAmount, fixedAmount: item.fixedAmount || 0, rate: item.rate })));
     setBulkEditOpen(true);
   };
 
@@ -130,6 +130,10 @@ export function TaxSlabList({ initialTaxSlabs, newItemId }: TaxSlabListProps) {
                   <div>
                     <Label className="text-xs">Max Amount</Label>
                     <Input type="number" value={row.maxAmount} onChange={(e) => updateEditRow(row.id, "maxAmount", parseFloat(e.target.value))} disabled={isPending} />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">Fixed Amount</Label>
+                    <Input type="number" step="0.01" value={row.fixedAmount} onChange={(e) => updateEditRow(row.id, "fixedAmount", parseFloat(e.target.value))} disabled={isPending} />
                   </div>
                 </div>
               </div>

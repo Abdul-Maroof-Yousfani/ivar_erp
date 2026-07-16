@@ -1,0 +1,2042 @@
+[
+  {
+    "rowNum": 3,
+    "sr": "1",
+    "mainHead": "ASSETS",
+    "subHead": "Fixed Assets",
+    "accountName": "FIXED ASSETS",
+    "balance": ""
+  },
+  {
+    "rowNum": 4,
+    "sr": "2",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR STORE KARACHI",
+    "balance": ""
+  },
+  {
+    "rowNum": 5,
+    "sr": "3",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "PLOT NO A-488",
+    "balance": ""
+  },
+  {
+    "rowNum": 6,
+    "sr": "4",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SECURITY DEPOSIT PLOT NO# A-488",
+    "balance": ""
+  },
+  {
+    "rowNum": 7,
+    "sr": "5",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SECURITY DEPOSIT LAHORE OUTLET",
+    "balance": ""
+  },
+  {
+    "rowNum": 8,
+    "sr": "6",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "METAL ASSETS",
+    "balance": ""
+  },
+  {
+    "rowNum": 9,
+    "sr": "7",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ISLAMABAD OUTLET",
+    "balance": ""
+  },
+  {
+    "rowNum": 10,
+    "sr": "8",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "LAHORE OUTLET",
+    "balance": ""
+  },
+  {
+    "rowNum": 11,
+    "sr": "9",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR STORE SHARFABAD",
+    "balance": ""
+  },
+  {
+    "rowNum": 12,
+    "sr": "10",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "TELECOM SECURITY DEPOSIT",
+    "balance": ""
+  },
+  {
+    "rowNum": 13,
+    "sr": "11",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ADVERTISING CREDIT",
+    "balance": ""
+  },
+  {
+    "rowNum": 14,
+    "sr": "12",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR FAISALABAD SHOP",
+    "balance": ""
+  },
+  {
+    "rowNum": 15,
+    "sr": "13",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "USD ASSETS",
+    "balance": ""
+  },
+  {
+    "rowNum": 16,
+    "sr": "14",
+    "mainHead": "",
+    "subHead": "Cash in Hand",
+    "accountName": "CASH AT LOCKER",
+    "balance": ""
+  },
+  {
+    "rowNum": 17,
+    "sr": "15",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "CASH AT HOME",
+    "balance": ""
+  },
+  {
+    "rowNum": 18,
+    "sr": "16",
+    "mainHead": "",
+    "subHead": "Bank Accounts",
+    "accountName": "MEEZAN AC 8231",
+    "balance": ""
+  },
+  {
+    "rowNum": 19,
+    "sr": "17",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "UBL ACC 7741",
+    "balance": ""
+  },
+  {
+    "rowNum": 20,
+    "sr": "18",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BANK ALFALAH ACC 2985",
+    "balance": ""
+  },
+  {
+    "rowNum": 21,
+    "sr": "19",
+    "mainHead": "",
+    "subHead": "Receivables",
+    "accountName": "SHAAD RECEVIBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 22,
+    "sr": "20",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "PETTY BUTYER RCVBL",
+    "balance": ""
+  },
+  {
+    "rowNum": 23,
+    "sr": "21",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "LAAM RCVBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 24,
+    "sr": "22",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "TCS RCVBL",
+    "balance": ""
+  },
+  {
+    "rowNum": 25,
+    "sr": "23",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "POST EX RCVBL",
+    "balance": ""
+  },
+  {
+    "rowNum": 26,
+    "sr": "24",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "COURIER NEXT RCVBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 27,
+    "sr": "25",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BLUE EX RCVBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 28,
+    "sr": "26",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ABHI PAY SHAAD RCVBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 29,
+    "sr": "27",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BAAD MAY RCVBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 30,
+    "sr": "28",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "EASY PAYSA DISCOUNT WORLD RCVBLE FOR SHOP",
+    "balance": ""
+  },
+  {
+    "rowNum": 31,
+    "sr": "29",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "EASY PAYSA DIS WORLD RCVBLE FOR ONLINE",
+    "balance": ""
+  },
+  {
+    "rowNum": 32,
+    "sr": "30",
+    "mainHead": "",
+    "subHead": "Debtors",
+    "accountName": "NAYAB FASHION MUZAFFARABAD",
+    "balance": ""
+  },
+  {
+    "rowNum": 33,
+    "sr": "31",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "NICE SUPER MART",
+    "balance": ""
+  },
+  {
+    "rowNum": 34,
+    "sr": "32",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "TESCO SUPER MART",
+    "balance": ""
+  },
+  {
+    "rowNum": 35,
+    "sr": "33",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "NEW WAY SUPER MART",
+    "balance": ""
+  },
+  {
+    "rowNum": 36,
+    "sr": "34",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR BUKHARI SHOP DEBTORS",
+    "balance": ""
+  },
+  {
+    "rowNum": 37,
+    "sr": "35",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR LAHORE SHOP DEBTORS",
+    "balance": ""
+  },
+  {
+    "rowNum": 38,
+    "sr": "36",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR ISLAMABAD SHOP DEBTORS",
+    "balance": ""
+  },
+  {
+    "rowNum": 39,
+    "sr": "37",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR SHARFABAD SHOP DEBTORS",
+    "balance": ""
+  },
+  {
+    "rowNum": 40,
+    "sr": "38",
+    "mainHead": "",
+    "subHead": "Stock / Inventory (Opening Stock)",
+    "accountName": "IVAR WAREHOUSE STOCK",
+    "balance": ""
+  },
+  {
+    "rowNum": 41,
+    "sr": "39",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR BUKHARI SHOP STOCK",
+    "balance": ""
+  },
+  {
+    "rowNum": 42,
+    "sr": "40",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "FABRIC",
+    "balance": ""
+  },
+  {
+    "rowNum": 43,
+    "sr": "41",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ACCESSORIES",
+    "balance": ""
+  },
+  {
+    "rowNum": 44,
+    "sr": "42",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "B STOCK",
+    "balance": ""
+  },
+  {
+    "rowNum": 45,
+    "sr": "43",
+    "mainHead": "",
+    "subHead": "Other Assets / Advances (Amanat)",
+    "accountName": "STAFF TEMPORARY LOAN",
+    "balance": ""
+  },
+  {
+    "rowNum": 46,
+    "sr": "44",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SHAAD TEMPORARY LOAN",
+    "balance": ""
+  },
+  {
+    "rowNum": 47,
+    "sr": "45",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SUSPENSE ACCOUNT",
+    "balance": ""
+  },
+  {
+    "rowNum": 48,
+    "sr": "46",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "POST EX CLAIM",
+    "balance": ""
+  },
+  {
+    "rowNum": 49,
+    "sr": "47",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "COURIER NEXT CLAIM",
+    "balance": ""
+  },
+  {
+    "rowNum": 50,
+    "sr": "48",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR BUKHARI SHOP EXP (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 51,
+    "sr": "49",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "TARIQ ELECTRITIAN (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 52,
+    "sr": "50",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "AHAD CARPAINTER (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 53,
+    "sr": "51",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "KASHIF IVAR SHOP (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 54,
+    "sr": "52",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SAAD PETTY CASH (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 55,
+    "sr": "53",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "OSAMA AFZAL LHR TOUR (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 56,
+    "sr": "54",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR LAHORE SHOP EXP (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 57,
+    "sr": "55",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "NAJEED SHAAD BROKER (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 58,
+    "sr": "56",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "QASIM HEAD OF RETAIL (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 59,
+    "sr": "57",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "KASHAN (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 60,
+    "sr": "58",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR ISLAMABAD SHOP EXP (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 61,
+    "sr": "59",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BABER STUDIO (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 62,
+    "sr": "60",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR SHARFABAD SHOP EXP (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 63,
+    "sr": "61",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MAJEED FABRICS (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 64,
+    "sr": "62",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BISMILLAH TAX INDUSTRIES (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 65,
+    "sr": "63",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SHARFABAD RENTAL AMANAT",
+    "balance": ""
+  },
+  {
+    "rowNum": 66,
+    "sr": "64",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MBK PRIVATE LIMITED (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 67,
+    "sr": "65",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ALI RAZA LHR (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 68,
+    "sr": "66",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "RAMZAN BHAI (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 69,
+    "sr": "67",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "HANZALA TRADERS (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 70,
+    "sr": "68",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ZAHEER BUKHARI SHOP (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 71,
+    "sr": "69",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "WALEED VM (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 72,
+    "sr": "70",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "YS DENIM (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 73,
+    "sr": "71",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "EHTISHAM BUKHARI STORE (AMANAT)",
+    "balance": ""
+  },
+  {
+    "rowNum": 74,
+    "sr": "72",
+    "mainHead": "LIABILITIES",
+    "subHead": "Payables (Creditors)",
+    "accountName": "JUNAID SHEIKH ACCESSORIES PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 75,
+    "sr": "73",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "HAFIZ PRINTERS PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 76,
+    "sr": "74",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SHAHEER PRINTING PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 77,
+    "sr": "75",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ALLIED CMT PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 78,
+    "sr": "76",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MR.VALI ENTERPRIZE PAYEBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 79,
+    "sr": "77",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "M.ISRAR ENTERPRISE PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 80,
+    "sr": "78",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ABDUL MUGHNI CMT PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 81,
+    "sr": "79",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "AHST APPAREL PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 82,
+    "sr": "80",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ALAM APPAREL PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 83,
+    "sr": "81",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "CLAIM REMAINING BALANCE",
+    "balance": ""
+  },
+  {
+    "rowNum": 84,
+    "sr": "82",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ASTORE BAGS PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 85,
+    "sr": "83",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "TODAY GARMENTS PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 86,
+    "sr": "84",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "CONCEPT PACKAGES PAYABLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 87,
+    "sr": "85",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "FINE TARE FABRIC",
+    "balance": ""
+  },
+  {
+    "rowNum": 88,
+    "sr": "86",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "RIZWAN DENIM FABRIC PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 89,
+    "sr": "87",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "1 STITCH SOLUTION PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 90,
+    "sr": "88",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ALLIED FABRIC PURCHASED (ON CASH)",
+    "balance": ""
+  },
+  {
+    "rowNum": 91,
+    "sr": "89",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "FATEH INDUSTRIES PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 92,
+    "sr": "90",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "S.K.F POLYTEX",
+    "balance": ""
+  },
+  {
+    "rowNum": 93,
+    "sr": "91",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SHAAD FABRICS PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 94,
+    "sr": "92",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "AL MAKKAH FABRICS CASH",
+    "balance": ""
+  },
+  {
+    "rowNum": 95,
+    "sr": "93",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BADAMI SUITING CASH",
+    "balance": ""
+  },
+  {
+    "rowNum": 96,
+    "sr": "94",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "USMANI GARMENTS PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 97,
+    "sr": "95",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "KHALIL FABRICS CASH",
+    "balance": ""
+  },
+  {
+    "rowNum": 98,
+    "sr": "96",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "FANSIA FRAGNANCE PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 99,
+    "sr": "97",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "OK TRADERS PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 100,
+    "sr": "98",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "RKM CORPRATION PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 101,
+    "sr": "99",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "KEMTEX PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 102,
+    "sr": "100",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "KNITEX PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 103,
+    "sr": "101",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MOIZ YASIN FABRICATION PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 104,
+    "sr": "102",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MUSTAFA CLOTH (NOWSHERA)",
+    "balance": ""
+  },
+  {
+    "rowNum": 105,
+    "sr": "103",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "GUL AHMED TEXTILE MILLS PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 106,
+    "sr": "104",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MIMA INTERNATIONAL PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 107,
+    "sr": "105",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ARTISTIC PRINT HOUSE",
+    "balance": ""
+  },
+  {
+    "rowNum": 108,
+    "sr": "106",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ALAM APPERAL FABRIC PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 109,
+    "sr": "107",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "AL AHAD FOOTWEAR",
+    "balance": ""
+  },
+  {
+    "rowNum": 110,
+    "sr": "108",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "AKRAM CONTRACTOR",
+    "balance": ""
+  },
+  {
+    "rowNum": 111,
+    "sr": "109",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "J.K ENTERPRISES BUTTON",
+    "balance": ""
+  },
+  {
+    "rowNum": 112,
+    "sr": "110",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MINAHEEL ENTERPRISE",
+    "balance": ""
+  },
+  {
+    "rowNum": 113,
+    "sr": "111",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MISAAF ENERGY PVT LTD",
+    "balance": ""
+  },
+  {
+    "rowNum": 114,
+    "sr": "112",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "NK APPAREL",
+    "balance": ""
+  },
+  {
+    "rowNum": 115,
+    "sr": "113",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "HUMAIR GAGAI PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 116,
+    "sr": "114",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "WALEED FOOTWEAR",
+    "balance": ""
+  },
+  {
+    "rowNum": 117,
+    "sr": "115",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "A.M APPAREL PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 118,
+    "sr": "116",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MIMA INTERNATIONAL FABRIC PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 119,
+    "sr": "117",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "TEZCO INDUSTRIES PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 120,
+    "sr": "118",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ALAM TEXTILE TRADING PAYBLE",
+    "balance": ""
+  },
+  {
+    "rowNum": 121,
+    "sr": "119",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "AHMED JAMAL TEXTILE MILLS",
+    "balance": ""
+  },
+  {
+    "rowNum": 122,
+    "sr": "120",
+    "mainHead": "",
+    "subHead": "Provision for Depreciation",
+    "accountName": "WAREHOUSE PROVISION DEPR ACC",
+    "balance": ""
+  },
+  {
+    "rowNum": 123,
+    "sr": "121",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BUKHARI SHOP PRIVISION DEPR ACC",
+    "balance": ""
+  },
+  {
+    "rowNum": 124,
+    "sr": "122",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "PLOT NO A-488 PROVISION DEPR ACC",
+    "balance": ""
+  },
+  {
+    "rowNum": 125,
+    "sr": "123",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ISB OUTLET PROVISION DEPR ACC",
+    "balance": ""
+  },
+  {
+    "rowNum": 126,
+    "sr": "124",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "LHR OUTLET PROVISION DEPR ACC",
+    "balance": ""
+  },
+  {
+    "rowNum": 127,
+    "sr": "125",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SHRFABAD OUTLET PROVISION DEPR ACC",
+    "balance": ""
+  },
+  {
+    "rowNum": 128,
+    "sr": "126",
+    "mainHead": "CAPITAL / EQUITY",
+    "subHead": "Partners' Capital",
+    "accountName": "SHAAD CAPITAL",
+    "balance": ""
+  },
+  {
+    "rowNum": 129,
+    "sr": "127",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SAIM CAPITAL",
+    "balance": ""
+  },
+  {
+    "rowNum": 130,
+    "sr": "128",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "REHMAN CAPITAL",
+    "balance": ""
+  },
+  {
+    "rowNum": 131,
+    "sr": "129",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MAAZ CAPITAL",
+    "balance": ""
+  },
+  {
+    "rowNum": 132,
+    "sr": "130",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "YAFEEZ CAPITAL",
+    "balance": ""
+  },
+  {
+    "rowNum": 133,
+    "sr": "131",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "HANZALA CAPITAL",
+    "balance": ""
+  },
+  {
+    "rowNum": 134,
+    "sr": "132",
+    "mainHead": "",
+    "subHead": "Drawings",
+    "accountName": "SAIM & SAMEER DRAWINGS",
+    "balance": ""
+  },
+  {
+    "rowNum": 135,
+    "sr": "133",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "REHMAN DRAWINGS",
+    "balance": ""
+  },
+  {
+    "rowNum": 136,
+    "sr": "134",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "YAFEEZ DRAWINGS",
+    "balance": ""
+  },
+  {
+    "rowNum": 137,
+    "sr": "135",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MAAZ DRAWINGS",
+    "balance": ""
+  },
+  {
+    "rowNum": 138,
+    "sr": "136",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "HANZALA DRAWINGS",
+    "balance": ""
+  },
+  {
+    "rowNum": 139,
+    "sr": "137",
+    "mainHead": "",
+    "subHead": "Disinvestment",
+    "accountName": "DISINVESTMENT",
+    "balance": ""
+  },
+  {
+    "rowNum": 140,
+    "sr": "138",
+    "mainHead": "INCOME",
+    "subHead": "Sales",
+    "accountName": "SALE(ABHI PAY)",
+    "balance": ""
+  },
+  {
+    "rowNum": 141,
+    "sr": "139",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "TCS SALES",
+    "balance": ""
+  },
+  {
+    "rowNum": 142,
+    "sr": "140",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "PETTY BUYERS SALES",
+    "balance": ""
+  },
+  {
+    "rowNum": 143,
+    "sr": "141",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "LAAM SALE",
+    "balance": ""
+  },
+  {
+    "rowNum": 144,
+    "sr": "142",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "POST EX SALES",
+    "balance": ""
+  },
+  {
+    "rowNum": 145,
+    "sr": "143",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "GIFT & SAMPLE & INFLUENCER SALE",
+    "balance": ""
+  },
+  {
+    "rowNum": 146,
+    "sr": "144",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "COURIER NEXT SALE",
+    "balance": ""
+  },
+  {
+    "rowNum": 147,
+    "sr": "145",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BLUE EX SALE",
+    "balance": ""
+  },
+  {
+    "rowNum": 148,
+    "sr": "146",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "KARACHI ONLINE SALE",
+    "balance": ""
+  },
+  {
+    "rowNum": 149,
+    "sr": "147",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "DISPUTE PARCEL CS",
+    "balance": ""
+  },
+  {
+    "rowNum": 150,
+    "sr": "148",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "OFFLINE SALE",
+    "balance": ""
+  },
+  {
+    "rowNum": 151,
+    "sr": "149",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR BUKHARI SHOP SALE",
+    "balance": ""
+  },
+  {
+    "rowNum": 152,
+    "sr": "150",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR LAHORE SHOP SALE",
+    "balance": ""
+  },
+  {
+    "rowNum": 153,
+    "sr": "151",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SALE (BAAD MAY)",
+    "balance": ""
+  },
+  {
+    "rowNum": 154,
+    "sr": "152",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR ISLAMABAD SHOP SALE",
+    "balance": ""
+  },
+  {
+    "rowNum": 155,
+    "sr": "153",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR SHARFABAD SHOP SALE",
+    "balance": ""
+  },
+  {
+    "rowNum": 156,
+    "sr": "154",
+    "mainHead": "",
+    "subHead": "Purchase Return",
+    "accountName": "PURCHASE RETURN",
+    "balance": ""
+  },
+  {
+    "rowNum": 157,
+    "sr": "155",
+    "mainHead": "",
+    "subHead": "Other Income",
+    "accountName": "SILVER S/P A/C",
+    "balance": ""
+  },
+  {
+    "rowNum": 158,
+    "sr": "156",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "GOLD S/P AC",
+    "balance": ""
+  },
+  {
+    "rowNum": 159,
+    "sr": "157",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "INCOME FROM FOREX MARKETING",
+    "balance": ""
+  },
+  {
+    "rowNum": 160,
+    "sr": "158",
+    "mainHead": "",
+    "subHead": "Claims Account",
+    "accountName": "CLAIMS ACC",
+    "balance": ""
+  },
+  {
+    "rowNum": 161,
+    "sr": "159",
+    "mainHead": "EXPENSES",
+    "subHead": "Purchases (Cost of Goods)",
+    "accountName": "ACCESSORIES PURCHASED",
+    "balance": ""
+  },
+  {
+    "rowNum": 162,
+    "sr": "160",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "T-SHIRT PURCHASED",
+    "balance": ""
+  },
+  {
+    "rowNum": 163,
+    "sr": "161",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "PURCHASE MISC",
+    "balance": ""
+  },
+  {
+    "rowNum": 164,
+    "sr": "162",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "U.G PURCHASED",
+    "balance": ""
+  },
+  {
+    "rowNum": 165,
+    "sr": "163",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "CMT PURCHASED",
+    "balance": ""
+  },
+  {
+    "rowNum": 166,
+    "sr": "164",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "PAJAMA PURCHASED",
+    "balance": ""
+  },
+  {
+    "rowNum": 167,
+    "sr": "165",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "FABRIC PURCHASED",
+    "balance": ""
+  },
+  {
+    "rowNum": 168,
+    "sr": "166",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "GARMENT PURCHASE",
+    "balance": ""
+  },
+  {
+    "rowNum": 169,
+    "sr": "167",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BAGS PURCHASE",
+    "balance": ""
+  },
+  {
+    "rowNum": 170,
+    "sr": "168",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SHOES PURCHASE",
+    "balance": ""
+  },
+  {
+    "rowNum": 171,
+    "sr": "169",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "FRAGNANCE PURCHASE",
+    "balance": ""
+  },
+  {
+    "rowNum": 172,
+    "sr": "170",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "DYING PURCHASE",
+    "balance": ""
+  },
+  {
+    "rowNum": 173,
+    "sr": "171",
+    "mainHead": "",
+    "subHead": "Sales Return",
+    "accountName": "SALE RETURN",
+    "balance": ""
+  },
+  {
+    "rowNum": 174,
+    "sr": "172",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "POST EX SALE RETURN",
+    "balance": ""
+  },
+  {
+    "rowNum": 175,
+    "sr": "173",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "COURIER NEXT SALE RETURN",
+    "balance": ""
+  },
+  {
+    "rowNum": 176,
+    "sr": "174",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR BUKHARI SHOP RETURN",
+    "balance": ""
+  },
+  {
+    "rowNum": 177,
+    "sr": "175",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ONLINE CSTMR SHOP REFUND",
+    "balance": ""
+  },
+  {
+    "rowNum": 178,
+    "sr": "176",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "NICE SUPER MART SALE RETURN",
+    "balance": ""
+  },
+  {
+    "rowNum": 179,
+    "sr": "177",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR LAHORE SHOP REFUNDS",
+    "balance": ""
+  },
+  {
+    "rowNum": 180,
+    "sr": "178",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BLUE EX SALE RETURN",
+    "balance": ""
+  },
+  {
+    "rowNum": 181,
+    "sr": "179",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR ISLAMABAD SHOP REFUND",
+    "balance": ""
+  },
+  {
+    "rowNum": 182,
+    "sr": "180",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR SHARFABAD SHOP REFUND",
+    "balance": ""
+  },
+  {
+    "rowNum": 183,
+    "sr": "181",
+    "mainHead": "",
+    "subHead": "Operating Expenses",
+    "accountName": "MISC EXPENSES",
+    "balance": ""
+  },
+  {
+    "rowNum": 184,
+    "sr": "182",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "E-COMMERCE EXPENSE",
+    "balance": ""
+  },
+  {
+    "rowNum": 185,
+    "sr": "183",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "F.B ASTORE IVAR",
+    "balance": ""
+  },
+  {
+    "rowNum": 186,
+    "sr": "184",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "LEGEL EXPENSES",
+    "balance": ""
+  },
+  {
+    "rowNum": 187,
+    "sr": "185",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SALARY EXPENSES",
+    "balance": ""
+  },
+  {
+    "rowNum": 188,
+    "sr": "186",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ABHI PAY COMMISION EXPENSES",
+    "balance": ""
+  },
+  {
+    "rowNum": 189,
+    "sr": "187",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "POST EX DELIVERY CHARGES",
+    "balance": ""
+  },
+  {
+    "rowNum": 190,
+    "sr": "188",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "GIFT & SAMPLE & INFLUENCER EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 191,
+    "sr": "189",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "COURIER NEXT DELIVERY CHARGES",
+    "balance": ""
+  },
+  {
+    "rowNum": 192,
+    "sr": "190",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "GOODS & TRANSPORT EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 193,
+    "sr": "191",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "AGENCY FEES EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 194,
+    "sr": "192",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "PHOTOGRAPHY & SHOOT EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 195,
+    "sr": "193",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "COMMISSION EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 196,
+    "sr": "194",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SOFTWEAR EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 197,
+    "sr": "195",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "T.G MARKETING EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 198,
+    "sr": "196",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "PETTY CASH EXPENSE (IVAR)",
+    "balance": ""
+  },
+  {
+    "rowNum": 199,
+    "sr": "197",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BUKHARI SHOP BANK CHARGES",
+    "balance": ""
+  },
+  {
+    "rowNum": 200,
+    "sr": "198",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR BUKHARI SHOP RENT EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 201,
+    "sr": "199",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BUKHARI SHOP EMPLOYE SALARY EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 202,
+    "sr": "200",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "STOCK LOSS EXPENSE",
+    "balance": ""
+  },
+  {
+    "rowNum": 203,
+    "sr": "201",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "TRAVELLING EXPENSE",
+    "balance": ""
+  },
+  {
+    "rowNum": 204,
+    "sr": "202",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "POST EX TAX CHARGES",
+    "balance": ""
+  },
+  {
+    "rowNum": 205,
+    "sr": "203",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR BUKHARI SHOP PETTY CASH EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 206,
+    "sr": "204",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "COURIER NEXT TAX CHARGES",
+    "balance": ""
+  },
+  {
+    "rowNum": 207,
+    "sr": "205",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "WAREHOUSE DEPRICIATION EXPENSE",
+    "balance": ""
+  },
+  {
+    "rowNum": 208,
+    "sr": "206",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BUKHARI SHOP DEPR EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 209,
+    "sr": "207",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "WAREHOUSE RENT EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 210,
+    "sr": "208",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "NEW WAREHOUSE UTILITY EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 211,
+    "sr": "209",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR BUKHARI SHOP UTILITY EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 212,
+    "sr": "210",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ABHI PAY TAX DEDUCT 3%",
+    "balance": ""
+  },
+  {
+    "rowNum": 213,
+    "sr": "211",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "WAREHOUSE RENT EXP A-488",
+    "balance": ""
+  },
+  {
+    "rowNum": 214,
+    "sr": "212",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ENTERTAINMENT EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 215,
+    "sr": "213",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SAAD PETTY CASH EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 216,
+    "sr": "214",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "LAHORE SHOP POS BANK CHARGES",
+    "balance": ""
+  },
+  {
+    "rowNum": 217,
+    "sr": "215",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR LAHORE SHOP PETTY CASH EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 218,
+    "sr": "216",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "VEHICLE MAINTENANCE EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 219,
+    "sr": "217",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR LAHORE SHOP UTILITY EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 220,
+    "sr": "218",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR LAHORE SHOP EMPLOYE SALARY EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 221,
+    "sr": "219",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BLUE EX DELIVERY CHARGES",
+    "balance": ""
+  },
+  {
+    "rowNum": 222,
+    "sr": "220",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BAAD MAY COMMISSION EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 223,
+    "sr": "221",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "BAAD MAY TAX DEDUCT EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 224,
+    "sr": "222",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR LAHORE SHOP RENT EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 225,
+    "sr": "223",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "REPAIRING EXPENSE",
+    "balance": ""
+  },
+  {
+    "rowNum": 226,
+    "sr": "224",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ISLAMABAD SHOP POS BANK CHARGES",
+    "balance": ""
+  },
+  {
+    "rowNum": 227,
+    "sr": "225",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ISLAMABAD SHOP PETTY CASH EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 228,
+    "sr": "226",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR LAHORE SHOP EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 229,
+    "sr": "227",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ISLAMABAD SHOP UTILITY EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 230,
+    "sr": "228",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR BUKHARI SHOP EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 231,
+    "sr": "229",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ISLAMABAD SHOP RENT EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 232,
+    "sr": "230",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "PLOT NO A-488 DEPR EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 233,
+    "sr": "231",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "ISB OUTLET DEPR EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 234,
+    "sr": "232",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "LHR OUTLET DEPR EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 235,
+    "sr": "233",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR ISB SHOP EMPLOYE SALARY EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 236,
+    "sr": "234",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR SHARFABAD SHOP EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 237,
+    "sr": "235",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR SHARFABAD SHOP EMPLOYE SALARY EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 238,
+    "sr": "236",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR ISLAMABAD SHOP EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 239,
+    "sr": "237",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "IVAR SHARFABAD SHOP RENT EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 240,
+    "sr": "238",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SHARFABAD SHOP DEPR EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 241,
+    "sr": "239",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SHARFABAD SHOP POS BANK CHARGES",
+    "balance": ""
+  },
+  {
+    "rowNum": 242,
+    "sr": "240",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MEEZAN ACC 8231 BANK CHARGES",
+    "balance": ""
+  },
+  {
+    "rowNum": 243,
+    "sr": "241",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SHARFABAD SHOP UTILITY EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 244,
+    "sr": "242",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "WITH HOLDING TAX EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 245,
+    "sr": "243",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "SHARFABAD SHOP PETTY CASH EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 246,
+    "sr": "244",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "GST LAWYER FEES EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 247,
+    "sr": "245",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "UBL 7741 BANK CHARGES",
+    "balance": ""
+  },
+  {
+    "rowNum": 248,
+    "sr": "246",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "MONTHLY GST CHALLAN",
+    "balance": ""
+  },
+  {
+    "rowNum": 249,
+    "sr": "247",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "EASY PAYSA DISCOUNT WORLD EXP FOR SHOP",
+    "balance": ""
+  },
+  {
+    "rowNum": 250,
+    "sr": "248",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "YOUSUF LAWYER SALARY EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 251,
+    "sr": "249",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "GST INVOICE COMMISSION EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 252,
+    "sr": "250",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "EASY PAYSA DIS WORLD EXP FOR ONLINE",
+    "balance": ""
+  },
+  {
+    "rowNum": 253,
+    "sr": "251",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "GST EXP",
+    "balance": ""
+  },
+  {
+    "rowNum": 254,
+    "sr": "",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "",
+    "balance": ""
+  },
+  {
+    "rowNum": 255,
+    "sr": "",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "",
+    "balance": ""
+  },
+  {
+    "rowNum": 256,
+    "sr": "",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "",
+    "balance": ""
+  },
+  {
+    "rowNum": 257,
+    "sr": "",
+    "mainHead": "",
+    "subHead": "",
+    "accountName": "",
+    "balance": ""
+  }
+]

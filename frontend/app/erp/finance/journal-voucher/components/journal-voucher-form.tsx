@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/ui/date-picker";
 import { ChartOfAccountSelect, getSharedTree } from "@/components/ui/chart-of-account-select";
-import { Plus, Trash2, Loader2, Tag, CheckIcon, ChevronDownIcon, Copy } from "lucide-react";
+import { authFetch } from "@/lib/auth";
+import { Plus, Trash2, Loader2, Tag, CheckIcon, ChevronDownIcon, Copy, Edit2, Upload } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -44,6 +45,30 @@ function findInTree(nodes: ChartOfAccount[], id: string): ChartOfAccount | undef
         }
     }
     return undefined;
+}
+
+export function contractTree(nodes: ChartOfAccount[], parentName?: string): ChartOfAccount[] {
+    const result: ChartOfAccount[] = [];
+    for (const node of nodes) {
+        let currentChildren = node.children;
+        if (currentChildren && currentChildren.length > 0) {
+            currentChildren = contractTree(currentChildren, node.name);
+        }
+        const nodeCopy = { ...node, children: currentChildren };
+        
+        if (
+            parentName &&
+            node.isGroup &&
+            node.name.toLowerCase().replace(/\s+/g, ' ').trim() === parentName.toLowerCase().replace(/\s+/g, ' ').trim()
+        ) {
+            if (currentChildren) {
+                result.push(...currentChildren);
+            }
+        } else {
+            result.push(nodeCopy);
+        }
+    }
+    return result;
 }
 
 // ─── Tag account selector ─────────────────────────────────────────────────────
@@ -150,52 +175,157 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
                       refBillNo: d.refBillNo || "",
                       isTaxApplicable: d.isTaxApplicable ?? false,
                   }))
-                : [
-                      { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
-                      { accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false },
-                  ],
+                : [],
         },
     });
 
-    const { fields, append, remove } = useFieldArray({
+    const { fields, append, remove, update } = useFieldArray({
         control: form.control,
         name: "details",
     });
 
     const watchDetails = form.watch("details") || [];
 
-    // Poll for the shared tree until it's available (it loads lazily on first open)
+    // Eagerly fetch and cache the shared tree on mount, or poll if needed
     useEffect(() => {
         const initial = getSharedTree();
-        if (initial.length > 0) { setTree(initial); return; }
+        if (initial.length > 0) {
+            setTree(initial);
+            return;
+        }
+        
+        // Eager fetch
+        authFetch(`/finance/chart-of-accounts/tree`, {})
+            .then((res) => {
+                const data = res.data;
+                if (Array.isArray(data)) {
+                    setTree(data);
+                }
+            })
+            .catch((err) => console.error("Eager tree fetch failed:", err));
+
         const id = setInterval(() => {
             const t = getSharedTree();
             if (t.length > 0) { setTree(t); clearInterval(id); }
-        }, 300);
+        }, 500);
         return () => clearInterval(id);
     }, []);
 
-    // When accountId changes for a row, clear its tagAccountId
-    const prevAccountIds = useRef<Record<number, string>>({});
-    useEffect(() => {
-        watchDetails.forEach((detail, index) => {
-            const accountId = detail.accountId;
-            if (prevAccountIds.current[index] !== undefined &&
-                prevAccountIds.current[index] !== accountId) {
-                form.setValue(`details.${index}.tagAccountId`, "");
-            }
-            prevAccountIds.current[index] = accountId;
-        });
-    }, [watchDetails.map((d) => d.accountId).join(",")]);
+    // Memoize the contracted tree for faster lookups
+    const contractedTree = useMemo(() => {
+        return contractTree(tree);
+    }, [tree]);
 
-    // Derive child accounts for each row from the cached tree
-    const rowChildren = useMemo(() => {
-        return watchDetails.map((detail) => {
-            if (!detail.accountId || tree.length === 0) return [];
-            const node = findInTree(tree, detail.accountId);
-            return node?.children ?? [];
-        });
-    }, [watchDetails.map((d) => d.accountId).join(","), tree]);
+    // Editor panel states
+    const [editorAccountId, setEditorAccountId] = useState("");
+    const [editorTagAccountId, setEditorTagAccountId] = useState("");
+    const [editorTaxType, setEditorTaxType] = useState<"Taxable" | "BTL" | "REIMB" | "Exempt">("Exempt");
+    const [editorNarration, setEditorNarration] = useState("");
+    const [editorRef1, setEditorRef1] = useState("");
+    const [editorRef2, setEditorRef2] = useState("");
+    const [editorDebit, setEditorDebit] = useState<number | "">("");
+    const [editorCredit, setEditorCredit] = useState<number | "">("");
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+    // Table filters
+    const [filterAccount, setFilterAccount] = useState("");
+    const [filterNarrationRef, setFilterNarrationRef] = useState("");
+    const [filterDebit, setFilterDebit] = useState("");
+    const [filterCredit, setFilterCredit] = useState("");
+
+    // Derive children for tag select based on selected account head in editor
+    const editorChildren = useMemo(() => {
+        if (!editorAccountId || contractedTree.length === 0) return [];
+        const node = findInTree(contractedTree, editorAccountId);
+        return node?.children ?? [];
+    }, [editorAccountId, contractedTree]);
+    const hasEditorChildren = editorChildren.length > 0;
+
+    // F4 keyboard shortcut to trigger Add Line
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "F4") {
+                e.preventDefault();
+                handleAddLine();
+            }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [editorAccountId, editorTagAccountId, editorTaxType, editorNarration, editorRef1, editorRef2, editorDebit, editorCredit, editingIndex]);
+
+    const handleAddLine = () => {
+        if (!editorAccountId) {
+            toast.error("Please select an Account Head");
+            return;
+        }
+
+        const debitNum = Number(editorDebit) || 0;
+        const creditNum = Number(editorCredit) || 0;
+
+        if (debitNum === 0 && creditNum === 0) {
+            toast.error("Either Debit or Credit must be greater than 0");
+            return;
+        }
+
+        if (debitNum > 0 && creditNum > 0) {
+            toast.error("A line cannot have both Debit and Credit amounts");
+            return;
+        }
+
+        // Concatenate references: Ref 1 and Ref 2
+        let refBillNo = editorRef1;
+        if (editorRef2) {
+            refBillNo = refBillNo ? `${refBillNo} | ${editorRef2}` : editorRef2;
+        }
+
+        const lineData = {
+            accountId: editorAccountId,
+            tagAccountId: editorTagAccountId || "",
+            debit: debitNum,
+            credit: creditNum,
+            narration: editorNarration || "",
+            refBillNo,
+            isTaxApplicable: editorTaxType === "Taxable",
+        };
+
+        if (editingIndex !== null) {
+            update(editingIndex, lineData);
+            setEditingIndex(null);
+            toast.success("Line updated successfully");
+        } else {
+            append(lineData);
+            toast.success("Line added successfully");
+        }
+
+        // Reset editor inputs
+        setEditorAccountId("");
+        setEditorTagAccountId("");
+        setEditorTaxType("Exempt");
+        setEditorNarration("");
+        setEditorRef1("");
+        setEditorRef2("");
+        setEditorDebit("");
+        setEditorCredit("");
+    };
+
+    const handleEditLine = (index: number) => {
+        const line = watchDetails[index];
+        if (!line) return;
+
+        setEditingIndex(index);
+        setEditorAccountId(line.accountId);
+        setEditorTagAccountId(line.tagAccountId || "");
+        setEditorTaxType(line.isTaxApplicable ? "Taxable" : "Exempt");
+        setEditorNarration(line.narration || "");
+
+        // Split refBillNo back into Ref 1 and Ref 2
+        const refs = (line.refBillNo || "").split(" | ");
+        setEditorRef1(refs[0] || "");
+        setEditorRef2(refs[1] || "");
+
+        setEditorDebit(line.debit > 0 ? line.debit : "");
+        setEditorCredit(line.credit > 0 ? line.credit : "");
+    };
 
     // Auto-save draft logic (multiple drafts keyed by jvNo)
     const watchAllFields = form.watch();
@@ -223,7 +353,6 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
     useEffect(() => {
         if (initialData) return;
         
-        // 1. Check if there's a specific draftId query parameter
         const urlParams = new URLSearchParams(window.location.search);
         const urlDraftId = urlParams.get("draftId");
         
@@ -243,7 +372,6 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
                     toast.success(`Restored draft: ${urlDraftId}`);
                 }
             } else {
-                // Check if any drafts exist
                 const draftKeys = Object.keys(drafts);
                 if (draftKeys.length === 1) {
                     const singleKey = draftKeys[0];
@@ -330,7 +458,6 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
     // Watch for changes in detail rows to calculate taxes
     const watchDetailsString = watchDetails.map((d: any) => `${d.debit}-${d.credit}-${d.accountId}-${d.tagAccountId}-${d.isTaxApplicable}`).join(",");
     useEffect(() => {
-        // Calculate total taxable amount (based on debits and credits where isTaxApplicable is true)
         const taxableDebitAmount = watchDetails.reduce((sum: number, detail: any) => {
             return sum + (detail.isTaxApplicable ? Math.round(Number(detail.debit) || 0) : 0);
         }, 0);
@@ -341,7 +468,6 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
         
         const taxableAmount = Math.max(taxableDebitAmount, taxableCreditAmount);
 
-        // Auto-calculate taxes for any recognized tax rows
         if (taxableAmount > 0 && tree.length > 0) {
             watchDetails.forEach((detail: any, index: number) => {
                 if (detail.accountId && detail.tagAccountId) {
@@ -355,9 +481,6 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
                             const currentDebit = Math.round(Number(detail.debit) || 0);
                             const currentCredit = Math.round(Number(detail.credit) || 0);
                             
-                            // Determine which side to place the tax
-                            // If taxableAmount comes from Debits, tax is a Credit liability
-                            // If taxableAmount comes from Credits, tax is a Debit asset
                             const isLiability = taxableDebitAmount > 0;
                             
                             if (isLiability) {
@@ -382,37 +505,41 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
     const totalCredit = watchDetails.reduce((sum, d) => sum + (Number(d.credit) || 0), 0);
     const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
 
-    const duplicateRowToOpposite = (fromIndex: number) => {
-        const fromRow = form.getValues(`details.${fromIndex}`);
-        const debitVal = Math.round(Number(fromRow.debit) || 0);
-        const creditVal = Math.round(Number(fromRow.credit) || 0);
-        
-        const val = Math.round(debitVal || creditVal);
-        const isFromDebit = debitVal > 0;
-        
-        const targetIndex = fromIndex + 1;
-        const currentDetails = form.getValues("details") || [];
-        
-        const oppositeRow = {
-            accountId: "",
-            tagAccountId: "",
-            debit: isFromDebit ? 0 : val,
-            credit: isFromDebit ? val : 0,
-            narration: fromRow.narration || "",
-            refBillNo: fromRow.refBillNo || "",
-            isTaxApplicable: fromRow.isTaxApplicable ?? false,
-        };
-        
-        if (targetIndex < currentDetails.length) {
-            form.setValue(`details.${targetIndex}.debit`, oppositeRow.debit, { shouldValidate: true });
-            form.setValue(`details.${targetIndex}.credit`, oppositeRow.credit, { shouldValidate: true });
-            form.setValue(`details.${targetIndex}.narration`, oppositeRow.narration, { shouldValidate: true });
-            form.setValue(`details.${targetIndex}.refBillNo`, oppositeRow.refBillNo, { shouldValidate: true });
-            form.setValue(`details.${targetIndex}.isTaxApplicable`, oppositeRow.isTaxApplicable, { shouldValidate: true });
-        } else {
-            append(oppositeRow);
-        }
-    };
+    // Filtered details list for table view
+    const filteredFields = useMemo(() => {
+        return fields
+            .map((field, index) => ({ field, index }))
+            .filter(({ index }) => {
+                const detail = watchDetails[index];
+                if (!detail) return false;
+
+                // Account Filter
+                if (filterAccount) {
+                    const accountNode = findInTree(tree, detail.accountId);
+                    const tagNode = accountNode?.children?.find(c => c.id === detail.tagAccountId);
+                    const labelText = `${accountNode ? `${accountNode.code} ${accountNode.name}` : detail.accountId} ${tagNode ? `${tagNode.code} ${tagNode.name}` : ""}`.toLowerCase();
+                    if (!labelText.includes(filterAccount.toLowerCase())) return false;
+                }
+
+                // Narration & Refs Filter
+                if (filterNarrationRef) {
+                    const labelText = `${detail.narration || ""} ${detail.refBillNo || ""}`.toLowerCase();
+                    if (!labelText.includes(filterNarrationRef.toLowerCase())) return false;
+                }
+
+                // Debit Filter
+                if (filterDebit) {
+                    if (detail.debit === 0 || !String(detail.debit).includes(filterDebit)) return false;
+                }
+
+                // Credit Filter
+                if (filterCredit) {
+                    if (detail.credit === 0 || !String(detail.credit).includes(filterCredit)) return false;
+                }
+
+                return true;
+            });
+    }, [fields, watchDetails, tree, filterAccount, filterNarrationRef, filterDebit, filterCredit]);
 
     return (
         <Card className="w-full">
@@ -422,6 +549,7 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
             <CardContent className="pt-6">
                 <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-8">
 
+                    {/* Top Row: JV No & Date */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-2">
                             <Label htmlFor="jvNo" className="text-xs text-muted-foreground uppercase font-semibold">
@@ -456,205 +584,310 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
                         </div>
                     </div>
 
-                    <div className="space-y-4 pt-4">
-                        <div className="flex items-center justify-between border-b pb-2">
+                    <div className="space-y-6 pt-4">
+                        <div className="flex items-center justify-between border-b pb-3">
                             <h2 className="text-xl font-bold text-gray-800 dark:text-foreground">Journal Voucher Detail</h2>
                             <Button
                                 type="button"
-                                variant="secondary"
+                                variant="outline"
                                 size="sm"
-                                onClick={() => append({ accountId: "", tagAccountId: "", debit: 0, credit: 0, narration: "", refBillNo: "", isTaxApplicable: false })}
+                                onClick={() => toast.info("Excel/CSV import coming soon!")}
+                                className="flex items-center gap-2 border-gray-300 hover:bg-gray-50 text-xs font-semibold"
                             >
-                                <Plus className="h-4 w-4 mr-2" />
-                                Add More JV Rows
+                                <Upload className="h-4 w-4 text-muted-foreground" />
+                                Import Excel/CSV
                             </Button>
                         </div>
 
-                        <div className="border rounded-lg overflow-hidden border-gray-200 dark:border-border">
-                            <table className="w-full text-sm">
-                                <thead className="dark:bg-muted text-foreground border-b font-bold">
+                        {/* ─── ADD TRANSACTION LINE PANEL ─── */}
+                        <div className="bg-gray-50/50 dark:bg-muted/10 border border-gray-200 dark:border-border rounded-xl p-5 space-y-4">
+                            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                {editingIndex !== null ? "Edit Transaction Line" : "Add Transaction Line"}
+                            </h3>
+
+                            {/* Row 1: Account Head, Tag Account, Tax Type */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                                <div className="md:col-span-5 space-y-1.5">
+                                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">
+                                        Account Head <span className="text-destructive">*</span>
+                                    </Label>
+                                    <ChartOfAccountSelect
+                                        value={editorAccountId}
+                                        onValueChange={(val) => {
+                                            setEditorAccountId(val);
+                                            setEditorTagAccountId("");
+                                        }}
+                                        placeholder="Select Account"
+                                        disabled={isPending}
+                                        allowGroups={false}
+                                        className="h-10 border-gray-300 dark:border-input shadow-xs"
+                                    />
+                                </div>
+                                <div className="md:col-span-4 space-y-1.5">
+                                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">
+                                        Tag Sub-Account
+                                    </Label>
+                                    <TagAccountSelect
+                                        children={editorChildren}
+                                        value={editorTagAccountId}
+                                        onValueChange={setEditorTagAccountId}
+                                        disabled={!hasEditorChildren || isPending}
+                                    />
+                                </div>
+                                <div className="md:col-span-3 space-y-1.5">
+                                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">
+                                        Tax Type
+                                    </Label>
+                                    <div className="flex rounded-lg bg-gray-200/50 dark:bg-muted p-1 h-10 border border-gray-300 dark:border-input">
+                                        {(["Taxable", "BTL", "REIMB", "Exempt"] as const).map((type) => (
+                                            <button
+                                                key={type}
+                                                type="button"
+                                                disabled={isPending}
+                                                onClick={() => setEditorTaxType(type)}
+                                                className={cn(
+                                                    "flex-1 rounded-md text-[10px] font-semibold select-none transition-all duration-150 cursor-pointer",
+                                                    editorTaxType === type
+                                                        ? "bg-white dark:bg-background text-foreground shadow-xs font-bold"
+                                                        : "text-muted-foreground hover:text-foreground"
+                                                )}
+                                            >
+                                                {type}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Row 2: Narration, Ref 1, Ref 2 */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                                <div className="md:col-span-6 space-y-1.5">
+                                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">
+                                        Line Narration
+                                    </Label>
+                                    <Input
+                                        placeholder="Narration for this line..."
+                                        value={editorNarration}
+                                        onChange={(e) => setEditorNarration(e.target.value)}
+                                        disabled={isPending}
+                                        className="h-10 border-gray-300 dark:border-input"
+                                    />
+                                </div>
+                                <div className="md:col-span-3 space-y-1.5">
+                                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">
+                                        Ref 1
+                                    </Label>
+                                    <Input
+                                        placeholder="Reference 1"
+                                        value={editorRef1}
+                                        onChange={(e) => setEditorRef1(e.target.value)}
+                                        disabled={isPending}
+                                        className="h-10 border-gray-300 dark:border-input"
+                                    />
+                                </div>
+                                <div className="md:col-span-3 space-y-1.5">
+                                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">
+                                        Ref 2
+                                    </Label>
+                                    <Input
+                                        placeholder="Reference 2"
+                                        value={editorRef2}
+                                        onChange={(e) => setEditorRef2(e.target.value)}
+                                        disabled={isPending}
+                                        className="h-10 border-gray-300 dark:border-input"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Row 3: Debit, Credit, Button */}
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                                <div className="md:col-span-4 space-y-1.5">
+                                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">
+                                        Debit Amount
+                                    </Label>
+                                    <Input
+                                        type="number"
+                                        step="1"
+                                        placeholder="0"
+                                        value={editorDebit}
+                                        onChange={(e) => {
+                                            const val = e.target.value === "" ? "" : Math.round(Number(e.target.value));
+                                            setEditorDebit(val);
+                                            if (val && Number(val) > 0) setEditorCredit("");
+                                        }}
+                                        disabled={isPending}
+                                        className="h-10 border-gray-300 dark:border-input font-medium"
+                                    />
+                                </div>
+                                <div className="md:col-span-4 space-y-1.5">
+                                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">
+                                        Credit Amount
+                                    </Label>
+                                    <Input
+                                        type="number"
+                                        step="1"
+                                        placeholder="0"
+                                        value={editorCredit}
+                                        onChange={(e) => {
+                                            const val = e.target.value === "" ? "" : Math.round(Number(e.target.value));
+                                            setEditorCredit(val);
+                                            if (val && Number(val) > 0) setEditorDebit("");
+                                        }}
+                                        disabled={isPending}
+                                        className="h-10 border-gray-300 dark:border-input font-medium"
+                                    />
+                                </div>
+                                <div className="md:col-span-4">
+                                    <Button
+                                        type="button"
+                                        onClick={handleAddLine}
+                                        disabled={isPending}
+                                        className="h-10 w-full bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-lg relative flex items-center justify-center gap-2 shadow-xs transition-colors"
+                                    >
+                                        <span>{editingIndex !== null ? "Update Line" : "Add Line"}</span>
+                                        <span className="absolute right-3 px-1.5 py-0.5 text-[9px] font-mono bg-violet-800 text-violet-200 rounded border border-violet-500">
+                                            F4
+                                        </span>
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* ─── ADDED LINES TABLE VIEW ─── */}
+                        <div className="border rounded-xl overflow-hidden border-gray-200 dark:border-border shadow-xs">
+                            <table className="w-full text-xs">
+                                <thead className="bg-gray-150 dark:bg-muted text-gray-700 dark:text-foreground border-b border-gray-200 dark:border-border font-bold">
                                     <tr>
-                                        <th className="px-4 py-3 text-left">Account Head</th>
-                                        <th className="px-4 py-3 text-left w-45">Debit <span className="text-destructive">*</span></th>
-                                        <th className="px-4 py-3 text-left w-45">Credit <span className="text-destructive">*</span></th>
-                                        <th className="px-4 py-3 text-center w-24">Action</th>
+                                        <th className="px-4 py-3.5 text-left w-12 text-[10px] uppercase font-semibold">#</th>
+                                        <th className="px-4 py-3.5 text-left text-[10px] uppercase font-semibold">Account Head & Tag</th>
+                                        <th className="px-4 py-3.5 text-left text-[10px] uppercase font-semibold">Narration & References</th>
+                                        <th className="px-4 py-3.5 text-right w-40 text-[10px] uppercase font-semibold">Debit</th>
+                                        <th className="px-4 py-3.5 text-right w-40 text-[10px] uppercase font-semibold">Credit</th>
+                                        <th className="px-4 py-3.5 text-center w-28 text-[10px] uppercase font-semibold">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-gray-200">
-                                    {fields.map((field, index) => {
-                                        const children = rowChildren[index] ?? [];
-                                        const hasChildren = children.length > 0;
+                                <tbody>
+                                    {/* Local filters row */}
+                                    <tr className="bg-gray-50/50 dark:bg-muted/30 border-b border-gray-200 dark:border-border">
+                                        <td className="px-4 py-2"></td>
+                                        <td className="px-4 py-2">
+                                            <Input
+                                                placeholder="Filter account..."
+                                                value={filterAccount}
+                                                onChange={(e) => setFilterAccount(e.target.value)}
+                                                className="h-8 text-xs bg-background border-gray-200 dark:border-input"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-2">
+                                            <Input
+                                                placeholder="Filter narration/ref..."
+                                                value={filterNarrationRef}
+                                                onChange={(e) => setFilterNarrationRef(e.target.value)}
+                                                className="h-8 text-xs bg-background border-gray-200 dark:border-input"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-2">
+                                            <Input
+                                                placeholder="Filter debit..."
+                                                value={filterDebit}
+                                                onChange={(e) => setFilterDebit(e.target.value)}
+                                                className="h-8 text-xs bg-background border-gray-200 dark:border-input text-right"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-2">
+                                            <Input
+                                                placeholder="Filter credit..."
+                                                value={filterCredit}
+                                                onChange={(e) => setFilterCredit(e.target.value)}
+                                                className="h-8 text-xs bg-background border-gray-200 dark:border-input text-right"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-2"></td>
+                                    </tr>
 
-                                        return (
-                                            <tr key={field.id} className="hover:bg-gray-50/50 dark:hover:bg-muted/50 align-top">
-                                                <td className="px-4 py-3">
-                                                    {/* Account selector */}
-                                                    <Controller
-                                                        control={form.control}
-                                                        name={`details.${index}.accountId`}
-                                                        render={({ field }) => (
-                                                            <ChartOfAccountSelect
-                                                                value={field.value}
-                                                                onValueChange={(val) => {
-                                                                    field.onChange(val);
-                                                                    // Eagerly update tree ref so rowChildren recalculates
-                                                                    const t = getSharedTree();
-                                                                    if (t.length > 0) setTree([...t]);
-                                                                }}
-                                                                placeholder="Select Account"
-                                                                disabled={isPending}
-                                                                className="h-10 border-gray-300 dark:border-input"
-                                                            />
+                                    {filteredFields.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground bg-white dark:bg-background">
+                                                No lines added yet. Use the editor above to add lines.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        filteredFields.map(({ field, index }, idx) => {
+                                            const detail = watchDetails[index];
+                                            if (!detail) return null;
+
+                                            const accountNode = findInTree(contractedTree, detail.accountId);
+                                            const tagNode = accountNode?.children?.find(c => c.id === detail.tagAccountId);
+
+                                            return (
+                                                <tr key={field.id} className="hover:bg-gray-50/30 dark:hover:bg-muted/10 border-b border-gray-200 dark:border-border bg-white dark:bg-background/20">
+                                                    <td className="px-4 py-3 text-muted-foreground align-middle font-medium">
+                                                        {idx + 1}
+                                                    </td>
+                                                    <td className="px-4 py-3 align-middle font-semibold">
+                                                        <div>{accountNode ? `${accountNode.code} - ${accountNode.name}` : detail.accountId}</div>
+                                                        {tagNode && (
+                                                            <div className="text-[10px] text-violet-600 dark:text-violet-400 font-semibold mt-0.5 flex items-center gap-1">
+                                                                <Tag className="h-2.5 w-2.5 shrink-0" />
+                                                                {tagNode.code} - {tagNode.name}
+                                                            </div>
                                                         )}
-                                                    />
-                                                    {form.formState.errors.details?.[index]?.accountId && (
-                                                        <p className="text-[10px] text-destructive mt-1">
-                                                            {form.formState.errors.details[index].accountId?.message}
-                                                        </p>
-                                                    )}
-
-                                                    {/* Tag sub-account — shown only when selected account has children */}
-                                                    {hasChildren && (
-                                                        <div className="mt-1.5">
-                                                            <Controller
-                                                                control={form.control}
-                                                                name={`details.${index}.tagAccountId`}
-                                                                render={({ field }) => (
-                                                                    <TagAccountSelect
-                                                                        children={children}
-                                                                        value={field.value ?? ""}
-                                                                        onValueChange={field.onChange}
-                                                                        disabled={isPending}
-                                                                    />
-                                                                )}
-                                                            />
-                                                        </div>
-                                                    )}
-
-                                                    {/* Row-level narration, reference, and tax check */}
-                                                    <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-12 gap-2 border-t pt-2 border-gray-100 dark:border-muted/20">
-                                                        <div className="sm:col-span-6">
-                                                            <Input
-                                                                placeholder="Line Narration (optional)"
-                                                                {...form.register(`details.${index}.narration`)}
-                                                                disabled={isPending}
-                                                                className="h-8 text-xs border-gray-300 dark:border-input"
-                                                            />
-                                                        </div>
-                                                        <div className="sm:col-span-3">
-                                                            <Input
-                                                                placeholder="Ref / Bill#"
-                                                                {...form.register(`details.${index}.refBillNo`)}
-                                                                disabled={isPending}
-                                                                className="h-8 text-xs border-gray-300 dark:border-input"
-                                                            />
-                                                        </div>
-                                                        <div className="sm:col-span-3 flex items-center gap-2 pl-1 select-none">
-                                                            <Controller
-                                                                control={form.control}
-                                                                name={`details.${index}.isTaxApplicable`}
-                                                                render={({ field }) => (
-                                                                    <Checkbox
-                                                                        id={`details.${index}.isTaxApplicable`}
-                                                                        checked={field.value ?? false}
-                                                                        onCheckedChange={field.onChange}
-                                                                        disabled={isPending}
-                                                                    />
-                                                                )}
-                                                            />
-                                                            <Label
-                                                                htmlFor={`details.${index}.isTaxApplicable`}
-                                                                className="text-xs text-muted-foreground cursor-pointer font-medium"
-                                                            >
-                                                                Taxable
-                                                            </Label>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <Input
-                                                        type="number"
-                                                        step="1"
-                                                        placeholder="Debit"
-                                                        {...form.register(`details.${index}.debit`, {
-                                                            valueAsNumber: true,
-                                                            onChange: (e) => {
-                                                                const rawVal = Number(e.target.value) || 0;
-                                                                const roundedVal = Math.round(rawVal);
-                                                                if (rawVal !== roundedVal) {
-                                                                    form.setValue(`details.${index}.debit`, roundedVal, { shouldValidate: true });
-                                                                }
-                                                                if (roundedVal > 0) {
-                                                                    form.setValue(`details.${index}.credit`, 0, { shouldValidate: true });
-                                                                }
-                                                            },
-                                                        })}
-                                                        disabled={isPending}
-                                                        className="h-10 border-gray-300 dark:border-input font-medium"
-                                                    />
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <Input
-                                                        type="number"
-                                                        step="1"
-                                                        placeholder="Credit"
-                                                        {...form.register(`details.${index}.credit`, {
-                                                            valueAsNumber: true,
-                                                            onChange: (e) => {
-                                                                const rawVal = Number(e.target.value) || 0;
-                                                                const roundedVal = Math.round(rawVal);
-                                                                if (rawVal !== roundedVal) {
-                                                                    form.setValue(`details.${index}.credit`, roundedVal, { shouldValidate: true });
-                                                                }
-                                                                if (roundedVal > 0) {
-                                                                    form.setValue(`details.${index}.debit`, 0, { shouldValidate: true });
-                                                                }
-                                                            },
-                                                        })}
-                                                        disabled={isPending}
-                                                        className="h-10 border-gray-300 dark:border-input font-medium"
-                                                    />
-                                                </td>
-                                                <td className="px-4 py-3 text-center">
-                                                    <div className="flex items-center justify-center gap-1">
-                                                        <Button
-                                                            type="button"
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            onClick={() => duplicateRowToOpposite(index)}
-                                                            disabled={isPending}
-                                                            title="Duplicate row data and swap debit/credit"
-                                                            className="rounded-full hover:bg-blue-50 dark:hover:bg-blue-950/20 text-blue-600 h-8 w-8"
-                                                        >
-                                                            <Copy className="h-4 w-4" />
-                                                        </Button>
-                                                        {fields.length > 2 ? (
+                                                    </td>
+                                                    <td className="px-4 py-3 align-middle text-muted-foreground">
+                                                        <div className="max-w-xs truncate">{detail.narration || "—"}</div>
+                                                        {detail.refBillNo && (
+                                                            <div className="text-[10px] text-gray-400 dark:text-muted-foreground/60 font-medium mt-0.5">
+                                                                Ref: {detail.refBillNo}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right align-middle font-mono font-bold text-sm">
+                                                        {detail.debit > 0 ? detail.debit.toLocaleString() : "—"}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right align-middle font-mono font-bold text-sm">
+                                                        {detail.credit > 0 ? detail.credit.toLocaleString() : "—"}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-center align-middle">
+                                                        <div className="flex items-center justify-center gap-1.5">
                                                             <Button
                                                                 type="button"
                                                                 variant="ghost"
                                                                 size="icon"
-                                                                onClick={() => remove(index)}
                                                                 disabled={isPending}
-                                                                className="rounded-full text-destructive h-8 w-8"
+                                                                onClick={() => handleEditLine(index)}
+                                                                className={cn(
+                                                                    "h-7 w-7 rounded-full text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/20",
+                                                                    editingIndex === index && "bg-blue-100 ring-2 ring-blue-500"
+                                                                )}
+                                                                title="Edit this line"
                                                             >
-                                                                <Trash2 className="h-4 w-4" />
+                                                                <Edit2 className="h-3.5 w-3.5" />
                                                             </Button>
-                                                        ) : (
-                                                            <span className="text-gray-300 text-xs">---</span>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                disabled={isPending}
+                                                                onClick={() => remove(index)}
+                                                                className="h-7 w-7 rounded-full text-destructive hover:bg-red-50 dark:hover:bg-red-950/20"
+                                                                title="Delete this line"
+                                                            >
+                                                                <Trash2 className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
                                 </tbody>
-                                <tfoot className="font-bold border-t border-gray-200 dark:border-border">
+                                <tfoot className="font-bold border-t border-gray-200 dark:border-border bg-gray-50/50 dark:bg-muted/10">
                                     <tr>
-                                        <td className="px-4 py-4 text-right pr-8 text-gray-600 dark:text-muted-foreground">Totals:</td>
-                                        <td className="px-4 py-4 text-right text-lg">
+                                        <td className="px-4 py-4 text-right pr-8 text-gray-600 dark:text-muted-foreground" colSpan={3}>Totals:</td>
+                                        <td className="px-4 py-4 text-right text-lg text-foreground font-mono">
                                             {totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                         </td>
-                                        <td className="px-4 py-4 text-right text-lg">
+                                        <td className="px-4 py-4 text-right text-lg text-foreground font-mono">
                                             {totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                         </td>
                                         <td className="px-4 py-4 text-center">
@@ -676,6 +909,7 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
                         )}
                     </div>
 
+                    {/* Voucher Description */}
                     <div className="space-y-2 pt-4">
                         <Label htmlFor="description" className="text-xs text-muted-foreground uppercase font-semibold">
                             Description <span className="text-destructive">*</span>
@@ -692,6 +926,7 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
                         )}
                     </div>
 
+                    {/* Form Submission Button */}
                     <div className="flex justify-center pt-6 border-t">
                         <Button
                             type="submit"

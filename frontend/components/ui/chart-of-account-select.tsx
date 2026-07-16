@@ -25,6 +25,12 @@ export function getSharedTree(): ChartOfAccount[] {
     return _cachedTree ?? [];
 }
 
+/** Clear the client-side COA tree cache (useful after bulk upload). */
+export function clearCachedTree(): void {
+    _cachedTree = null;
+    _fetchPromise = null;
+}
+
 async function fetchTree(): Promise<ChartOfAccount[]> {
     if (_cachedTree) return _cachedTree;
     if (_fetchPromise) return _fetchPromise;
@@ -324,9 +330,61 @@ export function ChartOfAccountSelect({
     }, [open]);
 
     // ── Derived ────────────────────────────────────────────────────────────────
+    const cleanTreeForSelect = React.useMemo(() => {
+        // Contract/bypass redundant nested group nodes with the exact same name (case-insensitive)
+        const contract = (nodes: ChartOfAccount[], parentName?: string): ChartOfAccount[] => {
+            const result: ChartOfAccount[] = [];
+            for (const node of nodes) {
+                let currentChildren = node.children;
+                if (currentChildren && currentChildren.length > 0) {
+                    currentChildren = contract(currentChildren, node.name);
+                }
+                const nodeCopy = { ...node, children: currentChildren };
+                
+                if (
+                    parentName &&
+                    node.isGroup &&
+                    node.name.toLowerCase().replace(/\s+/g, ' ').trim() === parentName.toLowerCase().replace(/\s+/g, ' ').trim()
+                ) {
+                    if (currentChildren) {
+                        result.push(...currentChildren);
+                    }
+                } else {
+                    result.push(nodeCopy);
+                }
+            }
+            return result;
+        };
+
+        const contractedTree = contract(tree);
+
+        function removeTags(nodes: ChartOfAccount[]): ChartOfAccount[] {
+            return nodes.map(node => {
+                if (!node.isGroup) {
+                    // Already a leaf — strip any children (shouldn't have any)
+                    return { ...node, children: [] };
+                }
+                const kids = node.children ?? [];
+                // If ALL children are leaf accounts, this group is a "tag parent":
+                // • Strip its children from Account Head dropdown (they go to Tag Sub-Account)
+                // • Mark node as isGroup:false so it becomes selectable as Account Head
+                const allChildrenAreLeaves =
+                    kids.length > 0 && kids.every(c => !c.isGroup);
+                if (allChildrenAreLeaves) {
+                    return { ...node, isGroup: false, children: [] };
+                }
+                return {
+                    ...node,
+                    children: removeTags(kids),
+                };
+            });
+        }
+        return removeTags(contractedTree);
+    }, [tree]);
+
     const filteredTree = React.useMemo(() => {
-        return filterTreeExclude(tree, excludeAccountId);
-    }, [tree, excludeAccountId]);
+        return filterTreeExclude(cleanTreeForSelect, excludeAccountId);
+    }, [cleanTreeForSelect, excludeAccountId]);
 
     const allFlat = React.useMemo(() => flattenTree(filteredTree), [filteredTree]);
 
