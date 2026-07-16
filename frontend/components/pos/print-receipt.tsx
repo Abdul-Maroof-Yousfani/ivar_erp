@@ -1429,7 +1429,7 @@ function A4InvoiceBody({
             <p className="text-[9px] text-zinc-400 font-mono mt-0.5">
               Invoice Ref: {order?.orderNumber}
             </p>
-            <p className="text-[9px] text-zinc-400 pt-0.5">Software by Innovative Network</p>
+            <p className="text-[9px] text-zinc-400 pt-0.5">Software by Innovative Network (Pvt) Ltd</p>
           </div>
         </div>
       </div>

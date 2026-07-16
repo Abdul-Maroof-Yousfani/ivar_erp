@@ -443,14 +443,41 @@ export class SalesHistoryUploadProcessor {
                 }
 
                 // Determine payment method and amounts from tender columns
-                const cashSale = firstRow.cashSale || 0;
-                const cardSale = firstRow.cardSale || 0;
-                const giftVoucher = firstRow.giftVoucherAmount || 0;
-                const creditVoucher = firstRow.creditVoucherAmount || 0;
-                const exchangeVoucher = firstRow.exchangeVoucherAmount || 0;
-                const onCredit = firstRow.onCreditAmount || 0;
-                const voucherAmount = giftVoucher + creditVoucher + exchangeVoucher;
+                let cashSale = firstRow.cashSale || 0;
+                let cardSale = firstRow.cardSale || 0;
+                let giftVoucher = firstRow.giftVoucherAmount || 0;
+                let creditVoucher = firstRow.creditVoucherAmount || 0;
+                let exchangeVoucher = firstRow.exchangeVoucherAmount || 0;
+                let onCredit = firstRow.onCreditAmount || 0;
 
+                // Detect if Excel order quantity/totals are duplicated across all rows (N times)
+                const numRows = rows.length;
+                let isDuplicated = false;
+                if (numRows > 1) {
+                    const firstQty = firstRow.quantity;
+                    const firstTotal = firstRow.totalPriceWithTax;
+                    // Duplication signature: All rows have the same quantity (which equals numRows)
+                    // and all rows have the same totalPriceWithTax.
+                    if (firstQty === numRows) {
+                        const allMatch = rows.every(
+                            (r) => r.data.quantity === firstQty && r.data.totalPriceWithTax === firstTotal
+                        );
+                        if (allMatch) {
+                            isDuplicated = true;
+                        }
+                    }
+                }
+
+                if (isDuplicated) {
+                    cashSale = cashSale / numRows;
+                    cardSale = cardSale / numRows;
+                    giftVoucher = giftVoucher / numRows;
+                    creditVoucher = creditVoucher / numRows;
+                    exchangeVoucher = exchangeVoucher / numRows;
+                    onCredit = onCredit / numRows;
+                }
+
+                const voucherAmount = giftVoucher + creditVoucher + exchangeVoucher;
                 const totalPaid = cashSale + cardSale + giftVoucher + creditVoucher + exchangeVoucher;
                 let paymentMethod = 'cash';
                 if (cardSale > 0 && cashSale > 0) paymentMethod = 'split';
@@ -488,21 +515,40 @@ export class SalesHistoryUploadProcessor {
                         continue;
                     }
 
-                    const qty = d.quantity || 1;
+                    let qty = d.quantity || 1;
                     const unitPrice = d.unitPrice ?? Number(item.unitPrice);
                     const discPct = d.discountPercent || 0;
 
+                    if (isDuplicated) {
+                        qty = qty / numRows;
+                    }
+
                     // 1. Calculate tax-inclusive line total first (what the customer paid)
                     const subtotalTaxIncl = unitPrice * qty;
-                    const discAmtTaxIncl = d.discountAmount ?? Math.round(subtotalTaxIncl * (discPct / 100) * 100) / 100;
-                    const lineTotal = d.totalPriceWithTax ?? Math.max(0, Math.round((subtotalTaxIncl - discAmtTaxIncl) * 100) / 100);
+                    
+                    let discountAmount = d.discountAmount;
+                    if (isDuplicated && discountAmount !== undefined) {
+                        discountAmount = discountAmount / numRows;
+                    }
+                    const discAmtTaxIncl = discountAmount ?? Math.round(subtotalTaxIncl * (discPct / 100) * 100) / 100;
+                    
+                    let lineTotal = d.totalPriceWithTax ?? Math.max(0, Math.round((subtotalTaxIncl - discAmtTaxIncl) * 100) / 100);
+                    if (isDuplicated && d.totalPriceWithTax !== undefined) {
+                        lineTotal = lineTotal / numRows;
+                    }
 
                     // 2. Extract tax-exclusive and tax amounts from the line total
                     const taxPct = Number(item.taxRate1 || 0);
                     const taxDivisor = 1 + (taxPct / 100);
 
                     const afterDisc = Math.round((lineTotal / taxDivisor) * 100) / 100;
-                    const taxAmt = d.salesTax ?? Math.round((lineTotal - afterDisc) * 100) / 100;
+                    
+                    let salesTax = d.salesTax;
+                    if (isDuplicated && salesTax !== undefined) {
+                        salesTax = salesTax / numRows;
+                    }
+                    const taxAmt = salesTax ?? Math.round((lineTotal - afterDisc) * 100) / 100;
+                    
                     const discAmt = Math.round((discAmtTaxIncl / taxDivisor) * 100) / 100;
                     const totalWost = afterDisc + discAmt;
 
