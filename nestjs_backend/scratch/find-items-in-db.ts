@@ -8,22 +8,21 @@ async function main() {
   });
 
   try {
-    const barcodes = ['104800', '105566', '105584'];
+    const searchTerms = ['174445', '6011069-001', '198634'];
+    
+    // Find items matching any of these terms in id, itemId, sku, or barCode
     const items = await prisma.item.findMany({
       where: {
-        barCode: { in: barcodes }
+        OR: [
+          { itemId: { in: searchTerms } },
+          { sku: { contains: '6011069' } },
+          { barCode: { contains: '174445' } },
+          { barCode: { contains: '198634' } },
+        ]
       }
     });
 
-    console.log('ITEMS FOR BARCODES:', JSON.stringify(items, null, 2));
-
-    const orders = await prisma.salesOrder.findMany({
-      where: { orderNumber: 'DHAZ-260707-00010' },
-      include: {
-        items: true,
-      },
-    });
-    console.log('ORDERS MATCHING DHAZ-260707-00010:', JSON.stringify(orders, null, 2));
+    console.log('FOUND ITEMS:', JSON.stringify(items, null, 2));
   } catch (error) {
     console.error('Error:', error);
   } finally {

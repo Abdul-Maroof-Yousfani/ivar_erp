@@ -41,6 +41,51 @@ export class SalesHistoryUploadProcessor {
         private readonly notificationsService: NotificationsService,
     ) {}
 
+    /**
+     * Robust date parser that handles:
+     * - Excel numeric serial dates (e.g. 46200)
+     * - 2-digit year strings: "4/30/26" → 2026-04-30
+     * - 4-digit year strings: "7/7/2026", "2026-07-07"
+     */
+    private parseExcelDate(value: any): Date | undefined {
+        if (value === null || value === undefined) return undefined;
+
+        // Excel numeric serial date
+        if (typeof value === 'number') {
+            // Excel epoch is 1899-12-30
+            const date = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
+            if (!isNaN(date.getTime())) return date;
+        }
+
+        const s = String(value).trim();
+        if (!s) return undefined;
+
+        // Try ISO / standard formats first
+        const iso = new Date(s);
+        if (!isNaN(iso.getTime()) && iso.getFullYear() > 2000) return iso;
+
+        // Handle M/D/YY or M/D/YYYY (and D/M/YY variants)
+        const slashParts = s.split('/');
+        if (slashParts.length === 3) {
+            let [a, b, c] = slashParts.map((p) => parseInt(p, 10));
+            // Fix 2-digit year
+            if (c < 100) c = c + 2000;
+            // Determine M/D/YYYY vs D/M/YYYY: if first part > 12 it must be the day
+            let month: number, day: number, year: number;
+            if (a > 12) {
+                // D/M/YYYY
+                day = a; month = b; year = c;
+            } else {
+                // M/D/YYYY (Excel default US format)
+                month = a; day = b; year = c;
+            }
+            const date = new Date(Date.UTC(year, month - 1, day));
+            if (!isNaN(date.getTime())) return date;
+        }
+
+        return undefined;
+    }
+
     @Process()
     async handleUpload(job: Job<any>): Promise<void> {
         let { uploadId, fileBuffer, filename, userId, tenantId, tenantDbUrl, mode,
@@ -435,23 +480,18 @@ export class SalesHistoryUploadProcessor {
                 // Use the first row for order-level fields
                 const firstRow = rows[0].data;
 
-                // Resolve order date
-                let createdAt: Date | undefined;
-                if (firstRow.documentDate) {
-                    const d = new Date(firstRow.documentDate);
-                    if (!isNaN(d.getTime())) createdAt = d;
-                }
+                // Resolve order date using robust parser (handles 2-digit years like "4/30/26")
+                const createdAt = this.parseExcelDate(firstRow.documentDate);
 
-                // Determine payment method and amounts from tender columns
-                let cashSale = firstRow.cashSale || 0;
-                let cardSale = firstRow.cardSale || 0;
-                let giftVoucher = firstRow.giftVoucherAmount || 0;
-                let creditVoucher = firstRow.creditVoucherAmount || 0;
-                let exchangeVoucher = firstRow.exchangeVoucherAmount || 0;
-                let onCredit = firstRow.onCreditAmount || 0;
+                // ── Determine payment method and amounts ──
+                // Scan ALL rows in the group — the exporter may populate payment
+                // columns only on certain rows (e.g. only on the last row).
+                // Strategy: sum unique non-zero payment values per tender type.
+                // For duplicated-totals orders (N rows with identical amounts) we
+                // divide by N after detecting the duplication signature.
+                const numRows = rows.length;
 
                 // Detect if Excel order quantity/totals are duplicated across all rows (N times)
-                const numRows = rows.length;
                 let isDuplicated = false;
                 if (numRows > 1) {
                     const firstQty = firstRow.quantity;
@@ -468,7 +508,17 @@ export class SalesHistoryUploadProcessor {
                     }
                 }
 
+                // Aggregate payments: take the max across all rows (handles
+                // both "last-row-only" and "duplicated on every row" patterns).
+                let cashSale = Math.max(...rows.map((r) => r.data.cashSale || 0));
+                let cardSale = Math.max(...rows.map((r) => r.data.cardSale || 0));
+                let giftVoucher = Math.max(...rows.map((r) => r.data.giftVoucherAmount || 0));
+                let creditVoucher = Math.max(...rows.map((r) => r.data.creditVoucherAmount || 0));
+                let exchangeVoucher = Math.max(...rows.map((r) => r.data.exchangeVoucherAmount || 0));
+                let onCredit = Math.max(...rows.map((r) => r.data.onCreditAmount || 0));
+
                 if (isDuplicated) {
+                    // Payments were duplicated N times — divide to get actual order total
                     cashSale = cashSale / numRows;
                     cardSale = cardSale / numRows;
                     giftVoucher = giftVoucher / numRows;
