@@ -3,10 +3,10 @@ import * as path from 'path';
 import * as XLSX from 'xlsx';
 import { Client } from 'pg';
 
-const DB_URL = 'postgresql://user_june_6_mqawmlin:2kaiRX1fQUnq7Bq*vCTYlzrjYqyt2SpJ@localhost:5433/tenant_june_6_mqawmlin';
+const DB_URL = 'postgresql://ivar_admin:ivar2026%23%23%23may1-unlimited@localhost:5432/tenant_ivar_mo2z612h';
 
 async function main() {
-  const uploadDir = path.join(__dirname, '../uploads/bulk/sales-history');
+  const uploadDir = path.join(__dirname, '../../sales-history');
   const files = fs.readdirSync(uploadDir).filter(f => f.endsWith('.xlsx') || f.endsWith('.xls'));
 
   console.log(`Reading ${files.length} upload file(s)...`);
