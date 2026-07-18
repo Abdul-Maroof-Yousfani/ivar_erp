@@ -1673,16 +1673,16 @@ export const menuData: MenuItem[] = [
     environment: "POS",
     permissions: ["pos.dashboard.view"],
     children: [
-      {
-        title: "Sales Reports",
-        href: "/pos/reports",
-        permissions: ["pos.dashboard.view"],
-      },
-      {
-        title: "Session Summary",
-        href: "/pos/session",
-        permissions: ["pos.shift.view"],
-      },
+      // {
+      //   title: "Sales Reports",
+      //   href: "/pos/reports",
+      //   permissions: ["pos.dashboard.view"],
+      // },
+      // {
+      //   title: "Session Summary",
+      //   href: "/pos/session",
+      //   permissions: ["pos.shift.view"],
+      // },
       {
         title: "Stock Activity",
         href: "/pos/reports/stock-activity",
