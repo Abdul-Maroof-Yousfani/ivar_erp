@@ -1,6 +1,6 @@
 import { TrialBalanceResult } from "@/lib/actions/finance-reports";
 import { format } from "date-fns";
-import { cn, COMPANY_NAME } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 const fmt = (n: number) =>
   n.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -32,7 +32,7 @@ export function TrialBalancePrint({ data, reportType, includeTagAccounts }: Tria
             // Fallback text if logo is not found
             (e.target as HTMLElement).style.display = 'none';
           }} />
-          <h2 className="text-sm font-bold tracking-tight mt-1">{COMPANY_NAME}</h2>
+          <h2 className="text-sm font-bold tracking-tight mt-1">SPEED LIMIT</h2>
           <p className="text-[9px] text-gray-500 uppercase tracking-wider">Financial Report</p>
         </div>
 
