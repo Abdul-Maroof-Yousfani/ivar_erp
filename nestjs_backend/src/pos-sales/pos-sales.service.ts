@@ -668,6 +668,7 @@ export class PosSalesService implements OnModuleInit {
                         referenceType: 'POS_SALE',
                         // unitCost: item.,
                         referenceId: order.id,
+                        allowNegativeStock: true, // Warehouse may be negative (allowed by business rules)
                     }, tx);
 
                     // ── Sync InventoryItem (for ERP visibility) ─────────
@@ -976,20 +977,8 @@ export class PosSalesService implements OnModuleInit {
         }
 
         // ── Permission filtering ──
-        // Check if user has pos.sales.history.view_all
-        const role = await this.prismaMaster.role.findUnique({
-            where: { id: user.roleId },
-            include: { permissions: { include: { permission: true } } },
-        });
-
-        const userPerms = role?.permissions.map(p => p.permission.name) || [];
-        const canViewAll = userPerms.includes('*') || userPerms.includes('pos.sales.history.view_all') ||
-            ['super_admin', 'admin'].includes(role?.name.toLowerCase() || '');
-
-        if (!canViewAll) {
-            // Only see their own orders
-            where.cashierUserId = user.id;
-        }
+        // Allow all cashiers/users to see all sales per POS / location regardless of who created it
+        // (Previously restricted non-admin users to only where.cashierUserId = user.id)
 
         const [rawOrders, total] = await Promise.all([
             this.prisma.salesOrder.findMany({
@@ -1222,18 +1211,8 @@ export class PosSalesService implements OnModuleInit {
         where.status = { notIn: ['hold', 'hold_expired', 'hold_cancelled'] };
 
         // ── Permission filtering ──
-        const role = await this.prismaMaster.role.findUnique({
-            where: { id: user.roleId },
-            include: { permissions: { include: { permission: true } } },
-        });
-
-        const userPerms = role?.permissions.map(p => p.permission.name) || [];
-        const canViewAll = userPerms.includes('*') || userPerms.includes('pos.sales.history.view_all') ||
-            ['super_admin', 'admin'].includes(role?.name.toLowerCase() || '');
-
-        if (!canViewAll) {
-            where.cashierUserId = user.id;
-        }
+        // Allow all cashiers/users to see all sales activities per POS / location regardless of who created it
+        // (Previously restricted non-admin users to only where.cashierUserId = user.id)
 
         // ── Determine Date Range ──
         let start: Date | undefined = undefined;
@@ -2499,6 +2478,7 @@ export class PosSalesService implements OnModuleInit {
             return { status: false, message: error.message };
         }
     }
+    
     // ─── Exchange items ───────────────────────────────────────────────
     async exchangeItems(
         id: string,
@@ -2543,6 +2523,7 @@ export class PosSalesService implements OnModuleInit {
                         itemId: ni.itemId, warehouseId: warehouse.id, locationId: order.locationId,
                         qty: -ni.quantity, movementType: MovementType.OUTBOUND,
                         referenceType: 'POS_EXCHANGE_OUT', referenceId: order.id,
+                        allowNegativeStock: true, // Warehouse may be negative (allowed by business rules)
                     }, tx);
 
                     const existing = await tx.inventoryItem.findFirst({
@@ -2948,6 +2929,7 @@ export class PosSalesService implements OnModuleInit {
                             movementType: MovementType.OUTBOUND,
                             referenceType: 'POS_HOLD',
                             referenceId: order.id,
+                            allowNegativeStock: true, // Warehouse may be negative (allowed by business rules)
                         }, tx);
 
                         const existing = await tx.inventoryItem.findFirst({
