@@ -32,7 +32,7 @@ export class ItemService {
   constructor(
     private prisma: PrismaService,
     private activityLogs: ActivityLogsService,
-  ) { }
+  ) {}
 
   async create(createItemDto: CreateItemDto) {
     try {
@@ -275,27 +275,27 @@ export class ItemService {
       // ── 2. Build shared item update payload ────────────────────────────
       const sharedData: any = dto.clearDiscount
         ? {
-          discountRate: 0,
-          discountAmount: 0,
-          discountStartDate: null,
-          discountEndDate: null,
-        }
-        : {
-          ...(dto.discountRate !== undefined && {
-            discountRate: dto.discountRate,
-            discountAmount: 0,
-          }),
-          ...(dto.discountAmount !== undefined && {
-            discountAmount: dto.discountAmount,
             discountRate: 0,
-          }),
-          ...(dto.discountStartDate !== undefined && {
-            discountStartDate: dto.discountStartDate,
-          }),
-          ...(dto.discountEndDate !== undefined && {
-            discountEndDate: dto.discountEndDate,
-          }),
-        };
+            discountAmount: 0,
+            discountStartDate: null,
+            discountEndDate: null,
+          }
+        : {
+            ...(dto.discountRate !== undefined && {
+              discountRate: dto.discountRate,
+              discountAmount: 0,
+            }),
+            ...(dto.discountAmount !== undefined && {
+              discountAmount: dto.discountAmount,
+              discountRate: 0,
+            }),
+            ...(dto.discountStartDate !== undefined && {
+              discountStartDate: dto.discountStartDate,
+            }),
+            ...(dto.discountEndDate !== undefined && {
+              discountEndDate: dto.discountEndDate,
+            }),
+          };
 
       // ── 3. Build per-item override map ─────────────────────────────────
       const overrideMap = new Map<
@@ -377,13 +377,13 @@ export class ItemService {
             },
             ...(dto.locationIds?.length
               ? {
-                locations: {
-                  create: dto.locationIds.map((locationId, idx) => ({
-                    locationId,
-                    locationName: dto.locationNames?.[idx] ?? null,
-                  })),
-                },
-              }
+                  locations: {
+                    create: dto.locationIds.map((locationId, idx) => ({
+                      locationId,
+                      locationName: dto.locationNames?.[idx] ?? null,
+                    })),
+                  },
+                }
               : {}),
           },
           include: { locations: true },
@@ -640,86 +640,86 @@ export class ItemService {
       itemSubclasses,
       hsCodes,
     ]: [
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-      ] = await Promise.all([
-        brandIds.length
-          ? this.prisma.brand.findMany({
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+    ] = await Promise.all([
+      brandIds.length
+        ? this.prisma.brand.findMany({
             where: { id: { in: brandIds as string[] } },
           })
-          : [],
-        divisionIds.length
-          ? this.prisma.division.findMany({
+        : [],
+      divisionIds.length
+        ? this.prisma.division.findMany({
             where: { id: { in: divisionIds as string[] } },
           })
-          : [],
-        categoryIds.length
-          ? this.prisma.category.findMany({
+        : [],
+      categoryIds.length
+        ? this.prisma.category.findMany({
             where: { id: { in: categoryIds as string[] } },
           })
-          : [],
-        subCategoryIds.length
-          ? this.prisma.category.findMany({
+        : [],
+      subCategoryIds.length
+        ? this.prisma.category.findMany({
             where: { id: { in: subCategoryIds as string[] } },
           })
-          : [],
-        seasonIds.length
-          ? this.prisma.season.findMany({
+        : [],
+      seasonIds.length
+        ? this.prisma.season.findMany({
             where: { id: { in: seasonIds as string[] } },
           })
-          : [],
-        genderIds.length
-          ? this.prisma.gender.findMany({
+        : [],
+      genderIds.length
+        ? this.prisma.gender.findMany({
             where: { id: { in: genderIds as string[] } },
           })
-          : [],
-        sizeIds.length
-          ? this.prisma.size.findMany({
+        : [],
+      sizeIds.length
+        ? this.prisma.size.findMany({
             where: { id: { in: sizeIds as string[] } },
           })
-          : [],
-        silhouetteIds.length
-          ? this.prisma.silhouette.findMany({
+        : [],
+      silhouetteIds.length
+        ? this.prisma.silhouette.findMany({
             where: { id: { in: silhouetteIds as string[] } },
           })
-          : [],
-        channelClassIds.length
-          ? this.prisma.channelClass.findMany({
+        : [],
+      channelClassIds.length
+        ? this.prisma.channelClass.findMany({
             where: { id: { in: channelClassIds as string[] } },
           })
-          : [],
-        colorIds.length
-          ? this.prisma.color.findMany({
+        : [],
+      colorIds.length
+        ? this.prisma.color.findMany({
             where: { id: { in: colorIds as string[] } },
           })
-          : [],
-        itemClassIds.length
-          ? this.prisma.itemClass.findMany({
+        : [],
+      itemClassIds.length
+        ? this.prisma.itemClass.findMany({
             where: { id: { in: itemClassIds as string[] } },
           })
-          : [],
-        itemSubclassIds.length
-          ? this.prisma.itemSubclass.findMany({
+        : [],
+      itemSubclassIds.length
+        ? this.prisma.itemSubclass.findMany({
             where: { id: { in: itemSubclassIds as string[] } },
           })
-          : [],
-        hsCodeIds.length
-          ? this.prisma.hsCode.findMany({
+        : [],
+      hsCodeIds.length
+        ? this.prisma.hsCode.findMany({
             where: { id: { in: hsCodeIds as string[] } },
           })
-          : [],
-      ]);
+        : [],
+    ]);
 
     return items.map((item) => ({
       ...item,

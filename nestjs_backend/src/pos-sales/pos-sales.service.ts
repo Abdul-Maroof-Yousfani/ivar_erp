@@ -2478,6 +2478,7 @@ export class PosSalesService implements OnModuleInit {
             return { status: false, message: error.message };
         }
     }
+    
     // ─── Exchange items ───────────────────────────────────────────────
     async exchangeItems(
         id: string,
