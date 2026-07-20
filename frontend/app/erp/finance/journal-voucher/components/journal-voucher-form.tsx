@@ -48,6 +48,19 @@ function findInTree(nodes: ChartOfAccount[], id: string): ChartOfAccount | undef
     return undefined;
 }
 
+function getLeafSubAccounts(node: ChartOfAccount | undefined): ChartOfAccount[] {
+    if (!node || !node.children || node.children.length === 0) return [];
+    const result: ChartOfAccount[] = [];
+    for (const child of node.children) {
+        if (!child.isGroup || !child.children || child.children.length === 0) {
+            result.push(child);
+        } else {
+            result.push(...getLeafSubAccounts(child));
+        }
+    }
+    return result;
+}
+
 // ─── Tag account selector ─────────────────────────────────────────────────────
 interface TagAccountSelectProps {
     children: ChartOfAccount[];
@@ -298,9 +311,10 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
 
     // Derive child sub-accounts for active line entry
     const activeLineChildren = useMemo(() => {
-        if (!entryLine.accountId || tree.length === 0) return [];
-        const node = findInTree(tree, entryLine.accountId);
-        return node?.children ?? [];
+        const nodes = getSharedTree().length > 0 ? getSharedTree() : tree;
+        if (!entryLine.accountId || nodes.length === 0) return [];
+        const node = findInTree(nodes, entryLine.accountId);
+        return getLeafSubAccounts(node);
     }, [entryLine.accountId, tree]);
 
     // Copy previous row values (F4 shortcut)
@@ -363,7 +377,8 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
         // Validate that Tag Sub-account is selected if the account head has children
         const nodes = getSharedTree().length > 0 ? getSharedTree() : tree;
         const node = findInTree(nodes, entryLine.accountId);
-        if (node && (node.children?.length ?? 0) > 0 && !entryLine.tagAccountId) {
+        const subAccounts = getLeafSubAccounts(node);
+        if (node && subAccounts.length > 0 && !entryLine.tagAccountId) {
             toast.error("Tag Sub-account is required for this account head.");
             return;
         }
@@ -461,24 +476,25 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
 
     // Poll for the shared tree until it's available (it loads lazily on first open)
     useEffect(() => {
-        fetchSharedTree();
+        fetchSharedTree().then((t) => {
+            if (t && t.length > 0) setTree(t);
+        });
         const initial = getSharedTree();
         if (initial.length > 0) { setTree(initial); return; }
         const id = setInterval(() => {
             const t = getSharedTree();
             if (t.length > 0) { setTree(t); clearInterval(id); }
-        }, 300);
+        }, 200);
         return () => clearInterval(id);
     }, []);
 
-
-
     // Derive child accounts for each row from the cached tree
     const rowChildren = useMemo(() => {
+        const nodes = getSharedTree().length > 0 ? getSharedTree() : tree;
         return watchDetails.map((detail) => {
-            if (!detail.accountId || tree.length === 0) return [];
-            const node = findInTree(tree, detail.accountId);
-            return node?.children ?? [];
+            if (!detail.accountId || nodes.length === 0) return [];
+            const node = findInTree(nodes, detail.accountId);
+            return getLeafSubAccounts(node);
         });
     }, [watchDetails.map((d) => d.accountId).join(","), tree]);
 
@@ -601,7 +617,8 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
             for (let i = 0; i < values.details.length; i++) {
                 const detail = values.details[i];
                 const node = findInTree(nodes, detail.accountId);
-                if (node && (node.children?.length ?? 0) > 0 && !detail.tagAccountId) {
+                const subAccounts = getLeafSubAccounts(node);
+                if (node && subAccounts.length > 0 && !detail.tagAccountId) {
                     toast.error(`Line #${i + 1}: Tag Sub-account is required for account "${node.name}".`);
                     return;
                 }
@@ -867,7 +884,6 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                                {/* Account Selector */}
                                 <div className="md:col-span-4 space-y-1">
                                     <Label className="text-[11px] text-muted-foreground font-semibold">ACCOUNT HEAD *</Label>
                                     <ChartOfAccountSelect
@@ -878,8 +894,8 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
                                             setTimeout(() => {
                                                 const nodes = getSharedTree().length > 0 ? getSharedTree() : tree;
                                                 const node = findInTree(nodes, val);
-                                                const hasChildren = (node?.children?.length ?? 0) > 0;
-                                                if (hasChildren) {
+                                                const subAccounts = getLeafSubAccounts(node);
+                                                if (subAccounts.length > 0) {
                                                     document.getElementById("entry-tagAccountId")?.focus();
                                                 } else {
                                                     focusTaxType();
@@ -1234,8 +1250,10 @@ export function JournalVoucherForm({ initialData }: { initialData?: JournalVouch
                                         </tr>
                                     ) : (
                                         visibleDetails.map((field, index) => {
-                                            const accountNode = findInTree(tree, field.accountId);
-                                            const tagNode = accountNode?.children?.find(c => c.id === field.tagAccountId);
+                                            const nodes = getSharedTree().length > 0 ? getSharedTree() : tree;
+                                            const accountNode = findInTree(nodes, field.accountId);
+                                            const subAccounts = getLeafSubAccounts(accountNode);
+                                            const tagNode = subAccounts.find(c => c.id === field.tagAccountId || c.code === field.tagAccountId);
 
                                             return (
                                                 <tr
