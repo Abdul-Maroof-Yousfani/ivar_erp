@@ -6,6 +6,7 @@ import { UpdateReceiptVoucherDto } from './dto/update-receipt-voucher.dto';
 
 import { ActivityLogsService } from '../../activity-logs/activity-logs.service';
 import { runInBackground } from '../../common/utils/run-in-background.util';
+import { generateNextRvNumber, generateNextFolioNumber } from '../../common/utils/voucher-number.util';
 @Injectable()
 export class ReceiptVoucherService {
   constructor(
@@ -52,6 +53,9 @@ export class ReceiptVoucherService {
     }
 
     return this.prisma.$transaction(async (prisma) => {
+      const finalRvNo = await generateNextRvNumber(prisma, data.type, data.rvDate);
+      const sequentialFolio = await generateNextFolioNumber(prisma, data.rvDate);
+
       // Derive debitAccountId from the first debit detail line
       const firstDebitDetail = details.find(d => Number(d.debit) > 0);
       const resolvedDebitAccountId = firstDebitDetail?.accountId ?? data.debitAccountId;
@@ -63,7 +67,8 @@ export class ReceiptVoucherService {
       const rv = await prisma.receiptVoucher.create({
         data: {
           type: data.type,
-          rvNo: data.rvNo,
+          rvNo: finalRvNo,
+          folio: sequentialFolio,
           rvDate: data.rvDate,
           refBillNo: data.refBillNo,
           billDate: data.billDate,
@@ -73,7 +78,7 @@ export class ReceiptVoucherService {
           debitAmount: resolvedDebitAmount,
           customerId: data.customerId || undefined,
           isAdvance: data.isAdvance ?? false,
-          isTaxApplicable: data.isTaxApplicable ?? false,
+          taxType: data.taxType ?? 'Taxable',
           description: data.description,
           status: targetStatus,
           details: { 
@@ -86,7 +91,8 @@ export class ReceiptVoucherService {
                 credit:          Number(d.credit) || 0,
                 narration:       d.narration || data.description || null,
                 refBillNo:       d.refBillNo || data.refBillNo || null,
-                isTaxApplicable: d.isTaxApplicable ?? data.isTaxApplicable ?? false,
+                refBillNo2:      d.refBillNo2 || null,
+                taxType: d.taxType ?? data.taxType ?? 'Taxable',
               }))
           },
         },
@@ -169,7 +175,7 @@ export class ReceiptVoucherService {
       ...(data.description !== undefined && { description: data.description }),
       ...(data.status !== undefined && { status: data.status }),
       ...(data.isAdvance !== undefined && { isAdvance: data.isAdvance }),
-      ...(data.isTaxApplicable !== undefined && { isTaxApplicable: data.isTaxApplicable }),
+      ...(data.taxType !== undefined && { taxType: data.taxType }),
     };
 
     if (details) {
@@ -189,7 +195,8 @@ export class ReceiptVoucherService {
                   credit:          Number(d.credit) || 0,
                   narration:       d.narration || data.description || null,
                   refBillNo:       d.refBillNo || data.refBillNo || null,
-                  isTaxApplicable: d.isTaxApplicable ?? data.isTaxApplicable ?? false,
+                  refBillNo2:      d.refBillNo2 || null,
+                  taxType: d.taxType ?? data.taxType ?? 'Taxable',
                 })),
             },
           },
@@ -304,7 +311,8 @@ export class ReceiptVoucherService {
           credit:          Number(d.credit) || 0,
           narration:       d.narration || voucher.description || undefined,
           refBillNo:       d.refBillNo || voucher.refBillNo || undefined,
-          isTaxApplicable: d.isTaxApplicable ?? false,
+          refBillNo2:      d.refBillNo2 || undefined,
+          taxType: d.taxType ?? 'Taxable',
         }));
 
       await this.accounting.postLines(allLines, {
