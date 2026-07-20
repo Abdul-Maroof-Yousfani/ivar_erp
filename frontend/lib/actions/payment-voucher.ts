@@ -15,7 +15,9 @@ export interface PaymentVoucherDetail {
     credit: number;
     narration?: string;
     refBillNo?: string;
-    isTaxApplicable?: boolean;
+    refBillNo2?: string;
+    taxType?: string;
+    cprNo?: string | null;
 }
 
 export interface PaymentVoucher {
@@ -24,6 +26,7 @@ export interface PaymentVoucher {
     pvNo: string;
     pvDate: string; // ISO string from API
     refBillNo?: string;
+    refBillNo2?: string;
     billDate?: string; // ISO string
     creditAccountId: string;
     creditAccountCode?: string;
@@ -31,12 +34,13 @@ export interface PaymentVoucher {
     creditAccountName?: string; // helper for UI
     creditAmount: number;
     status: "pending" | "approved" | "rejected";
-    description: string;
-    isTaxApplicable: boolean;
+    description?: string;
+    taxType?: string;
     isAdvance: boolean;
     chequeNo?: string;
     chequeDate?: string; // ISO string
     details: PaymentVoucherDetail[];
+    folio?: string | null;
     createdAt: string;
     createdBy: string;
 }
@@ -372,3 +376,61 @@ export async function updatePaymentVoucherStatus(id: string, status: "approved" 
         return { status: false, message: error.message || "An unexpected error occurred" };
     }
 }
+
+// ── Background export ─────────────────────────────────────────────────────────
+export async function queuePaymentVouchersExport(opts?: {
+    type?: string;
+    status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+}): Promise<{ status: boolean; jobId?: string; message?: string }> {
+    try {
+        const params = new URLSearchParams();
+        if (opts?.type   && opts.type   !== 'all') params.set('type',   opts.type);
+        if (opts?.status && opts.status !== 'all') params.set('status', opts.status);
+        if (opts?.dateFrom)                         params.set('dateFrom', opts.dateFrom);
+        if (opts?.dateTo)                           params.set('dateTo',   opts.dateTo);
+
+        const response = await authFetch(
+            `/finance/payment-vouchers/export?${params.toString()}`,
+            { method: 'POST' },
+        );
+
+        if (!response.ok) {
+            const err = response.data || {};
+            return { status: false, message: err.message || 'Failed to queue export' };
+        }
+
+        const result = response.data;
+        return { status: true, jobId: result?.data?.jobId };
+    } catch (error: any) {
+        return { status: false, message: error.message || 'An unexpected error occurred' };
+    }
+}
+
+export async function updatePaymentVoucherCpr(id: string, details: { id: string; cprNo?: string | null }[]) {
+    try {
+        const response = await authFetch(`/finance/payment-vouchers/${id}/cpr`, {
+            method: "PATCH",
+            body: JSON.stringify({ details }),
+        });
+
+        if (!response.ok) {
+            const errorData = response.data || {};
+            return {
+                status: false,
+                message: errorData.message || `Failed to update CPR numbers: ${response.statusText || response.status}`
+            };
+        }
+
+        revalidatePath("/finance/payment-voucher/list");
+        revalidatePath(`/erp/finance/payment-voucher/${id}`);
+        revalidatePath("/erp/finance/payment-voucher/list");
+
+        return { status: true, message: "CPR numbers updated successfully" };
+    } catch (error: any) {
+        console.error("Error updating payment voucher CPR numbers:", error);
+        return { status: false, message: error.message || "An unexpected error occurred" };
+    }
+}
+
