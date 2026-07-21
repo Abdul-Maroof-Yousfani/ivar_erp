@@ -118,7 +118,7 @@ export default async function ViewItemPage({ params }: PageProps) {
                 <InfoItem label="Brand" value={item.brand?.name} />
                 <InfoItem label="Segment" value={item.segment?.name} />
                 <InfoItem label="Barcode" value={item.barCode} />
-                <InfoItem label="HS Code" value={item.hsCode} />
+                <InfoItem label="HS Code" value={item.hsCodeStr || item.hsCode?.hsCode} />
             </InfoSection>
 
             <InfoSection title="Classification">

@@ -52,7 +52,7 @@ const itemFormSchema = z.object({
     brandId: z.string().min(1, "Brand is required"),
     description: z.string().nullable().optional(),
     sku: z.string().min(1, "SKU is required"),
-    itemId: z.string().min(1, "Item ID is required"),
+    itemId: z.string().optional(),
     barCode: z.string().nullable().optional(),
     hsCodeId: z.string().nullable().optional(),
     isActive: z.boolean(),
@@ -85,7 +85,6 @@ const itemFormSchema = z.object({
     case: z.string().nullable().optional(),
     band: z.string().nullable().optional(),
     movementType: z.string().nullable().optional(),
-    uniqueNo: z.string().nullable().optional(),
     heelHeight: z.string().nullable().optional(),
     width: z.string().nullable().optional(),
 });
@@ -160,7 +159,6 @@ export default function ItemEditPage() {
             channelClassId: "",
             genderId: "",
             seasonId: "",
-            uomId: "",
             discountStartDate: null,
             discountEndDate: null,
             sizeId: "",
@@ -169,7 +167,6 @@ export default function ItemEditPage() {
             case: "",
             band: "",
             movementType: "",
-            uniqueNo: "",
             heelHeight: "",
             width: "",
         },
@@ -264,7 +261,6 @@ export default function ItemEditPage() {
                         case: item.case || "",
                         band: item.band || "",
                         movementType: item.movementType || "",
-                        uniqueNo: item.uniqueNo || "",
                         heelHeight: item.heelHeight || "",
                         width: item.width || "",
                     });
@@ -322,13 +318,13 @@ export default function ItemEditPage() {
     const getFieldsForStep = (step: number): (keyof ItemFormValues)[] => {
         switch (step) {
             case 0:
-                return ["brandId", "segmentId", "sku", "itemId", "barCode", "hsCodeId", "isActive", "description"];
+                return ["brandId", "segmentId", "sku", "barCode", "hsCodeId", "isActive", "description"];
             case 1:
                 return ["divisionId", "categoryId", "subCategoryId", "itemClassId", "itemSubclassId", "channelClassId", "genderId", "seasonId"];
             case 2:
                 return ["unitPrice", "taxRate1", "taxRate2", "discountRate", "discountAmount", "discountStartDate", "discountEndDate"];
             case 3:
-                return ["sizeId", "colorId", "silhouetteId", "case", "band", "movementType", "uniqueNo", "heelHeight", "width"];
+                return ["sizeId", "colorId", "silhouetteId", "case", "band", "movementType", "heelHeight", "width"];
             default:
                 return [];
         }
@@ -822,17 +818,7 @@ export default function ItemEditPage() {
                                                 </FormItem>
                                             )}
                                         />
-                                        <FormField
-                                            control={form.control}
-                                            name="uniqueNo"
-                                            render={({ field }: { field: any }) => (
-                                                <FormItem>
-                                                    <FormLabel>Unique No.</FormLabel>
-                                                    <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
-                                                    <FormMessage />
-                                                </FormItem>
-                                            )}
-                                        />
+
                                         <FormField
                                             control={form.control}
                                             name="heelHeight"
