@@ -28,7 +28,7 @@ export class PosSessionService {
     private readonly journalVoucherService: JournalVoucherService,
     private readonly receiptVoucherService: ReceiptVoucherService,
     @InjectQueue('reconciliation-export') private readonly exportQueue?: Queue,
-  ) {}
+  ) { }
 
   /**
    * Get the active session for the provided terminal (UUID),
@@ -467,13 +467,13 @@ export class PosSessionService {
     // Fetch Cashier Profile from Central/Master DB
     const cashier = session.userId
       ? await this.prismaMaster.user.findUnique({
-          where: { id: session.userId },
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        })
+        where: { id: session.userId },
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      })
       : null;
 
     const toLocalDateString = (d: Date) => {
@@ -931,12 +931,12 @@ export class PosSessionService {
       { type: 'Cash', amount: cashSaleAmt, from: '-' },
       ...(cashGiftVouchersAmt > 0
         ? [
-            {
-              type: 'Cash - Gift Vouchers Issued',
-              amount: cashGiftVouchersAmt,
-              from: '-',
-            },
-          ]
+          {
+            type: 'Cash - Gift Vouchers Issued',
+            amount: cashGiftVouchersAmt,
+            from: '-',
+          },
+        ]
         : []),
       ...redeemedVouchersList,
     ];
@@ -979,7 +979,7 @@ export class PosSessionService {
     const returnAmount =
       exchangeAndClaims.reduce((sum, v) => sum + v.amount, 0) +
       refundVouchers.reduce((sum, v) => sum + v.amount, 0);
-      
+
     const creditVouchersTotal = creditVouchers.reduce(
       (sum, v) => sum + v.amount,
       0,
@@ -1110,7 +1110,7 @@ export class PosSessionService {
         : `${formatDate(startRangeStr)} - ${formatDate(endRangeStr)}`;
 
     return {
-      companyName: 'Speed (Private) Limited',
+      companyName: 'IVAR',
       locationName: session.pos.location?.name ?? 'Nike-Dolmen Clifton',
       reportTitle: 'Sales Reconciliation',
       dateRange: dateRange,
@@ -1137,13 +1137,13 @@ export class PosSessionService {
         },
         cashier: cashier
           ? {
-              fullName: `${cashier.firstName} ${cashier.lastName}`.trim(),
-              email: cashier.email,
-            }
+            fullName: `${cashier.firstName} ${cashier.lastName}`.trim(),
+            email: cashier.email,
+          }
           : {
-              fullName: 'N/A',
-              email: 'N/A',
-            },
+            fullName: 'N/A',
+            email: 'N/A',
+          },
       },
       metrics: {
         grossSales: financials.sale,
@@ -1183,7 +1183,9 @@ export class PosSessionService {
         sale: cardSaleAmt,
         giftVouchers: cardGiftVouchersAmt,
         total: totalCardReceived,
-  }}}
+      }
+    }
+  }
 
   async getDaywiseReconciliation(locationId: string, date: string) {
     const location = await this.prisma.location.findUnique({
@@ -1594,12 +1596,12 @@ export class PosSessionService {
       { type: 'Cash', amount: cashSaleAmt, from: '-' },
       ...(cashGiftVouchersAmt > 0
         ? [
-            {
-              type: 'Cash - Gift Vouchers Issued',
-              amount: cashGiftVouchersAmt,
-              from: '-',
-            },
-          ]
+          {
+            type: 'Cash - Gift Vouchers Issued',
+            amount: cashGiftVouchersAmt,
+            from: '-',
+          },
+        ]
         : []),
       ...redeemedVouchersList,
     ];
@@ -1656,7 +1658,7 @@ export class PosSessionService {
     const dateRange = formatDate(date + 'T00:00:00');
 
     return {
-      companyName: 'Speed (Private) Limited',
+      companyName: 'IVAR',
       locationName: location.name ?? 'Unknown Location',
       reportTitle: 'Sales Reconciliation',
       dateRange: dateRange,
@@ -2010,7 +2012,7 @@ export class PosSessionService {
     stream.on('close', () => {
       fs.unlink(filePath, (err) => {
         if (err) this.logger.warn(`Could not delete export file: ${err.message}`);
-        else     this.logger.log(`[ReconciliationExport] Cleaned up ${filePath}`);
+        else this.logger.log(`[ReconciliationExport] Cleaned up ${filePath}`);
       });
     });
     stream.on('error', (err) => {
