@@ -36,9 +36,13 @@ export class CreateJournalVoucherDetailDto {
   @IsOptional()
   refBillNo?: string;       // Bill/ref number for this line
 
-  @IsBoolean()
+  @IsString()
   @IsOptional()
-  isTaxApplicable?: boolean;
+  refBillNo2?: string;
+
+  @IsString()
+  @IsOptional()
+  taxType?: string;
 }
 
 export class CreateJournalVoucherDto {
@@ -51,8 +55,8 @@ export class CreateJournalVoucherDto {
   jvDate: Date;
 
   @IsString()
-  @IsNotEmpty()
-  description: string;
+  @IsOptional()
+  description?: string;
 
   @IsString()
   @IsOptional()

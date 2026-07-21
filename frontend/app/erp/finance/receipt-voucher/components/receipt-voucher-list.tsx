@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
@@ -12,9 +13,11 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Printer, Download, Plus, CreditCard, Wallet, Eye } from "lucide-react";
+import { Printer, Download, Plus, CreditCard, Wallet, Eye, Loader2 } from "lucide-react";
 import { ChartOfAccount } from "@/lib/actions/chart-of-account";
 import { ReceiptVoucher } from "@/lib/actions/receipt-voucher";
+import { queueReceiptVouchersExport } from "@/lib/actions/receipt-voucher";
+import { ReceiptVoucherPrint } from "./receipt-voucher-print";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -51,13 +54,56 @@ export function ReceiptVoucherList({
     };
 }) {
     const [type, setType] = useState<"bank" | "cash">("bank");
-    const [fromDate, setFromDate] = useState<Date | undefined>(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-    const [toDate, setToDate] = useState<Date | undefined>(new Date());
+    const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
+    const [toDate, setToDate] = useState<Date | undefined>(undefined);
     const [selectedAccount, setSelectedAccount] = useState<string>("all");
     const [status, setStatus] = useState<string>("all");
     const [vouchers, setVouchers] = useState<ReceiptVoucher[]>(initialData);
     const [showFilterInfo, setShowFilterInfo] = useState(false);
     const [localDrafts, setLocalDrafts] = useState<LocalDraft[]>([]);
+    const [printingVoucher, setPrintingVoucher] = useState<ReceiptVoucher | null>(null);
+    const [isExporting, setIsExporting] = useState(false);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    const handleExport = async () => {
+        setIsExporting(true);
+        try {
+            const result = await queueReceiptVouchersExport({
+                type:     type,
+                status:   status !== "all" ? status : undefined,
+                dateFrom: fromDate ? fromDate.toISOString().split("T")[0] : undefined,
+                dateTo:   toDate   ? toDate.toISOString().split("T")[0]   : undefined,
+            });
+            if (result.status) {
+                toast.success("Export queued! You'll receive a notification when your file is ready.");
+            } else {
+                toast.error(result.message || "Failed to queue export.");
+            }
+        } catch {
+            toast.error("An unexpected error occurred while queuing export.");
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    useEffect(() => {
+        const handleAfterPrint = () => {
+            setPrintingVoucher(null);
+        };
+        window.addEventListener("afterprint", handleAfterPrint);
+        return () => window.removeEventListener("afterprint", handleAfterPrint);
+    }, []);
+
+    const handlePrint = (voucher: ReceiptVoucher) => {
+        setPrintingVoucher(voucher);
+        setTimeout(() => {
+            window.print();
+        }, 100);
+    };
 
     useEffect(() => {
         const draftsJson = localStorage.getItem("receipt-voucher-drafts");
@@ -127,57 +173,74 @@ export function ReceiptVoucherList({
                 const debitLines  = row.original.details.filter(d => Number(d.debit)  > 0);
                 const creditLines = row.original.details.filter(d => Number(d.credit) > 0);
                 return (
-                    <div className="space-y-0.5 min-w-[200px]">
-                        {/* Debit lines — from details if present, else fallback to header */}
-                        {debitLines.length > 0
-                            ? debitLines.map((d, di) => (
-                                <div key={`dr-${di}`} className="space-y-0.5">
-                                    <div className="flex justify-between text-xs gap-3">
-                                        <span className="text-blue-600 font-medium truncate max-w-[150px]">
-                                            {d.accountCode ? `${d.accountCode} ` : ""}{d.accountName}
+                    <div className="flex flex-col">
+                        <div className="space-y-0.5 min-w-[280px] max-h-36 overflow-y-auto pr-1.5 border border-muted/20 rounded-md p-1.5 bg-muted/10">
+                            {/* Debit lines — from details if present, else fallback to header */}
+                            {debitLines.length > 0
+                                ? debitLines.map((d, di) => (
+                                    <div key={`dr-${di}`} className="space-y-0.5">
+                                        <div className="flex justify-between text-xs gap-3">
+                                            <span className="text-blue-600 font-medium truncate max-w-[150px]">
+                                                {d.accountCode ? `${d.accountCode} ` : ""}{d.accountName}
+                                            </span>
+                                            <span className="font-bold tabular-nums shrink-0">
+                                                {Number(d.debit).toLocaleString("en-PK", { minimumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                        {(d.tagAccountCode || d.tagAccountName) && (
+                                            <span className="block text-[9px] text-muted-foreground uppercase pl-2">
+                                                ↳ {d.tagAccountCode ? `${d.tagAccountCode} ` : ""}{d.tagAccountName}
+                                            </span>
+                                        )}
+                                        {d.narration && (
+                                            <span className="block text-[10px] text-muted-foreground italic pl-2">
+                                                {d.narration}
+                                            </span>
+                                        )}
+                                    </div>
+                                ))
+                                : (
+                                    <div className="flex justify-between text-xs font-medium gap-3">
+                                        <span className="text-blue-600 truncate max-w-[150px]">
+                                            {row.original.debitAccountName}
                                         </span>
                                         <span className="font-bold tabular-nums shrink-0">
-                                            {Number(d.debit).toLocaleString("en-PK", { minimumFractionDigits: 2 })}
+                                            {row.original.debitAmount.toLocaleString("en-PK", { minimumFractionDigits: 2 })}
                                         </span>
                                     </div>
+                                )
+                            }
+                            {/* Divider */}
+                            <div className="border-t border-dashed border-border my-0.5" />
+                            {/* Credit lines */}
+                            {creditLines.map((d, ci) => (
+                                <div key={`cr-${ci}`} className="space-y-0.5 opacity-70 italic">
+                                    <div className="flex justify-between text-xs gap-3">
+                                        <span className="text-green-600 truncate max-w-[150px]">
+                                            (Cr: {d.accountCode ? `${d.accountCode} ` : ""}{d.accountName})
+                                        </span>
+                                        <span className="tabular-nums shrink-0">
+                                            {Number(d.credit).toLocaleString("en-PK", { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                    {(d.tagAccountCode || d.tagAccountName) && (
+                                        <span className="block text-[9px] text-muted-foreground uppercase pl-4">
+                                            ↳ {d.tagAccountCode ? `${d.tagAccountCode} ` : ""}{d.tagAccountName}
+                                        </span>
+                                    )}
                                     {d.narration && (
-                                        <span className="block text-[10px] text-muted-foreground italic pl-2">
+                                        <span className="block text-[10px] text-muted-foreground pl-2">
                                             {d.narration}
                                         </span>
                                     )}
                                 </div>
-                            ))
-                            : (
-                                <div className="flex justify-between text-xs font-medium gap-3">
-                                    <span className="text-blue-600 truncate max-w-[150px]">
-                                        {row.original.debitAccountName}
-                                    </span>
-                                    <span className="font-bold tabular-nums shrink-0">
-                                        {row.original.debitAmount.toLocaleString("en-PK", { minimumFractionDigits: 2 })}
-                                    </span>
-                                </div>
-                            )
-                        }
-                        {/* Divider */}
-                        <div className="border-t border-dashed border-border my-0.5" />
-                        {/* Credit lines */}
-                        {creditLines.map((d, ci) => (
-                            <div key={`cr-${ci}`} className="space-y-0.5 opacity-70 italic">
-                                <div className="flex justify-between text-xs gap-3">
-                                    <span className="text-green-600 truncate max-w-[150px]">
-                                        (Cr: {d.accountCode ? `${d.accountCode} ` : ""}{d.accountName})
-                                    </span>
-                                    <span className="tabular-nums shrink-0">
-                                        {Number(d.credit).toLocaleString("en-PK", { minimumFractionDigits: 2 })}
-                                    </span>
-                                </div>
-                                {d.narration && (
-                                    <span className="block text-[10px] text-muted-foreground pl-2">
-                                        {d.narration}
-                                    </span>
-                                )}
+                            ))}
+                        </div>
+                        {row.original.details.length > 5 && (
+                            <div className="text-[10px] text-muted-foreground font-semibold mt-1 text-center">
+                                Total {row.original.details.length} lines (scroll to see all)
                             </div>
-                        ))}
+                        )}
                     </div>
                 );
             }
@@ -199,17 +262,28 @@ export function ReceiptVoucherList({
             id: "actions",
             header: "",
             cell: ({ row }) => (
-                <Link
-                    href={`/erp/finance/receipt-voucher/${row.original.id}`}
-                    transitionTypes={["nav-forward"]}
-                >
-                    <Button variant="ghost" size="icon" className="h-7 w-7">
-                        <Eye className="h-3.5 w-3.5" />
+                <div className="flex items-center gap-1.5">
+                    <Link
+                        href={`/erp/finance/receipt-voucher/${row.original.id}`}
+                        transitionTypes={["nav-forward"]}
+                    >
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="View Details">
+                            <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                    </Link>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handlePrint(row.original)}
+                        className="h-7 w-7 hover:bg-muted text-primary"
+                        title="Print Voucher"
+                    >
+                        <Printer className="h-3.5 w-3.5" />
                     </Button>
-                </Link>
+                </div>
             )
         }
-    ], []);
+    ], [handlePrint]);
 
     const filteredData = useMemo(() => {
         return vouchers.filter(v => {
@@ -243,9 +317,11 @@ export function ReceiptVoucherList({
                         <Printer className="mr-2 h-4 w-4" />
                         Print
                     </Button>
-                    <Button variant="outline">
-                        <Download className="mr-2 h-4 w-4" />
-                        Export (xlsx)
+                    <Button variant="outline" onClick={handleExport} disabled={isExporting}>
+                        {isExporting
+                            ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            : <Download className="mr-2 h-4 w-4" />}
+                        {isExporting ? "Queuing..." : "Export (xlsx)"}
                     </Button>
                 </div>
             </div>
@@ -398,6 +474,67 @@ export function ReceiptVoucherList({
                     </CardContent>
                 </Card>
             </Tabs>
+
+            {/* Hidden Print Section */}
+            {mounted && typeof window !== "undefined" && printingVoucher && createPortal(
+                <>
+                    <style dangerouslySetInnerHTML={{ __html: `
+                        @media print {
+                          html, body {
+                            height: auto !important;
+                            overflow: visible !important;
+                            background: white !important;
+                            color: black !important;
+                          }
+                          body > *:not(#rv-print-section) {
+                            display: none !important;
+                          }
+                          #rv-print-section, #rv-print-section * {
+                            visibility: visible !important;
+                          }
+                          #rv-print-section {
+                            display: block !important;
+                            position: relative !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 100% !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            background: white !important;
+                            color: black !important;
+                            z-index: 99999 !important;
+                          }
+                          tr {
+                            page-break-inside: avoid;
+                            break-inside: avoid;
+                          }
+                          thead {
+                            display: table-header-group;
+                          }
+                          tfoot {
+                            display: table-footer-group;
+                          }
+                          @page {
+                            margin: 10mm;
+                            size: A4 portrait;
+                          }
+                        }
+                    `}} />
+                    <div 
+                        id="rv-print-section" 
+                        style={{
+                            position: "fixed",
+                            left: "-9999px",
+                            top: 0,
+                            pointerEvents: "none",
+                        }}
+                        aria-hidden="true"
+                    >
+                        <ReceiptVoucherPrint voucher={printingVoucher} />
+                    </div>
+                </>,
+                document.body
+            )}
         </div>
     );
 }

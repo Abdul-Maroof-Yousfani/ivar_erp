@@ -17,14 +17,17 @@ model AccountTransaction {
   sourceId        String
   /// Human-readable reference e.g. BP/2026/5/4069, JV-2026-0001
   sourceRef       String
+  sourceDetailId  String?
+  cprNo           String?
 
   // ── Per-line details ──────────────────────────────────────────────────────
   /// Per-line narration (overrides voucher-level description for this line)
   narration       String?
   /// Bill / reference number tied to this specific line (e.g. CW-M076-2026-05)
   refBillNo       String?
+  refBillNo2      String?
   /// Whether this line is subject to withholding tax
-  isTaxApplicable Boolean         @default(false)
+  taxType         String          @default("Taxable")
 
   // ── Legacy / fallback description ────────────────────────────────────────
   description     String?

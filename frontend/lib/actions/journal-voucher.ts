@@ -15,14 +15,19 @@ export interface JournalVoucherDetail {
     credit: number;
     narration?: string;
     refBillNo?: string;
-    isTaxApplicable?: boolean;
+    refBillNo2?: string;
+    taxType?: string;
 }
 
 export interface JournalVoucher {
     id: string;
     jvNo: string;
+    folio?: string | null;
     jvDate: string;
-    description: string;
+    description?: string;
+    refBillNo?: string;
+    refBillNo2?: string;
+    taxType?: string;
     details: JournalVoucherDetail[];
     status: "pending" | "approved" | "rejected";
     createdAt: string;
@@ -181,3 +186,33 @@ export async function deleteJournalVoucher(id: string) {
         return { status: false, message: error.message || "An unexpected error occurred" };
     }
 }
+
+// ── Background export ─────────────────────────────────────────────────────────
+export async function queueJournalVouchersExport(opts?: {
+    status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+}): Promise<{ status: boolean; jobId?: string; message?: string }> {
+    try {
+        const params = new URLSearchParams();
+        if (opts?.status   && opts.status   !== 'all') params.set('status',   opts.status);
+        if (opts?.dateFrom)                             params.set('dateFrom', opts.dateFrom);
+        if (opts?.dateTo)                               params.set('dateTo',   opts.dateTo);
+
+        const response = await authFetch(
+            `/finance/journal-vouchers/export?${params.toString()}`,
+            { method: 'POST' },
+        );
+
+        if (!response.ok) {
+            const err = response.data || {};
+            return { status: false, message: err.message || 'Failed to queue export' };
+        }
+
+        const result = response.data;
+        return { status: true, jobId: result?.data?.jobId };
+    } catch (error: any) {
+        return { status: false, message: error.message || 'An unexpected error occurred' };
+    }
+}
+

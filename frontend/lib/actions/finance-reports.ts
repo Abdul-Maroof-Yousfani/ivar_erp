@@ -206,3 +206,50 @@ export async function queueGeneralLedgerExport(
     return { status: false, message: e.message };
   }
 }
+
+export interface GeneralLedgerSummaryRow {
+  id: string;
+  code: string;
+  name: string;
+  openingBalance: number;
+  debit: number;
+  credit: number;
+  closingBalance: number;
+}
+
+export interface GeneralLedgerSummaryResult {
+  parentAccount: {
+    id: string;
+    code: string;
+    name: string;
+    type: string;
+  };
+  rows: GeneralLedgerSummaryRow[];
+  totals: {
+    openingBalance: number;
+    debit: number;
+    credit: number;
+    closingBalance: number;
+  };
+}
+
+export async function getGeneralLedgerSummary(
+  parentAccountId: string,
+  subAccountIds: string[],
+  from?: string,
+  to?: string,
+): Promise<{ status: boolean; data?: GeneralLedgerSummaryResult; message?: string }> {
+  try {
+    const params = new URLSearchParams({ parentAccountId });
+    if (subAccountIds && subAccountIds.length > 0) {
+      params.append("subAccountIds", subAccountIds.join(","));
+    }
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+
+    const res = await authFetch(`/finance/reports/general-ledger-summary?${params.toString()}`, {});
+    return res.data;
+  } catch (e: any) {
+    return { status: false, message: e.message };
+  }
+}

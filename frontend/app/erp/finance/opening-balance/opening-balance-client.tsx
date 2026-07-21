@@ -48,17 +48,19 @@ export function OpeningBalanceClient() {
     const res = await getChartOfAccounts();
     if (res.data) {
       setAccounts(res.data);
-      const flat = flattenAccounts(res.data);
+      const tree = buildTree(res.data);
+      const flat = flattenTree(tree);
       setFlatAccounts(flat);
       
       // Initialize entries
       const initialEntries: Record<string, OpeningBalanceEntry> = {};
       flat.forEach(acc => {
         if (!acc.isGroup) {
+          const bal = acc.balance || 0;
           initialEntries[acc.id] = {
             accountId: acc.id,
-            type: acc.type === "ASSET" || acc.type === "EXPENSE" ? "DEBIT" : "CREDIT",
-            amount: 0,
+            type: bal > 0 ? "DEBIT" : bal < 0 ? "CREDIT" : (acc.type === "ASSET" || acc.type === "EXPENSE" ? "DEBIT" : "CREDIT"),
+            amount: Math.abs(bal),
           };
         }
       });
@@ -66,12 +68,52 @@ export function OpeningBalanceClient() {
     }
   };
 
-  const flattenAccounts = (accounts: Account[], level = 0): Account[] => {
+  const buildTree = (flat: Account[]): Account[] => {
+    const map = new Map<string, Account>();
+    const roots: Account[] = [];
+
+    flat.forEach((item) => map.set(item.id, { ...item, children: [] }));
+
+    flat.forEach((item) => {
+      const node = map.get(item.id)!;
+      if (item.parentId && map.has(item.parentId)) {
+        map.get(item.parentId)!.children!.push(node);
+      } else {
+        roots.push(node);
+      }
+    });
+
+    // Contract/bypass redundant nested group nodes with the exact same name (case-insensitive)
+    const contract = (nodes: Account[], parentName?: string): Account[] => {
+      const result: Account[] = [];
+      for (const node of nodes) {
+        if (node.children && node.children.length > 0) {
+          node.children = contract(node.children, node.name);
+        }
+        if (
+          parentName &&
+          node.isGroup &&
+          node.name.toLowerCase().replace(/\s+/g, ' ').trim() === parentName.toLowerCase().replace(/\s+/g, ' ').trim()
+        ) {
+          if (node.children) {
+            result.push(...node.children);
+          }
+        } else {
+          result.push(node);
+        }
+      }
+      return result;
+    };
+
+    return contract(roots);
+  };
+
+  const flattenTree = (nodes: Account[], level = 0): Account[] => {
     let result: Account[] = [];
-    accounts.forEach(acc => {
+    nodes.forEach(acc => {
       result.push({ ...acc, level });
       if (acc.children && acc.children.length > 0) {
-        result = result.concat(flattenAccounts(acc.children, level + 1));
+        result = result.concat(flattenTree(acc.children, level + 1));
       }
     });
     return result;
@@ -126,7 +168,7 @@ export function OpeningBalanceClient() {
     if (account.isGroup) {
       return (
         <tr key={account.id} className="bg-muted/20 border-t dark:border-border">
-          <td colSpan={6} className="px-4 py-2 font-bold text-xs uppercase tracking-widest text-muted-foreground">
+          <td colSpan={6} className="px-4 py-2 font-bold text-xs uppercase tracking-widest text-muted-foreground" style={{ paddingLeft: `${16 + (account.level || 0) * 16}px` }}>
             {account.code} - {account.name}
           </td>
         </tr>

@@ -61,7 +61,7 @@ export default function EditReceiptVoucherPage({
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto px-4 py-8">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <Button variant="outline" size="sm" asChild>
           <Link href={`/erp/finance/receipt-voucher/${id}`}>

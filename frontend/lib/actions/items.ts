@@ -5,6 +5,29 @@ import { revalidatePath } from "next/cache";
 
 function sanitizeItemData(data: any) {
     const sanitized = { ...data };
+
+    // Strip properties that are not part of CreateItemDto / UpdateItemDto or read-only / auto-generated
+    delete sanitized.id;
+    delete sanitized.itemId;
+    delete sanitized.uniqueNo;
+    delete sanitized.uomId;
+    delete sanitized.createdAt;
+    delete sanitized.updatedAt;
+    delete sanitized.brand;
+    delete sanitized.division;
+    delete sanitized.category;
+    delete sanitized.subCategory;
+    delete sanitized.itemClass;
+    delete sanitized.itemSubclass;
+    delete sanitized.channelClass;
+    delete sanitized.gender;
+    delete sanitized.season;
+    delete sanitized.size;
+    delete sanitized.color;
+    delete sanitized.silhouette;
+    delete sanitized.segment;
+    delete sanitized.hsCode;
+
     // List of keys that are optional UUIDs or might be empty strings should be removed or set to undefined
     const keysToCheck = [
         "brandId",
@@ -32,6 +55,7 @@ function sanitizeItemData(data: any) {
     // Also sanitizing other string fields if they are empty
     if (sanitized.barCode === "") sanitized.barCode = undefined;
     if (sanitized.hsCode === "") sanitized.hsCode = undefined;
+    if (sanitized.hsCodeStr === "") sanitized.hsCodeStr = undefined;
     if (sanitized.description === "") sanitized.description = undefined;
     if (sanitized.imageUrl === "") sanitized.imageUrl = undefined;
     if (sanitized.case === "") sanitized.case = undefined;

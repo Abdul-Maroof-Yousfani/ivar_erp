@@ -38,9 +38,13 @@ export class CreateReceiptVoucherDetailDto {
   @IsOptional()
   refBillNo?: string;
 
-  @IsBoolean()
+  @IsString()
   @IsOptional()
-  isTaxApplicable?: boolean;
+  refBillNo2?: string;
+
+  @IsString()
+  @IsOptional()
+  taxType?: string;
 }
 
 export class CreateReceiptVoucherInvoiceDto {
@@ -105,13 +109,13 @@ export class CreateReceiptVoucherDto {
   @IsOptional()
   isAdvance?: boolean;
 
-  @IsBoolean()
+  @IsString()
   @IsOptional()
-  isTaxApplicable?: boolean;
+  taxType?: string;
 
   @IsString()
-  @IsNotEmpty()
-  description: string;
+  @IsOptional()
+  description?: string;
 
   @IsString()
   @IsOptional()

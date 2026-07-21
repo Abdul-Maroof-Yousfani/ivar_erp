@@ -1,14 +1,6 @@
 import { getJournalVouchers } from "@/lib/actions/journal-voucher";
 import { getChartOfAccounts } from "@/lib/actions/chart-of-account";
 import { JournalVoucherList } from "../components/journal-voucher-list";
-import {
-    Breadcrumb,
-    BreadcrumbItem,
-    BreadcrumbLink,
-    BreadcrumbList,
-    BreadcrumbPage,
-    BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { hasPermission } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";

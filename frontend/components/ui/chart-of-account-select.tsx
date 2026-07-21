@@ -31,7 +31,7 @@ export function clearCachedTree(): void {
     _fetchPromise = null;
 }
 
-async function fetchTree(): Promise<ChartOfAccount[]> {
+export async function fetchSharedTree(): Promise<ChartOfAccount[]> {
     if (_cachedTree) return _cachedTree;
     if (_fetchPromise) return _fetchPromise;
 
@@ -53,6 +53,8 @@ async function fetchTree(): Promise<ChartOfAccount[]> {
 
     return _fetchPromise;
 }
+
+const fetchTree = fetchSharedTree;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
