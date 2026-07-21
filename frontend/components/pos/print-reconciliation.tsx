@@ -312,7 +312,7 @@ export function PrintReconciliation({ sessionId, open, onOpenChange }: PrintReco
         const dateRange = openedStr === closedStr ? openedStr : `${openedStr} - ${closedStr}`;
 
         return {
-            companyName: "Speed (Private) Limited",
+            companyName: "IVAR",
             locationName: session.terminal?.locationName || "Nike-Dolmen Clifton",
             reportTitle: "Sales Reconciliation",
             dateRange: dateRange,
