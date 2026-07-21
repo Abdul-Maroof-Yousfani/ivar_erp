@@ -1,14 +1,17 @@
 import { z } from "zod";
 
+export const taxTypeEnum = z.enum(["Taxable", "BTL", "REIMB", "Exempt", ""]);
+
 export const paymentVoucherDetailSchema = z.object({
-    accountId:       z.string().min(1, "Account is required"),
-    tagAccountId:    z.string().optional(),
-    debit:           z.coerce.number().min(0).transform(v => Math.round(v)).default(0),
-    credit:          z.coerce.number().min(0).transform(v => Math.round(v)).default(0),
-    narration:       z.string().optional(),   // per-line narration
-    refBillNo:       z.string().optional(),   // per-line bill ref
-    isTaxApplicable: z.boolean().optional(),  // per-line tax flag
-    taxableValue:    z.coerce.number().optional().default(0), // base value for calculation
+    accountId:    z.string().min(1, "Account is required"),
+    tagAccountId: z.string().optional(),
+    debit:        z.coerce.number().min(0).transform(v => Math.round(v)).default(0),
+    credit:       z.coerce.number().min(0).transform(v => Math.round(v)).default(0),
+    narration:    z.string().optional(),   // per-line narration
+    refBillNo:    z.string().optional(),   // per-line bill ref
+    refBillNo2:   z.string().optional(),
+    taxType:      taxTypeEnum.default(""),
+    taxableValue: z.coerce.number().optional().default(0), // base value for calculation
 });
 
 export const paymentVoucherInvoiceSchema = z.object({
@@ -25,7 +28,7 @@ export const paymentVoucherSchema = z.object({
     }),
     refBillNo: z.string().optional(),
     billDate: z.date().optional(),
-    // Bank specific fields
+    // Bank specific fields (optional)
     chequeNo: z.string().optional(),
     chequeDate: z.date().optional(),
     // Optional fields (not required anymore)
@@ -35,17 +38,9 @@ export const paymentVoucherSchema = z.object({
     supplierId: z.string().optional(),
     invoices: z.array(paymentVoucherInvoiceSchema).optional(),
 
-    isTaxApplicable: z.boolean().default(false),
+    taxType: taxTypeEnum.default(""),
     description: z.string().optional(),
     details: z.array(paymentVoucherDetailSchema).min(1, "At least one detail row is required"),
-}).refine(data => {
-    if (data.type === "bank") {
-        return !!data.chequeNo && !!data.chequeDate;
-    }
-    return true;
-}, {
-    message: "Cheque details are required for Bank payments",
-    path: ["chequeNo"],
 }).refine(data => {
     const totalDebit = data.details.reduce((sum, item) => sum + (item.debit || 0), 0);
     const totalCredit = data.details.reduce((sum, item) => sum + (item.credit || 0), 0);
@@ -56,3 +51,4 @@ export const paymentVoucherSchema = z.object({
 });
 
 export type PaymentVoucherFormValues = z.infer<typeof paymentVoucherSchema>;
+
