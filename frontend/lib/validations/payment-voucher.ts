@@ -36,7 +36,7 @@ export const paymentVoucherSchema = z.object({
     invoices: z.array(paymentVoucherInvoiceSchema).optional(),
 
     isTaxApplicable: z.boolean().default(false),
-    description: z.string().min(1, "Description is required"),
+    description: z.string().optional(),
     details: z.array(paymentVoucherDetailSchema).min(1, "At least one detail row is required"),
 }).refine(data => {
     if (data.type === "bank") {

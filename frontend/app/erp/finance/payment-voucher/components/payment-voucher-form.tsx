@@ -2158,7 +2158,7 @@ export function PaymentVoucherForm({ initialData }: { initialData?: any }) {
                     </div>
 
                     <div className="space-y-2 pt-4">
-                        <Label htmlFor="description" className="text-xs text-muted-foreground uppercase font-semibold">Description</Label>
+                        <Label htmlFor="description" className="text-xs text-muted-foreground uppercase font-semibold">Description (Optional)</Label>
                         <Textarea
                             id="description"
                             placeholder="Enter payment description..."
