@@ -1221,6 +1221,38 @@ export const PERMISSIONS = [
     description: 'Approve Receipt Voucher',
   },
 
+  // Finance Reports
+  {
+    name: 'erp.finance.general-ledger.read',
+    module: 'erp.finance.general-ledger',
+    action: 'read',
+    description: 'Read General Ledger',
+  },
+  {
+    name: 'erp.finance.general-ledger-summary.read',
+    module: 'erp.finance.general-ledger-summary',
+    action: 'read',
+    description: 'Read General Ledger Summary',
+  },
+  {
+    name: 'erp.finance.trial-balance.read',
+    module: 'erp.finance.trial-balance',
+    action: 'read',
+    description: 'Read Trial Balance',
+  },
+  {
+    name: 'erp.finance.balance-sheet.read',
+    module: 'erp.finance.balance-sheet',
+    action: 'read',
+    description: 'Read Balance Sheet',
+  },
+  {
+    name: 'erp.finance.profit-loss.read',
+    module: 'erp.finance.profit-loss',
+    action: 'read',
+    description: 'Read Profit & Loss',
+  },
+
   // Brand
   {
     name: 'master.brand.create',
@@ -1976,7 +2008,6 @@ export const PERMISSIONS = [
   // ── POS — New Sale ──────────────────────────────────────────────────────────
   { name: 'pos.sale.create', description: 'Create a New POS Sale' },
   { name: 'pos.sale.item-discount', description: 'Apply Per-Item Discount Override on Cart' },
-  { name: 'pos.sale.transit-override', description: 'Mark Items as Stock-in-Transit (sell without stock)' },
 
   // ── POS — Checkout / Discounts ──────────────────────────────────────────────
   { name: 'pos.checkout.promo', description: 'Apply Promo Campaign Discount at Checkout' },
@@ -2027,6 +2058,9 @@ export const PERMISSIONS = [
 
   // ── POS — Dashboard ─────────────────────────────────────────────────────────
   { name: 'pos.dashboard.view', description: 'View POS Dashboard & Stats' },
+  { name: 'pos.report.view', description: 'View POS Reports' },
+
+
 
   // ── Profile Management ──────────────────────────────────────────────────────
   { name: 'profile.update', description: 'Update Own Profile Information' },

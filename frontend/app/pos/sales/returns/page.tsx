@@ -65,7 +65,7 @@ interface ReturnLine {
 }
 
 interface NewLine { itemId: string; name: string; sku: string; size?: string; color?: string; quantity: number; unitPrice: number; discountPct: number; }
-interface LoadedOrder { id: string; orderNumber: string; grandTotal: number; createdAt: string; items: any[]; coupon?: string; promo?: string; alliance?: string; }
+interface LoadedOrder { id: string; orderNumber: string; grandTotal: number; createdAt: string; items: any[]; coupon?: string; promo?: string; alliance?: string; locationName?: string; locationId?: string; }
 
 export default function ReturnsPage() {
     const router = useRouter();
@@ -151,7 +151,7 @@ export default function ReturnsPage() {
         }
         setIsSearching(true);
         try {
-            const res = await authFetch("/pos-sales/orders", { params: { search: orderSearch.trim(), limit: 5 } });
+            const res = await authFetch("/pos-sales/orders/search-for-return", { params: { search: orderSearch.trim() } });
             if (res.ok && res.data?.status) {
                 const found = res.data.data?.[0];
                 if (!found) { toast.error("Order not found"); return; }
@@ -164,6 +164,8 @@ export default function ReturnsPage() {
                     coupon: found.coupon?.code || undefined,
                     promo: found.promo?.code || undefined,
                     alliance: found.alliance?.code || undefined,
+                    locationName: found.location?.name || undefined,
+                    locationId: found.locationId || undefined,
                 }]);
 
                 // Append return lines for this order (qty = 0 by default)
@@ -501,6 +503,11 @@ export default function ReturnsPage() {
                                     <Receipt className="h-3 w-3 shrink-0" />
                                 </div>
                                 <span className="font-mono font-extrabold text-emerald-700 dark:text-emerald-300 text-sm tracking-wide">{o.orderNumber}</span>
+                                {o.locationName && (
+                                    <Badge variant="outline" className="bg-emerald-100/60 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 border-emerald-300 text-[10px] font-medium py-0 px-2">
+                                        Sold at: {o.locationName}
+                                    </Badge>
+                                )}
                                 <div className="h-3 w-px bg-emerald-300/60 dark:bg-emerald-700/60" />
                                 <span className="text-emerald-600 dark:text-emerald-400 font-bold text-xs">{formatCurrency(o.grandTotal)}</span>
                                 <button 

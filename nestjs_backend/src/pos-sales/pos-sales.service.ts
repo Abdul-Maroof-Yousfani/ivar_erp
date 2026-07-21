@@ -9,6 +9,9 @@ import { VoucherService } from '../pos-config/voucher.service';
 
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { runInBackground } from '../common/utils/run-in-background.util';
+import { NotificationsService } from '../notifications/notifications.service';
+import { StockMovementService } from '../warehouse/stock-movement.service';
+
 @Injectable()
 export class PosSalesService implements OnModuleInit {
     private readonly logger = new Logger(PosSalesService.name);
@@ -20,6 +23,8 @@ export class PosSalesService implements OnModuleInit {
         private fbrService: FbrService,
         private activityLogs: ActivityLogsService,
         private voucherService: VoucherService,
+        private notificationsService: NotificationsService,
+        private stockMovementService: StockMovementService,
     ) { }
 
       // ─── Schedule midnight hold-clear ─────────────────────────────────
@@ -929,6 +934,145 @@ export class PosSalesService implements OnModuleInit {
                 error: err.message || 'Unknown integration error',
             };
         }
+    }
+
+    // ─── Search order for return (unrestricted by location / POS) ─────
+    async searchOrderForReturn(orderNumber: string) {
+        if (!orderNumber || !orderNumber.trim()) {
+            return { status: false, message: 'Order number is required' };
+        }
+
+        const cleanSearch = orderNumber.trim();
+        const rawOrders = await this.prisma.salesOrder.findMany({
+            where: {
+                orderNumber: { contains: cleanSearch, mode: 'insensitive' },
+                status: { notIn: ['hold', 'hold_expired', 'hold_cancelled'] },
+            },
+            take: 10,
+            orderBy: { createdAt: 'desc' },
+            include: {
+                items: {
+                    include: {
+                        item: {
+                            select: {
+                                description: true,
+                                sku: true,
+                                barCode: true,
+                                size: { select: { name: true } },
+                                color: { select: { name: true } },
+                                brand: { select: { name: true } },
+                            },
+                        },
+                    },
+                },
+                promo: { select: { name: true, code: true } },
+                coupon: { select: { code: true, description: true } },
+                alliance: { select: { partnerName: true, code: true, discountPercent: true, maxDiscount: true } },
+                merchant: { select: { id: true, bankName: true, description: true, commissionRate: true, bankGlCode: true } },
+                voucherRedemptions: { select: { amountUsed: true, voucher: { select: { code: true, faceValue: true } } } },
+            },
+        });
+
+        if (rawOrders.length === 0) {
+            return { status: false, message: `Order matching "${cleanSearch}" not found` };
+        }
+
+        const orderIds = rawOrders.map(o => o.id);
+        const returnEntries = await this.prisma.stockLedger.findMany({
+            where: {
+                referenceType: { in: ['POS_RETURN', 'POS_REFUND'] },
+                referenceId: { in: orderIds },
+            },
+            select: { referenceId: true, itemId: true, qty: true, referenceType: true },
+        });
+
+        const returnedQtyMap = new Map<string, Map<string, number>>();
+        const orderReturnFlags = new Map<string, { hasReturn: boolean; hasRefund: boolean }>();
+        for (const entry of returnEntries) {
+            if (!returnedQtyMap.has(entry.referenceId)) {
+                returnedQtyMap.set(entry.referenceId, new Map());
+            }
+            const itemMap = returnedQtyMap.get(entry.referenceId)!;
+            const current = itemMap.get(entry.itemId) || 0;
+            itemMap.set(entry.itemId, current + Math.abs(Number(entry.qty)));
+
+            if (!orderReturnFlags.has(entry.referenceId)) {
+                orderReturnFlags.set(entry.referenceId, { hasReturn: false, hasRefund: false });
+            }
+            const flags = orderReturnFlags.get(entry.referenceId)!;
+            if (entry.referenceType === 'POS_RETURN') flags.hasReturn = true;
+            if (entry.referenceType === 'POS_REFUND') flags.hasRefund = true;
+        }
+
+        const claims = await this.prisma.posClaim.findMany({
+            where: { salesOrderId: { in: orderIds } },
+            select: {
+                id: true,
+                claimNumber: true,
+                salesOrderId: true,
+                status: true,
+                items: {
+                    select: { itemId: true, claimedQty: true, approvedQty: true, itemStatus: true },
+                },
+            },
+        });
+
+        const claimsMap = new Map<string, any[]>();
+        for (const claim of claims) {
+            if (!claimsMap.has(claim.salesOrderId)) {
+                claimsMap.set(claim.salesOrderId, []);
+            }
+            claimsMap.get(claim.salesOrderId)!.push(claim);
+        }
+
+        const locIds = [...new Set(rawOrders.map(o => o.locationId).filter(Boolean))] as string[];
+        const locations = locIds.length > 0
+            ? await this.prisma.location.findMany({ where: { id: { in: locIds } }, select: { id: true, name: true, code: true, shortCode: true } })
+            : [];
+        const locationMap = new Map(locations.map(l => [l.id, l]));
+
+        const orders = rawOrders.map(order => {
+            const itemMap = returnedQtyMap.get(order.id);
+            const orderClaims = claimsMap.get(order.id) || [];
+            const claimedQtyMap = new Map<string, { claimed: number; approved: number }>();
+            for (const claim of orderClaims) {
+                for (const claimItem of claim.items) {
+                    const current = claimedQtyMap.get(claimItem.itemId) || { claimed: 0, approved: 0 };
+                    const isRejected = claim.status === 'REJECTED' || claim.status === 'CANCELLED' || claimItem.itemStatus === 'REJECTED';
+                    let claimedToAdd = 0;
+                    if (isRejected) {
+                        claimedToAdd = 0;
+                    } else if (claimItem.itemStatus === 'APPROVED' || claimItem.itemStatus === 'PARTIALLY_APPROVED') {
+                        claimedToAdd = Number(claimItem.approvedQty);
+                    } else {
+                        claimedToAdd = Number(claimItem.claimedQty);
+                    }
+                    claimedQtyMap.set(claimItem.itemId, {
+                        claimed: current.claimed + claimedToAdd,
+                        approved: current.approved + Number(claimItem.approvedQty),
+                    });
+                }
+            }
+
+            const enrichedItems = order.items.map(oi => ({
+                ...oi,
+                returnedQty: itemMap?.get(oi.itemId) || 0,
+                claimedQty: claimedQtyMap.get(oi.itemId)?.claimed || 0,
+                approvedClaimQty: claimedQtyMap.get(oi.itemId)?.approved || 0,
+            }));
+
+            const returnFlags = orderReturnFlags.get(order.id) || { hasReturn: false, hasRefund: false };
+            return {
+                ...order,
+                location: order.locationId ? locationMap.get(order.locationId) || null : null,
+                items: enrichedItems,
+                claims: orderClaims,
+                hasReturn: returnFlags.hasReturn,
+                hasRefund: returnFlags.hasRefund,
+            };
+        });
+
+        return { status: true, data: orders };
     }
 
     // ─── List orders (for session/history) ────────────────────────────
@@ -2003,6 +2147,27 @@ export class PosSalesService implements OnModuleInit {
                         });
                     }
 
+                    // Inter-location stock transfer record via StockMovementService if returned at a different branch
+                    if (order.locationId && order.locationId !== effectiveLocationId) {
+                        const origLoc = await tx.location.findUnique({ where: { id: order.locationId }, select: { name: true } });
+                        const retLoc = effectiveLocationId ? await tx.location.findUnique({ where: { id: effectiveLocationId }, select: { name: true } }) : null;
+                        const origName = origLoc?.name || 'Original Branch';
+                        const retName = retLoc?.name || 'Return Outlet';
+
+                        await this.stockMovementService.executeMovement({
+                            itemId: returnItem.itemId,
+                            fromLocationId: order.locationId,
+                            toLocationId: effectiveLocationId || undefined,
+                            quantity: returnItem.quantity,
+                            type: 'CROSS_LOCATION_RETURN_TRANSFER',
+                            referenceType: 'POS_RETURN',
+                            referenceId: order.id,
+                            notes: `Automated Stock Transfer against Sales Return #${returnNumber} (Original Order #${order.orderNumber} sold at ${origName}). Physical item received at ${retName}.`,
+                            userId: ctx?.userId,
+                            transaction: tx,
+                        }, ctx);
+                    }
+
                     // Update the map with current return
                     alreadyReturnedMap.set(returnItem.itemId, (alreadyReturnedMap.get(returnItem.itemId) || 0) + returnItem.quantity);
                 }
@@ -2014,12 +2179,19 @@ export class PosSalesService implements OnModuleInit {
                 });
 
                 const newStatus = allItemsReturned ? 'returned' : 'partially_returned';
+                const isCrossLocation = !!(order.locationId && order.locationId !== effectiveLocationId);
+                let locationNarration = '';
+                if (isCrossLocation && effectiveLocationId) {
+                    const retLoc = await tx.location.findUnique({ where: { id: effectiveLocationId }, select: { name: true } });
+                    locationNarration = ` [Cross-Location Return: Physical stock received at ${retLoc?.name || 'Return Branch'}; Stock transfer created against Order ${order.orderNumber} / SR ${returnNumber}]`;
+                }
+
                 const updatedOrder = await tx.salesOrder.update({
                     where: { id },
                     data: {
                         status: newStatus,
                         returnNumber,
-                        notes: reason ? `Return (${newStatus}): ${reason}` : order.notes,
+                        notes: `${reason ? `Return (${newStatus}): ${reason}` : order.notes || ''}${locationNarration}`.trim(),
                     },
                 });
 
@@ -2085,6 +2257,12 @@ export class PosSalesService implements OnModuleInit {
                     }
                 }
 
+                let returnLocationName = '';
+                if (effectiveLocationId && effectiveLocationId !== order.locationId) {
+                    const retLoc = await tx.location.findUnique({ where: { id: effectiveLocationId }, select: { name: true } });
+                    if (retLoc) returnLocationName = retLoc.name;
+                }
+
                 return { 
                     status: true, 
                     data: updatedOrder, 
@@ -2096,11 +2274,50 @@ export class PosSalesService implements OnModuleInit {
                         faceValue: exchangeVoucher.faceValue,
                         expiresAt: exchangeVoucher.expiresAt,
                     } : null,
+                    isCrossLocation: !!(order.locationId && order.locationId !== effectiveLocationId),
+                    originalLocationId: order.locationId,
+                    returnLocationId: effectiveLocationId,
+                    returnLocationName,
+                    orderNumber: order.orderNumber,
                     message: exchangeVoucher 
                         ? `Return processed (${newStatus}), inventory restored, and exchange voucher ${exchangeVoucher.code} issued for Rs.${Math.round(totalRefundAmount * 100) / 100}`
                         : `Return processed (${newStatus}) and inventory restored`
                 };
             });
+
+            if (result.status) {
+                this.logger.log(`[returnItems] Return processed successfully for Order #${result.orderNumber}. isCrossLocation: ${result.isCrossLocation}`);
+                
+                // 1. Notify original location if cross-location
+                if (result.isCrossLocation && result.originalLocationId) {
+                    this.notificationsService.sendPosLocationNotification({
+                        locationId: result.originalLocationId,
+                        title: 'Cross-Location Return Received',
+                        message: `Invoice #${result.orderNumber} (originally sold at your branch) had a return processed at ${result.returnLocationName || 'another store branch'}.`,
+                        category: 'pos_return',
+                        priority: 'high',
+                        entityType: 'SalesOrder',
+                        entityId: id,
+                        actionType: 'view_order',
+                        actionPayload: { orderId: id, orderNumber: result.orderNumber, returnLocationId: result.returnLocationId },
+                    }).catch(err => this.logger.error(`[returnItems] Failed to send original location notification: ${err.message}`));
+                }
+
+                // 2. Notify processing location
+                if (result.returnLocationId) {
+                    this.notificationsService.sendPosLocationNotification({
+                        locationId: result.returnLocationId,
+                        title: 'POS Sale Return Processed',
+                        message: `Return processed for Invoice #${result.orderNumber}. Refund Amount: Rs.${result.refundAmount}.`,
+                        category: 'pos_return',
+                        priority: 'high',
+                        entityType: 'SalesOrder',
+                        entityId: id,
+                        actionType: 'view_order',
+                        actionPayload: { orderId: id, orderNumber: result.orderNumber },
+                    }).catch(err => this.logger.error(`[returnItems] Failed to send return location notification: ${err.message}`));
+                }
+            }
 
             runInBackground(
                 'Return POS Order Items',
@@ -2485,6 +2702,7 @@ export class PosSalesService implements OnModuleInit {
         returnedItems: { orderItemId: string; itemId: string; quantity: number }[],
         newItems: { itemId: string; quantity: number; unitPrice: number }[],
         reason?: string,
+        exchangeLocationId?: string,
         ctx?: { userId?: string; ipAddress?: string; userAgent?: string }
     ) {
         try {
@@ -2496,43 +2714,66 @@ export class PosSalesService implements OnModuleInit {
                 const warehouse = await tx.warehouse.findFirst({ where: { isActive: true, isDeleted: false } });
                 if (!warehouse) throw new Error('No active warehouse found');
 
+                const effectiveLocationId = exchangeLocationId || order.locationId;
+                const isCrossLocation = !!(order.locationId && order.locationId !== effectiveLocationId);
+
                 // ── Restore returned items ──────────────────────────────
                 for (const ri of returnedItems) {
                     const orderItem = order.items.find(i => i.id === ri.orderItemId);
                     if (!orderItem || ri.quantity > orderItem.quantity) continue;
 
                     await this.stockLedgerService.createEntry({
-                        itemId: ri.itemId, warehouseId: warehouse.id, locationId: order.locationId,
+                        itemId: ri.itemId, warehouseId: warehouse.id, locationId: effectiveLocationId,
                         qty: ri.quantity, movementType: MovementType.INBOUND,
                         referenceType: 'POS_EXCHANGE_IN', referenceId: order.id,
                     }, tx);
 
                     const existing = await tx.inventoryItem.findFirst({
-                        where: { itemId: ri.itemId, locationId: order.locationId, status: 'AVAILABLE' },
+                        where: { itemId: ri.itemId, locationId: effectiveLocationId, status: 'AVAILABLE' },
                     });
                     if (existing) {
                         await tx.inventoryItem.update({ where: { id: existing.id }, data: { quantity: { increment: ri.quantity } } });
                     } else {
-                        await tx.inventoryItem.create({ data: { itemId: ri.itemId, locationId: order.locationId, warehouseId: warehouse.id, quantity: ri.quantity, status: 'AVAILABLE' } });
+                        await tx.inventoryItem.create({ data: { itemId: ri.itemId, locationId: effectiveLocationId, warehouseId: warehouse.id, quantity: ri.quantity, status: 'AVAILABLE' } });
+                    }
+
+                    if (isCrossLocation) {
+                        const origLoc = order.locationId ? await tx.location.findUnique({ where: { id: order.locationId }, select: { name: true } }) : null;
+                        const exLoc = effectiveLocationId ? await tx.location.findUnique({ where: { id: effectiveLocationId }, select: { name: true } }) : null;
+                        const origName = origLoc?.name || 'Original Branch';
+                        const exName = exLoc?.name || 'Exchange Outlet';
+
+                        await this.stockMovementService.executeMovement({
+                            itemId: ri.itemId,
+                            fromLocationId: order.locationId || undefined,
+                            toLocationId: effectiveLocationId || undefined,
+                            quantity: ri.quantity,
+                            type: 'CROSS_LOCATION_EXCHANGE_TRANSFER',
+                            referenceType: 'POS_EXCHANGE',
+                            referenceId: order.id,
+                            notes: `Automated Stock Transfer against Exchange of Order #${order.orderNumber} (originally sold at ${origName}). Physical item received at ${exName}.`,
+                            userId: ctx?.userId,
+                            transaction: tx,
+                        }, ctx);
                     }
                 }
 
                 // ── Deduct new items ────────────────────────────────────
                 for (const ni of newItems) {
                     await this.stockLedgerService.createEntry({
-                        itemId: ni.itemId, warehouseId: warehouse.id, locationId: order.locationId,
+                        itemId: ni.itemId, warehouseId: warehouse.id, locationId: effectiveLocationId,
                         qty: -ni.quantity, movementType: MovementType.OUTBOUND,
                         referenceType: 'POS_EXCHANGE_OUT', referenceId: order.id,
                         allowNegativeStock: true, // Warehouse may be negative (allowed by business rules)
                     }, tx);
 
                     const existing = await tx.inventoryItem.findFirst({
-                        where: { itemId: ni.itemId, locationId: order.locationId, status: 'AVAILABLE' },
+                        where: { itemId: ni.itemId, locationId: effectiveLocationId, status: 'AVAILABLE' },
                     });
                     if (existing) {
                         await tx.inventoryItem.update({ where: { id: existing.id }, data: { quantity: { decrement: ni.quantity } } });
                     } else {
-                        await tx.inventoryItem.create({ data: { itemId: ni.itemId, locationId: order.locationId, warehouseId: warehouse.id, quantity: -ni.quantity, status: 'AVAILABLE' } });
+                        await tx.inventoryItem.create({ data: { itemId: ni.itemId, locationId: effectiveLocationId, warehouseId: warehouse.id, quantity: -ni.quantity, status: 'AVAILABLE' } });
                     }
                 }
 
@@ -2564,7 +2805,7 @@ export class PosSalesService implements OnModuleInit {
                                 data: {
                                     couponId: order.couponId,
                                     orderId: id,
-                                    locationId: order.locationId,
+                                    locationId: effectiveLocationId,
                                     action: 'RESTORED_VIA_EXCHANGE',
                                     previousValue: coupon.usedCount,
                                     newValue: coupon.usedCount - 1,
@@ -2580,20 +2821,69 @@ export class PosSalesService implements OnModuleInit {
                         }
 
                         // Restrict to exchange location
-                        if (order.locationId) {
+                        if (effectiveLocationId) {
                             await tx.couponCodeLocation.deleteMany({ where: { couponId: order.couponId } });
                             await tx.couponCodeLocation.create({
                                 data: {
                                     couponId: order.couponId,
-                                    locationId: order.locationId,
+                                    locationId: effectiveLocationId,
                                 },
                             });
                         }
                     }
                 }
 
-                return { status: true, data: { ...updatedOrder, difference }, message: 'Exchange processed successfully' };
+                let exchangeLocationName = '';
+                if (isCrossLocation && effectiveLocationId) {
+                    const exLoc = await tx.location.findUnique({ where: { id: effectiveLocationId }, select: { name: true } });
+                    if (exLoc) exchangeLocationName = exLoc.name;
+                }
+
+                return { 
+                    status: true, 
+                    data: { ...updatedOrder, difference }, 
+                    message: 'Exchange processed successfully',
+                    isCrossLocation,
+                    originalLocationId: order.locationId,
+                    exchangeLocationId: effectiveLocationId,
+                    exchangeLocationName,
+                    orderNumber: order.orderNumber,
+                };
             });
+
+            if (result.status) {
+                this.logger.log(`[exchangeItems] Exchange processed successfully for Order #${result.orderNumber}. isCrossLocation: ${result.isCrossLocation}`);
+                
+                // 1. Notify original location if cross-location
+                if (result.isCrossLocation && result.originalLocationId) {
+                    this.notificationsService.sendPosLocationNotification({
+                        locationId: result.originalLocationId,
+                        title: 'Cross-Location Exchange Processed',
+                        message: `Invoice #${result.orderNumber} (originally sold at your branch) had an exchange processed at ${result.exchangeLocationName || 'another store branch'}.`,
+                        category: 'pos_exchange',
+                        priority: 'high',
+                        entityType: 'SalesOrder',
+                        entityId: id,
+                        actionType: 'view_order',
+                        actionPayload: { orderId: id, orderNumber: result.orderNumber, exchangeLocationId: result.exchangeLocationId },
+                    }).catch(err => this.logger.error(`[exchangeItems] Failed to send original location notification: ${err.message}`));
+                }
+
+                // 2. Notify processing location
+                if (result.exchangeLocationId) {
+                    this.notificationsService.sendPosLocationNotification({
+                        locationId: result.exchangeLocationId,
+                        title: 'POS Sale Exchange Processed',
+                        message: `Exchange processed for Invoice #${result.orderNumber}.`,
+                        category: 'pos_exchange',
+                        priority: 'high',
+                        entityType: 'SalesOrder',
+                        entityId: id,
+                        actionType: 'view_order',
+                        actionPayload: { orderId: id, orderNumber: result.orderNumber },
+                    }).catch(err => this.logger.error(`[exchangeItems] Failed to send exchange location notification: ${err.message}`));
+                }
+            }
 
             runInBackground(
                 'Exchange POS Order Items',
@@ -3959,4 +4249,303 @@ export class PosSalesService implements OnModuleInit {
 
         return root;
     }
+
+    // ─── Sales Register Report ────────────────────────────────────
+     async getSalesRegisterReport(options: {
+    locationId: string;
+    startDate?: string;
+    endDate?: string;
+    cashierUserId?: string;
+    search?: string;
+  }) {
+    const {
+      locationId,
+      startDate: startStr,
+      endDate: endStr,
+      cashierUserId,
+      search,
+    } = options;
+    if (!locationId) {
+      throw new BadRequestException('locationId is required');
+    }
+    const now = new Date();
+    const startDate = startStr
+      ? new Date(startStr)
+      : new Date(now.getFullYear(), now.getMonth(), 1);
+    const endDate = endStr ? new Date(endStr) : new Date(now);
+    endDate.setHours(23, 59, 59, 999);
+
+    const orders = await this.prisma.salesOrder.findMany({
+      where: {
+        locationId,
+        status: {
+          in: ['completed', 'partially_returned', 'refunded', 'exchanged'],
+        },
+        createdAt: { gte: startDate, lte: endDate },
+        ...(cashierUserId ? { cashierUserId } : {}),
+        ...(search
+          ? { orderNumber: { contains: search, mode: 'insensitive' } }
+          : {}),
+      },
+      include: {
+        alliance: true,
+        voucherRedemptions: {
+          include: {
+            voucher: true,
+          },
+        },
+        items: {
+          include: {
+            item: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const returnLedgerEntries = await this.prisma.stockLedger.findMany({
+      where: {
+        referenceType: { in: ['POS_RETURN', 'POS_REFUND'] },
+        createdAt: { gte: startDate, lte: endDate },
+        locationId,
+      },
+      include: {
+        item: true,
+      },
+    });
+
+    const referenceOrderIds = [
+      ...new Set(returnLedgerEntries.map((e) => e.referenceId).filter(Boolean)),
+    ];
+    const referenceOrders = referenceOrderIds.length
+      ? await this.prisma.salesOrder.findMany({
+          where: {
+            id: { in: referenceOrderIds },
+            ...(cashierUserId ? { cashierUserId } : {}),
+          },
+          include: {
+            items: { include: { item: true } },
+            alliance: true,
+            voucherRedemptions: { include: { voucher: true } },
+          },
+        })
+      : [];
+
+    const referenceOrderMap = new Map<string, any>();
+    for (const o of referenceOrders) {
+      referenceOrderMap.set(o.id, o);
+    }
+
+    const rows: any[] = [];
+
+    for (const order of orders) {
+      let grossSale = 0;
+      let grossSaleWost = 0;
+
+      for (const item of order.items) {
+        const qty = Number(item.quantity || 0);
+        const price = Number(item.unitPrice || 0);
+        const taxRate = Number(item.taxPercent || 0);
+
+        grossSale += qty * price;
+        grossSaleWost += qty * (price / (1 + taxRate / 100));
+      }
+
+      let cash = Number(order.cashAmount || 0);
+      let cardAmount = Number(order.cardAmount || 0);
+      let postex = 0;
+      let leopard = 0;
+
+      const pm = order.paymentMethod?.toLowerCase();
+      if (pm === 'postex') {
+        postex = cardAmount || Number(order.grandTotal);
+        cardAmount = 0;
+      } else if (pm === 'leopard') {
+        leopard = cardAmount || Number(order.grandTotal);
+        cardAmount = 0;
+      }
+
+      let giftVoucherAmt = 0;
+      let giftVoucherCodes: string[] = [];
+      let creditAmt = 0;
+      let creditCodes: string[] = [];
+      let claimAmt = 0;
+      let claimCodes: string[] = [];
+      let corporateAmt = 0;
+      let corporateCodes: string[] = [];
+      let exchangeAmt = 0;
+      let exchangeCodes: string[] = [];
+
+      for (const red of order.voucherRedemptions) {
+        const type = red.voucher?.voucherType;
+        const code = red.voucher?.code || '';
+        const amt = Number(red.amountUsed);
+
+        if (type === 'GIFT' || type === 'OUTLET_GIFT') {
+          giftVoucherAmt += amt;
+          giftVoucherCodes.push(code);
+        } else if (type === 'CREDIT') {
+          creditAmt += amt;
+          creditCodes.push(code);
+        } else if (type === 'CLAIM') {
+          claimAmt += amt;
+          claimCodes.push(code);
+        } else if (type === 'CORPORATE') {
+          corporateAmt += amt;
+          corporateCodes.push(code);
+        } else if (type === 'EXCHANGE') {
+          exchangeAmt += amt;
+          exchangeCodes.push(code);
+        }
+      }
+
+      let cardNo = '';
+      const notesStr = order.notes || '';
+      const cardMatch = notesStr.match(/Card:\s*\*\*\*\*(\d{4})/i);
+      if (cardMatch) {
+        cardNo = cardMatch[1];
+      }
+
+      let allianceDetails = '';
+      if (order.alliance) {
+        allianceDetails = `${order.alliance.partnerName} (${order.alliance.discountPercent}%)`;
+      }
+
+      const overrideDiscPct = order.items
+        .map((i: any) =>
+          i.overrideDiscountPercent ? `${i.overrideDiscountPercent}%` : null,
+        )
+        .filter(Boolean)
+        .join(', ');
+
+      const overrideDiscNote = order.items
+        .map((i: any) => i.overrideDiscountNote)
+        .filter(Boolean)
+        .join('; ');
+
+      rows.push({
+        id: order.id,
+        cmNo: order.orderNumber,
+        date: order.createdAt,
+        grossSale,
+        grossSaleWost,
+        disc: Number(order.discountAmount || 0),
+        sTax: Number(order.taxAmount || 0),
+        netSale: Number(order.grandTotal),
+        cash,
+        postex,
+        leopard,
+        cardNo,
+        cardAmount,
+        allianceDetails,
+        giftVoucherAmt,
+        giftVoucherCode: giftVoucherCodes.join(', '),
+        creditAmt,
+        creditCode: creditCodes.join(', '),
+        claimAmt,
+        claimCode: claimCodes.join(', '),
+        corporateAmt,
+        corporateCode: corporateCodes.join(', '),
+        exchangeAmt,
+        exchangeCode: exchangeCodes.join(', '),
+        manualDiscPct: order.globalDiscountPercent
+          ? `${order.globalDiscountPercent}%`
+          : '',
+        manualDiscAmt: Number(order.globalDiscountAmount || 0),
+        manualDiscNote: order.manualDiscountNote || '',
+        overrideDiscPct,
+        overrideDiscNote,
+      });
+    }
+
+    const groupedReturns = new Map<string, any[]>();
+    for (const entry of returnLedgerEntries) {
+      if (!entry.referenceId) continue;
+      const list = groupedReturns.get(entry.referenceId) || [];
+      list.push(entry);
+      groupedReturns.set(entry.referenceId, list);
+    }
+
+    for (const [refId, entries] of groupedReturns.entries()) {
+      const order = referenceOrderMap.get(refId);
+      if (!order) continue;
+
+      let grossSale = 0;
+      let grossSaleWost = 0;
+      let disc = 0;
+      let sTax = 0;
+
+      for (const entry of entries) {
+        const qty = Math.abs(Number(entry.qty));
+        const orderItem = order.items.find(
+          (oi: any) => oi.itemId === entry.itemId,
+        );
+        if (!orderItem) continue;
+
+        const price = Number(orderItem.unitPrice || 0);
+        const taxRate = Number(orderItem.taxPercent || 0);
+        const itemQty = Number(orderItem.quantity || 1);
+
+        grossSale += qty * price;
+        grossSaleWost += qty * (price / (1 + taxRate / 100));
+        disc += (qty / itemQty) * Number(orderItem.discountAmount || 0);
+        sTax += (qty / itemQty) * Number(orderItem.taxAmount || 0);
+      }
+
+      const netSale = grossSaleWost - disc + sTax;
+
+      let cash = 0;
+      let creditAmt = 0;
+      let exchangeAmt = 0;
+
+      const isRefund = entries[0].referenceType === 'POS_REFUND';
+      if (isRefund) {
+        cash = -netSale;
+      } else {
+        exchangeAmt = -netSale;
+      }
+
+      const docNum = isRefund
+        ? order.refundNumber || `Refund for ${order.orderNumber}`
+        : order.returnNumber || `Return for ${order.orderNumber}`;
+
+      rows.push({
+        id: `${refId}-return`,
+        cmNo: docNum,
+        date: entries[0].createdAt,
+        grossSale: -grossSale,
+        grossSaleWost: -grossSaleWost,
+        disc: -disc,
+        sTax: -sTax,
+        netSale: -netSale,
+        cash,
+        postex: 0,
+        leopard: 0,
+        cardNo: '',
+        cardAmount: 0,
+        allianceDetails: '',
+        giftVoucherAmt: 0,
+        giftVoucherCode: '',
+        creditAmt,
+        creditCode: '',
+        claimAmt: 0,
+        claimCode: '',
+        corporateAmt: 0,
+        corporateCode: '',
+        exchangeAmt,
+        exchangeCode: '',
+        manualDiscPct: '',
+        manualDiscAmt: 0,
+        manualDiscNote: '',
+        overrideDiscPct: '',
+        overrideDiscNote: '',
+      });
+    }
+
+    rows.sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    );
+
+    return { status: true, data: rows };
+  }
 }
