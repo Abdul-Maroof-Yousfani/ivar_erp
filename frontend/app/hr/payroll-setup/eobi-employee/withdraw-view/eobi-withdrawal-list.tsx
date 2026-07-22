@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import DataTable from "@/components/common/data-table";
-import { columns } from "./columns";
+import { getColumns } from "./columns";
 import { EOBIWithdrawal } from "@/lib/actions/eobi-withdrawal";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -11,7 +11,19 @@ interface EOBIWithdrawalListProps {
 }
 
 export function EOBIWithdrawalList({ initialData }: EOBIWithdrawalListProps) {
-    const [data] = useState<EOBIWithdrawal[]>(initialData);
+    const [data, setData] = useState<EOBIWithdrawal[]>(initialData);
+
+    const handleApproved = (id: string) => {
+        setData((prev) =>
+            prev.map((item) =>
+                item.id === id
+                    ? { ...item, approvalStatus: "approved", status: "processed" }
+                    : item
+            )
+        );
+    };
+
+    const columns = useMemo(() => getColumns(handleApproved), []);
 
     return (
         <div className="space-y-6">

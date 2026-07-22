@@ -1,116 +1,89 @@
 "use client";
 
-import { useState } from "react";
-import DataTable from "@/components/common/data-table";
-import { columns } from "./columns";
+import { ColumnDef } from "@tanstack/react-table";
 import { EOBIEmployee } from "@/lib/actions/eobi-employee";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, TrendingUp, DollarSign } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
-interface EOBIEmployeeListProps {
-    initialData: EOBIEmployee[];
-}
+const formatPKR = (amount: number) =>
+    new Intl.NumberFormat("en-PK", {
+        style: "currency",
+        currency: "PKR",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(amount);
 
-export function EOBIEmployeeList({ initialData }: EOBIEmployeeListProps) {
-    const [data] = useState<EOBIEmployee[]>(initialData);
-
-    // Calculate summary statistics
-    const totalEmployees = data.length;
-    const totalEOBIBalance = data.reduce((sum, emp) => sum + emp.totalEOBIBalance, 0);
-    const totalEmployeeContribution = data.reduce((sum, emp) => sum + emp.employeeContribution, 0);
-    const totalEmployerContribution = data.reduce((sum, emp) => sum + emp.employerContribution, 0);
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat("en-PK", {
-            style: "currency",
-            currency: "PKR",
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0,
-        }).format(amount);
-    };
-
-    return (
-        <div className="space-y-6">
-            {/* Summary Cards */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Total Employees</CardTitle>
-                        <Users className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{totalEmployees}</div>
-                        <p className="text-xs text-muted-foreground">
-                            With active EOBI accounts
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Total EOBI Balance</CardTitle>
-                        <DollarSign className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-green-600">
-                            {formatCurrency(totalEOBIBalance)}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                            Employee + Employer contributions
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Employee Contribution</CardTitle>
-                        <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">
-                            {formatCurrency(totalEmployeeContribution)}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                            Total employee deductions
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Employer Contribution</CardTitle>
-                        <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">
-                            {formatCurrency(totalEmployerContribution)}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                            Total employer contributions
-                        </p>
-                    </CardContent>
-                </Card>
+export const columns: ColumnDef<EOBIEmployee>[] = [
+    {
+        id: "serialNumber",
+        header: "S.No",
+        cell: ({ row }) => <div className="text-center">{row.index + 1}</div>,
+    },
+    {
+        id: "employeeDetails",
+        accessorFn: (row) => `${row.employeeName} ${row.employeeId} ${row.department} ${row.subDepartment || ''} ${row.designation || ''}`,
+        header: "Employee Details",
+        cell: ({ row }) => (
+            <div className="space-y-1">
+                <div className="font-medium">{row.original.employeeName}</div>
+                <div className="text-xs text-muted-foreground">
+                    {row.original.employeeId}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                    {row.original.department}
+                    {row.original.subDepartment ? ` • ${row.original.subDepartment}` : ""}
+                </div>
             </div>
-
-            {/* Data Table */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>EOBI Employee Balances</CardTitle>
-                    <CardDescription>
-                        View total EOBI balances for all employees with EOBI enabled
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <DataTable<EOBIEmployee>
-                        columns={columns}
-                        data={data}
-                        searchFields={[
-                            { key: "employeeDetails", label: "Employee" },
-                        ]}
-                        tableId="eobi-employee-list"
-                    />
-                </CardContent>
-            </Card>
-        </div>
-    );
-}
+        ),
+    },
+    {
+        accessorKey: "designation",
+        header: "Designation",
+    },
+    {
+        accessorKey: "totalEOBIBalance",
+        header: "Total EOBI Balance",
+        cell: ({ row }) => (
+            <div className="font-medium">{formatPKR(row.original.totalEOBIBalance)}</div>
+        ),
+    },
+    {
+        accessorKey: "totalWithdrawn",
+        header: "Total Withdrawn",
+        cell: ({ row }) => {
+            const amount = row.original.totalWithdrawn;
+            return (
+                <div className={`font-medium ${amount > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                    {amount > 0 ? `-${formatPKR(amount)}` : formatPKR(0)}
+                </div>
+            );
+        },
+    },
+    {
+        accessorKey: "availableBalance",
+        header: "Available Balance",
+        cell: ({ row }) => {
+            const amount = row.original.availableBalance;
+            return (
+                <div className={`font-bold ${amount <= 0 ? "text-red-600" : "text-green-600"}`}>
+                    {formatPKR(amount)}
+                </div>
+            );
+        },
+    },
+    {
+        accessorKey: "lastContributionMonth",
+        header: "Last Contribution",
+        cell: ({ row }) => (
+            <Badge variant="outline">{row.getValue("lastContributionMonth")}</Badge>
+        ),
+    },
+    {
+        accessorKey: "totalMonths",
+        header: "Total Months",
+        cell: ({ row }) => (
+            <div className="text-center">
+                <Badge variant="secondary">{row.getValue("totalMonths")}</Badge>
+            </div>
+        ),
+    },
+];

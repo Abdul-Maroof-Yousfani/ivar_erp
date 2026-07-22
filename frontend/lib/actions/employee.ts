@@ -134,6 +134,7 @@ export interface EmployeeDropdownOption {
   subDepartmentName?: string | null;
   designationName?: string | null;
   providentFund?: boolean;
+  eobi?: boolean;
   officialEmail?: string | null;
   personalEmail?: string | null;
 }
@@ -145,6 +146,8 @@ export async function getEmployeesForDropdown(params?: {
   departmentId?: string;
   subDepartmentId?: string;
   providentFund?: boolean;
+  eobi?: boolean;
+  locationId?: string;
 }): Promise<{
   status: boolean;
   data?: EmployeeDropdownOption[];
@@ -163,7 +166,9 @@ export async function getEmployeesForDropdown(params?: {
     if (params?.search) searchParams.append('search', params.search);
     if (params?.departmentId) searchParams.append('departmentId', params.departmentId);
     if (params?.subDepartmentId) searchParams.append('subDepartmentId', params.subDepartmentId);
+    if (params?.locationId) searchParams.append('locationId', params.locationId);
     if (params?.providentFund) searchParams.append('providentFund', 'true');
+    if (params?.eobi) searchParams.append('eobi', 'true');
 
     const url = `/employees/dropdown${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     const res = await authFetch(url, {});
@@ -187,6 +192,7 @@ export async function getAllEmployeesForDropdown(filters?: {
   subDepartmentId?: string;
   search?: string;
   providentFund?: boolean;
+  locationId?: string;
 }): Promise<{
   status: boolean;
   data?: EmployeeDropdownOption[];
@@ -639,3 +645,18 @@ export async function queueEmployeesExport(
     return { status: false, message: 'Failed to connect to server' };
   }
 }
+
+export async function getEmployeeExportStatus(
+  jobId: string,
+): Promise<{ status: boolean; data?: { state: string; progress: number }; message?: string }> {
+  try {
+    const res = await authFetch(`/employees/export/${jobId}/status`, {
+      method: 'GET',
+    });
+    return res.data ?? { status: false, message: 'No response from server' };
+  } catch (error) {
+    console.error('Get employee export status error:', error);
+    return { status: false, message: 'Failed to connect to server' };
+  }
+}
+
