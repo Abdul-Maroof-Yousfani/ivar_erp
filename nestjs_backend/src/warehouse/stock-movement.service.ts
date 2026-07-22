@@ -12,7 +12,7 @@ interface CreateStockMovementDto {
   toLocationId?: string;     // Destination outlet location (optional for returns)
   toWarehouseId?: string;    // Destination warehouse (for returns)
   quantity: number;
-  type: 'INBOUND' | 'OUTBOUND' | 'TRANSFER' | 'RETURN_TRANSFER' | 'ADJUSTMENT';
+  type: 'INBOUND' | 'OUTBOUND' | 'TRANSFER' | 'RETURN_TRANSFER' | 'ADJUSTMENT' | 'CROSS_LOCATION_RETURN_TRANSFER' | 'CROSS_LOCATION_EXCHANGE_TRANSFER' | 'INTER_OUTLET_TRANSFER' | string;
   referenceType?: string;
   referenceId?: string;
   notes?: string;
@@ -81,6 +81,13 @@ export class StockMovementService {
         } else if (dto.type === 'RETURN_TRANSFER') {
           // Return Transfer: Outlet → Warehouse
           await this.executeOutletToWarehouseTransfer(dto, tx, movement.id);
+        } else if (
+          dto.type === 'CROSS_LOCATION_RETURN_TRANSFER' ||
+          dto.type === 'CROSS_LOCATION_EXCHANGE_TRANSFER' ||
+          dto.type === 'INTER_OUTLET_TRANSFER'
+        ) {
+          // Inter-Outlet Transfer: Outlet A → Outlet B (Auto-Accepted / No verification required)
+          await this.executeInterOutletTransfer(dto, tx, movement.id);
         }
 
         runInBackground(
@@ -408,6 +415,42 @@ export class StockMovementService {
 
     console.log('✅ [Stock Movement] Warehouse INBOUND ledger entry created');
     console.log('🎉 [Stock Movement] Transfer Complete: Outlet → Warehouse');
+  }
+
+  private async executeInterOutletTransfer(dto: CreateStockMovementDto, tx: any, movementId: string) {
+    if (!dto.fromLocationId || !dto.toLocationId) {
+      throw new BadRequestException('fromLocationId and toLocationId are required for inter-outlet transfers');
+    }
+
+    const itemRate = await this.getCurrentItemRate(tx, dto.itemId);
+    const defaultWarehouse = await tx.warehouse.findFirst({ where: { status: 'active' } });
+    const warehouseId = dto.fromWarehouseId || dto.toWarehouseId || defaultWarehouse?.id || '';
+
+    // 1. Ledger OUTBOUND for source outlet
+    await this.stockLedgerService.createEntry({
+      itemId: dto.itemId,
+      warehouseId,
+      locationId: dto.fromLocationId,
+      qty: -dto.quantity,
+      movementType: MovementType.OUTBOUND,
+      referenceType: dto.referenceType || 'INTER_OUTLET_TRANSFER',
+      referenceId: dto.referenceId || movementId,
+      rate: itemRate,
+    }, tx);
+
+    // 2. Ledger INBOUND for destination outlet
+    await this.stockLedgerService.createEntry({
+      itemId: dto.itemId,
+      warehouseId,
+      locationId: dto.toLocationId,
+      qty: dto.quantity,
+      movementType: MovementType.INBOUND,
+      referenceType: dto.referenceType || 'INTER_OUTLET_TRANSFER',
+      referenceId: dto.referenceId || movementId,
+      rate: itemRate,
+    }, tx);
+
+    console.log(`✅ [Stock Movement] Auto-accepted Inter-Outlet Transfer (${dto.type}) completed: ${dto.fromLocationId} → ${dto.toLocationId}`);
   }
 
   async getMovements(itemId?: string) {

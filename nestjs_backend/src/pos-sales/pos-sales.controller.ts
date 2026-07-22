@@ -21,6 +21,7 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 import { CustomerService } from '../sales/customer/customer.service';
 import { CreateCustomerDto, UpdateCustomerDto } from '../sales/customer/dto/customer-dto';
 import * as jwt from 'jsonwebtoken';
+import { SalesRegisterExportService } from './sales-register-export.service';
 
 @ApiTags('POS Sales')
 @Controller('api/pos-sales')
@@ -31,6 +32,7 @@ export class PosSalesController {
         private readonly posSalesService: PosSalesService,
         private readonly customerService: CustomerService,
         private readonly netSalesSummaryExportService: NetSalesSummaryExportService,
+        private readonly salesRegisterExportService: SalesRegisterExportService,
     ) { }
 
     // ─── POS Customer Endpoints ────────────────────────────────────────
@@ -183,12 +185,12 @@ export class PosSalesController {
 
         // 1. Context from logged-in user
         if (req.user?.isPosUser || req.user?.isTerminal) {
-            if (!effectivePosId) effectivePosId = req.user.posId || req.user.terminalId;
+            if (!effectivePosId && !search) effectivePosId = req.user.posId || req.user.terminalId;
             effectiveLocationId = req.user.locationId;
         }
 
         // 2. Fallback to terminal cookie
-        if (!effectivePosId && req.cookies?.posTerminalToken) {
+        if (!effectivePosId && !search && req.cookies?.posTerminalToken) {
             try {
                 const decoded: any = jwt.decode(req.cookies.posTerminalToken);
                 effectivePosId = decoded?.posId || decoded?.terminalId;
@@ -232,12 +234,12 @@ export class PosSalesController {
 
         // 1. Context from logged-in user
         if (req.user?.isPosUser || req.user?.isTerminal) {
-            if (!effectivePosId) effectivePosId = req.user.posId || req.user.terminalId;
+            if (!effectivePosId && !search) effectivePosId = req.user.posId || req.user.terminalId;
             effectiveLocationId = req.user.locationId;
         }
 
         // 2. Fallback to terminal cookie
-        if (!effectivePosId && req.cookies?.posTerminalToken) {
+        if (!effectivePosId && !search && req.cookies?.posTerminalToken) {
             try {
                 const decoded: any = jwt.decode(req.cookies.posTerminalToken);
                 effectivePosId = decoded?.posId || decoded?.terminalId;
@@ -261,6 +263,15 @@ export class PosSalesController {
         );
     }
 
+
+    // ─── Search orders globally for return lookup ─────────────────────
+    // IMPORTANT: Must be BEFORE @Get('orders/:id') — otherwise 'search-for-return' is matched as :id
+    @Get('orders/search-for-return')
+    @Permissions('pos.sales.history.view')
+    @ApiOperation({ summary: 'Search orders globally for returns lookup (unrestricted by location/posId)' })
+    async searchOrderForReturn(@Query('search') search: string) {
+        return this.posSalesService.searchOrderForReturn(search);
+    }
 
     // ─── Get return details for printing return slip ──────────────────
     // IMPORTANT: This must come BEFORE @Get('orders/:id') to avoid route conflict
@@ -298,10 +309,10 @@ export class PosSalesController {
     @ApiOperation({ summary: 'Process a partial or full return for a sales order' })
     async returnOrder(
         @Param('id') id: string,
-        @Body() body: { items: { orderItemId: string; itemId: string; quantity: number }[]; reason?: string },
+        @Body() body: { items: { orderItemId: string; itemId: string; quantity: number }[]; reason?: string; returnLocationId?: string; locationId?: string },
         @Req() req: any,
     ) {
-        const returnLocationId = req.user?.locationId;
+        const returnLocationId = body.returnLocationId || body.locationId || req.user?.locationId || req.headers?.['x-location-id'] || req.headers?.['location-id'];
         const ctx = {
             userId: req.user?.id,
             ipAddress: req.ip,
@@ -320,15 +331,18 @@ export class PosSalesController {
             returnedItems: { orderItemId: string; itemId: string; quantity: number }[];
             newItems: { itemId: string; quantity: number; unitPrice: number }[];
             reason?: string;
+            exchangeLocationId?: string;
+            locationId?: string;
         },
         @Req() req: any,
     ) {
+        const exchangeLocationId = body.exchangeLocationId || body.locationId || req.user?.locationId || req.headers?.['x-location-id'] || req.headers?.['location-id'];
         const ctx = {
             userId: req.user?.id,
             ipAddress: req.ip,
             userAgent: req.headers['user-agent'],
         };
-        return this.posSalesService.exchangeItems(id, body.returnedItems, body.newItems, body.reason, ctx);
+        return this.posSalesService.exchangeItems(id, body.returnedItems, body.newItems, body.reason, exchangeLocationId, ctx);
     }
 
     // ─── Refund only (no stock movement) ─────────────────────────────
@@ -604,4 +618,78 @@ export class PosSalesController {
             res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });
         }
     }
+
+    
+  // ─── Sales Register Report Endpoints ────────────────────────────
+
+  @Get('reports/sales-register')
+  @ApiOperation({ summary: 'Get Sales Register Report' })
+  async getSalesRegister(
+    @Query('locationId') locationId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('cashierUserId') cashierUserId?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.posSalesService.getSalesRegisterReport({
+      locationId,
+      startDate,
+      endDate,
+      cashierUserId,
+      search,
+    });
+  }
+
+  @Post('reports/sales-register/export/queue')
+  @ApiOperation({ summary: 'Queue Sales Register Export' })
+  async queueSalesRegisterExport(
+    @Req() req: any,
+    @Body()
+    body: {
+      locationId: string;
+      startDate?: string;
+      endDate?: string;
+      cashierUserId?: string;
+      format: 'xlsx' | 'pdf';
+      search?: string;
+    },
+  ) {
+    const userId = req.user?.userId || req.user?.id;
+    const result = await this.salesRegisterExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      cashierUserId: body.cashierUserId,
+      format: body.format,
+      search: body.search,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('reports/sales-register/export/:jobId/status')
+  @ApiOperation({ summary: 'Get Sales Register Export Status' })
+  async getSalesRegisterExportStatus(@Param('jobId') jobId: string) {
+    const result = await this.salesRegisterExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('reports/sales-register/export/:jobId/download')
+  @ApiOperation({ summary: 'Download Sales Register Export' })
+  async downloadSalesRegisterExport(
+    @Param('jobId') jobId: string,
+    @Res() res: any,
+  ) {
+    try {
+      await this.salesRegisterExportService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res
+        .status(status)
+        .send({
+          status: false,
+          message: err?.message ?? 'Export file not found',
+        });
+    }
+  }
 }

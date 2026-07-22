@@ -1686,17 +1686,22 @@ export const menuData: MenuItem[] = [
       {
         title: "Stock Activity",
         href: "/pos/reports/stock-activity",
-        permissions: ["pos.report.view"]
+        permissions: ["pos.report.view"],
+      },
+      {
+        href: "/pos/reports/sales-register",
+        title: "Sales Register",
+        permissions: ["pos.report.view"],
       },
       {
         title: "Net Sales Summary",
         href: "/pos/reports/net-sales-summary",
-        permissions: ["pos.report.view"]
+        permissions: ["pos.report.view"],
       },
       {
         title: "Sales Reconciliation",
         href: "/pos/reports/reconciliation",
-        permissions: ["pos.report.view"]
+        permissions: ["pos.report.view"],
       },
     ],
   },
