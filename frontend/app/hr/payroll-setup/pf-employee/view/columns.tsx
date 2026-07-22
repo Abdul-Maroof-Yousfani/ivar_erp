@@ -1,153 +1,89 @@
 "use client";
 
-import { useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
-import { PFWithdrawal } from "@/lib/actions/pf-withdrawal";
-import { approvePFWithdrawal } from "@/lib/actions/pf-withdrawal";
+import { PFEmployee } from "@/lib/actions/pf-employee";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { format } from "date-fns";
-import { toast } from "sonner";
-import { CheckCircle, Loader2 } from "lucide-react";
 
-function ApproveButton({ row, onApproved }: { row: PFWithdrawal; onApproved: (id: string) => void }) {
-    const [loading, setLoading] = useState(false);
+const formatPKR = (amount: number) =>
+    new Intl.NumberFormat("en-PK", {
+        style: "currency",
+        currency: "PKR",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(amount);
 
-    if (row.approvalStatus === "approved") {
-        return null;
-    }
-
-    const handleApprove = async () => {
-        setLoading(true);
-        try {
-            const result = await approvePFWithdrawal(row.id);
-            if (result.status) {
-                toast.success("PF withdrawal approved successfully");
-                onApproved(row.id);
-            } else {
-                toast.error(result.message || "Failed to approve withdrawal");
-            }
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <Button
-            size="sm"
-            variant="outline"
-            className="text-green-600 border-green-600 hover:bg-green-50 hover:text-green-700"
-            onClick={handleApprove}
-            disabled={loading}
-        >
-            {loading ? (
-                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-            ) : (
-                <CheckCircle className="h-3 w-3 mr-1" />
-            )}
-            Approve
-        </Button>
-    );
-}
-
-export function getColumns(onApproved: (id: string) => void): ColumnDef<PFWithdrawal>[] {
-    return [
-        {
-            id: "serialNumber",
-            header: "S.No",
-            cell: ({ row }) => <div className="text-center">{row.index + 1}</div>,
-        },
-        {
-            id: "employeeDetails",
-            accessorFn: (row) => `${row.employee.employeeName} ${row.employee.employeeId} ${row.employee.department?.name || ''} ${row.employee.subDepartment?.name || ''}`,
-            header: "Employee Details",
-            cell: ({ row }) => (
-                <div className="space-y-1">
-                    <div className="font-medium">{row.original.employee.employeeName}</div>
-                    <div className="text-xs text-muted-foreground">
-                        {row.original.employee.employeeId}
-                    </div>
-                    {(row.original.employee.department?.name || row.original.employee.subDepartment?.name) && (
-                        <div className="text-xs text-muted-foreground">
-                            {row.original.employee.department?.name || 'N/A'}
-                            {row.original.employee.subDepartment?.name ? ` • ${row.original.employee.subDepartment.name}` : ""}
-                        </div>
-                    )}
+export const columns: ColumnDef<PFEmployee>[] = [
+    {
+        id: "serialNumber",
+        header: "S.No",
+        cell: ({ row }) => <div className="text-center">{row.index + 1}</div>,
+    },
+    {
+        id: "employeeDetails",
+        accessorFn: (row) => `${row.employeeName} ${row.employeeId} ${row.department} ${row.subDepartment || ''} ${row.designation || ''}`,
+        header: "Employee Details",
+        cell: ({ row }) => (
+            <div className="space-y-1">
+                <div className="font-medium">{row.original.employeeName}</div>
+                <div className="text-xs text-muted-foreground">
+                    {row.original.employeeId}
                 </div>
-            ),
+                <div className="text-xs text-muted-foreground">
+                    {row.original.department}
+                    {row.original.subDepartment ? ` • ${row.original.subDepartment}` : ""}
+                </div>
+            </div>
+        ),
+    },
+    {
+        accessorKey: "designation",
+        header: "Designation",
+    },
+    {
+        accessorKey: "totalPFBalance",
+        header: "Total PF Balance",
+        cell: ({ row }) => (
+            <div className="font-medium">{formatPKR(row.original.totalPFBalance)}</div>
+        ),
+    },
+    {
+        accessorKey: "totalWithdrawn",
+        header: "Total Withdrawn",
+        cell: ({ row }) => {
+            const amount = row.original.totalWithdrawn;
+            return (
+                <div className={`font-medium ${amount > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                    {amount > 0 ? `-${formatPKR(amount)}` : formatPKR(0)}
+                </div>
+            );
         },
-        {
-            accessorKey: "withdrawalAmount",
-            header: "Withdrawal Amount",
-            cell: ({ row }) => {
-                const amount = parseFloat(row.getValue("withdrawalAmount"));
-                const formatted = new Intl.NumberFormat("en-PK", {
-                    style: "currency",
-                    currency: "PKR",
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 0,
-                }).format(amount);
-                return <div className="text-right font-bold">{formatted}</div>;
-            },
+    },
+    {
+        accessorKey: "availableBalance",
+        header: "Available Balance",
+        cell: ({ row }) => {
+            const amount = row.original.availableBalance;
+            return (
+                <div className={`font-bold ${amount <= 0 ? "text-red-600" : "text-green-600"}`}>
+                    {formatPKR(amount)}
+                </div>
+            );
         },
-        {
-            accessorKey: "monthYear",
-            header: "Month/Year",
-            cell: ({ row }) => {
-                const monthYear = row.getValue<string>("monthYear");
-                return monthYear;
-            },
-        },
-        {
-            accessorKey: "withdrawalDate",
-            header: "Withdrawal Date",
-            cell: ({ row }) => {
-                const date = new Date(row.getValue("withdrawalDate"));
-                return format(date, "dd MMM yyyy");
-            },
-        },
-        {
-            accessorKey: "approvalStatus",
-            header: "Approval Status",
-            cell: ({ row }) => {
-                const status = row.getValue<string>("approvalStatus");
-                const variant =
-                    status === "approved"
-                        ? "default"
-                        : status === "rejected"
-                            ? "destructive"
-                            : "secondary";
-                return (
-                    <Badge variant={variant} className="capitalize">
-                        {status}
-                    </Badge>
-                );
-            },
-        },
-        {
-            accessorKey: "status",
-            header: "Status",
-            cell: ({ row }) => {
-                const status = row.getValue<string>("status");
-                const variant =
-                    status === "processed"
-                        ? "default"
-                        : status === "cancelled"
-                            ? "destructive"
-                            : "secondary";
-                return (
-                    <Badge variant={variant} className="capitalize">
-                        {status}
-                    </Badge>
-                );
-            },
-        },
-        {
-            id: "actions",
-            header: "Actions",
-            cell: ({ row }) => (
-                <ApproveButton row={row.original} onApproved={onApproved} />
-            ),
-        },
-    ];
-}
+    },
+    {
+        accessorKey: "lastContributionMonth",
+        header: "Last Contribution",
+        cell: ({ row }) => (
+            <Badge variant="outline">{row.getValue("lastContributionMonth")}</Badge>
+        ),
+    },
+    {
+        accessorKey: "totalMonths",
+        header: "Total Months",
+        cell: ({ row }) => (
+            <div className="text-center">
+                <Badge variant="secondary">{row.getValue("totalMonths")}</Badge>
+            </div>
+        ),
+    },
+];
