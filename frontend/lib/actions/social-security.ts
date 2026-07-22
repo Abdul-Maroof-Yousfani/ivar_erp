@@ -1,162 +1,86 @@
 "use server";
 import { authFetch } from "@/lib/auth";
-import { revalidatePath } from "next/cache";
-export interface SocialSecurityInstitution {
+
+export interface SocialSecurityEmployee {
   id: string;
-  code: string;
-  name: string;
-  province?: string | null;
-  description?: string | null;
+  registrationNumber: string;
+  baseSalary: string | number;
+  monthlyContribution: string | number;
   status: string;
-  website?: string | null;
-  contactNumber?: string | null;
-  address?: string | null;
-  contributionRate: number;
-  createdAt: string;
-  updatedAt: string;
+  employee: {
+    id: string;
+    employeeId: string;
+    employeeName: string;
+    department: {
+      id: string;
+      name: string;
+    } | null;
+  };
+  institution: {
+    id: string;
+    name: string;
+    code: string;
+  };
 }
-export async function getSocialSecurityInstitutions(): Promise<{ status: boolean; data: SocialSecurityInstitution[] }> {
+
+export async function getSocialSecurityEmployees(): Promise<{ status: boolean; data?: SocialSecurityEmployee[]; message?: string }> {
   try {
-    const res = await authFetch(`/social-security-institutions`, {
-    });
-    return res.data;
-  } catch (error) {
-    console.error("Failed to fetch social security institutions:", error);
-    return { status: false, data: [] };
-  }
-}
-export async function createSocialSecurityInstitution(formData: FormData): Promise<{ status: boolean; message: string; data?: SocialSecurityInstitution }> {
-  const code = formData.get("code") as string;
-  const name = formData.get("name") as string;
-  const province = formData.get("province") as string;
-  const description = formData.get("description") as string;
-  const website = formData.get("website") as string;
-  const contactNumber = formData.get("contactNumber") as string;
-  const address = formData.get("address") as string;
-  const contributionRate = formData.get("contributionRate") ? parseFloat(formData.get("contributionRate") as string) : 0;
-  if (!code?.trim() || !name?.trim()) {
-    return { status: false, message: "Code and name are required" };
-  }
-  try {
-    const res = await authFetch(`/social-security-institutions`, {
-      method: "POST",
-      body: JSON.stringify({
-        code: code.trim(),
-        name: name.trim(),
-        province: province?.trim() || undefined,
-        description: description?.trim() || undefined,
-        website: website?.trim() || undefined,
-        contactNumber: contactNumber?.trim() || undefined,
-        address: address?.trim() || undefined,
-        contributionRate,
-        status: "active",
+    const [registrationsResponse, contributionsResponse] = await Promise.all([
+      authFetch(`/social-security-employee-registrations`, {
+        method: "GET",
       }),
-    });
-    const data = res.data;
-    if (data.status) revalidatePath("/master/social-security");
-    return data;
-  } catch (error) {
-    return { status: false, message: "Failed to create social security institution" };
-  }
-}
-export async function createSocialSecurityInstitutions(
-  items: { code: string; name: string; province?: string; description?: string; website?: string; contactNumber?: string; address?: string; contributionRate?: number }[]
-): Promise<{ status: boolean; message: string }> {
-  if (!items.length) return { status: false, message: "At least one institution is required" };
-  try {
-    const promises = items.map((item) =>
-      authFetch(`/social-security-institutions`, {
-        method: "POST",
-        body: JSON.stringify({
-          ...item,
-          status: "active",
-        }),
-      })
-    );
-    const results = await Promise.all(promises);
-    const data = results[0].data;
-    if (data.status) revalidatePath("/master/social-security");
-    return { status: true, message: `Created ${items.length} institution(s) successfully` };
-  } catch (error) {
-    return { status: false, message: "Failed to create social security institutions" };
-  }
-}
-export async function updateSocialSecurityInstitution(id: string, formData: FormData): Promise<{ status: boolean; message: string; data?: SocialSecurityInstitution }> {
-  const code = formData.get("code") as string;
-  const name = formData.get("name") as string;
-  const province = formData.get("province") as string;
-  const description = formData.get("description") as string;
-  const website = formData.get("website") as string;
-  const contactNumber = formData.get("contactNumber") as string;
-  const address = formData.get("address") as string;
-  const contributionRate = formData.get("contributionRate") ? parseFloat(formData.get("contributionRate") as string) : 0;
-  const status = formData.get("status") as string;
-  if (!code?.trim() || !name?.trim()) return { status: false, message: "Code and name are required" };
-  try {
-    const res = await authFetch(`/social-security-institutions/${id}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        id,
-        code: code.trim(),
-        name: name.trim(),
-        province: province?.trim() || undefined,
-        description: description?.trim() || undefined,
-        website: website?.trim() || undefined,
-        contactNumber: contactNumber?.trim() || undefined,
-        address: address?.trim() || undefined,
-        contributionRate,
-        status: status || "active",
+      authFetch(`/social-security-contributions`, {
+        method: "GET",
       }),
+    ]);
+    if (!registrationsResponse.ok) {
+      const errorData = registrationsResponse.data || { message: "Failed to fetch Social Security employees" };
+      return {
+        status: false,
+        message: errorData.message || `HTTP error! status: ${registrationsResponse.status}`,
+      };
+    }
+    const registrationsResult = registrationsResponse.data;
+    const registrations: SocialSecurityEmployee[] = registrationsResult.data || [];
+    let contributions: any[] = [];
+    if (contributionsResponse.ok) {
+      const contributionsResult = contributionsResponse.data || { data: [] };
+      contributions = contributionsResult.data || [];
+    }
+    const totalContributionByRegistration = new Map<string, number>();
+    const totalContributionByEmployeeId = new Map<string, number>();
+
+    for (const contrib of contributions) {
+      const amount = Number(contrib.contributionAmount || 0);
+      if (contrib.employeeRegistrationId) {
+        const curr = totalContributionByRegistration.get(contrib.employeeRegistrationId) || 0;
+        totalContributionByRegistration.set(contrib.employeeRegistrationId, curr + amount);
+      }
+      if (contrib.employeeId) {
+        const curr = totalContributionByEmployeeId.get(contrib.employeeId) || 0;
+        totalContributionByEmployeeId.set(contrib.employeeId, curr + amount);
+      }
+    }
+
+    const enrichedRegistrations = registrations.map((reg) => {
+      const totalAmount =
+        totalContributionByRegistration.get(reg.id) ??
+        totalContributionByEmployeeId.get(reg.employeeId);
+
+      return {
+        ...reg,
+        monthlyContribution:
+          totalAmount !== undefined && totalAmount > 0
+            ? totalAmount
+            : Number(reg.monthlyContribution || 0),
+      };
     });
-    const data = res.data;
-    if (data.status) revalidatePath("/master/social-security");
-    return data;
+    return { status: true, data: enrichedRegistrations };
   } catch (error) {
-    return { status: false, message: "Failed to update social security institution" };
-  }
-}
-export async function deleteSocialSecurityInstitution(id: string): Promise<{ status: boolean; message: string }> {
-  try {
-    const res = await authFetch(`/social-security-institutions/${id}`, {
-      method: "DELETE",
-    });
-    const data = res.data;
-    if (data.status) revalidatePath("/master/social-security");
-    return data;
-  } catch (error) {
-    return { status: false, message: "Failed to delete social security institution" };
-  }
-}
-export async function deleteSocialSecurityInstitutions(ids: string[]): Promise<{ status: boolean; message: string }> {
-  if (!ids.length) return { status: false, message: "No items to delete" };
-  try {
-    const promises = ids.map((id) =>
-      authFetch(`/social-security-institutions/${id}`, {
-        method: "DELETE",
-      })
-    );
-    await Promise.all(promises);
-    revalidatePath("/master/social-security");
-    return { status: true, message: `Deleted ${ids.length} institution(s) successfully` };
-  } catch (error) {
-    return { status: false, message: "Failed to delete social security institutions" };
-  }
-}
-export async function updateSocialSecurityInstitutions(
-  items: { id: string; code: string; name: string; province?: string; description?: string; website?: string; contactNumber?: string; address?: string; status?: string; contributionRate?: number }[]
-): Promise<{ status: boolean; message: string }> {
-  if (!items.length) return { status: false, message: "No items to update" };
-  try {
-    const promises = items.map((item) =>
-      authFetch(`/social-security-institutions/${item.id}`, {
-        method: "PUT",
-        body: JSON.stringify(item),
-      })
-    );
-    await Promise.all(promises);
-    revalidatePath("/master/social-security");
-    return { status: true, message: `Updated ${items.length} institution(s) successfully` };
-  } catch (error) {
-    return { status: false, message: "Failed to update social security institutions" };
+    console.error("Error fetching Social Security employees:", error);
+    return {
+      status: false,
+      message: error instanceof Error ? error.message : "An unexpected error occurred",
+    };
   }
 }

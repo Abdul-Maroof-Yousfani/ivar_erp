@@ -90,3 +90,24 @@ export async function getEOBIWithdrawals(filters?: any): Promise<{ status: boole
         };
     }
 }
+
+// Approve EOBI withdrawal
+export async function approveEOBIWithdrawal(id: string): Promise<{ status: boolean; message?: string }> {
+    try {
+        const response = await authFetch(`/eobi/withdrawals/${id}/approve`, {
+            method: "PATCH",
+            body: JSON.stringify({}),
+        });
+        if (!response.ok) {
+            const errorData = response.data || { message: "Failed to approve EOBI withdrawal" };
+            return { status: false, message: errorData.message || `HTTP error! status: ${response.status}` };
+        }
+        return response.data;
+    } catch (error) {
+        console.error("Error approving EOBI withdrawal:", error);
+        return {
+            status: false,
+            message: error instanceof Error ? error.message : "An unexpected error occurred",
+        };
+    }
+}
