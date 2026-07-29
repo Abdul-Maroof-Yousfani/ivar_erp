@@ -92,9 +92,17 @@ export class PosSessionController {
     async getDaywiseReconciliation(
         @Req() req: any,
         @Query('date') date: string,
+        @Query('locationId') queryLocationId?: string,
     ) {
-        const { locationId } = this.extractTerminalContext(req);
-        return this.sessionService.getDaywiseReconciliation(locationId, date);
+        let locationId = queryLocationId;
+        if (locationId === undefined || locationId === null) {
+            try {
+                locationId = this.extractTerminalContext(req).locationId;
+            } catch {
+                locationId = req.user?.locationId || '';
+            }
+        }
+        return this.sessionService.getDaywiseReconciliation(locationId || '', date);
     }
 
     @Get('reconciliation/daywise/excel')
@@ -102,10 +110,18 @@ export class PosSessionController {
     async getDaywiseReconciliationExcel(
         @Req() req: any,
         @Query('date') date: string,
+        @Query('locationId') queryLocationId: string,
         @Res() res: any,
     ) {
-        const { locationId } = this.extractTerminalContext(req);
-        return this.sessionService.exportDaywiseReconciliationExcel(locationId, date, res);
+        let locationId = queryLocationId;
+        if (locationId === undefined || locationId === null) {
+            try {
+                locationId = this.extractTerminalContext(req).locationId;
+            } catch {
+                locationId = req.user?.locationId || '';
+            }
+        }
+        return this.sessionService.exportDaywiseReconciliationExcel(locationId || '', date, res);
     }
 
     @Post('reconciliation/daywise/export/queue')
@@ -113,10 +129,18 @@ export class PosSessionController {
     async queueReconciliationExport(
         @Req() req: any,
         @Query('date') date: string,
+        @Query('locationId') queryLocationId?: string,
     ) {
-        const { locationId } = this.extractTerminalContext(req);
+        let locationId = queryLocationId;
+        if (locationId === undefined || locationId === null) {
+            try {
+                locationId = this.extractTerminalContext(req).locationId;
+            } catch {
+                locationId = req.user?.locationId || '';
+            }
+        }
         const userId = req.user?.userId;
-        const result = await this.sessionService.queueDaywiseReconciliationExcel(userId, locationId, date);
+        const result = await this.sessionService.queueDaywiseReconciliationExcel(userId, locationId || '', date);
         return {
             status: true,
             message: "Reconciliation export queued. You'll receive a notification when it is ready.",
@@ -145,6 +169,74 @@ export class PosSessionController {
         }
     }
 
+    @Get('cash-compare')
+    @ApiOperation({ summary: 'Get cash comparison report by date range or month' })
+    async getCashCompareReport(
+        @Req() req: any,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('month') monthStr?: string,
+        @Query('year') yearStr?: string,
+        @Query('locationId') queryLocationId?: string,
+    ) {
+        let locationId = queryLocationId;
+        if (locationId === undefined || locationId === null) {
+            try {
+                locationId = this.extractTerminalContext(req).locationId;
+            } catch {
+                locationId = req.user?.locationId || '';
+            }
+        }
+        const month = monthStr ? parseInt(monthStr, 10) : undefined;
+        const year = yearStr ? parseInt(yearStr, 10) : undefined;
+        return this.sessionService.getCashCompareReport(
+            locationId || '',
+            startDate,
+            endDate,
+            month,
+            year,
+        );
+    }
+
+    @Get('cash-compare/excel')
+    @ApiOperation({ summary: 'Export cash comparison report as Excel by date range or month' })
+    async exportCashCompareExcel(
+        @Req() req: any,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('month') monthStr?: string,
+        @Query('year') yearStr?: string,
+        @Query('locationId') queryLocationId?: string,
+        @Res() res?: any,
+    ) {
+        let locationId = queryLocationId;
+        if (locationId === undefined || locationId === null) {
+            try {
+                locationId = this.extractTerminalContext(req).locationId;
+            } catch {
+                locationId = req.user?.locationId || '';
+            }
+        }
+        const month = monthStr ? parseInt(monthStr, 10) : undefined;
+        const year = yearStr ? parseInt(yearStr, 10) : undefined;
+        return this.sessionService.exportCashCompareExcel(
+            locationId || '',
+            startDate,
+            endDate,
+            month,
+            year,
+            res,
+        );
+    }
+
+    @Get(':id/close-summary')
+    @ApiOperation({ summary: 'Get session-wise shift close summary report' })
+    async getSessionCloseSummary(
+        @Param('id') sessionId: string,
+    ) {
+        return this.sessionService.getSessionCloseSummary(sessionId);
+    }
+
     @Get(':id/reconciliation')
     @ApiOperation({ summary: 'Get detailed reconciliation report metrics for a POS shift' })
     async getReconciliationDetails(
@@ -156,3 +248,4 @@ export class PosSessionController {
         return this.sessionService.getReconciliationDetails(sessionId, date);
     }
 }
+
