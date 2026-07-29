@@ -100,6 +100,7 @@ export class PayrollService {
       leaveApplications,
       increments,
       ssRegistrations,
+      ssInstitutions,
       workingHoursPolicies,
       leavesPolicies,
       allowanceHeads,
@@ -130,14 +131,21 @@ export class PayrollService {
       this.prisma.loanRequest.findMany({
         where: {
           employeeId: { in: ids },
-          OR: [{ approvalStatus: 'approved' }, { status: 'approved' }],
+          OR: [
+            { approvalStatus: 'approved' },
+            { status: 'approved' },
+            { status: 'disbursed' },
+          ],
         },
       }),
       this.prisma.advanceSalary.findMany({
         where: {
           employeeId: { in: ids },
-          approvalStatus: 'approved',
-          status: 'active',
+          OR: [
+            { approvalStatus: 'approved' },
+            { status: 'approved' },
+            { status: 'active' },
+          ],
         },
       }),
       this.prisma.leaveEncashment.findMany({
@@ -200,6 +208,9 @@ export class PayrollService {
         },
         orderBy: { registrationDate: 'desc' },
       }),
+      this.prisma.socialSecurityInstitution.findMany({
+        where: { isDeleted: false },
+      }),
       this.prisma.workingHoursPolicy.findMany({
         where: { status: 'active' },
       }),
@@ -235,6 +246,7 @@ export class PayrollService {
     ]);
 
     // Create maps for Master data types
+    const ssInstitutionMap = new Map(ssInstitutions.map((i) => [i.id, i]));
     const workingHoursPolicyMap = new Map(
       workingHoursPolicies.map((p) => [p.id, p]),
     );
@@ -247,6 +259,9 @@ export class PayrollService {
     // 3. Map relations to employees to create enriched employee objects
     const enrichedEmployees = employees.map((emp) => ({
       ...emp,
+      socialSecurityInstitution: emp.socialSecurityInstitutionId
+        ? ssInstitutionMap.get(emp.socialSecurityInstitutionId)
+        : null,
       workingHoursPolicy: workingHoursPolicyMap.get(emp.workingHoursPolicyId),
       leavesPolicy: leavesPolicyMap.get(emp.leavesPolicyId),
       socialSecurityRegistrations: ssRegistrations.filter(
@@ -499,14 +514,17 @@ export class PayrollService {
       }
 
       if (socialSecurityRate && socialSecurityRate.gt(0)) {
-        // SSI base calculation: Use only salary components marked as deductible
-        // Filter components where isDeductible = true
-        const ssiBase = salaryBreakup
+        // SSI base calculation: Use salary components marked as deductible or fallback to calculatedBasicSalary
+        let ssiBase = salaryBreakup
           .filter((comp) => comp.isDeductible === true)
           .reduce(
             (sum, comp) => sum.add(new Decimal(comp.amount)),
             new Decimal(0),
           );
+
+        if (ssiBase.lte(0)) {
+          ssiBase = calculatedBasicSalary;
+        }
 
         socialSecurityContributionAmount = ssiBase
           .mul(socialSecurityRate)
@@ -600,6 +618,8 @@ export class PayrollService {
           },
           attendanceDeduction: 0,
           loanDeduction: 0,
+          loanDisbursement: 0,
+          advanceSalaryDisbursement: 0,
           advanceSalaryDeduction: 0,
           eobiDeduction: 0,
           providentFundDeduction: 0,
@@ -732,8 +752,8 @@ export class PayrollService {
         await this.calculateEOBI_PF(employee, month, year, salaryBreakup);
 
       // H. Calculate Loans & Advances
-      const { loanDeduction, advanceSalaryDeduction } =
-        this.calculateLoansAndAdvances(
+      const { loanDeduction, loanDisbursement, advanceSalaryDisbursement, advanceSalaryDeduction } =
+        await this.calculateLoansAndAdvances(
           employee,
           normalizedMonth,
           normalizedYear,
@@ -754,7 +774,10 @@ export class PayrollService {
         .add(totalAdHocDeductions);
 
       // Net Salary
-      const netSalary = grossSalary.minus(totalDeductionsSum);
+      const netSalary = grossSalary
+        .minus(totalDeductionsSum)
+        .add(loanDisbursement)
+        .add(advanceSalaryDisbursement);
 
       // Push to array (plain objects for frontend)
       previewData.push({
@@ -791,6 +814,8 @@ export class PayrollService {
         attendanceBreakup,
         attendanceDeduction: attendanceDeduction.toNumber(),
         loanDeduction: loanDeduction.toNumber(),
+        loanDisbursement: loanDisbursement.toNumber(),
+        advanceSalaryDisbursement: advanceSalaryDisbursement.toNumber(),
         advanceSalaryDeduction: advanceSalaryDeduction.toNumber(),
         eobiDeduction: eobiDeduction.toNumber(),
         providentFundDeduction: providentFundDeduction.toNumber(),
@@ -879,6 +904,8 @@ export class PayrollService {
           totalDeductions: new Decimal(d.totalDeductions),
           attendanceDeduction: new Decimal(d.attendanceDeduction),
           loanDeduction: new Decimal(d.loanDeduction),
+          loanDisbursement: new Decimal(d.loanDisbursement || 0),
+          advanceSalaryDisbursement: new Decimal(d.advanceSalaryDisbursement || 0),
           advanceSalaryDeduction: new Decimal(d.advanceSalaryDeduction),
           eobiDeduction: new Decimal(d.eobiDeduction),
           providentFundDeduction: new Decimal(d.providentFundDeduction),
@@ -931,6 +958,9 @@ export class PayrollService {
 
       // Add EOBI contributions for employees with EOBI enabled
       await this.addEOBIContributionsForPayroll(payroll.id, month, year, details);
+
+      // Add Social Security contributions for employees with Social Security
+      await this.addSocialSecurityContributionsForPayroll(payroll.id, month, year, details);
 
       // Log Component
       runInBackground(
@@ -1363,6 +1393,7 @@ export class PayrollService {
     departmentId?: string;
     subDepartmentId?: string;
     employeeId?: string;
+    locationId?: string;
   }) {
     const where: Prisma.PayrollDetailWhereInput = {};
 
@@ -1375,12 +1406,17 @@ export class PayrollService {
     }
 
     if (filters.employeeId && filters.employeeId !== 'all') {
-      where.employeeId = filters.employeeId;
+      if (filters.employeeId.includes(',')) {
+        where.employeeId = { in: filters.employeeId.split(',') };
+      } else {
+        where.employeeId = filters.employeeId;
+      }
     }
 
     if (
       (filters.departmentId && filters.departmentId !== 'all') ||
-      (filters.subDepartmentId && filters.subDepartmentId !== 'all')
+      (filters.subDepartmentId && filters.subDepartmentId !== 'all') ||
+      (filters.locationId && filters.locationId !== 'all')
     ) {
       where.employee = {
         ...(filters.departmentId &&
@@ -1390,6 +1426,10 @@ export class PayrollService {
         ...(filters.subDepartmentId &&
           filters.subDepartmentId !== 'all' && {
           subDepartmentId: filters.subDepartmentId,
+        }),
+        ...(filters.locationId &&
+          filters.locationId !== 'all' && {
+          locationId: filters.locationId,
         }),
       };
     }
@@ -1886,7 +1926,7 @@ export class PayrollService {
     }
 
     // Provident Fund calculation from master table
-    // Calculate PF as percentage of deductible base amount only
+    // Calculate PF as percentage of Basic Salary component (falls back to deductibleBaseAmount if no basic component is found)
     if (employee.providentFund) {
       try {
         // Fetch active ProvidentFund record from master table
@@ -1898,8 +1938,16 @@ export class PayrollService {
         });
 
         if (pfRecord) {
-          // Calculate PF deduction as percentage of deductible base amount
-          providentFundDeduction = deductibleBaseAmount
+          // Find Basic Salary component from salaryBreakup
+          const basicComponent = salaryBreakup.find((component) =>
+            component.name.toLowerCase().includes('basic'),
+          );
+          const basicSalaryBase = basicComponent
+            ? new Decimal(basicComponent.amount)
+            : deductibleBaseAmount;
+
+          // Calculate PF deduction as percentage of Basic Salary base
+          providentFundDeduction = basicSalaryBase
             .mul(new Decimal(pfRecord.percentage))
             .div(100);
         } else {
@@ -1918,23 +1966,98 @@ export class PayrollService {
     return { eobiDeduction, providentFundDeduction };
   }
 
-  private calculateLoansAndAdvances(
+  private async getUnconfirmedPayrollStartMonth(
+    startMonthYear: string,
+  ): Promise<string> {
+    let [year, month] = startMonthYear.split('-').map(Number);
+
+    while (true) {
+      const monthStr = String(month).padStart(2, '0');
+      const yearStr = String(year);
+
+      const payroll = await this.prisma.payroll.findFirst({
+        where: {
+          month: monthStr,
+          year: yearStr,
+        },
+        select: {
+          status: true,
+        },
+      });
+
+      if (!payroll || payroll.status !== 'confirmed') {
+        return `${yearStr}-${monthStr}`;
+      }
+
+      month++;
+      if (month > 12) {
+        month = 1;
+        year++;
+      }
+    }
+  }
+
+  private async calculateLoansAndAdvances(
     employee: any,
     month: string,
     year: string,
   ) {
     let loanDeduction = new Decimal(0);
+    let loanDisbursement = new Decimal(0);
+    let advanceSalaryDisbursement = new Decimal(0);
     let advanceSalaryDeduction = new Decimal(0);
+
+    const normalizedMonthForComparison = String(Number(month)).padStart(
+      2,
+      '0',
+    );
+    const normalizedYearForComparison = String(year);
 
     // Loans
     const emp = employee as any;
     if (emp.loanRequests && emp.loanRequests.length > 0) {
       for (const loan of emp.loanRequests) {
+        // Only process if the loan status is 'disbursed'
+        const loanStatus = (loan.status || '').toLowerCase();
+        if (loanStatus !== 'disbursed') {
+          continue;
+        }
+
+        // 1. Calculate Disbursement (Addition)
+        // Check if the loan was disbursed in the current payroll month/year
+        let matchesDisbursementMonth = false;
+        if (loan.disbursedAt) {
+          const disbursedDate = new Date(loan.disbursedAt);
+          const disbursedM = String(disbursedDate.getMonth() + 1).padStart(2, '0');
+          const disbursedY = String(disbursedDate.getFullYear());
+          matchesDisbursementMonth =
+            disbursedM === normalizedMonthForComparison &&
+            disbursedY === normalizedYearForComparison;
+        } else if (loan.updatedAt) {
+          // Fallback to checking updatedAt
+          const updatedDate = new Date(loan.updatedAt);
+          const updatedM = String(updatedDate.getMonth() + 1).padStart(2, '0');
+          const updatedY = String(updatedDate.getFullYear());
+          matchesDisbursementMonth =
+            updatedM === normalizedMonthForComparison &&
+            updatedY === normalizedYearForComparison;
+        }
+
+        if (matchesDisbursementMonth) {
+          loanDisbursement = loanDisbursement.add(new Decimal(loan.amount));
+        }
+
+        // 2. Calculate Deduction
         if (!loan.repaymentStartMonthYear || !loan.numberOfInstallments) {
           continue;
         }
 
-        const [startYear, startMonth] = loan.repaymentStartMonthYear
+        // Shift the repayment start month to the first unconfirmed payroll period
+        const shiftedStartMonthYear = await this.getUnconfirmedPayrollStartMonth(
+          loan.repaymentStartMonthYear,
+        );
+
+        const [startYear, startMonth] = shiftedStartMonthYear
           .split('-')
           .map(Number);
         const currentY = Number(year);
@@ -1962,6 +2085,20 @@ export class PayrollService {
       const deductionMonthYearStr = `${normalizedYearForComparison}-${normalizedMonthForComparison}`;
 
       for (const advance of emp.advanceSalaries) {
+        // 1. Calculate Disbursement (Addition) in neededOn month
+        if (advance.neededOn) {
+          const neededDate = new Date(advance.neededOn);
+          const neededM = String(neededDate.getMonth() + 1).padStart(2, '0');
+          const neededY = String(neededDate.getFullYear());
+          if (
+            neededM === normalizedMonthForComparison &&
+            neededY === normalizedYearForComparison
+          ) {
+            advanceSalaryDisbursement = advanceSalaryDisbursement.add(new Decimal(advance.amount));
+          }
+        }
+
+        // 2. Calculate Deduction in deduction month/year
         const matchesMonth =
           advance.deductionMonth === normalizedMonthForComparison ||
           String(Number(advance.deductionMonth)).padStart(2, '0') ===
@@ -1979,7 +2116,7 @@ export class PayrollService {
       }
     }
 
-    return { loanDeduction, advanceSalaryDeduction };
+    return { loanDeduction, loanDisbursement, advanceSalaryDisbursement, advanceSalaryDeduction };
   }
 
   private calculateEffectiveSalary(
@@ -3223,6 +3360,178 @@ export class PayrollService {
         error,
       );
       // Don't throw error - just log it so payroll confirmation can continue
+    }
+  }
+
+  // Add Social Security contributions when payroll is confirmed
+  private async addSocialSecurityContributionsForPayroll(
+    payrollId: string,
+    month: string,
+    year: string,
+    details: any[],
+  ) {
+    try {
+      this.logger.log(
+        `Adding Social Security contributions for payroll ${payrollId} (${month}/${year})`,
+      );
+
+      for (const d of details) {
+        let amount = Number(d.socialSecurityContributionAmount || 0);
+
+        if (amount <= 0) {
+          const empCheck = await this.prisma.employee.findUnique({
+            where: { id: d.employeeId },
+            include: { socialSecurityInstitution: true },
+          });
+          if (
+            empCheck &&
+            empCheck.socialSecurityInstitution &&
+            empCheck.socialSecurityInstitution.contributionRate
+          ) {
+            const rate = Number(empCheck.socialSecurityInstitution.contributionRate);
+            const baseSalary = Number(d.basicSalary || empCheck.employeeSalary || 0);
+            amount = (baseSalary * rate) / 100;
+          }
+        }
+
+        if (amount <= 0) continue;
+
+        // Find active employee registration
+        let reg =
+          await this.prisma.socialSecurityEmployeeRegistration.findFirst({
+            where: { employeeId: d.employeeId, isDeleted: false },
+            include: { institution: true, employerRegistration: true },
+          });
+
+        if (!reg) {
+          // Check employee record
+          const emp = await this.prisma.employee.findUnique({
+            where: { id: d.employeeId },
+          });
+          if (!emp || !emp.socialSecurityInstitutionId) continue;
+
+          let employerReg =
+            await this.prisma.socialSecurityEmployerRegistration.findFirst({
+              where: {
+                institutionId: emp.socialSecurityInstitutionId,
+                status: 'active',
+                isDeleted: false,
+              },
+            });
+          if (!employerReg) {
+            employerReg =
+              await this.prisma.socialSecurityEmployerRegistration.create({
+                data: {
+                  companyId: 'default-company',
+                  institutionId: emp.socialSecurityInstitutionId,
+                  registrationNumber: `AUTO-${emp.socialSecurityInstitutionId}-${Date.now()}`,
+                  employerName: 'Auto Employer',
+                  employerType: 'company',
+                  businessAddress: 'N/A',
+                  registrationDate: new Date(),
+                  status: 'active',
+                  totalEmployees: 0,
+                  monthlyContribution: 0,
+                },
+              });
+          }
+
+          reg = await this.prisma.socialSecurityEmployeeRegistration.create({
+            data: {
+              companyId: employerReg.companyId,
+              institutionId: emp.socialSecurityInstitutionId,
+              employerRegistrationId: employerReg.id,
+              employeeId: emp.id,
+              registrationNumber: `SS-${emp.employeeId || emp.id}`,
+              registrationDate: new Date(),
+              status: 'active',
+              contributionRate: 0,
+              baseSalary: Number(d.basicSalary || 0),
+              monthlyContribution: amount,
+              isEmployerContribution: true,
+            },
+            include: { institution: true, employerRegistration: true },
+          });
+        }
+
+        if (reg) {
+          // Upsert monthly contribution
+          let monthNum = parseInt(month, 10);
+          if (isNaN(monthNum)) {
+            const monthNames = [
+              'january', 'february', 'march', 'april', 'may', 'june',
+              'july', 'august', 'september', 'october', 'november', 'december'
+            ];
+            const idx = monthNames.indexOf(month.toString().toLowerCase());
+            monthNum = idx !== -1 ? idx + 1 : 1;
+          }
+          const monthStr = monthNum.toString().padStart(2, '0');
+          const yearStr = year.toString();
+          const date = new Date(
+            parseInt(yearStr, 10),
+            monthNum - 1,
+            28,
+          );
+
+          const existingContrib =
+            await this.prisma.socialSecurityContribution.findFirst({
+              where: {
+                employeeRegistrationId: reg.id,
+                month: monthStr,
+                year: yearStr,
+                isDeleted: false,
+              },
+            });
+
+          if (existingContrib) {
+            await this.prisma.socialSecurityContribution.update({
+              where: { id: existingContrib.id },
+              data: {
+                baseSalary: new Decimal(d.basicSalary || 0),
+                contributionAmount: new Decimal(amount),
+                employerContribution: new Decimal(amount),
+                employeeContribution: new Decimal(0),
+                paymentStatus: 'pending',
+                date,
+              },
+            });
+          } else {
+            await this.prisma.socialSecurityContribution.create({
+              data: {
+                companyId: reg.companyId || 'default-company',
+                institutionId: reg.institutionId,
+                employerRegistrationId: reg.employerRegistrationId,
+                employeeRegistrationId: reg.id,
+                employeeId: d.employeeId,
+                month: monthStr,
+                year: yearStr,
+                date,
+                baseSalary: new Decimal(d.basicSalary || 0),
+                contributionRate: reg.contributionRate || new Decimal(0),
+                contributionAmount: new Decimal(amount),
+                employerContribution: new Decimal(amount),
+                employeeContribution: new Decimal(0),
+                paymentStatus: 'pending',
+                status: 'active',
+              },
+            });
+          }
+
+          // Update registration's monthlyContribution & baseSalary
+          await this.prisma.socialSecurityEmployeeRegistration.update({
+            where: { id: reg.id },
+            data: {
+              monthlyContribution: new Decimal(amount),
+              baseSalary: new Decimal(d.basicSalary || 0),
+            },
+          });
+        }
+      }
+    } catch (err) {
+      this.logger.error(
+        `Error adding Social Security contributions for payroll ${payrollId}:`,
+        err,
+      );
     }
   }
 }

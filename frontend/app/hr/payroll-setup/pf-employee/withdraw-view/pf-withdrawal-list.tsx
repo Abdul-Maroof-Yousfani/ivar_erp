@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import DataTable from "@/components/common/data-table";
-import { columns } from "./columns";
+import { getColumns } from "./columns";
 import { PFWithdrawal } from "@/lib/actions/pf-withdrawal";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -11,7 +11,19 @@ interface PFWithdrawalListProps {
 }
 
 export function PFWithdrawalList({ initialData }: PFWithdrawalListProps) {
-    const [data] = useState<PFWithdrawal[]>(initialData);
+    const [data, setData] = useState<PFWithdrawal[]>(initialData);
+
+    const handleApproved = (id: string) => {
+        setData((prev) =>
+            prev.map((item) =>
+                item.id === id
+                    ? { ...item, approvalStatus: "approved", status: "processed" }
+                    : item
+            )
+        );
+    };
+
+    const columns = useMemo(() => getColumns(handleApproved), []);
 
     return (
         <div className="space-y-6">

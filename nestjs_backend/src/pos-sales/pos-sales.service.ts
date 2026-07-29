@@ -2939,7 +2939,14 @@ export class PosSalesService implements OnModuleInit {
             if (!order) throw new Error('Order not found');
             if (order.status === 'voided') throw new Error('Order is already voided');
             if (refundAmount <= 0) throw new Error('Refund amount must be greater than 0');
-            if (refundAmount > Number(order.grandTotal)) throw new Error('Refund amount exceeds order total');
+            if (refundAmount > Number(order.grandTotal)) {
+                // Cap it to grandTotal if it's within a small tolerance (e.g. 5 PKR) for rounding/precision discrepancies
+                if (refundAmount - Number(order.grandTotal) <= 5) {
+                    refundAmount = Number(order.grandTotal);
+                } else {
+                    throw new Error('Refund amount exceeds order total');
+                }
+            }
 
             // Use transaction to ensure inventory is restored atomically
             const result = await this.prisma.$transaction(async (tx) => {

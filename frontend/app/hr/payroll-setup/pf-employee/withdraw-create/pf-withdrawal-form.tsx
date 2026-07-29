@@ -9,16 +9,31 @@ import { Label } from "@/components/ui/label";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import { EmployeeSelect } from "@/components/employees/employee-select";
 import { toast } from "sonner";
-import { Printer, FileDown } from "lucide-react";
+import { Printer, FileDown, Wallet, TrendingDown, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { getDepartments, getSubDepartmentsByDepartment } from "@/lib/actions/department";
 import { createPFWithdrawal } from "@/lib/actions/pf-withdrawal";
+import { getEmployeePFBalance } from "@/lib/actions/pf-employee";
 import { MonthYearPicker } from "@/components/ui/month-year-picker";
+
+const formatPKR = (amount: number) =>
+    new Intl.NumberFormat("en-PK", {
+        style: "currency",
+        currency: "PKR",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(amount);
 
 export function PFWithdrawalForm() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
     const [departments, setDepartments] = useState<any[]>([]);
     const [subDepartments, setSubDepartments] = useState<any[]>([]);
+    const [balanceLoading, setBalanceLoading] = useState(false);
+    const [balance, setBalance] = useState<{
+        totalPFBalance: number;
+        totalWithdrawn: number;
+        availableBalance: number;
+    } | null>(null);
 
     const [formData, setFormData] = useState({
         departmentId: "",
@@ -56,11 +71,38 @@ export function PFWithdrawalForm() {
         fetchSubDepartments();
     }, [formData.departmentId]);
 
+    // Fetch employee balance when employee changes
+    useEffect(() => {
+        if (!formData.employeeId) {
+            setBalance(null);
+            return;
+        }
+        const fetchBalance = async () => {
+            setBalanceLoading(true);
+            const result = await getEmployeePFBalance(formData.employeeId);
+            if (result.status && result.data) {
+                setBalance(result.data);
+            } else {
+                setBalance(null);
+            }
+            setBalanceLoading(false);
+        };
+        fetchBalance();
+    }, [formData.employeeId]);
+
+    const requestedAmount = parseFloat(formData.withdrawalAmount) || 0;
+    const isOverLimit = balance !== null && requestedAmount > balance.availableBalance;
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
         if (!formData.employeeId || !formData.withdrawalAmount || !formData.monthYear) {
             toast.error("Please fill all required fields");
+            return;
+        }
+
+        if (isOverLimit) {
+            toast.error(`Amount exceeds available balance of ${formatPKR(balance!.availableBalance)}`);
             return;
         }
 
@@ -154,7 +196,7 @@ export function PFWithdrawalForm() {
                             <EmployeeSelect
                                 value={formData.employeeId}
                                 onValueChange={(value) =>
-                                    setFormData({ ...formData, employeeId: value })
+                                    setFormData({ ...formData, employeeId: value, withdrawalAmount: "" })
                                 }
                                 departmentId={formData.departmentId}
                                 subDepartmentId={formData.subDepartmentId}
@@ -165,6 +207,48 @@ export function PFWithdrawalForm() {
                             />
                         </div>
                     </div>
+
+                    {/* Balance Card */}
+                    {formData.employeeId && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {balanceLoading ? (
+                                <div className="md:col-span-3 flex items-center gap-2 text-muted-foreground text-sm py-3">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Loading balance...
+                                </div>
+                            ) : balance ? (
+                                <>
+                                    <div className="flex items-center gap-3 rounded-lg border p-4 bg-muted/30">
+                                        <Wallet className="h-8 w-8 text-blue-500 shrink-0" />
+                                        <div>
+                                            <p className="text-xs text-muted-foreground">Total PF Balance</p>
+                                            <p className="font-bold text-base">{formatPKR(balance.totalPFBalance)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 rounded-lg border p-4 bg-red-50 dark:bg-red-950/20">
+                                        <TrendingDown className="h-8 w-8 text-red-500 shrink-0" />
+                                        <div>
+                                            <p className="text-xs text-muted-foreground">Total Withdrawn</p>
+                                            <p className="font-bold text-base text-red-600">-{formatPKR(balance.totalWithdrawn)}</p>
+                                        </div>
+                                    </div>
+                                    <div className={`flex items-center gap-3 rounded-lg border p-4 ${balance.availableBalance <= 0 ? "bg-red-50 dark:bg-red-950/20" : "bg-green-50 dark:bg-green-950/20"}`}>
+                                        {balance.availableBalance <= 0 ? (
+                                            <AlertCircle className="h-8 w-8 text-red-500 shrink-0" />
+                                        ) : (
+                                            <CheckCircle2 className="h-8 w-8 text-green-500 shrink-0" />
+                                        )}
+                                        <div>
+                                            <p className="text-xs text-muted-foreground">Available Balance</p>
+                                            <p className={`font-bold text-base ${balance.availableBalance <= 0 ? "text-red-600" : "text-green-600"}`}>
+                                                {formatPKR(balance.availableBalance)}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : null}
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Withdrawal Amount */}
@@ -181,7 +265,14 @@ export function PFWithdrawalForm() {
                                 onChange={(e) =>
                                     setFormData({ ...formData, withdrawalAmount: e.target.value })
                                 }
+                                className={isOverLimit ? "border-red-500 focus-visible:ring-red-500" : ""}
                             />
+                            {isOverLimit && (
+                                <p className="text-xs text-red-600 flex items-center gap-1">
+                                    <AlertCircle className="h-3 w-3" />
+                                    Exceeds available balance of {formatPKR(balance!.availableBalance)}
+                                </p>
+                            )}
                         </div>
 
                         {/* Month-Year */}
@@ -203,7 +294,7 @@ export function PFWithdrawalForm() {
                     </div>
 
                     <div className="flex justify-end gap-4">
-                        <Button type="submit" disabled={loading}>
+                        <Button type="submit" disabled={loading || isOverLimit || (balance !== null && balance.availableBalance <= 0)}>
                             {loading ? "Submitting..." : "Submit"}
                         </Button>
                     </div>

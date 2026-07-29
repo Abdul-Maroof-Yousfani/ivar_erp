@@ -12,6 +12,8 @@ export interface EOBIEmployee {
     employeeContribution: number;
     employerContribution: number;
     totalEOBIBalance: number;
+    totalWithdrawn: number;
+    availableBalance: number;
     lastContributionMonth: string;
     totalMonths: number;
 }
@@ -35,6 +37,37 @@ export async function getEOBIEmployees(): Promise<{ status: boolean; data?: EOBI
         return result;
     } catch (error) {
         console.error('Error fetching EOBI employees:', error);
+        return {
+            status: false,
+            message: error instanceof Error ? error.message : 'An unexpected error occurred',
+        };
+    }
+}
+
+// Get single employee EOBI balance
+export async function getEmployeeEOBIBalance(employeeId: string): Promise<{
+    status: boolean;
+    data?: { totalEOBIBalance: number; totalWithdrawn: number; availableBalance: number };
+    message?: string;
+}> {
+    try {
+        const result = await getEOBIEmployees();
+        if (!result.status || !result.data) {
+            return { status: false, message: result.message };
+        }
+        const employee = result.data.find((e) => e.id === employeeId);
+        if (!employee) {
+            return { status: false, message: 'Employee not found' };
+        }
+        return {
+            status: true,
+            data: {
+                totalEOBIBalance: employee.totalEOBIBalance,
+                totalWithdrawn: employee.totalWithdrawn,
+                availableBalance: employee.availableBalance,
+            },
+        };
+    } catch (error) {
         return {
             status: false,
             message: error instanceof Error ? error.message : 'An unexpected error occurred',
