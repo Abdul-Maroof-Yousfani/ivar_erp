@@ -107,11 +107,7 @@ async function wipeLocationData(prisma: PrismaClient, options: WipeOptions) {
     where: { OR: [{ fromLocationId: locId }, { toLocationId: locId }] },
   });
 
-  const stockRequisitionsCount = await prisma.stockRequisition.count({
-    where: { toLocationId: locId },
-  });
-
-  const stockAdjustmentsCount = await prisma.stockAdjustment.count({
+  const stockAdjustmentItemsCount = await prisma.stockAdjustmentItem.count({
     where: { locationId: locId },
   });
 
@@ -129,8 +125,7 @@ async function wipeLocationData(prisma: PrismaClient, options: WipeOptions) {
   console.log(`   • POS Terminals:             ${posTerminals.length}`);
   console.log(`   • Transfer Requests:         ${transferRequestsCount}`);
   console.log(`   • Stock Movements:           ${stockMovementsCount}`);
-  console.log(`   • Stock Requisitions:        ${stockRequisitionsCount}`);
-  console.log(`   • Stock Adjustments:         ${stockAdjustmentsCount}`);
+  console.log(`   • Stock Adjustment Items:    ${stockAdjustmentItemsCount}`);
   console.log(`   • Stock Ledger Entries:      ${stockLedgerCount}`);
   console.log(`   • Inventory Items:           ${inventoryItemsCount}\n`);
 
@@ -187,28 +182,9 @@ async function wipeLocationData(prisma: PrismaClient, options: WipeOptions) {
 
     // 4. Delete POS Sessions & POS Terminals
     if (posIds.length > 0) {
-      const posSessions = await tx.posSession.findMany({
+      await tx.posSession.deleteMany({
         where: { posId: { in: posIds } },
-        select: { id: true },
       });
-      const sessionIds = posSessions.map(s => s.id);
-
-      if (sessionIds.length > 0) {
-        await tx.$executeRaw`
-          DELETE FROM pos_session_cash_denominations WHERE pos_session_id IN (
-            SELECT id FROM "PosSession" WHERE "posId" IN (${posIds.join(',')})
-          );
-        `;
-        await tx.$executeRaw`
-          DELETE FROM pos_session_transactions WHERE pos_session_id IN (
-            SELECT id FROM "PosSession" WHERE "posId" IN (${posIds.join(',')})
-          );
-        `;
-        await tx.posSession.deleteMany({
-          where: { posId: { in: posIds } },
-        });
-      }
-
       await tx.pos.deleteMany({
         where: { locationId: locId },
       });
@@ -238,41 +214,29 @@ async function wipeLocationData(prisma: PrismaClient, options: WipeOptions) {
     });
     console.log(`   ✅ Wiped ${deletedMovements.count} Stock Movement(s).`);
 
-    // 7. Delete Stock Requisitions
-    const stockRequisitions = await tx.stockRequisition.findMany({
-      where: { toLocationId: locId },
-      select: { id: true },
-    });
-    const reqIds = stockRequisitions.map(r => r.id);
-
-    if (reqIds.length > 0) {
-      await tx.stockRequisitionItem.deleteMany({
-        where: { stockRequisitionId: { in: reqIds } },
-      });
-      await tx.stockRequisition.deleteMany({
-        where: { id: { in: reqIds } },
-      });
-      console.log(`   ✅ Wiped ${reqIds.length} Stock Requisition(s).`);
-    }
-
-    // 8. Delete Stock Adjustments & Items
-    const stockAdjustments = await tx.stockAdjustment.findMany({
+    // 7. Delete Stock Adjustment Items & empty Stock Adjustments
+    const stockAdjustmentItems = await tx.stockAdjustmentItem.findMany({
       where: { locationId: locId },
-      select: { id: true },
+      select: { id: true, stockAdjustmentId: true },
     });
-    const adjIds = stockAdjustments.map(a => a.id);
 
-    if (adjIds.length > 0) {
+    if (stockAdjustmentItems.length > 0) {
+      const parentAdjIds = Array.from(new Set(stockAdjustmentItems.map(a => a.stockAdjustmentId)));
+
       await tx.stockAdjustmentItem.deleteMany({
-        where: { stockAdjustmentId: { in: adjIds } },
-      });
-      await tx.stockAdjustment.deleteMany({
         where: { locationId: locId },
       });
-      console.log(`   ✅ Wiped ${adjIds.length} Stock Adjustment(s).`);
+
+      for (const adjId of parentAdjIds) {
+        const remaining = await tx.stockAdjustmentItem.count({ where: { stockAdjustmentId: adjId } });
+        if (remaining === 0) {
+          await tx.stockAdjustment.delete({ where: { id: adjId } }).catch(() => {});
+        }
+      }
+      console.log(`   ✅ Wiped ${stockAdjustmentItems.length} Stock Adjustment Item(s).`);
     }
 
-    // 9. Delete Stock Ledgers & Inventory Items
+    // 8. Delete Stock Ledgers & Inventory Items
     const deletedLedger = await tx.stockLedger.deleteMany({
       where: { locationId: locId },
     });
@@ -310,6 +274,8 @@ async function main() {
   const managementUrl = process.env.DATABASE_URL_MANAGEMENT;
   const masterKey = process.env.MASTER_ENCRYPTION_KEY;
 
+  let multiTenantProcessed = false;
+
   if (managementUrl && masterKey) {
     const pool = new Pool({ connectionString: managementUrl });
     const adapter = new PrismaPg(pool);
@@ -320,55 +286,65 @@ async function main() {
         where: { status: 'active', ...(specificTenant ? { dbName: specificTenant } : {}) },
       });
 
-      if (companies.length === 0) {
-        console.log('ℹ️ No active tenant companies found matching filter.');
-        return;
-      }
+      if (companies.length > 0) {
+        multiTenantProcessed = true;
+        for (const company of companies) {
+          console.log(`\n👉 Processing Tenant Company: ${company.name} (${company.code})`);
+          let connectionString = company.dbUrl;
+          if (company.dbPassword) {
+            try {
+              const decPassword = encodeURIComponent(decrypt(company.dbPassword, masterKey));
+              connectionString = `postgresql://${company.dbUser}:${decPassword}@${company.dbHost || 'localhost'}:${company.dbPort || 5432}/${company.dbName}?schema=public`;
+            } catch {
+              console.warn(`  ⚠️ Decryption failed, using stored dbUrl`);
+            }
+          }
 
-      for (const company of companies) {
-        console.log(`\n👉 Processing Tenant Company: ${company.name} (${company.code})`);
-        let connectionString = company.dbUrl;
-        if (company.dbPassword) {
+          if (!connectionString) {
+            console.error(`  ❌ No database connection details available for company: ${company.code}`);
+            continue;
+          }
+
+          const tenantPool = new Pool({ connectionString });
+          const tenantAdapter = new PrismaPg(tenantPool);
+          const tenantPrisma = new PrismaClient({ adapter: tenantAdapter });
+
           try {
-            const decPassword = encodeURIComponent(decrypt(company.dbPassword, masterKey));
-            connectionString = `postgresql://${company.dbUser}:${decPassword}@${company.dbHost || 'localhost'}:${company.dbPort || 5432}/${company.dbName}?schema=public`;
-          } catch {
-            console.warn(`  ⚠️ Decryption failed, using stored dbUrl`);
+            await tenantPrisma.$connect();
+            await wipeLocationData(tenantPrisma, options);
+          } catch (err: any) {
+            console.error(`  ❌ Failed wiping location data for tenant ${company.code}: ${err.message}`);
+          } finally {
+            await tenantPrisma.$disconnect();
+            await tenantPool.end();
           }
         }
-
-        if (!connectionString) {
-          console.error(`  ❌ No database connection details available for company: ${company.code}`);
-          continue;
-        }
-
-        const tenantPool = new Pool({ connectionString });
-        const tenantAdapter = new PrismaPg(tenantPool);
-        const tenantPrisma = new PrismaClient({ adapter: tenantAdapter });
-
-        try {
-          await tenantPrisma.$connect();
-          await wipeLocationData(tenantPrisma, options);
-        } catch (err: any) {
-          console.error(`  ❌ Failed wiping location data for tenant ${company.code}: ${err.message}`);
-        } finally {
-          await tenantPrisma.$disconnect();
-          await tenantPool.end();
-        }
       }
+    } catch (err: any) {
+      console.warn(`⚠️ Management DB connection unavailable (${err.message}). Falling back to default DATABASE_URL...`);
     } finally {
-      await management.$disconnect();
-      await pool.end();
+      await management.$disconnect().catch(() => {});
+      await pool.end().catch(() => {});
     }
-  } else {
+  }
+
+  if (!multiTenantProcessed) {
     // Single database instance fallback
     console.log(`ℹ️ Connecting via default DATABASE_URL...`);
-    const prisma = new PrismaClient();
+    const defaultUrl = process.env.DATABASE_URL;
+    if (!defaultUrl) {
+      console.error('❌ DATABASE_URL is not set in environment.');
+      process.exit(1);
+    }
+    const defaultPool = new Pool({ connectionString: defaultUrl });
+    const defaultAdapter = new PrismaPg(defaultPool);
+    const prisma = new PrismaClient({ adapter: defaultAdapter } as any);
     try {
       await prisma.$connect();
       await wipeLocationData(prisma, options);
     } finally {
       await prisma.$disconnect();
+      await defaultPool.end();
     }
   }
 
@@ -379,3 +355,4 @@ main().catch((e) => {
   console.error('❌ Script failed with error:', e);
   process.exit(1);
 });
+
