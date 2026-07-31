@@ -746,6 +746,10 @@ export const menuData: MenuItem[] = [
             href: "/erp/finance/reports/general-ledger",
           },
           {
+            title: "General Ledger Summary",
+            href: "/erp/finance/reports/general-ledger-summary",
+          },
+          {
             title: "Trial Balance",
             href: "/erp/finance/reports/trial-balance",
           },

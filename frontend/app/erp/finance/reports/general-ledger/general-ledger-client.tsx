@@ -126,9 +126,37 @@ export function GeneralLedgerClient({
   const [isPending, startTransition] = React.useTransition();
   const [isExporting, setIsExporting] = React.useState(false);
 
+  // Contract tree to remove redundant same-named nested group wrappers (matches Chart of Accounts view)
+  const contractedAccounts = React.useMemo(() => {
+    if (!accounts || accounts.length === 0) return [];
+    const contract = (nodes: ChartOfAccount[], parentName?: string): ChartOfAccount[] => {
+      const result: ChartOfAccount[] = [];
+      for (const node of nodes) {
+        let currentChildren = node.children;
+        if (currentChildren && currentChildren.length > 0) {
+          currentChildren = contract(currentChildren, node.name);
+        }
+        const nodeCopy = { ...node, children: currentChildren };
+        if (
+          parentName &&
+          node.isGroup &&
+          node.name.toLowerCase().replace(/\s+/g, ' ').trim() === parentName.toLowerCase().replace(/\s+/g, ' ').trim()
+        ) {
+          if (currentChildren) {
+            result.push(...currentChildren);
+          }
+        } else {
+          result.push(nodeCopy);
+        }
+      }
+      return result;
+    };
+    return contract(accounts);
+  }, [accounts]);
+
   // Find selected account in the tree to check for children (sub-accounts)
   const selectedAccountInTree = React.useMemo(() => {
-    if (!accountId || accounts.length === 0) return null;
+    if (!accountId || contractedAccounts.length === 0) return null;
     const findInTree = (
       nodes: ChartOfAccount[],
       id: string,
@@ -142,10 +170,25 @@ export function GeneralLedgerClient({
       }
       return undefined;
     };
-    return findInTree(accounts, accountId);
-  }, [accountId, accounts]);
+    return findInTree(contractedAccounts, accountId);
+  }, [accountId, contractedAccounts]);
 
-  const subAccounts = selectedAccountInTree?.children ?? [];
+  const subAccounts = React.useMemo(() => {
+    if (!selectedAccountInTree) return [];
+    const getLeafSubAccounts = (node: ChartOfAccount): ChartOfAccount[] => {
+      if (!node.children || node.children.length === 0) return [];
+      const result: ChartOfAccount[] = [];
+      for (const child of node.children) {
+        if (!child.isGroup || !child.children || child.children.length === 0) {
+          result.push(child);
+        } else {
+          result.push(...getLeafSubAccounts(child));
+        }
+      }
+      return result;
+    };
+    return getLeafSubAccounts(selectedAccountInTree);
+  }, [selectedAccountInTree]);
 
   // Pagination states
   const [page, setPage] = React.useState(1);

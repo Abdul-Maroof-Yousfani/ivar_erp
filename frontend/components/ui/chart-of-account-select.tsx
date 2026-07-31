@@ -115,6 +115,7 @@ export interface ChartOfAccountSelectProps {
     allowGroups?: boolean;
     groupsOnly?: boolean;
     excludeAccountId?: string;
+    excludeTags?: boolean;
 }
 
 // ─── Tree row ─────────────────────────────────────────────────────────────────
@@ -295,6 +296,7 @@ export function ChartOfAccountSelect({
     allowGroups = false,
     groupsOnly = false,
     excludeAccountId,
+    excludeTags = false,
 }: ChartOfAccountSelectProps) {
     const [open, setOpen] = React.useState(false);
     const [tree, setTree] = React.useState<ChartOfAccount[]>(
@@ -360,6 +362,10 @@ export function ChartOfAccountSelect({
 
         const contractedTree = contract(tree);
 
+        if (!excludeTags) {
+            return contractedTree;
+        }
+
         function removeTags(nodes: ChartOfAccount[]): ChartOfAccount[] {
             return nodes.map(node => {
                 if (!node.isGroup) {
@@ -382,7 +388,7 @@ export function ChartOfAccountSelect({
             });
         }
         return removeTags(contractedTree);
-    }, [tree]);
+    }, [tree, excludeTags]);
 
     const filteredTree = React.useMemo(() => {
         return filterTreeExclude(cleanTreeForSelect, excludeAccountId);

@@ -78,9 +78,37 @@ export function GeneralLedgerSummaryClient({
   // Keyboard navigation on list
   const [focusedIndex, setFocusedIndex] = React.useState<number>(-1);
 
+  // Contract tree to remove redundant same-named nested group wrappers (matches Chart of Accounts view)
+  const contractedAccounts = React.useMemo(() => {
+    if (!accounts || accounts.length === 0) return [];
+    const contract = (nodes: ChartOfAccount[], parentName?: string): ChartOfAccount[] => {
+      const result: ChartOfAccount[] = [];
+      for (const node of nodes) {
+        let currentChildren = node.children;
+        if (currentChildren && currentChildren.length > 0) {
+          currentChildren = contract(currentChildren, node.name);
+        }
+        const nodeCopy = { ...node, children: currentChildren };
+        if (
+          parentName &&
+          node.isGroup &&
+          node.name.toLowerCase().replace(/\s+/g, ' ').trim() === parentName.toLowerCase().replace(/\s+/g, ' ').trim()
+        ) {
+          if (currentChildren) {
+            result.push(...currentChildren);
+          }
+        } else {
+          result.push(nodeCopy);
+        }
+      }
+      return result;
+    };
+    return contract(accounts);
+  }, [accounts]);
+
   // Find selected parent account in the tree to check for sub-accounts
   const selectedParentInTree = React.useMemo(() => {
-    if (!parentAccountId || accounts.length === 0) return null;
+    if (!parentAccountId || contractedAccounts.length === 0) return null;
     const findInTree = (
       nodes: ChartOfAccount[],
       id: string,
@@ -94,11 +122,24 @@ export function GeneralLedgerSummaryClient({
       }
       return undefined;
     };
-    return findInTree(accounts, parentAccountId);
-  }, [parentAccountId, accounts]);
+    return findInTree(contractedAccounts, parentAccountId);
+  }, [parentAccountId, contractedAccounts]);
 
   const subAccounts = React.useMemo(() => {
-    return selectedParentInTree?.children ?? [];
+    if (!selectedParentInTree) return [];
+    const getLeafSubAccounts = (node: ChartOfAccount): ChartOfAccount[] => {
+      if (!node.children || node.children.length === 0) return [];
+      const result: ChartOfAccount[] = [];
+      for (const child of node.children) {
+        if (!child.isGroup || !child.children || child.children.length === 0) {
+          result.push(child);
+        } else {
+          result.push(...getLeafSubAccounts(child));
+        }
+      }
+      return result;
+    };
+    return getLeafSubAccounts(selectedParentInTree);
   }, [selectedParentInTree]);
 
   // Filtered subaccounts based on search input
