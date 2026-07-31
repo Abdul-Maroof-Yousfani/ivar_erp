@@ -103,10 +103,11 @@ export class ChartOfAccountService {
     const map = new Map<string, (typeof accounts)[0] & { balance: any; debit: number; credit: number }>();
     for (const acc of accounts) {
       const balance = Number(acc.balance);
+      const isNormalDebit = acc.type === 'ASSET' || acc.type === 'EXPENSE';
       map.set(acc.id, { 
         ...acc, 
-        debit: balance > 0 ? balance : 0,
-        credit: balance < 0 ? Math.abs(balance) : 0
+        debit: isNormalDebit ? (balance > 0 ? balance : 0) : (balance < 0 ? Math.abs(balance) : 0),
+        credit: isNormalDebit ? (balance < 0 ? Math.abs(balance) : 0) : (balance > 0 ? balance : 0),
       });
     }
 

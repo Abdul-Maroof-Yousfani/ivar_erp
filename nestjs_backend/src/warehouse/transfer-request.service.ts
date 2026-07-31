@@ -35,6 +35,13 @@ export class TransferRequestService {
     return Number(item?.unitCost || 0);
   }
 
+  private async generateSequentialTransferNumber(tx?: Prisma.TransactionClient): Promise<string> {
+    const prisma = tx || this.prisma;
+    const count = await prisma.transferRequest.count();
+    const nextSeq = count + 1;
+    return `TR-${String(nextSeq).padStart(6, '0')}`;
+  }
+
   async createRequest(
     data: {
       fromWarehouseId?: string; // Optional for outlet-to-warehouse
@@ -51,7 +58,7 @@ export class TransferRequestService {
     ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
-      const requestNo = `TR-${Date.now()}`;
+      const requestNo = await this.generateSequentialTransferNumber();
       const transferType = data.transferType || 'WAREHOUSE_TO_OUTLET';
 
       // Validation based on transfer type
@@ -210,7 +217,7 @@ export class TransferRequestService {
     ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
-      const requestNo = `TR-BP-${Date.now()}`;
+      const requestNo = await this.generateSequentialTransferNumber();
       const transferType = data.transferType || 'WAREHOUSE_TO_OUTLET';
 
       // Ensure warehouse exists if provided
@@ -884,6 +891,10 @@ export class TransferRequestService {
   async acceptRequest(
     id: string,
     userId?: string,
+    data?: {
+      receivedItems?: { itemId: string; receivedQty: number }[];
+      notes?: string;
+    },
     ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
@@ -919,7 +930,25 @@ export class TransferRequestService {
         }
       }
 
+      const receivedMap = new Map<string, number>();
+      if (data?.receivedItems && Array.isArray(data.receivedItems)) {
+        for (const item of data.receivedItems) {
+          receivedMap.set(item.itemId, Number(item.receivedQty));
+        }
+      }
+
       return this.prisma.$transaction(async (tx) => {
+        // Update fulfilledQty for items
+        for (const item of request.items) {
+          const rxQty = receivedMap.has(item.itemId)
+            ? Number(receivedMap.get(item.itemId))
+            : Number(item.quantity);
+          await tx.transferRequestItem.update({
+            where: { id: item.id },
+            data: { fulfilledQty: new Prisma.Decimal(rxQty) },
+          });
+        }
+
         if (request.transferType === 'WAREHOUSE_TO_OUTLET') {
           // Normal transfer: Warehouse → Outlet
           if (request.status !== 'PENDING' && request.status !== 'APPROVED') {
@@ -929,11 +958,15 @@ export class TransferRequestService {
           }
 
           for (const item of request.items) {
+            const rxQty = receivedMap.has(item.itemId)
+              ? Number(receivedMap.get(item.itemId))
+              : Number(item.quantity);
+
             await this.stockMovementService.executeMovement({
               itemId: item.itemId,
               fromWarehouseId: request.fromWarehouseId!,
               toLocationId: request.toLocationId!,
-              quantity: Number(item.quantity),
+              quantity: rxQty,
               type: 'TRANSFER',
               referenceType: 'TRANSFER_REQUEST',
               referenceId: request.id,
@@ -952,8 +985,11 @@ export class TransferRequestService {
           const isClaimBased = request.notes?.includes('approved claim');
 
           if (isClaimBased) {
-            // For claim-based transfers: First add items to POS inventory, then transfer to warehouse
             for (const item of request.items) {
+              const rxQty = receivedMap.has(item.itemId)
+                ? Number(receivedMap.get(item.itemId))
+                : Number(item.quantity);
+
               const posStock = await tx.inventoryItem.findFirst({
                 where: {
                   itemId: item.itemId,
@@ -970,7 +1006,7 @@ export class TransferRequestService {
               if (posStock) {
                 await tx.inventoryItem.update({
                   where: { id: posStock.id },
-                  data: { quantity: { increment: Number(item.quantity) } },
+                  data: { quantity: { increment: rxQty } },
                 });
               } else {
                 await tx.inventoryItem.create({
@@ -978,7 +1014,7 @@ export class TransferRequestService {
                     itemId: item.itemId,
                     warehouseId: actualWarehouseId,
                     locationId: request.fromLocationId!,
-                    quantity: Number(item.quantity),
+                    quantity: rxQty,
                     status: 'AVAILABLE',
                   },
                 });
@@ -990,7 +1026,7 @@ export class TransferRequestService {
                   itemId: item.itemId,
                   warehouseId: actualWarehouseId,
                   locationId: request.fromLocationId!,
-                  qty: Number(item.quantity),
+                  qty: rxQty,
                   movementType: 'INBOUND' as any,
                   referenceType: 'POS_CLAIM_APPROVED',
                   referenceId: request.id,
@@ -1004,7 +1040,7 @@ export class TransferRequestService {
                 itemId: item.itemId,
                 fromLocationId: request.fromLocationId!,
                 toWarehouseId: request.fromWarehouseId!,
-                quantity: Number(item.quantity),
+                quantity: rxQty,
                 type: 'RETURN_TRANSFER',
                 referenceType: 'CLAIM_RETURN_REQUEST',
                 referenceId: request.id,
@@ -1014,11 +1050,15 @@ export class TransferRequestService {
           } else {
             // Normal outlet-to-warehouse transfer (non-claim)
             for (const item of request.items) {
+              const rxQty = receivedMap.has(item.itemId)
+                ? Number(receivedMap.get(item.itemId))
+                : Number(item.quantity);
+
               await this.stockMovementService.executeMovement({
                 itemId: item.itemId,
                 fromLocationId: request.fromLocationId!,
                 toWarehouseId: request.fromWarehouseId!,
-                quantity: Number(item.quantity),
+                quantity: rxQty,
                 type: 'RETURN_TRANSFER',
                 referenceType: 'RETURN_REQUEST',
                 referenceId: request.id,
@@ -1035,6 +1075,10 @@ export class TransferRequestService {
           }
 
           for (const item of request.items) {
+            const rxQty = receivedMap.has(item.itemId)
+              ? Number(receivedMap.get(item.itemId))
+              : Number(item.quantity);
+
             // Only need to add stock to destination (source already decreased)
             const destItem = await tx.inventoryItem.findFirst({
               where: {
@@ -1044,7 +1088,6 @@ export class TransferRequestService {
               },
             });
 
-            // Find source stock to get actual warehouseId
             const sourceStock = await tx.inventoryItem.findFirst({
               where: {
                 locationId: request.fromLocationId!,
@@ -1056,31 +1099,28 @@ export class TransferRequestService {
             const transferRate = await this.getCurrentItemRate(tx, item.itemId);
 
             if (destItem) {
-              // Update existing stock at destination
               await tx.inventoryItem.update({
                 where: { id: destItem.id },
-                data: { quantity: { increment: Number(item.quantity) } },
+                data: { quantity: { increment: rxQty } },
               });
             } else {
-              // Create new stock entry at destination
               await tx.inventoryItem.create({
                 data: {
                   warehouseId: actualWarehouseId,
                   locationId: request.toLocationId!,
                   itemId: item.itemId,
-                  quantity: Number(item.quantity),
+                  quantity: rxQty,
                   status: 'AVAILABLE',
                 },
               });
             }
 
-            // Create inbound ledger entry for destination
             await this.stockLedgerService.createEntry(
               {
                 itemId: item.itemId,
                 warehouseId: actualWarehouseId,
                 locationId: request.toLocationId!,
-                qty: Number(item.quantity),
+                qty: rxQty,
                 movementType: 'INBOUND' as any,
                 referenceType: 'OUTLET_TRANSFER_IN',
                 referenceId: request.id,
@@ -1091,12 +1131,21 @@ export class TransferRequestService {
           }
         }
 
+        // Combine existing notes with receiving notes
+        let newNotes = request.notes || '';
+        if (data?.notes) {
+          newNotes = newNotes
+            ? `${newNotes}\n[Receiving Notes]: ${data.notes}`
+            : `[Receiving Notes]: ${data.notes}`;
+        }
+
         // Update request status to completed
         const updated = await tx.transferRequest.update({
           where: { id },
           data: {
             status: 'COMPLETED',
             approvedById: userId,
+            notes: newNotes,
           },
         });
 

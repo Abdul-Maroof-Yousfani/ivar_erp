@@ -12,7 +12,7 @@ import { Autocomplete } from "@/components/ui/autocomplete";
 import { CalendarIcon, Save } from "lucide-react";
 import { cn, COMPANY_NAME } from "@/lib/utils";
 import { getChartOfAccounts } from "@/lib/actions/chart-of-account";
-import { saveOpeningBalance } from "@/lib/actions/opening-balance";
+import { saveOpeningBalance, getOpeningBalances } from "@/lib/actions/opening-balance";
 import { toast } from "sonner";
 
 interface Account {
@@ -45,23 +45,59 @@ export function OpeningBalanceClient() {
   }, []);
 
   const loadAccounts = async () => {
-    const res = await getChartOfAccounts();
+    const [res, obRes] = await Promise.all([
+      getChartOfAccounts(),
+      getOpeningBalances(),
+    ]);
+
     if (res.data) {
       setAccounts(res.data);
       const tree = buildTree(res.data);
       const flat = flattenTree(tree);
       setFlatAccounts(flat);
+
+      const obMap = new Map<string, { debit: number; credit: number; date?: string }>();
+      if (obRes.status && Array.isArray(obRes.data)) {
+        obRes.data.forEach((tx: any) => {
+          obMap.set(tx.accountId, {
+            debit: Number(tx.debit || 0),
+            credit: Number(tx.credit || 0),
+            date: tx.transactionDate,
+          });
+        });
+      }
       
       // Initialize entries
       const initialEntries: Record<string, OpeningBalanceEntry> = {};
       flat.forEach(acc => {
         if (!acc.isGroup) {
-          const bal = acc.balance || 0;
-          initialEntries[acc.id] = {
-            accountId: acc.id,
-            type: bal > 0 ? "DEBIT" : bal < 0 ? "CREDIT" : (acc.type === "ASSET" || acc.type === "EXPENSE" ? "DEBIT" : "CREDIT"),
-            amount: Math.abs(bal),
-          };
+          const ob = obMap.get(acc.id);
+          const isNormalDebit = acc.type === "ASSET" || acc.type === "EXPENSE";
+
+          if (ob && (ob.debit > 0 || ob.credit > 0)) {
+            initialEntries[acc.id] = {
+              accountId: acc.id,
+              type: ob.debit > 0 ? "DEBIT" : "CREDIT",
+              amount: ob.debit > 0 ? ob.debit : ob.credit,
+            };
+          } else {
+            const bal = Number(acc.balance) || 0;
+            if (bal !== 0) {
+              initialEntries[acc.id] = {
+                accountId: acc.id,
+                type: isNormalDebit
+                  ? (bal > 0 ? "DEBIT" : "CREDIT")
+                  : (bal > 0 ? "CREDIT" : "DEBIT"),
+                amount: Math.abs(bal),
+              };
+            } else {
+              initialEntries[acc.id] = {
+                accountId: acc.id,
+                type: isNormalDebit ? "DEBIT" : "CREDIT",
+                amount: 0,
+              };
+            }
+          }
         }
       });
       setEntries(initialEntries);
@@ -141,8 +177,8 @@ export function OpeningBalanceClient() {
 
   const handleSave = async (accountId: string) => {
     const entry = entries[accountId];
-    if (!entry || entry.amount === 0) {
-      toast.error("Please enter an amount");
+    if (!entry || entry.amount < 0) {
+      toast.error("Please enter a valid amount");
       return;
     }
 
@@ -155,7 +191,7 @@ export function OpeningBalanceClient() {
       });
 
       if (res.status) {
-        toast.success("Opening balance saved successfully");
+        toast.success(res.message || "Opening balance saved successfully");
         // Reload accounts to update balances
         loadAccounts();
       } else {
@@ -201,7 +237,7 @@ export function OpeningBalanceClient() {
           <Input
             type="number"
             step="0.01"
-            value={entry.amount || ""}
+            value={entry.amount === 0 ? "" : entry.amount}
             onChange={(e) => handleAmountChange(account.id, e.target.value)}
             className="text-right font-mono"
             placeholder="0.00"
@@ -211,7 +247,7 @@ export function OpeningBalanceClient() {
           <Button
             size="sm"
             onClick={() => handleSave(account.id)}
-            disabled={isPending || entry.amount === 0}
+            disabled={isPending || entry.amount < 0}
             className="bg-green-600 hover:bg-green-700"
           >
             <Save className="h-4 w-4 mr-1" />

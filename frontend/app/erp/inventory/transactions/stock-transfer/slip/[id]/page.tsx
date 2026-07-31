@@ -303,30 +303,61 @@ export default function TransferSlipPage({ params }: { params: Promise<{ id: str
                                 <th className="py-3 px-2 font-bold text-sm w-12 text-center">#</th>
                                 <th className="py-3 px-2 font-bold text-sm">Item Code (SKU)</th>
                                 <th className="py-3 px-2 font-bold text-sm">Description</th>
-                                <th className="py-3 px-2 font-bold text-sm text-right">
-                                    {transfer.transferType === 'OUTLET_TO_WAREHOUSE' ? 'Quantity Returned' : 'Quantity Transferred'}
-                                </th>
+                                <th className="py-3 px-2 font-bold text-sm text-right">Dispatched Qty</th>
+                                <th className="py-3 px-2 font-bold text-sm text-right">Received Qty</th>
+                                <th className="py-3 px-2 font-bold text-sm text-right">Variance</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {transfer.items?.map((item: any, index: number) => (
-                                <tr key={item.id} className="border-b border-gray-200">
-                                    <td className="py-4 px-2 text-center text-gray-500 text-sm">{index + 1}</td>
-                                    <td className="py-4 px-2 font-mono text-sm font-semibold">{item.item?.sku}</td>
-                                    <td className="py-4 px-2 text-sm">{item.item?.name || item.item?.description || 'N/A'}</td>
-                                    <td className="py-4 px-2 text-right font-bold text-lg bg-gray-50/50">
-                                        {item.quantity}
-                                    </td>
-                                </tr>
-                            ))}
+                            {transfer.items?.map((item: any, index: number) => {
+                                const sent = Number(item.quantity || 0);
+                                const rx = item.fulfilledQty !== null && item.fulfilledQty !== undefined 
+                                    ? Number(item.fulfilledQty) 
+                                    : (transfer.status === 'COMPLETED' ? sent : null);
+                                const diff = rx !== null ? rx - sent : null;
+
+                                return (
+                                    <tr key={item.id} className="border-b border-gray-200">
+                                        <td className="py-4 px-2 text-center text-gray-500 text-sm">{index + 1}</td>
+                                        <td className="py-4 px-2 font-mono text-sm font-semibold">{item.item?.sku}</td>
+                                        <td className="py-4 px-2 text-sm">{item.item?.name || item.item?.description || 'N/A'}</td>
+                                        <td className="py-4 px-2 text-right font-bold text-base bg-gray-50/50">
+                                            {sent}
+                                        </td>
+                                        <td className="py-4 px-2 text-right font-bold text-base bg-gray-50/80">
+                                            {rx !== null ? rx : <span className="text-gray-400 text-xs font-normal">Pending</span>}
+                                        </td>
+                                        <td className={`py-4 px-2 text-right font-bold text-sm ${diff !== null && diff < 0 ? 'text-red-600' : diff !== null && diff > 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
+                                            {diff !== null ? (diff > 0 ? `+${diff}` : diff) : '—'}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                         <tfoot>
-                            <tr className="border-t-2 border-gray-800">
-                                <td colSpan={3} className="py-4 px-2 text-right font-bold text-gray-800">
-                                    {transfer.transferType === 'OUTLET_TO_WAREHOUSE' ? 'Total Quantities Returned:' : 'Total Quantities Dispatched:'}
+                            <tr className="border-t-2 border-gray-800 font-bold">
+                                <td colSpan={3} className="py-4 px-2 text-right text-gray-800">
+                                    Total Summaries:
                                 </td>
-                                <td className="py-4 px-2 text-right font-black text-2xl">
-                                    {transfer.items?.reduce((sum: number, item: any) => sum + Number(item.quantity), 0)}
+                                <td className="py-4 px-2 text-right font-black text-xl">
+                                    {transfer.items?.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0)}
+                                </td>
+                                <td className="py-4 px-2 text-right font-black text-xl text-emerald-700">
+                                    {transfer.items?.reduce((sum: number, item: any) => {
+                                        const rx = item.fulfilledQty !== null && item.fulfilledQty !== undefined ? Number(item.fulfilledQty) : (transfer.status === 'COMPLETED' ? Number(item.quantity || 0) : 0);
+                                        return sum + rx;
+                                    }, 0)}
+                                </td>
+                                <td className="py-4 px-2 text-right font-black text-xl">
+                                    {(() => {
+                                        const totalSent = transfer.items?.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0);
+                                        const totalRx = transfer.items?.reduce((sum: number, item: any) => {
+                                            const rx = item.fulfilledQty !== null && item.fulfilledQty !== undefined ? Number(item.fulfilledQty) : (transfer.status === 'COMPLETED' ? Number(item.quantity || 0) : Number(item.quantity || 0));
+                                            return sum + rx;
+                                        }, 0);
+                                        const diff = totalRx - totalSent;
+                                        return <span className={diff < 0 ? 'text-red-600' : diff > 0 ? 'text-emerald-600' : 'text-gray-600'}>{diff > 0 ? `+${diff}` : diff}</span>;
+                                    })()}
                                 </td>
                             </tr>
                         </tfoot>

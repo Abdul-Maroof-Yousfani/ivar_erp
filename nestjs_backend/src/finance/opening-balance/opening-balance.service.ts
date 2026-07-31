@@ -13,48 +13,78 @@ export class OpeningBalanceService {
   async createOpeningBalance(dto: CreateOpeningBalanceDto) {
     const { accountId, type, amount, date } = dto;
 
-    // Validate account exists
-    const account = await this.prisma.chartOfAccount.findUnique({
-      where: { id: accountId },
-    });
+    return await this.prisma.$transaction(async (tx) => {
+      // Validate account exists
+      const account = await tx.chartOfAccount.findUnique({
+        where: { id: accountId },
+      });
 
-    if (!account) {
-      throw new BadRequestException('Account not found');
-    }
+      if (!account) {
+        throw new BadRequestException('Account not found');
+      }
 
-    if (account.isGroup) {
-      throw new BadRequestException('Cannot set opening balance for group accounts');
-    }
+      if (account.isGroup) {
+        throw new BadRequestException('Cannot set opening balance for group accounts');
+      }
 
-    // Create journal entry for opening balance
-    const transactionDate = date ? new Date(date) : new Date();
-    
-    // Determine debit and credit amounts based on type
-    const debit = type === 'DEBIT' ? amount : 0;
-    const credit = type === 'CREDIT' ? amount : 0;
+      const isNormalDebit = account.type === 'ASSET' || account.type === 'EXPENSE';
 
-    // Post the opening balance transaction
-    await this.accountingService.postLines(
-      [
-        {
+      // Find any existing opening balance transaction(s) for this account
+      const existingTxs = await tx.accountTransaction.findMany({
+        where: {
           accountId,
-          debit,
-          credit,
+          sourceType: 'OPENING_BALANCE',
         },
-      ],
-      {
-        sourceType: 'OPENING_BALANCE',
-        sourceId: accountId,
-        sourceRef: `Opening Balance - ${account.code}`,
-        description: `Opening Balance for ${account.name}`,
-        transactionDate,
-      },
-    );
+      });
 
-    return {
-      status: true,
-      message: 'Opening balance created successfully',
-    };
+      // Revert existing opening balance transaction effects
+      for (const existingTx of existingTxs) {
+        const oldDelta = isNormalDebit
+          ? Number(existingTx.debit) - Number(existingTx.credit)
+          : Number(existingTx.credit) - Number(existingTx.debit);
+
+        if (oldDelta !== 0) {
+          await tx.chartOfAccount.update({
+            where: { id: accountId },
+            data: { balance: { decrement: oldDelta } },
+          });
+        }
+
+        await tx.accountTransaction.delete({
+          where: { id: existingTx.id },
+        });
+      }
+
+      // If amount > 0, post the new opening balance
+      if (amount > 0) {
+        const transactionDate = date ? new Date(date) : new Date();
+        const debit = type === 'DEBIT' ? amount : 0;
+        const credit = type === 'CREDIT' ? amount : 0;
+
+        await this.accountingService.postLines(
+          [
+            {
+              accountId,
+              debit,
+              credit,
+            },
+          ],
+          {
+            sourceType: 'OPENING_BALANCE',
+            sourceId: accountId,
+            sourceRef: `Opening Balance - ${account.code}`,
+            description: `Opening Balance for ${account.name}`,
+            transactionDate,
+          },
+          tx,
+        );
+      }
+
+      return {
+        status: true,
+        message: amount > 0 ? 'Opening balance saved successfully' : 'Opening balance reset to 0',
+      };
+    });
   }
 
   async getOpeningBalances() {

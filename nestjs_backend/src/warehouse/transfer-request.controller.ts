@@ -132,12 +132,21 @@ export class TransferRequestController {
     @Post(':id/accept')
     @Permissions('pos.inventory.receiving.accept', 'pos.inventory.inbound.accept', 'pos.inventory.returns.approve')
     @ApiOperation({ summary: 'Accept and execute transfer movement' })
-    async accept(@Param('id') id: string, @Body() dto: { userId?: string }, @Req() req: any) {
-        const data = await this.transferRequestService.acceptRequest(id, dto.userId, {
-            userId: req.user?.id,
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent'],
-        });
+    async accept(
+        @Param('id') id: string,
+        @Body() dto: { userId?: string; receivedItems?: { itemId: string; receivedQty: number }[]; notes?: string },
+        @Req() req: any
+    ) {
+        const data = await this.transferRequestService.acceptRequest(
+            id,
+            dto.userId,
+            { receivedItems: dto.receivedItems, notes: dto.notes },
+            {
+                userId: req.user?.id,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+            }
+        );
         return { status: true, data, message: 'Transfer accepted and stock moved successfully' };
     }
 
