@@ -123,13 +123,48 @@ async function applyOpeningBalancesToTenant(
   console.log(`📅 Effective Transaction Date: ${transactionDate.toISOString().split('T')[0]}`);
   console.log(`============================================================\n`);
 
-  // Fetch all COA accounts
+  // STEP 1: Wipe all previous OPENING_BALANCE transactions and revert account balances
+  const existingOpeningTxs = await prisma.accountTransaction.findMany({
+    where: { sourceType: 'OPENING_BALANCE' },
+    include: { account: { select: { id: true, type: true } } },
+  });
+
+  console.log(`🧹 Clearing ${existingOpeningTxs.length} previous opening balance transaction(s)...`);
+
+  const accountDeltaMap = new Map<string, number>();
+  for (const txRow of existingOpeningTxs) {
+    if (!txRow.account) continue;
+    const isNormalDebit = txRow.account.type === AccountType.ASSET || txRow.account.type === AccountType.EXPENSE;
+    const oldDelta = isNormalDebit
+      ? Number(txRow.debit) - Number(txRow.credit)
+      : Number(txRow.credit) - Number(txRow.debit);
+
+    accountDeltaMap.set(txRow.accountId, (accountDeltaMap.get(txRow.accountId) || 0) + oldDelta);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const [accountId, oldDelta] of accountDeltaMap.entries()) {
+      if (oldDelta !== 0) {
+        await tx.chartOfAccount.update({
+          where: { id: accountId },
+          data: { balance: { decrement: oldDelta } },
+        });
+      }
+    }
+
+    await tx.accountTransaction.deleteMany({
+      where: { sourceType: 'OPENING_BALANCE' },
+    });
+  });
+
+  console.log(`✅ Previous opening balances cleared cleanly.\n`);
+
+  // STEP 2: Fetch all COA accounts for lookup
   const allAccounts = await prisma.chartOfAccount.findMany({
     select: { id: true, code: true, name: true, type: true, isGroup: true, balance: true },
     orderBy: { code: 'asc' },
   });
 
-  // Create lookup maps
   const accountByNormName = new Map<string, typeof allAccounts[0]>();
   const accountByCode = new Map<string, typeof allAccounts[0]>();
 
@@ -143,6 +178,7 @@ async function applyOpeningBalancesToTenant(
   let skippedGroupCount = 0;
   let unmatchedEntries: ExcelOpeningBalanceEntry[] = [];
 
+  // STEP 3: Apply Excel entries one by one
   for (const entry of entries) {
     if (entry.amount === 0) {
       skippedZeroCount++;
@@ -152,14 +188,11 @@ async function applyOpeningBalancesToTenant(
     const normKey = normalizeName(entry.rawName);
     let matchedAccount = accountByNormName.get(normKey);
 
-    // Fallback search if exact normalized name didn't match directly
     if (!matchedAccount) {
-      // Try by code if rawName is a code
       matchedAccount = accountByCode.get(entry.rawName.toLowerCase());
     }
 
     if (!matchedAccount) {
-      // Try substring matching
       matchedAccount = allAccounts.find(
         a => normalizeName(a.name) === normKey || normalizeName(a.name).includes(normKey) || normKey.includes(normalizeName(a.name))
       );
@@ -176,7 +209,7 @@ async function applyOpeningBalancesToTenant(
       continue;
     }
 
-    // Apply opening balance in an atomic transaction
+    // Apply the new opening balance entry one by one
     await prisma.$transaction(async (tx) => {
       const account = await tx.chartOfAccount.findUnique({
         where: { id: matchedAccount!.id },
@@ -184,37 +217,8 @@ async function applyOpeningBalancesToTenant(
 
       if (!account) return;
 
-      const isNormalDebit = account.type === AccountType.ASSET || account.type === AccountType.EXPENSE;
-
-      // Find and revert any existing OPENING_BALANCE transaction for this account
-      const existingTxs = await tx.accountTransaction.findMany({
-        where: {
-          accountId: account.id,
-          sourceType: 'OPENING_BALANCE',
-        },
-      });
-
-      for (const existingTx of existingTxs) {
-        const oldDelta = isNormalDebit
-          ? Number(existingTx.debit) - Number(existingTx.credit)
-          : Number(existingTx.credit) - Number(existingTx.debit);
-
-        if (oldDelta !== 0) {
-          await tx.chartOfAccount.update({
-            where: { id: account.id },
-            data: { balance: { decrement: oldDelta } },
-          });
-        }
-
-        await tx.accountTransaction.delete({
-          where: { id: existingTx.id },
-        });
-      }
-
-      // Post the new opening balance
       const debit = entry.type === 'DEBIT' ? entry.amount : 0;
       const credit = entry.type === 'CREDIT' ? entry.amount : 0;
-
       const delta = calculateDelta(account.type as AccountType, debit, credit);
 
       const updatedAccount = await tx.chartOfAccount.update({
@@ -266,7 +270,6 @@ async function applyOpeningBalancesToTenant(
 async function main() {
   console.log('🚀 Starting Opening Balance Update from Excel File...\n');
 
-  // Command-line arguments
   const fileArgIdx = process.argv.indexOf('--file');
   const excelFilePath =
     fileArgIdx !== -1
