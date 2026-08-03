@@ -149,8 +149,7 @@ export class UploadService {
       },
     });
     // Resolve the URL to return to the caller
-    // The frontend base URL already includes /api, so return a path without it
-    const fileUrl = publicUrl ? publicUrl: `/uploads/${record.id}`;
+    const fileUrl = publicUrl ? publicUrl : `/api/uploads/${record.id}`;
 
     runInBackground(
       'Upload File',
@@ -302,7 +301,7 @@ export class UploadService {
   }
 
   async getSignedUrlForDownload(key: string): Promise<string> {
-    if (!USE_S3) return `/uploads/${key}`;
+    if (!USE_S3) return `/api/uploads/${key}`;
     return getSignedUrl(
       s3Client!,
       new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }),

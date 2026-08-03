@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
     const id = json.data?.id;
     let url = json.data?.url;
     if (url && url.startsWith("/")) {
-      url = `${API_BASE.replace("/api", "")}${url}`;
+      const apiOrigin = new URL(API_BASE).origin;
+      url = url.startsWith("/api") ? `${apiOrigin}${url}` : `${API_BASE}${url}`;
     } else if (!url) {
       url = `${API_BASE}/uploads/${id}`;
     }

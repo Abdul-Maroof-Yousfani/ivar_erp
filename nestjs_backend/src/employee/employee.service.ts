@@ -1141,6 +1141,7 @@ export class EmployeeService {
                       stateId: stateIdStr,
                       year: yearValue,
                       grade: gradeStr,
+                      documentUrl: (q as any).documentUrl || null,
                     };
                   }),
               }
@@ -1724,6 +1725,7 @@ export class EmployeeService {
                       stateId: stateIdStr,
                       year: yearValue,
                       grade: gradeStr,
+                      documentUrl: (q as any).documentUrl || null,
                     };
                   }),
               }
