@@ -103,16 +103,20 @@ export class UploadController {
           .send({ status: false, message: 'File not found' });
       }
 
+      reply.header('Access-Control-Allow-Origin', '*');
+      reply.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
+
       const result = await this.uploadService.downloadUpload(id);
 
-      // S3: redirect to signed/public URL instead of proxying
-      if (result.url) {
+      // S3 fallback: redirect to signed/public URL if stream isn't directly available
+      if (result.url && (!result.stream || (result.stream as any).destroyed)) {
         return reply.redirect(result.url, 302);
       }
 
       reply.header('Content-Type', item.mimetype);
       reply.header('Content-Disposition', `inline; filename="${item.filename}"`);
-      reply.header('Cache-Control', 'public, max-age=31536000');
+      reply.header('Cache-Control', 'public, max-age=31536000, immutable');
       return reply.send(result.stream);
     } catch (error: any) {
       return reply

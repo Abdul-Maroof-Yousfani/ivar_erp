@@ -10,6 +10,14 @@ import { SocialSecurityInstitution } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/client';
 import * as bcrypt from 'bcrypt';
 
+function formatUploadUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.includes('/uploads/') && !url.includes('/api/uploads/')) {
+    return url.replace('/uploads/', '/api/uploads/');
+  }
+  return url;
+}
+
 @Injectable()
 export class EmployeeService {
   private readonly logger = new Logger(EmployeeService.name);
@@ -81,7 +89,7 @@ export class EmployeeService {
         stateName: emp.state?.name || null,
         countryName: emp.country?.name || null,
         socialSecurityInstitutionName: emp.socialSecurityInstitution?.name || null,
-        avatarUrl: user?.avatar || null,
+        avatarUrl: formatUploadUrl(user?.avatar) || null,
         // Legacy compatibility
         department: emp.department?.name || emp.departmentId,
         subDepartment: emp.subDepartment?.name || emp.subDepartmentId,
@@ -405,9 +413,9 @@ export class EmployeeService {
           : 0,
       })),
       // Avatar from user table
-      avatarUrl: user?.avatar || null,
+      avatarUrl: formatUploadUrl(user?.avatar) || null,
       // EOBI Document URL
-      eobiDocumentUrl: emp.eobiDocumentUrl || null,
+      eobiDocumentUrl: formatUploadUrl(emp.eobiDocumentUrl) || null,
       // Document URLs (JSON field)
       documentUrls: emp.documentUrls || null,
       // Explicitly preserve address fields

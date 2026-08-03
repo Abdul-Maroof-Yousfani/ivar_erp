@@ -222,6 +222,19 @@ export class UploadService {
     if (!item || !item.path) throw new NotFoundException('File not found');
 
     if (USE_S3) {
+      try {
+        const command = new GetObjectCommand({
+          Bucket: S3_BUCKET,
+          Key: item.path,
+        });
+        const response = await s3Client!.send(command);
+        if (response.Body) {
+          return { item, stream: response.Body as Readable };
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to stream S3 object ${item.path}, falling back to signed URL:`, e);
+      }
+
       if (S3_PUBLIC) {
         // For public buckets, redirect instead of proxying
         const endpoint = process.env.AWS_S3_ENDPOINT;
