@@ -15,7 +15,9 @@ import {
     Eye,
     AlertCircle,
     Check,
-    X
+    X,
+    Scan,
+    Barcode
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -52,6 +54,128 @@ export default function StockReceivingPage() {
     const [receivedQtyMap, setReceivedQtyMap] = useState<Record<string, number>>({});
     const [receivingNotes, setReceivingNotes] = useState<string>("");
 
+    // Barcode Scanner state for modal
+    const [scanInput, setScanInput] = useState<string>("");
+    const scannerInputRef = React.useRef<HTMLInputElement>(null);
+    const [lastScannedItemId, setLastScannedItemId] = useState<string | null>(null);
+
+    // Web Audio API Synthesized Audio Cues
+    const playScanSuccessBeep = () => {
+        if (typeof window === 'undefined') return;
+        try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(1050, audioCtx.currentTime); // Crisp, positive beep
+            gainNode.gain.setValueAtTime(0.06, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.08);
+        } catch (e) {
+            console.warn('Audio Context failed:', e);
+        }
+    };
+
+    const playScanErrorBuzz = () => {
+        if (typeof window === 'undefined') return;
+        try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc1 = audioCtx.createOscillator();
+            const osc2 = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc1.connect(gainNode);
+            osc2.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            osc1.type = 'sawtooth';
+            osc2.type = 'sawtooth';
+            osc1.frequency.setValueAtTime(140, audioCtx.currentTime); // Bass mismatch sound
+            osc2.frequency.setValueAtTime(143, audioCtx.currentTime);
+            
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.22);
+            
+            osc1.start();
+            osc2.start();
+            osc1.stop(audioCtx.currentTime + 0.22);
+            osc2.stop(audioCtx.currentTime + 0.22);
+        } catch (e) {
+            console.warn('Audio Context failed:', e);
+        }
+    };
+
+    // Auto-focus scanner input when modal opens
+    useEffect(() => {
+        if (inspectingRequest) {
+            const timer = setTimeout(() => {
+                scannerInputRef.current?.focus();
+            }, 150);
+            return () => clearTimeout(timer);
+        }
+    }, [inspectingRequest]);
+
+    // Keyboard shortcut F2 to focus scanner input
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'F2' && inspectingRequest) {
+                e.preventDefault();
+                scannerInputRef.current?.focus();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [inspectingRequest]);
+
+    const handleScanBarcode = (barcodeVal: string) => {
+        const code = barcodeVal.trim().toLowerCase();
+        if (!code || !inspectingRequest) return;
+
+        const matchedItem = inspectingRequest.items?.find((i: any) => {
+            const sku = i.item?.sku?.toLowerCase();
+            const barcode = (i.item?.barcode || i.item?.barCode)?.toLowerCase();
+            const itemCode = i.item?.code?.toLowerCase();
+            const itemId = i.itemId?.toLowerCase();
+            const upc = i.item?.upc?.toLowerCase();
+            const ean = i.item?.ean?.toLowerCase();
+
+            return (
+                sku === code ||
+                barcode === code ||
+                itemCode === code ||
+                itemId === code ||
+                upc === code ||
+                ean === code ||
+                (sku && code.includes(sku))
+            );
+        });
+
+        if (matchedItem) {
+            playScanSuccessBeep();
+            const currentRx = receivedQtyMap[matchedItem.itemId] !== undefined 
+                ? Number(receivedQtyMap[matchedItem.itemId]) 
+                : Number(matchedItem.quantity || 0);
+            const newRx = currentRx + 1;
+            
+            setReceivedQtyMap(prev => ({
+                ...prev,
+                [matchedItem.itemId]: newRx
+            }));
+            setLastScannedItemId(matchedItem.itemId);
+            toast.success(`+1 Scanned: ${matchedItem.item?.description || matchedItem.item?.sku || "Item"} (Total Rx: ${newRx})`);
+        } else {
+            playScanErrorBuzz();
+            toast.error(`Barcode/SKU "${barcodeVal}" not found in this transfer shipment.`);
+        }
+
+        setScanInput("");
+    };
+
     const locationId = user?.terminal?.location?.id || user?.locationId;
 
     const fetchRequests = async () => {
@@ -81,6 +205,8 @@ export default function StockReceivingPage() {
         });
         setReceivedQtyMap(initialMap);
         setReceivingNotes("");
+        setScanInput("");
+        setLastScannedItemId(null);
         setInspectingRequest(request);
     };
 
@@ -490,7 +616,7 @@ export default function StockReceivingPage() {
                     </DialogHeader>
 
                     {inspectingRequest && (
-                        <div className="flex-1 overflow-y-auto space-y-4 my-2 pr-2">
+                        <div className="flex-1 overflow-y-auto space-y-4 my-2 pr-2.5 [scrollbar-width:thin] [scrollbar-color:hsl(var(--primary)/0.4)_transparent] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-muted/20 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-primary/40 hover:[&::-webkit-scrollbar-thumb]:bg-primary/70 [&::-webkit-scrollbar-thumb]:rounded-full">
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-muted/40 p-3 rounded-lg text-xs font-semibold">
                                 <div>
                                     <span className="text-muted-foreground block text-[10px] uppercase">From</span>
@@ -506,9 +632,79 @@ export default function StockReceivingPage() {
                                 </div>
                             </div>
 
-                            <div className="border rounded-lg overflow-hidden">
+                            {/* Barcode / SKU Scanner Bar */}
+                            <div className="bg-muted/30 border border-primary/20 p-3 rounded-lg flex flex-col sm:flex-row items-center gap-3">
+                                <div className="flex-1 flex items-center gap-2 w-full">
+                                    <div className="relative flex-1">
+                                        <Scan className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
+                                        <Input
+                                            ref={scannerInputRef}
+                                            placeholder="Scan Item Barcode / SKU (or press F2)..."
+                                            value={scanInput}
+                                            onChange={(e) => setScanInput(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    e.preventDefault();
+                                                    handleScanBarcode(scanInput);
+                                                }
+                                            }}
+                                            className="pl-9 pr-8 font-mono text-xs sm:text-sm bg-background border-primary/30 focus-visible:ring-primary h-9"
+                                        />
+                                        {scanInput && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setScanInput("")}
+                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                            >
+                                                <X className="h-3.5 w-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
+                                    <Button 
+                                        type="button" 
+                                        size="sm"
+                                        onClick={() => handleScanBarcode(scanInput)} 
+                                        className="font-bold h-9 gap-1.5 shrink-0"
+                                    >
+                                        <Barcode className="h-4 w-4" />
+                                        Scan
+                                    </Button>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0 w-full sm:w-auto justify-end">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="text-[11px] h-8 font-semibold"
+                                        onClick={() => {
+                                            const zeroMap: Record<string, number> = {};
+                                            inspectingRequest.items?.forEach((i: any) => { zeroMap[i.itemId] = 0; });
+                                            setReceivedQtyMap(zeroMap);
+                                            toast.info("All received quantities set to 0. You can now scan items one by one.");
+                                        }}
+                                    >
+                                        Reset to 0
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="text-[11px] h-8 font-semibold"
+                                        onClick={() => {
+                                            const sentMap: Record<string, number> = {};
+                                            inspectingRequest.items?.forEach((i: any) => { sentMap[i.itemId] = Number(i.quantity || 0); });
+                                            setReceivedQtyMap(sentMap);
+                                            toast.info("All received quantities filled with dispatched quantities.");
+                                        }}
+                                    >
+                                        Fill Sent Qty
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="border rounded-lg overflow-x-auto max-h-[45vh] overflow-y-auto [scrollbar-width:thin] [scrollbar-color:hsl(var(--primary)/0.4)_transparent] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-muted/20 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-primary/40 hover:[&::-webkit-scrollbar-thumb]:bg-primary/70 [&::-webkit-scrollbar-thumb]:rounded-full">
                                 <table className="w-full text-left border-collapse text-xs">
-                                    <thead className="bg-muted/80 font-bold uppercase text-[10px] tracking-wider text-muted-foreground">
+                                    <thead className="bg-muted/80 font-bold uppercase text-[10px] tracking-wider text-muted-foreground sticky top-0 z-10 backdrop-blur-xs">
                                         <tr>
                                             <th className="p-3">Item / SKU</th>
                                             <th className="p-3 text-center">Dispatched Qty</th>
@@ -521,11 +717,17 @@ export default function StockReceivingPage() {
                                             const dispatched = Number(item.quantity || 0);
                                             const rxQty = receivedQtyMap[item.itemId] !== undefined ? receivedQtyMap[item.itemId] : dispatched;
                                             const diff = rxQty - dispatched;
+                                            const isLastScanned = lastScannedItemId === item.itemId;
 
                                             return (
-                                                <tr key={item.id} className="hover:bg-muted/20">
+                                                <tr key={item.id} className={`transition-colors ${isLastScanned ? "bg-primary/10 font-semibold" : "hover:bg-muted/20"}`}>
                                                     <td className="p-3">
-                                                        <div className="font-bold text-sm">{item.item?.description || "Item"}</div>
+                                                        <div className="font-bold text-sm flex items-center gap-1.5">
+                                                            {item.item?.description || "Item"}
+                                                            {isLastScanned && (
+                                                                <Badge variant="secondary" className="text-[9px] bg-primary/20 text-primary border-primary/30 py-0 px-1">Last Scanned</Badge>
+                                                            )}
+                                                        </div>
                                                         <div className="font-mono text-muted-foreground text-[11px]">SKU: {item.item?.sku || "N/A"}</div>
                                                     </td>
                                                     <td className="p-3 text-center font-bold text-base">
