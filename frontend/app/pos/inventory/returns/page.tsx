@@ -15,7 +15,10 @@ import {
     Search,
     Send,
     ShoppingCart,
-    Building2
+    Building2,
+    Scan,
+    Barcode,
+    X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -94,8 +97,162 @@ export default function ReturnRequestsPage() {
     const [notes, setNotes] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Barcode Scanner State
+    const [scanInput, setScanInput] = useState('');
+    const scannerInputRef = React.useRef<HTMLInputElement>(null);
+
+    // Web Audio API Synthesized Audio Cues
+    const playScanSuccessBeep = () => {
+        if (typeof window === 'undefined') return;
+        try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(1050, audioCtx.currentTime); // Crisp beep
+            gainNode.gain.setValueAtTime(0.06, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.08);
+        } catch (e) {
+            console.warn('Audio Context failed:', e);
+        }
+    };
+
+    const playScanErrorBuzz = () => {
+        if (typeof window === 'undefined') return;
+        try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc1 = audioCtx.createOscillator();
+            const osc2 = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc1.connect(gainNode);
+            osc2.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            osc1.type = 'sawtooth';
+            osc2.type = 'sawtooth';
+            osc1.frequency.setValueAtTime(140, audioCtx.currentTime); // Error buzz
+            osc2.frequency.setValueAtTime(143, audioCtx.currentTime);
+            
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.22);
+            
+            osc1.start();
+            osc2.start();
+            osc1.stop(audioCtx.currentTime + 0.22);
+            osc2.stop(audioCtx.currentTime + 0.22);
+        } catch (e) {
+            console.warn('Audio Context failed:', e);
+        }
+    };
+
+    // Auto-focus scanner on create mode open
+    useEffect(() => {
+        if (isCreating) {
+            const timer = setTimeout(() => {
+                scannerInputRef.current?.focus();
+            }, 150);
+            return () => clearTimeout(timer);
+        }
+    }, [isCreating]);
+
+    // Keyboard shortcut F2 to focus scanner input
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'F2' && isCreating) {
+                e.preventDefault();
+                scannerInputRef.current?.focus();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isCreating]);
+
     const locationId = user?.terminal?.location?.id || user?.locationId;
     const debouncedQuery = useDebounce(itemQuery, 300);
+
+    const handleScanToAdd = async (barcodeVal: string) => {
+        const code = barcodeVal.trim();
+        if (!code) return;
+        if (!locationId) {
+            playScanErrorBuzz();
+            toast.error("Outlet location is not configured");
+            return;
+        }
+
+        setIsSearching(true);
+        try {
+            const res = await inventoryApi.search(code, undefined, locationId);
+            if (res.status && res.data && res.data.length > 0) {
+                const cleanedCode = code.toLowerCase();
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                let matched = res.data.find((item: any) => 
+                    (item.sku && item.sku.toLowerCase() === cleanedCode) ||
+                    (item.barcode && item.barcode.toLowerCase() === cleanedCode) ||
+                    (item.barCode && item.barCode.toLowerCase() === cleanedCode) ||
+                    (item.code && item.code.toLowerCase() === cleanedCode) ||
+                    (item.id && item.id.toLowerCase() === cleanedCode)
+                );
+
+                if (!matched && res.data.length === 1) {
+                    matched = res.data[0];
+                }
+
+                if (matched) {
+                    const totalQty = matched.totalQuantity || 0;
+                    if (totalQty <= 0) {
+                        playScanErrorBuzz();
+                        toast.error(`Item "${matched.description || matched.sku}" has 0 available stock at this outlet.`);
+                        setScanInput('');
+                        return;
+                    }
+
+                    const itemToAdd: Item = {
+                        id: matched.id,
+                        sku: matched.sku,
+                        description: matched.description,
+                        size: matched.size,
+                        color: matched.color,
+                        totalQuantity: totalQty,
+                    };
+
+                    const existingInCart = cart.find(c => c.item.id === matched.id);
+                    const currentQty = existingInCart ? existingInCart.quantity : 0;
+
+                    if (currentQty >= totalQty) {
+                        playScanErrorBuzz();
+                        toast.warning(`Cannot add more than available outlet stock (${totalQty}) for ${matched.sku}`);
+                        setScanInput('');
+                        return;
+                    }
+
+                    playScanSuccessBeep();
+                    addToCart(itemToAdd);
+                    toast.success(`+1 Scanned & Added: ${itemToAdd.description || itemToAdd.sku}`);
+                } else {
+                    playScanErrorBuzz();
+                    toast.warning(`Multiple items found for "${code}". Please select from search results.`);
+                    setItemQuery(code);
+                }
+            } else {
+                playScanErrorBuzz();
+                toast.error(`No item found matching Barcode/SKU: "${code}" in outlet stock.`);
+            }
+        } catch (error) {
+            console.error("Failed to scan item", error);
+            playScanErrorBuzz();
+            toast.error(`Error scanning barcode "${code}"`);
+        } finally {
+            setIsSearching(false);
+            setScanInput('');
+        }
+    };
 
     const fetchRequests = useCallback(async () => {
         if (!locationId) return;
@@ -300,7 +457,54 @@ export default function ReturnRequestsPage() {
 
                 {/* Main Form */}
                 <main className="flex-1 p-4 md:p-6 pb-20 overflow-auto">
-                    <div className="max-w-5xl mx-auto w-full grid grid-cols-1 md:grid-cols-5 gap-6">
+                    <div className="max-w-5xl mx-auto w-full">
+                        {/* Barcode / SKU Scan-to-Add Input Bar */}
+                        <Card className="border-orange-500/30 bg-orange-500/5 shadow-sm mb-6">
+                            <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-3">
+                                <div className="flex items-center gap-2 font-bold text-sm text-orange-700 dark:text-orange-300 shrink-0">
+                                    <Scan className="h-5 w-5 text-orange-600 animate-pulse" />
+                                    Scan to Add Item:
+                                </div>
+                                <div className="flex-1 flex items-center gap-2 w-full">
+                                    <div className="relative flex-1">
+                                        <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                        <Input
+                                            ref={scannerInputRef}
+                                            placeholder="Scan Item Barcode / SKU (or press F2 to focus)..."
+                                            value={scanInput}
+                                            onChange={(e) => setScanInput(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    e.preventDefault();
+                                                    handleScanToAdd(scanInput);
+                                                }
+                                            }}
+                                            className="pl-9 pr-8 font-mono text-xs sm:text-sm bg-background border-orange-500/30 focus-visible:ring-orange-500 h-10 shadow-xs"
+                                        />
+                                        {scanInput && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setScanInput("")}
+                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                            >
+                                                <X className="h-3.5 w-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        onClick={() => handleScanToAdd(scanInput)}
+                                        disabled={isSearching}
+                                        className="font-bold h-10 gap-1.5 bg-orange-600 hover:bg-orange-700 text-white shrink-0 shadow-sm"
+                                    >
+                                        <Barcode className="h-4 w-4" />
+                                        {isSearching ? "Searching..." : "Scan & Add"}
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
                         {/* Left Column: Warehouse Selection & Item Search */}
                         <div className="md:col-span-2 space-y-6">
                             {/* Warehouse Selection Card */}

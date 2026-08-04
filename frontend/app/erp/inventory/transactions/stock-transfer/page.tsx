@@ -3,14 +3,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { warehouseApi, inventoryApi, locationApi, brandApi, categoryApi, silhouetteApi, genderApi, Warehouse, WarehouseLocation } from '@/lib/api';
-import { createTransferRequest, createReturnTransferRequest, createOutletToOutletTransferRequest } from '@/lib/actions/transfer-request';
+import { createTransferRequest, createReturnTransferRequest, createOutletToOutletTransferRequest, getTransferRequests, acceptTransferRequest } from '@/lib/actions/transfer-request';
 import { toast } from 'sonner';
-import { ArrowLeft, ArrowRightLeft, Search, Package, Save, History, RotateCcw, Trash2, Plus, CheckCircle2, Info, Loader2, WarehouseIcon, ArrowDown, Filter, X, ChevronDown, ChevronRight, ScanBarcode, Volume2, VolumeX, Keyboard, Sparkles, Upload } from 'lucide-react';
+import { ArrowLeft, ArrowRightLeft, Search, Package, Save, History, RotateCcw, Trash2, Plus, CheckCircle2, Info, Loader2, WarehouseIcon, ArrowDown, Filter, X, ChevronDown, ChevronRight, ScanBarcode, Volume2, VolumeX, Keyboard, Sparkles, Upload, PackageCheck, Scan, Barcode } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
@@ -23,6 +23,15 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/com
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { PermissionGuard } from '@/components/auth/permission-guard';
 import { TransferBulkUploadModal } from '@/components/inventory/transfer-bulk-upload-modal';
+import { useAuth } from '@/components/providers/auth-provider';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 
 export default function StockTransferPage() {
     const router = useRouter();
@@ -98,11 +107,145 @@ export default function StockTransferPage() {
         handleUploadIdChange(null);
     };
 
+    const { user } = useAuth();
+
     // Form State
     const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
     const [sourceLocationId, setSourceLocationId] = useState<string>('unassigned');
     const [destLocationId, setDestLocationId] = useState<string>('');
-    const [transferMode, setTransferMode] = useState<'WAREHOUSE_TO_OUTLET' | 'OUTLET_TO_WAREHOUSE' | 'OUTLET_TO_OUTLET'>('WAREHOUSE_TO_OUTLET');
+    const [transferMode, setTransferMode] = useState<'WAREHOUSE_TO_OUTLET' | 'OUTLET_TO_WAREHOUSE' | 'OUTLET_TO_OUTLET' | 'WAREHOUSE_RECEIVING'>('WAREHOUSE_TO_OUTLET');
+
+    // Warehouse Receiving Mode State
+    const [incomingWarehouseRequests, setIncomingWarehouseRequests] = useState<any[]>([]);
+    const [loadingIncoming, setLoadingIncoming] = useState(false);
+    const [inspectingRequest, setInspectingRequest] = useState<any | null>(null);
+    const [receivedQtyMap, setReceivedQtyMap] = useState<Record<string, number>>({});
+    const [receivingNotes, setReceivingNotes] = useState<string>('');
+    const [isAccepting, setIsAccepting] = useState<string | null>(null);
+
+    // Scanner state for receiving modal
+    const [modalScanInput, setModalScanInput] = useState<string>('');
+    const modalScannerRef = useRef<HTMLInputElement>(null);
+    const [lastScannedModalItemId, setLastScannedModalItemId] = useState<string | null>(null);
+
+    const fetchIncomingWarehouseTransfers = async () => {
+        setLoadingIncoming(true);
+        try {
+            const res = await getTransferRequests({ 
+                warehouseId: selectedWarehouseId && selectedWarehouseId !== 'all' ? selectedWarehouseId : undefined,
+                status: 'PENDING',
+                transferType: 'OUTLET_TO_WAREHOUSE'
+            });
+            if (res && res.status) {
+                setIncomingWarehouseRequests(res.data || []);
+            } else if (Array.isArray(res)) {
+                setIncomingWarehouseRequests(res);
+            } else {
+                setIncomingWarehouseRequests([]);
+            }
+        } catch (error) {
+            console.error('Failed to load incoming warehouse transfers', error);
+        } finally {
+            setLoadingIncoming(false);
+        }
+    };
+
+    useEffect(() => {
+        if (transferMode === 'WAREHOUSE_RECEIVING' || selectedWarehouseId) {
+            fetchIncomingWarehouseTransfers();
+        }
+    }, [transferMode, selectedWarehouseId]);
+
+    const openWarehouseInspectModal = (request: any) => {
+        const initialMap: Record<string, number> = {};
+        request.items?.forEach((item: any) => {
+            initialMap[item.itemId] = Number(item.quantity || 0);
+        });
+        setReceivedQtyMap(initialMap);
+        setReceivingNotes('');
+        setModalScanInput('');
+        setLastScannedModalItemId(null);
+        setInspectingRequest(request);
+    };
+
+    const handleAcceptWarehouseInspected = async () => {
+        if (!inspectingRequest) return;
+
+        const receivedItems = inspectingRequest.items.map((item: any) => ({
+            itemId: item.itemId,
+            receivedQty: receivedQtyMap[item.itemId] !== undefined ? Number(receivedQtyMap[item.itemId]) : Number(item.quantity || 0),
+        }));
+
+        setIsAccepting(inspectingRequest.id);
+        try {
+            const res = await acceptTransferRequest(inspectingRequest.id, user?.id, receivedItems, receivingNotes);
+            if (res && res.status) {
+                toast.success("Stock received into warehouse successfully!");
+                setIncomingWarehouseRequests(prev => prev.filter(r => r.id !== inspectingRequest.id));
+                setInspectingRequest(null);
+                loadWarehouses();
+            } else {
+                toast.error(res?.message || "Failed to accept stock");
+            }
+        } catch (error: any) {
+            toast.error(error.message || "Failed to accept stock");
+        } finally {
+            setIsAccepting(null);
+        }
+    };
+
+    const handleModalScanBarcode = (barcodeVal: string) => {
+        const code = barcodeVal.trim().toLowerCase();
+        if (!code || !inspectingRequest) return;
+
+        const matchedItem = inspectingRequest.items?.find((i: any) => {
+            const sku = i.item?.sku?.toLowerCase();
+            const barcode = (i.item?.barcode || i.item?.barCode)?.toLowerCase();
+            const itemCode = i.item?.code?.toLowerCase();
+            const itemId = i.itemId?.toLowerCase();
+            const upc = i.item?.upc?.toLowerCase();
+            const ean = i.item?.ean?.toLowerCase();
+
+            return (
+                sku === code ||
+                barcode === code ||
+                itemCode === code ||
+                itemId === code ||
+                upc === code ||
+                ean === code ||
+                (sku && code.includes(sku))
+            );
+        });
+
+        if (matchedItem) {
+            if (soundEnabled) playScanSuccessBeep();
+            const currentRx = receivedQtyMap[matchedItem.itemId] !== undefined 
+                ? Number(receivedQtyMap[matchedItem.itemId]) 
+                : Number(matchedItem.quantity || 0);
+            const newRx = currentRx + 1;
+            
+            setReceivedQtyMap(prev => ({
+                ...prev,
+                [matchedItem.itemId]: newRx
+            }));
+            setLastScannedModalItemId(matchedItem.itemId);
+            toast.success(`+1 Scanned: ${matchedItem.item?.description || matchedItem.item?.sku || "Item"} (Total Rx: ${newRx})`);
+        } else {
+            if (soundEnabled) playScanErrorBuzz();
+            toast.error(`Barcode/SKU "${barcodeVal}" not found in this transfer shipment.`);
+        }
+
+        setModalScanInput("");
+    };
+
+    useEffect(() => {
+        if (inspectingRequest) {
+            const timer = setTimeout(() => {
+                modalScannerRef.current?.focus();
+            }, 150);
+            return () => clearTimeout(timer);
+        }
+    }, [inspectingRequest]);
 
     // Item Selection State
     const [selectedItems, setSelectedItems] = useState<Array<{
@@ -650,14 +793,17 @@ export default function StockTransferPage() {
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight">
                             {transferMode === 'WAREHOUSE_TO_OUTLET' ? 'Stock Transfer' :
-                                transferMode === 'OUTLET_TO_WAREHOUSE' ? 'Return Transfer' : 'Outlet Transfer'}
+                                transferMode === 'OUTLET_TO_WAREHOUSE' ? 'Return Transfer' :
+                                transferMode === 'OUTLET_TO_OUTLET' ? 'Outlet Transfer' : 'Receive Warehouse Stock'}
                         </h1>
                         <p className="text-muted-foreground">
                             {transferMode === 'WAREHOUSE_TO_OUTLET'
                                 ? 'Move stock from warehouse to outlets.'
                                 : transferMode === 'OUTLET_TO_WAREHOUSE'
                                     ? 'Return stock from outlets to warehouse.'
-                                    : 'Transfer stock between outlets with dual approval.'
+                                    : transferMode === 'OUTLET_TO_OUTLET'
+                                        ? 'Transfer stock between outlets with dual approval.'
+                                        : 'Inspect and receive incoming stock returns at warehouse.'
                             }
                         </p>
                     </div>
@@ -705,6 +851,24 @@ export default function StockTransferPage() {
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
+                                variant={transferMode === 'WAREHOUSE_RECEIVING' ? 'default' : 'outline'}
+                                onClick={() => { setTransferMode('WAREHOUSE_RECEIVING'); setSelectedItems([]); }}
+                                className={`font-bold border-2 ${transferMode === 'WAREHOUSE_RECEIVING' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'}`}
+                            >
+                                <PackageCheck className="h-4 w-4 mr-2" /> Receive Stock
+                                {incomingWarehouseRequests.length > 0 && (
+                                    <Badge variant="secondary" className="ml-1.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-extrabold px-1.5 py-0.2 text-[10px]">
+                                        {incomingWarehouseRequests.length}
+                                    </Badge>
+                                )}
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Inspect and receive incoming stock returns/transfers into warehouse</TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
                                 variant="outline"
                                 onClick={() => setIsUploadModalOpen(true)}
                                 className="border-2 font-bold shadow-sm border-primary/20 hover:border-primary/40 hover:bg-primary/5"
@@ -742,7 +906,121 @@ export default function StockTransferPage() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {transferMode === 'WAREHOUSE_RECEIVING' ? (
+                <Card className="border-emerald-500/20 shadow-sm">
+                    <CardHeader className="border-b bg-emerald-500/5 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <CardTitle className="text-xl font-bold flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+                                <PackageCheck className="h-6 w-6 text-emerald-600" />
+                                Incoming Warehouse Shipments & Shop Returns
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                                Inspect and receive stock transfers returning from outlets to the warehouse.
+                            </CardDescription>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div className="w-60">
+                                <Autocomplete
+                                    options={warehouseOptions}
+                                    value={selectedWarehouseId}
+                                    onValueChange={(val) => {
+                                        setSelectedWarehouseId(val);
+                                    }}
+                                    placeholder="Select Warehouse..."
+                                />
+                            </div>
+                            <Button variant="outline" size="sm" onClick={fetchIncomingWarehouseTransfers} disabled={loadingIncoming} className="h-9 gap-1.5 font-semibold shrink-0">
+                                <Loader2 className={`h-4 w-4 ${loadingIncoming ? 'animate-spin' : ''}`} />
+                                Refresh
+                            </Button>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                        {loadingIncoming ? (
+                            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+                                <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+                                <p className="text-sm font-medium">Loading incoming shipments for warehouse...</p>
+                            </div>
+                        ) : incomingWarehouseRequests.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-16 text-center">
+                                <Package className="h-12 w-12 text-muted-foreground/30 mb-3" />
+                                <h3 className="text-lg font-bold text-foreground">No Pending Incoming Transfers</h3>
+                                <p className="text-sm text-muted-foreground max-w-sm mt-1">
+                                    There are currently no return requests or incoming stock shipments waiting to be received at this warehouse.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {incomingWarehouseRequests.map((req: any) => {
+                                    const totalQty = req.items?.reduce((sum: number, i: any) => sum + Number(i.quantity || 0), 0) || 0;
+                                    const fromName = req.fromLocation?.name || req.fromLocationId || "Outlet Store";
+                                    const toWhName = req.fromWarehouse?.name || "Main Warehouse";
+
+                                    return (
+                                        <Card key={req.id} className="border-border/60 hover:border-emerald-500/40 transition-colors shadow-xs">
+                                            <CardContent className="p-5 space-y-4">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className="font-mono font-bold text-sm text-primary">{req.requestNo}</span>
+                                                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-bold">
+                                                                {req.status}
+                                                            </Badge>
+                                                            <Badge variant="secondary" className="text-[10px] font-semibold">
+                                                                {req.transferType === 'OUTLET_TO_WAREHOUSE' ? 'Return to Warehouse' : 'Stock Transfer'}
+                                                            </Badge>
+                                                        </div>
+                                                        <div className="text-xs text-muted-foreground font-medium">
+                                                            From: <span className="font-bold text-foreground">{fromName}</span> → Target: <span className="font-bold text-foreground">{toWhName}</span>
+                                                        </div>
+                                                        <div className="text-[11px] text-muted-foreground mt-0.5">
+                                                            Sent: {new Date(req.createdAt).toLocaleString()}
+                                                        </div>
+                                                    </div>
+                                                    <Badge variant="outline" className="font-bold text-xs bg-muted px-2.5 py-1">
+                                                        {totalQty} Units
+                                                    </Badge>
+                                                </div>
+
+                                                {/* Item Summary Table */}
+                                                <div className="border rounded-md overflow-hidden bg-muted/20 text-xs">
+                                                    <div className="bg-muted/50 px-3 py-1.5 font-bold uppercase text-[10px] text-muted-foreground grid grid-cols-12 gap-2">
+                                                        <span className="col-span-8">Item Description</span>
+                                                        <span className="col-span-4 text-right">Dispatched</span>
+                                                    </div>
+                                                    <div className="divide-y max-h-28 overflow-y-auto">
+                                                        {req.items?.map((it: any) => (
+                                                            <div key={it.id} className="px-3 py-1.5 grid grid-cols-12 gap-2 items-center">
+                                                                <span className="col-span-8 font-semibold truncate">{it.item?.description || it.item?.sku || "Item"}</span>
+                                                                <span className="col-span-4 text-right font-mono font-bold">{Number(it.quantity)}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {req.notes && (
+                                                    <div className="text-xs bg-muted/30 p-2 rounded border text-muted-foreground italic">
+                                                        "{req.notes}"
+                                                    </div>
+                                                )}
+
+                                                <Button
+                                                    onClick={() => openWarehouseInspectModal(req)}
+                                                    className="w-full font-bold gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                                                >
+                                                    <Scan className="h-4 w-4" />
+                                                    Inspect & Receive Stock
+                                                </Button>
+                                            </CardContent>
+                                        </Card>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+            ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                 <Card className="lg:col-span-1">
                     <CardHeader>
                         <CardTitle className="text-lg">Transfer Context</CardTitle>
@@ -1504,7 +1782,199 @@ export default function StockTransferPage() {
                     </CardContent>
                 </Card>
             </div>
+            )}
             </div>
+
+            {/* Inspect & Custom Receiving Modal for Warehouse */}
+            <Dialog open={!!inspectingRequest} onOpenChange={(open) => !open && setInspectingRequest(null)}>
+                <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+                            <PackageCheck className="h-6 w-6 text-emerald-600" />
+                            Warehouse Stock Receiving — {inspectingRequest?.requestNo}
+                        </DialogTitle>
+                        <DialogDescription>
+                            Scan barcodes to count items, verify sent quantities vs actual physical stock received, and enter receiving notes.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {inspectingRequest && (
+                        <div className="flex-1 overflow-y-auto space-y-4 my-2 pr-2.5 [scrollbar-width:thin] [scrollbar-color:hsl(var(--primary)/0.4)_transparent] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-muted/20 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-primary/40 hover:[&::-webkit-scrollbar-thumb]:bg-primary/70 [&::-webkit-scrollbar-thumb]:rounded-full">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-muted/40 p-3 rounded-lg text-xs font-semibold">
+                                <div>
+                                    <span className="text-muted-foreground block text-[10px] uppercase">From Location</span>
+                                    <span>{inspectingRequest.fromLocation?.name || inspectingRequest.fromLocationId || "Outlet Store"}</span>
+                                </div>
+                                <div>
+                                    <span className="text-muted-foreground block text-[10px] uppercase">Date Sent</span>
+                                    <span>{new Date(inspectingRequest.createdAt).toLocaleString()}</span>
+                                </div>
+                                <div>
+                                    <span className="text-muted-foreground block text-[10px] uppercase">Destination Warehouse</span>
+                                    <span>{inspectingRequest.fromWarehouse?.name || "Main Warehouse"}</span>
+                                </div>
+                            </div>
+
+                            {/* Barcode / SKU Scanner Control Bar */}
+                            <div className="bg-muted/30 border border-emerald-500/30 p-3 rounded-lg flex flex-col sm:flex-row items-center gap-3">
+                                <div className="flex-1 flex items-center gap-2 w-full">
+                                    <div className="relative flex-1">
+                                        <Scan className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600" />
+                                        <Input
+                                            ref={modalScannerRef}
+                                            placeholder="Scan Item Barcode / SKU (or press F2 to focus)..."
+                                            value={modalScanInput}
+                                            onChange={(e) => setModalScanInput(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    e.preventDefault();
+                                                    handleModalScanBarcode(modalScanInput);
+                                                }
+                                            }}
+                                            className="pl-9 pr-8 font-mono text-xs sm:text-sm bg-background border-emerald-500/30 focus-visible:ring-emerald-500 h-9"
+                                        />
+                                        {modalScanInput && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setModalScanInput("")}
+                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                            >
+                                                <X className="h-3.5 w-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
+                                    <Button 
+                                        type="button" 
+                                        size="sm"
+                                        onClick={() => handleModalScanBarcode(modalScanInput)} 
+                                        className="font-bold h-9 gap-1.5 shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                    >
+                                        <Barcode className="h-4 w-4" />
+                                        Scan
+                                    </Button>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0 w-full sm:w-auto justify-end">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="text-[11px] h-8 font-semibold"
+                                        onClick={() => {
+                                            const zeroMap: Record<string, number> = {};
+                                            inspectingRequest.items?.forEach((i: any) => { zeroMap[i.itemId] = 0; });
+                                            setReceivedQtyMap(zeroMap);
+                                            toast.info("All received quantities set to 0. You can now scan items one by one.");
+                                        }}
+                                    >
+                                        Reset to 0
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="text-[11px] h-8 font-semibold"
+                                        onClick={() => {
+                                            const sentMap: Record<string, number> = {};
+                                            inspectingRequest.items?.forEach((i: any) => { sentMap[i.itemId] = Number(i.quantity || 0); });
+                                            setReceivedQtyMap(sentMap);
+                                            toast.info("All received quantities filled with dispatched quantities.");
+                                        }}
+                                    >
+                                        Fill Sent Qty
+                                    </Button>
+                                </div>
+                            </div>
+
+                            <div className="border rounded-lg overflow-x-auto max-h-[45vh] overflow-y-auto [scrollbar-width:thin] [scrollbar-color:hsl(var(--primary)/0.4)_transparent] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-muted/20 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-primary/40 hover:[&::-webkit-scrollbar-thumb]:bg-primary/70 [&::-webkit-scrollbar-thumb]:rounded-full">
+                                <table className="w-full text-left border-collapse text-xs">
+                                    <thead className="bg-muted/80 font-bold uppercase text-[10px] tracking-wider text-muted-foreground sticky top-0 z-10 backdrop-blur-xs">
+                                        <tr>
+                                            <th className="p-3">Item / SKU</th>
+                                            <th className="p-3 text-center">Dispatched Qty</th>
+                                            <th className="p-3 text-center w-36">Received Qty</th>
+                                            <th className="p-3 text-right">Variance</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                        {inspectingRequest.items?.map((item: any) => {
+                                            const dispatched = Number(item.quantity || 0);
+                                            const rxQty = receivedQtyMap[item.itemId] !== undefined ? receivedQtyMap[item.itemId] : dispatched;
+                                            const diff = rxQty - dispatched;
+                                            const isLastScanned = lastScannedModalItemId === item.itemId;
+
+                                            return (
+                                                <tr key={item.id} className={`transition-colors ${isLastScanned ? "bg-emerald-500/10 font-semibold" : "hover:bg-muted/20"}`}>
+                                                    <td className="p-3">
+                                                        <div className="font-bold text-sm flex items-center gap-1.5">
+                                                            {item.item?.description || "Item"}
+                                                            {isLastScanned && (
+                                                                <Badge variant="secondary" className="text-[9px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 py-0 px-1">Last Scanned</Badge>
+                                                            )}
+                                                        </div>
+                                                        <div className="font-mono text-muted-foreground text-[11px]">SKU: {item.item?.sku || "N/A"}</div>
+                                                    </td>
+                                                    <td className="p-3 text-center font-bold text-base">
+                                                        {dispatched}
+                                                    </td>
+                                                    <td className="p-3 text-center">
+                                                        <Input
+                                                            type="number"
+                                                            step="1"
+                                                            value={receivedQtyMap[item.itemId] ?? dispatched}
+                                                            onChange={(e) => {
+                                                                const val = parseFloat(e.target.value) || 0;
+                                                                setReceivedQtyMap(prev => ({ ...prev, [item.itemId]: val }));
+                                                            }}
+                                                            className="w-24 mx-auto text-center font-bold text-sm h-9"
+                                                        />
+                                                    </td>
+                                                    <td className="p-3 text-right font-bold">
+                                                        {diff === 0 ? (
+                                                            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Match (0)</Badge>
+                                                        ) : diff < 0 ? (
+                                                            <Badge variant="secondary" className="bg-rose-100 text-rose-700 border-rose-200">Shortage ({diff})</Badge>
+                                                        ) : (
+                                                            <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-blue-200">Excess (+{diff})</Badge>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="receivingNotesModal" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Receiving Notes / Remarks (Optional)</Label>
+                                <Input
+                                    id="receivingNotesModal"
+                                    placeholder="Add any remarks regarding damaged items, shortages, or delivery condition..."
+                                    value={receivingNotes}
+                                    onChange={(e) => setReceivingNotes(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t">
+                        <Button variant="outline" onClick={() => setInspectingRequest(null)}>
+                            Cancel
+                        </Button>
+                        <Button 
+                            className="font-bold gap-2 shadow-md bg-emerald-600 hover:bg-emerald-700 text-white"
+                            disabled={isAccepting === inspectingRequest?.id}
+                            onClick={handleAcceptWarehouseInspected}
+                        >
+                            {isAccepting === inspectingRequest?.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <CheckCircle2 className="h-5 w-5" />
+                            )}
+                            Confirm & Receive Stock into Warehouse
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <TransferBulkUploadModal
                 open={isUploadModalOpen}

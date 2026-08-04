@@ -135,7 +135,6 @@ export function ChartOfAccountForm({ initialData, accounts }: ChartOfAccountForm
                     <SelectItem value="EQUITY">Equity</SelectItem>
                     <SelectItem value="REVENUE">Revenue</SelectItem>
                     <SelectItem value="EXPENSE">Expense</SelectItem>
-                    
                   </SelectContent>
                 </Select>
                 <FormMessage />
