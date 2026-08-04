@@ -727,8 +727,9 @@ export default function ReturnRequestsPage() {
                             </Card>
                         </div>
                     </div>
-                </main>
-            </div>
+                </div>
+            </main>
+        </div>
         );
     }
 
