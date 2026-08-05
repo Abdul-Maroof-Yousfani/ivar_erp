@@ -1868,7 +1868,11 @@ export const PERMISSIONS = [
   { name: 'erp.inventory.stock-ledger.update', description: 'Update Stock Ledger Status' },
   { name: 'erp.inventory.return-transfer.read', description: 'View Return Transfers' },
   { name: 'erp.inventory.return-transfer.create', description: 'Create Return Transfer' },
-
+  { name: 'erp.inventory.transfer.check',   description: "Check Store transfer"},
+  { name: 'erp.inventory.transfer.authorize',   description: "Authorize Store transfer"},
+  { name: 'pos.inventory.transfer.check',   description: "Check Store transfer from pos"},
+  { name: 'pos.inventory.transfer.authorize',   description: "Authorize Store transfer from pos"},
+  
   // ── ERP Inventory — Warehouse ───────────────────────────────────────────────
   { name: 'erp.inventory.warehouse.view', description: 'View Warehouse List & Dashboard' },
   { name: 'erp.inventory.warehouse.create', description: 'Create Warehouse' },
