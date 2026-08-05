@@ -427,7 +427,9 @@ export class TransferRequestService {
       where: {
         toLocationId: locationId,
         transferType: 'WAREHOUSE_TO_OUTLET',
-        status: { in: ['PENDING', 'APPROVED'] },
+        status: {
+          in: ['PENDING', 'APPROVED', 'PENDING_CHECKER', 'PENDING_AUTHORIZER'],
+        },
       },
       include: {
         items: {
@@ -456,7 +458,9 @@ export class TransferRequestService {
       where: {
         fromLocationId: locationId,
         transferType: 'OUTLET_TO_WAREHOUSE',
-        status: 'PENDING',
+        status: {
+          in: ['PENDING', 'APPROVED', 'PENDING_CHECKER', 'PENDING_AUTHORIZER'],
+        },
       },
       include: {
         items: {
@@ -486,7 +490,9 @@ export class TransferRequestService {
       where: {
         fromLocationId: locationId,
         transferType: 'OUTLET_TO_OUTLET',
-        status: 'PENDING',
+        status: {
+          in: ['PENDING', 'APPROVED', 'PENDING_CHECKER', 'PENDING_AUTHORIZER'],
+        },
         requiresSourceApproval: true,
         sourceApprovedById: null,
       },
@@ -744,9 +750,15 @@ export class TransferRequestService {
         );
       }
 
-      if (request.status !== 'PENDING') {
+      const validStatuses = [
+        'PENDING',
+        'APPROVED',
+        'PENDING_CHECKER',
+        'PENDING_AUTHORIZER',
+      ];
+      if (!validStatuses.includes(request.status)) {
         throw new BadRequestException(
-          `Request is not in PENDING status (Current: ${request.status})`,
+          `Request is not in a valid pending status (Current: ${request.status})`,
         );
       }
 
@@ -951,7 +963,13 @@ export class TransferRequestService {
 
         if (request.transferType === 'WAREHOUSE_TO_OUTLET') {
           // Normal transfer: Warehouse → Outlet
-          if (request.status !== 'PENDING' && request.status !== 'APPROVED') {
+          const validStatuses = [
+            'PENDING',
+            'APPROVED',
+            'PENDING_CHECKER',
+            'PENDING_AUTHORIZER',
+          ];
+          if (!validStatuses.includes(request.status)) {
             throw new BadRequestException(
               `Request is not in PENDING or APPROVED status (Current: ${request.status})`,
             );
@@ -975,7 +993,13 @@ export class TransferRequestService {
           }
         } else if (request.transferType === 'OUTLET_TO_WAREHOUSE') {
           // Return transfer: Outlet → Warehouse
-          if (request.status !== 'PENDING' && request.status !== 'APPROVED') {
+          const validStatuses = [
+            'PENDING',
+            'APPROVED',
+            'PENDING_CHECKER',
+            'PENDING_AUTHORIZER',
+          ];
+          if (!validStatuses.includes(request.status)) {
             throw new BadRequestException(
               `Request is not in PENDING or APPROVED status (Current: ${request.status})`,
             );
@@ -1212,7 +1236,13 @@ export class TransferRequestService {
         );
       }
 
-      if (request.status !== 'PENDING' && request.status !== 'APPROVED') {
+      const validStatuses = [
+        'PENDING',
+        'APPROVED',
+        'PENDING_CHECKER',
+        'PENDING_AUTHORIZER',
+      ];
+      if (!validStatuses.includes(request.status)) {
         throw new BadRequestException(
           `Request is not in PENDING or APPROVED status (Current: ${request.status})`,
         );

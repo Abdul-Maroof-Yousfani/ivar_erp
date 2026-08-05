@@ -814,7 +814,7 @@ export default function ReturnRequestsPage() {
                                                     </Badge>
                                                 ) : (
                                                     <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-100/80 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-900">
-                                                        <AlertTriangle className="h-3 w-3 mr-1" /> Pending Approval
+                                                        <AlertTriangle className="h-3 w-3 mr-1" /> {request.status === 'PENDING_CHECKER' ? 'Pending Checker' : request.status === 'PENDING_AUTHORIZER' ? 'Pending Authorizer' : 'Pending Approval'}
                                                     </Badge>
                                                 )}
                                             </div>
