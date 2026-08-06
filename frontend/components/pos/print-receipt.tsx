@@ -302,26 +302,26 @@ export function PrintReceipt({
   const items: any[] =
     order?.items && order.items.length > 0
       ? order.items.map((oi: any) => ({
-          id: oi.id,
-          name: oi.item?.description || oi.item?.sku || "Item",
-          sku: oi.item?.sku || "",
-          upc: oi.item?.upc || oi.upc || "",
-          size:
-            typeof oi.item?.size === "object"
-              ? oi.item?.size?.name
-              : oi.item?.size || oi.size || "",
-          price: Number(oi.unitPrice),
-          quantity: Number(oi.quantity),
-          discountPercent: Number(oi.discountPercent ?? 0),
-          overrideDiscountPercent:
-            oi.overrideDiscountPercent != null
-              ? Number(oi.overrideDiscountPercent)
-              : undefined,
-          discountAmount: Number(oi.discountAmount ?? 0),
-          taxPercent: Number(oi.taxPercent ?? 0),
-          taxAmount: Number(oi.taxAmount ?? 0),
-          lineTotal: oi.lineTotal != null ? Number(oi.lineTotal) : undefined,
-        }))
+        id: oi.id,
+        name: oi.item?.description || oi.item?.sku || "Item",
+        sku: oi.item?.sku || "",
+        upc: oi.item?.upc || oi.upc || "",
+        size:
+          typeof oi.item?.size === "object"
+            ? oi.item?.size?.name
+            : oi.item?.size || oi.size || "",
+        price: Number(oi.unitPrice),
+        quantity: Number(oi.quantity),
+        discountPercent: Number(oi.discountPercent ?? 0),
+        overrideDiscountPercent:
+          oi.overrideDiscountPercent != null
+            ? Number(oi.overrideDiscountPercent)
+            : undefined,
+        discountAmount: Number(oi.discountAmount ?? 0),
+        taxPercent: Number(oi.taxPercent ?? 0),
+        taxAmount: Number(oi.taxAmount ?? 0),
+        lineTotal: oi.lineTotal != null ? Number(oi.lineTotal) : undefined,
+      }))
       : (propCartItems ?? []);
 
   // ── Totals ────────────────────────────────────────────────────────
@@ -332,10 +332,10 @@ export function PrintReceipt({
   const subtotal = isSavedOrder
     ? Number(order.subtotal)
     : items.reduce((s, i) => {
-        const taxDivisor = 1 + (i.taxPercent ?? 0) / 100;
-        const wostPerUnit = i.price / taxDivisor;
-        return s + wostPerUnit * i.quantity;
-      }, 0);
+      const taxDivisor = 1 + (i.taxPercent ?? 0) / 100;
+      const wostPerUnit = i.price / taxDivisor;
+      return s + wostPerUnit * i.quantity;
+    }, 0);
 
   const itemDiscountsRaw = items.reduce(
     (s, i) => s + (i.discountAmount ?? 0),
@@ -361,29 +361,29 @@ export function PrintReceipt({
   const totalTax = isSavedOrder
     ? Number(order.taxAmount)
     : items.reduce((s, i) => {
-        const taxPct = i.taxPercent ?? 0;
-        const taxDivisor = 1 + taxPct / 100;
-        const wostPerUnit = i.price / taxDivisor;
-        const totalWost = wostPerUnit * i.quantity;
+      const taxPct = i.taxPercent ?? 0;
+      const taxDivisor = 1 + taxPct / 100;
+      const wostPerUnit = i.price / taxDivisor;
+      const totalWost = wostPerUnit * i.quantity;
 
-        const itemDiscPct = i.overrideDiscountPercent ?? i.discountPercent ?? 0;
-        const rawDisc = totalWost * (itemDiscPct / 100);
+      const itemDiscPct = i.overrideDiscountPercent ?? i.discountPercent ?? 0;
+      const rawDisc = totalWost * (itemDiscPct / 100);
 
-        const disc = suppressItemDiscounts ? 0 : rawDisc;
-        let displayDisc = disc;
+      const disc = suppressItemDiscounts ? 0 : rawDisc;
+      let displayDisc = disc;
 
-        if (suppressItemDiscounts && subtotal > 0) {
-          displayDisc = Math.min(
-            (orderDiscount * totalWost) / subtotal,
-            totalWost,
-          );
-        }
+      if (suppressItemDiscounts && subtotal > 0) {
+        displayDisc = Math.min(
+          (orderDiscount * totalWost) / subtotal,
+          totalWost,
+        );
+      }
 
-        const amtAfterDisc =
-          totalWost - (suppressItemDiscounts ? displayDisc : disc);
-        const tax = amtAfterDisc * (taxPct / 100);
-        return s + tax;
-      }, 0);
+      const amtAfterDisc =
+        totalWost - (suppressItemDiscounts ? displayDisc : disc);
+      const tax = amtAfterDisc * (taxPct / 100);
+      return s + tax;
+    }, 0);
 
   const totalDiscount = isSavedOrder
     ? Number(order.discountAmount)
@@ -541,7 +541,7 @@ export function PrintReceipt({
                 Receipt Preview
               </DialogTitle>
             </div>
-            
+
             {/* Format Switcher */}
             {!isLoading && (
               <div className="flex items-center gap-1 bg-muted p-1 rounded-full border ml-auto">
@@ -1013,7 +1013,7 @@ function ReceiptBody({
       {/* ── Terms ── */}
       <div className="py-1 border-b border-dashed border-zinc-400 text-[8px] leading-snug">
         <p className="font-bold text-[9px] uppercase">Terms &amp; Conditions</p>
-        <p>• No refund. Exchange within 4 days on unused items with invoice. Sale items non-exchangeable. Full-price items go on sale: exchanged at marked-down price.</p>
+        <p>•Customers can exchange their purchased item within 15 days of the purchase date, subject to the item's original condition and proof of purchase. Refunds will only be processed if the product is found to be defective or damaged due to our fault. Eligible refunds will be processed within 15 days.</p>
       </div>
 
       {/* ── Footer ── */}
@@ -1102,7 +1102,7 @@ function A4InvoiceBody({
               {storeSTRN && <p>STRN: {storeSTRN}</p>}
             </div>
           </div>
-          
+
           <div className="text-right space-y-1.5">
             <h2 className="text-lg font-black tracking-widest text-zinc-850 uppercase">
               {isGiftReceipt ? "GIFT RECEIPT" : "TAX INVOICE"}
@@ -1317,7 +1317,7 @@ function A4InvoiceBody({
                 <span>Subtotal (Excl. Sales Tax)</span>
                 <span className="font-mono font-semibold">{fmt(Math.round(subtotal))}</span>
               </div>
-              
+
               <div className="flex justify-between text-zinc-600 py-0.5">
                 <span>Total Invoice Discounts</span>
                 <span className="font-mono font-semibold text-green-600">

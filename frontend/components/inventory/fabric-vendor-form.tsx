@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   fabricVendorTrackerApi,
@@ -17,7 +16,7 @@ import {
   Warehouse,
 } from '@/lib/api';
 import { toast } from 'sonner';
-import { Info, HelpCircle, AlertCircle, CheckCircle, Scale, ChevronRight, Package } from 'lucide-react';
+import { AlertCircle, CheckCircle, Scale, Package, Clock, History } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 interface FabricVendorFormProps {
@@ -39,15 +38,12 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
   );
   const [notes, setNotes] = useState(initialData?.notes || '');
 
-  // Form states for Consumption Phase (Step B)
-  const [qtyUsed, setQtyUsed] = useState(initialData ? Number(initialData.qtyUsed) : 0);
-  const [qtyReturned, setQtyReturned] = useState(initialData ? Number(initialData.qtyReturned) : 0);
-  const [qtyShortage, setQtyShortage] = useState(initialData ? Number(initialData.qtyShortage) : 0);
-  const [consumptionDate, setConsumptionDate] = useState(
-    initialData?.consumptionDate
-      ? new Date(initialData.consumptionDate).toISOString().split('T')[0]
-      : new Date().toISOString().split('T')[0]
-  );
+  // Form states for THIS Consumption Log Entry (Step B)
+  const [newQtyUsed, setNewQtyUsed] = useState<number>(0);
+  const [newQtyReturned, setNewQtyReturned] = useState<number>(0);
+  const [newQtyShortage, setNewQtyShortage] = useState<number>(0);
+  const [consumptionDate, setConsumptionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [logNotes, setLogNotes] = useState('');
 
   // Options states
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -71,7 +67,8 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
     if (!isEditMode && itemId && warehouseId) {
       setLoadingStock(true);
       setAvailableStock(null);
-      inventoryApi.getStockLevel(itemId, warehouseId)
+      inventoryApi
+        .getStockLevel(itemId, warehouseId)
         .then((res) => {
           setAvailableStock(Number(res.totalQuantity) || 0);
         })
@@ -95,8 +92,6 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
       ]);
 
       setSuppliers(suppliersRes.data || []);
-      // Filter items to only show meters / fabric if possible, but let's show all items
-      // (or filter items with UOM meter or type fabric if their description/sku mentions it)
       setItems(itemsRes.data || []);
       setWarehouses(warehousesRes || []);
     } catch (error) {
@@ -107,10 +102,21 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
     }
   };
 
-  // Real-time calculation and validation
-  const sum = qtyUsed + qtyReturned + qtyShortage;
-  const difference = isEditMode ? Number(initialData.qtyIssued) - sum : 0;
-  const isValid = !isEditMode || Math.abs(difference) < 0.0001;
+  // Calculations for Edit / Consumption Mode
+  const qtyIssuedTotal = isEditMode && initialData ? Number(initialData.qtyIssued) : 0;
+  const prevUsed = isEditMode && initialData ? Number(initialData.qtyUsed || 0) : 0;
+  const prevReturned = isEditMode && initialData ? Number(initialData.qtyReturned || 0) : 0;
+  const prevShortage = isEditMode && initialData ? Number(initialData.qtyShortage || 0) : 0;
+  const prevTotalAccounted = prevUsed + prevReturned + prevShortage;
+  const remainingBalance = qtyIssuedTotal - prevTotalAccounted;
+
+  const thisEntryTotal = newQtyUsed + newQtyReturned + newQtyShortage;
+  const projectedTotalAccounted = prevTotalAccounted + thisEntryTotal;
+  const projectedRemaining = qtyIssuedTotal - projectedTotalAccounted;
+
+  const isValidConsumption =
+    !isEditMode || (thisEntryTotal > 0 && thisEntryTotal <= remainingBalance + 0.0001);
+  const isCompleting = isEditMode && (Math.abs(projectedRemaining) < 0.0001 || projectedRemaining <= 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,21 +124,35 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
 
     try {
       if (isEditMode && initialData) {
-        if (!isValid) {
-          toast.error(`Sum of Used, Returned, and Shortage must equal Issued Qty (${initialData.qtyIssued})`);
+        if (thisEntryTotal <= 0) {
+          toast.error('Please enter quantity for used, returned, or shortage for this batch');
+          setSubmitting(false);
+          return;
+        }
+
+        if (thisEntryTotal > remainingBalance + 0.0001) {
+          toast.error(
+            `Entered quantity (${thisEntryTotal}m) exceeds remaining unaccounted fabric (${remainingBalance.toFixed(2)}m)`
+          );
           setSubmitting(false);
           return;
         }
 
         await fabricVendorTrackerApi.updateConsumption(initialData.id, {
-          qtyUsed,
-          qtyReturned,
-          qtyShortage,
+          qtyUsed: newQtyUsed,
+          qtyReturned: newQtyReturned,
+          qtyShortage: newQtyShortage,
           consumptionDate,
-          notes,
+          notes: logNotes,
         });
 
-        toast.success('Fabric usage and returns logged successfully!');
+        if (isCompleting) {
+          toast.success('Fabric issue fully accounted & completed!');
+        } else {
+          toast.success(
+            `Partial consumption logged! (${projectedRemaining.toFixed(2)}m remaining with vendor)`
+          );
+        }
       } else {
         if (!supplierId || !itemId || !warehouseId || qtyIssued <= 0) {
           toast.error('Please fill in all required fields');
@@ -166,9 +186,10 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
       {isEditMode && initialData ? (
         // Consumption Mode (Step B)
         <div className="space-y-6">
+          {/* Summary Box */}
           <div className="bg-muted/40 p-4 rounded-xl border border-border space-y-3">
-            <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Original Issue Details</h4>
-            <div className="grid grid-cols-2 gap-y-3 gap-x-6 text-sm">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Original Issue Details</h4>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-y-3 gap-x-6 text-sm">
               <div>
                 <span className="text-muted-foreground block text-xs">Tracker Ref</span>
                 <span className="font-semibold">{initialData.trackerNumber}</span>
@@ -190,22 +211,59 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
                 <span>{new Date(initialData.issueDate).toLocaleDateString()}</span>
               </div>
               <div>
-                <span className="text-muted-foreground block text-xs font-semibold text-blue-600">Total Qty Issued</span>
-                <span className="font-bold text-blue-600">{Number(initialData.qtyIssued).toLocaleString()} meters</span>
+                <span className="text-muted-foreground block text-xs font-semibold text-indigo-600">Total Qty Issued</span>
+                <span className="font-bold text-indigo-600">{qtyIssuedTotal.toLocaleString()} meters</span>
               </div>
             </div>
-            {initialData.notes && (
-              <div className="pt-2 border-t text-xs">
-                <span className="text-muted-foreground block">Issue Notes:</span>
-                <p className="italic">{initialData.notes}</p>
-              </div>
-            )}
           </div>
 
-          <div className="border-t pt-4">
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <Scale className="h-5 w-5 text-indigo-500" />
-              Log Consumption & Returns
+          {/* Accounted & Remaining Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800">
+              <span className="text-xs font-medium block">Previously Used</span>
+              <span className="text-lg font-bold font-mono">{prevUsed.toLocaleString()} m</span>
+            </div>
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800">
+              <span className="text-xs font-medium block">Previously Returned</span>
+              <span className="text-lg font-bold font-mono">{prevReturned.toLocaleString()} m</span>
+            </div>
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800">
+              <span className="text-xs font-medium block">Balance Remaining</span>
+              <span className="text-lg font-bold font-mono">{remainingBalance.toLocaleString()} m</span>
+            </div>
+          </div>
+
+          {/* Previous Consumption Logs History Timeline (if any) */}
+          {initialData.consumptionLogs && initialData.consumptionLogs.length > 0 && (
+            <div className="space-y-2 border-t pt-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <History className="h-4 w-4 text-indigo-500" /> Previous Consumption Logs
+              </h4>
+              <div className="max-h-36 overflow-y-auto space-y-2 pr-1">
+                {initialData.consumptionLogs.map((log, idx) => (
+                  <div key={log.id || idx} className="p-2.5 bg-muted/20 border rounded-lg text-xs flex items-center justify-between">
+                    <div>
+                      <span className="font-semibold text-foreground">
+                        Log #{initialData.consumptionLogs!.length - idx} &bull; {new Date(log.consumptionDate || log.createdAt).toLocaleDateString()}
+                      </span>
+                      {log.notes && <p className="text-muted-foreground italic text-[11px] mt-0.5">{log.notes}</p>}
+                    </div>
+                    <div className="flex gap-2 font-mono text-[11px]">
+                      {Number(log.qtyUsed) > 0 && <Badge variant="outline" className="bg-emerald-50 text-emerald-700">Used: {log.qtyUsed}m</Badge>}
+                      {Number(log.qtyReturned) > 0 && <Badge variant="outline" className="bg-blue-50 text-blue-700">Returned: {log.qtyReturned}m</Badge>}
+                      {Number(log.qtyShortage) > 0 && <Badge variant="outline" className="bg-red-50 text-red-700">Shortage: {log.qtyShortage}m</Badge>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Form to Log New Batch Consumption */}
+          <div className="border-t pt-4 space-y-4">
+            <h3 className="text-base font-bold flex items-center gap-2 text-indigo-900">
+              <Scale className="h-5 w-5 text-indigo-600" />
+              Log Consumption & Returns (This Batch)
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -216,11 +274,11 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
                 <Input
                   type="number"
                   min="0"
+                  max={remainingBalance}
                   step="0.0001"
-                  required
-                  value={qtyUsed || ''}
-                  onChange={(e) => setQtyUsed(Number(e.target.value))}
-                  placeholder="e.g. 35"
+                  value={newQtyUsed || ''}
+                  onChange={(e) => setNewQtyUsed(Number(e.target.value))}
+                  placeholder="e.g. 50"
                   className="h-10 font-mono text-base"
                 />
               </div>
@@ -228,102 +286,97 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
               <div className="space-y-2">
                 <label className="text-sm font-semibold flex items-center gap-1.5">
                   Qty Returned <span className="text-xs text-muted-foreground">(Meters)</span>
-                  <span className="text-[10px] text-muted-foreground font-normal italic">(Optional)</span>
                 </label>
                 <Input
                   type="number"
                   min="0"
+                  max={remainingBalance}
                   step="0.0001"
-                  value={qtyReturned || ''}
-                  onChange={(e) => setQtyReturned(Number(e.target.value))}
-                  placeholder="e.g. 3"
+                  value={newQtyReturned || ''}
+                  onChange={(e) => setNewQtyReturned(Number(e.target.value))}
+                  placeholder="e.g. 10"
                   className="h-10 font-mono text-base"
                 />
-                <p className="text-[11px] text-muted-foreground">Will be auto-restocked in store.</p>
+                <p className="text-[11px] text-muted-foreground">Auto-restocked in store.</p>
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-semibold flex items-center gap-1.5">
                   Qty Shortage <span className="text-xs text-muted-foreground">(Meters)</span>
-                  <span className="text-[10px] text-muted-foreground font-normal italic">(Optional)</span>
                 </label>
                 <Input
                   type="number"
                   min="0"
+                  max={remainingBalance}
                   step="0.0001"
-                  value={qtyShortage || ''}
-                  onChange={(e) => setQtyShortage(Number(e.target.value))}
+                  value={newQtyShortage || ''}
+                  onChange={(e) => setNewQtyShortage(Number(e.target.value))}
                   placeholder="e.g. 2"
                   className="h-10 font-mono text-base"
                 />
               </div>
             </div>
-          </div>
 
-          {/* Validation Status Indicator */}
-          <div className="bg-muted/20 p-4 rounded-xl border border-dashed space-y-3">
-            <div className="flex justify-between items-center text-sm font-medium">
-              <span className="flex items-center gap-2">
-                Total Accounted: <span className="font-mono text-lg font-bold">{sum}</span> / {Number(initialData.qtyIssued)}
-              </span>
-              {isValid ? (
-                <span className="text-green-600 flex items-center gap-1 text-xs">
-                  <CheckCircle className="h-4 w-4" /> Balances Perfectly
+            {/* Validation & Projected Indicator */}
+            <div className="bg-muted/20 p-4 rounded-xl border border-dashed space-y-3">
+              <div className="flex justify-between items-center text-sm font-medium">
+                <span className="flex items-center gap-2">
+                  Accounted After Entry:{' '}
+                  <span className="font-mono text-lg font-bold">{projectedTotalAccounted}</span> / {qtyIssuedTotal} m
                 </span>
-              ) : (
-                <span className="text-amber-600 flex items-center gap-1 text-xs">
-                  <AlertCircle className="h-4 w-4" /> Discrepancy: {difference > 0 ? `${difference} remaining` : `${Math.abs(difference)} over`}
-                </span>
-              )}
+                {thisEntryTotal > remainingBalance + 0.0001 ? (
+                  <span className="text-red-600 flex items-center gap-1 text-xs font-semibold">
+                    <AlertCircle className="h-4 w-4" /> Exceeds Remaining ({remainingBalance}m)
+                  </span>
+                ) : isCompleting ? (
+                  <span className="text-emerald-600 flex items-center gap-1 text-xs font-semibold">
+                    <CheckCircle className="h-4 w-4" /> Will Mark COMPLETED
+                  </span>
+                ) : (
+                  <span className="text-indigo-600 flex items-center gap-1 text-xs font-semibold">
+                    <Clock className="h-4 w-4" /> Status: PARTIAL ({projectedRemaining.toFixed(2)}m left)
+                  </span>
+                )}
+              </div>
+
+              {/* Progress Visualizer */}
+              <div className="w-full h-3 bg-muted rounded-full overflow-hidden flex">
+                <div
+                  className="h-full bg-emerald-500 transition-all duration-300"
+                  style={{ width: `${(Math.min(projectedTotalAccounted, qtyIssuedTotal) / qtyIssuedTotal) * 100}%` }}
+                  title={`Accounted: ${projectedTotalAccounted}m`}
+                />
+              </div>
+
+              <div className="flex justify-between text-[11px] text-muted-foreground">
+                <span>Prev Accounted: {prevTotalAccounted}m</span>
+                <span>This Batch: {thisEntryTotal}m</span>
+                <span>Remaining: {projectedRemaining > 0 ? projectedRemaining.toFixed(2) : 0}m</span>
+              </div>
             </div>
 
-            {/* Progress Visualizer */}
-            <div className="w-full h-3 bg-muted rounded-full overflow-hidden flex">
-              <div
-                className="h-full bg-green-500 transition-all duration-300"
-                style={{ width: `${(qtyUsed / Number(initialData.qtyIssued)) * 100}%` }}
-                title={`Used: ${qtyUsed}`}
-              />
-              <div
-                className="h-full bg-blue-500 transition-all duration-300 border-l border-white"
-                style={{ width: `${(qtyReturned / Number(initialData.qtyIssued)) * 100}%` }}
-                title={`Returned: ${qtyReturned}`}
-              />
-              <div
-                className="h-full bg-red-400 transition-all duration-300 border-l border-white"
-                style={{ width: `${(qtyShortage / Number(initialData.qtyIssued)) * 100}%` }}
-                title={`Shortage: ${qtyShortage}`}
-              />
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold">Consumption Date</label>
+                <Input
+                  type="date"
+                  required
+                  value={consumptionDate}
+                  onChange={(e) => setConsumptionDate(e.target.value)}
+                  className="h-10"
+                />
+              </div>
 
-            <div className="flex justify-between text-[11px] text-muted-foreground">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-green-500 rounded-sm inline-block" /> Used ({qtyUsed}m)</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-blue-500 rounded-sm inline-block" /> Returned ({qtyReturned}m)</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-red-400 rounded-sm inline-block" /> Shortage ({qtyShortage}m)</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-semibold">Consumption Date</label>
-              <Input
-                type="date"
-                required
-                value={consumptionDate}
-                onChange={(e) => setConsumptionDate(e.target.value)}
-                className="h-10"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-semibold">Remarks / Notes</label>
-              <Input
-                type="text"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Any special remarks or comments"
-                className="h-10"
-              />
+              <div className="space-y-2">
+                <label className="text-sm font-semibold">Log Remarks / Notes</label>
+                <Input
+                  type="text"
+                  value={logNotes}
+                  onChange={(e) => setLogNotes(e.target.value)}
+                  placeholder="e.g. First 50m used for cutting batch #1"
+                  className="h-10"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -422,7 +475,7 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
                 required
                 value={qtyIssued || ''}
                 onChange={(e) => setQtyIssued(Number(e.target.value))}
-                placeholder="e.g. 40"
+                placeholder="e.g. 100"
                 className="h-10"
               />
             </div>
@@ -460,10 +513,16 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
         </Button>
         <Button
           type="submit"
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
-          disabled={submitting || (isEditMode && !isValid)}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm transition-all"
+          disabled={submitting || (isEditMode && !isValidConsumption)}
         >
-          {submitting ? 'Submitting...' : isEditMode ? 'Log Consumption & Complete' : 'Issue Fabric'}
+          {submitting
+            ? 'Saving...'
+            : isEditMode
+            ? isCompleting
+              ? 'Log Consumption & Complete'
+              : 'Log Partial Consumption'
+            : 'Issue Fabric'}
         </Button>
       </div>
     </form>

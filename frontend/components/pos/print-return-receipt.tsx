@@ -190,9 +190,9 @@ export function PrintReturnReceipt({
         "Store";
 
     const storeAddress = settings.receiptAddress || (typeof user?.terminal?.location?.address === "string" ? user.terminal.location.address : "") || "";
-    const storePhone   = settings.receiptPhone   || (typeof user?.terminal?.location?.phone   === "string" ? user.terminal.location.phone   : "") || "";
-    const storeNTN     = settings.receiptNTN     || (typeof user?.terminal?.location?.fbrNtn  === "string" ? user.terminal.location.fbrNtn  : "") || "";
-    const storeSTRN    = settings.receiptSTRN    || "";
+    const storePhone = settings.receiptPhone || (typeof user?.terminal?.location?.phone === "string" ? user.terminal.location.phone : "") || "";
+    const storeNTN = settings.receiptNTN || (typeof user?.terminal?.location?.fbrNtn === "string" ? user.terminal.location.fbrNtn : "") || "";
+    const storeSTRN = settings.receiptSTRN || "";
     const terminalName = (typeof user?.terminal?.name === "string" ? user.terminal.name : "") || (typeof user?.terminal?.code === "string" ? user.terminal.code : "") || "";
 
     const cashierName = user ? `${user.firstName} ${user.lastName}`.trim() : "";
@@ -410,15 +410,15 @@ function ReturnBody({
 
             {/* ── Returned item lines ── */}
             {returnedLines.map((line, idx) => {
-                const qty          = line.returnQty;
-                const taxPct       = line.taxPercent ?? 0;
-                const taxDivisor   = 1 + (taxPct / 100);
+                const qty = line.returnQty;
+                const taxPct = line.taxPercent ?? 0;
+                const taxDivisor = 1 + (taxPct / 100);
                 const effectiveRetailPerUnit = line.unitPrice ?? line.paidPerUnit;
-                const wostPerUnit  = effectiveRetailPerUnit / taxDivisor;
-                const totalWost    = wostPerUnit * qty;
-                const discAmt      = line.discountAmount ?? 0;
-                const afterDisc    = totalWost - discAmt;
-                const taxAmt       = line.taxAmount ?? 0;
+                const wostPerUnit = effectiveRetailPerUnit / taxDivisor;
+                const totalWost = wostPerUnit * qty;
+                const discAmt = line.discountAmount ?? 0;
+                const afterDisc = totalWost - discAmt;
+                const taxAmt = line.taxAmount ?? 0;
                 const valueIncludingTax = afterDisc + taxAmt;
                 const uniqueNo = line.sku || "—";
 
@@ -537,7 +537,7 @@ function ReturnBody({
             {/* ── Terms ── */}
             <div className="py-1 border-b border-dashed border-zinc-400 text-[8px] leading-snug">
                 <p className="font-bold text-[9px] uppercase">Terms &amp; Conditions</p>
-                <p>• No refund. Exchange within 4 days on unused items with invoice. Sale items non-exchangeable. Full-price items go on sale: exchanged at marked-down price.</p>
+                <p>Customers can exchange their purchased item within 15 days of the purchase date, subject to the item's original condition and proof of purchase. Refunds will only be processed if the product is found to be defective or damaged due to our fault. Eligible refunds will be processed within 15 days.</p>
             </div>
 
             {/* ── Footer ── */}

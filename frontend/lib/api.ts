@@ -1493,10 +1493,19 @@ export interface FabricVendorTracker {
   qtyReturned: string;
   qtyShortage: string;
   consumptionDate: string | null;
-  status: 'PENDING' | 'COMPLETED';
+  status: 'PENDING' | 'PARTIAL' | 'COMPLETED';
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  consumptionLogs?: {
+    id: string;
+    qtyUsed: string;
+    qtyReturned: string;
+    qtyShortage: string;
+    consumptionDate: string;
+    notes?: string;
+    createdAt: string;
+  }[];
   supplier?: {
     id: string;
     code: string;

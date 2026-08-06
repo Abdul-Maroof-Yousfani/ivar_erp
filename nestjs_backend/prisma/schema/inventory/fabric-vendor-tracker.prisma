@@ -9,22 +9,23 @@ model FabricVendorTracker {
   qtyIssued       Decimal      @db.Decimal(15, 4) @map("qty_issued")
   issueDate       DateTime     @default(now()) @map("issue_date")
   
-  // 2. Consumption Phase (Form ka dusra part - pehle null/zero hoga)
+  // 2. Consumption Phase (Form ka dusra part - accumulated totals)
   qtyUsed         Decimal      @default(0.0) @db.Decimal(15, 4) @map("qty_used")
   qtyReturned     Decimal      @default(0.0) @db.Decimal(15, 4) @map("qty_returned")
   qtyShortage     Decimal      @default(0.0) @db.Decimal(15, 4) @map("qty_shortage")
   consumptionDate DateTime?    @map("consumption_date")
   
-  status          FabricStatus @default(PENDING) // PENDING | COMPLETED
+  status          FabricStatus @default(PENDING) // PENDING | PARTIAL | COMPLETED
   notes           String?
   
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
 
   // Relations
-  supplier        Supplier     @relation(fields: [supplierId], references: [id])
-  item            Item         @relation(fields: [itemId], references: [id])
-  warehouse       Warehouse    @relation(fields: [warehouseId], references: [id])
+  supplier        Supplier                     @relation(fields: [supplierId], references: [id])
+  item            Item                         @relation(fields: [itemId], references: [id])
+  warehouse       Warehouse                    @relation(fields: [warehouseId], references: [id])
+  consumptionLogs FabricVendorConsumptionLog[]
 
   @@index([supplierId])
   @@index([itemId])
@@ -32,7 +33,25 @@ model FabricVendorTracker {
   @@map("fabric_vendor_trackers")
 }
 
-enum FabricStatus {
-  PENDING   // Fabric vendor ke paas chala gaya hai, consumption report hona baki hai
-  COMPLETED // Vendor ne consumption report kar di hai, balance clear hai
+model FabricVendorConsumptionLog {
+  id              String              @id @default(uuid())
+  trackerId       String              @map("tracker_id")
+  qtyUsed         Decimal             @default(0.0) @db.Decimal(15, 4) @map("qty_used")
+  qtyReturned     Decimal             @default(0.0) @db.Decimal(15, 4) @map("qty_returned")
+  qtyShortage     Decimal             @default(0.0) @db.Decimal(15, 4) @map("qty_shortage")
+  consumptionDate DateTime            @default(now()) @map("consumption_date")
+  notes           String?
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  tracker         FabricVendorTracker @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+
+  @@index([trackerId])
+  @@map("fabric_vendor_consumption_logs")
 }
+
+enum FabricStatus {
+  PENDING   // Fabric issued to vendor, 0% consumed
+  PARTIAL   // Partially consumed, remaining fabric with vendor
+  COMPLETED // Fully accounted / clear
+}
+

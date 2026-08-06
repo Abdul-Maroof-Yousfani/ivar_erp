@@ -137,7 +137,7 @@ export default function FabricVendorTrackerPage() {
 
   // Compute KPI summary stats
   const totalIssuesCount = trackers.length;
-  const pendingCount = trackers.filter((t) => t.status === "PENDING").length;
+  const pendingOrPartialCount = trackers.filter((t) => t.status !== "COMPLETED").length;
   const completedCount = trackers.filter((t) => t.status === "COMPLETED").length;
   const totalIssuedQty = trackers.reduce((sum, t) => sum + Number(t.qtyIssued), 0);
   const totalReturnedQty = trackers.reduce((sum, t) => sum + Number(t.qtyReturned), 0);
@@ -186,12 +186,12 @@ export default function FabricVendorTrackerPage() {
 
           <Card className="border-l-4 border-l-amber-500 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Pending Consumption</CardTitle>
+              <CardTitle className="text-sm font-medium">Pending / Partial</CardTitle>
               <AlertCircle className="h-4 w-4 text-amber-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold font-mono text-amber-600">{pendingCount} records</div>
-              <p className="text-xs text-muted-foreground">Currently held by vendors</p>
+              <div className="text-2xl font-bold font-mono text-amber-600">{pendingOrPartialCount} records</div>
+              <p className="text-xs text-muted-foreground">Active with vendors</p>
             </CardContent>
           </Card>
 
@@ -202,7 +202,7 @@ export default function FabricVendorTrackerPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold font-mono text-emerald-600">{totalReturnedQty.toLocaleString()} m</div>
-              <p className="text-xs text-muted-foreground">Returned back to main warehouse</p>
+              <p className="text-xs text-muted-foreground">Returned back to warehouse</p>
             </CardContent>
           </Card>
 
@@ -213,7 +213,7 @@ export default function FabricVendorTrackerPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold font-mono text-blue-600">{totalUsedQty.toLocaleString()} m</div>
-              <p className="text-xs text-muted-foreground">Reported utilization by vendors</p>
+              <p className="text-xs text-muted-foreground">Reported utilization</p>
             </CardContent>
           </Card>
         </div>
@@ -239,6 +239,7 @@ export default function FabricVendorTrackerPage() {
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="PENDING">Pending (Issued)</SelectItem>
+                  <SelectItem value="PARTIAL">Partial Consumption</SelectItem>
                   <SelectItem value="COMPLETED">Completed</SelectItem>
                 </SelectContent>
               </Select>
@@ -288,7 +289,13 @@ export default function FabricVendorTrackerPage() {
                   </TableRow>
                 ) : (
                   trackers.map((tracker) => {
-                    const hasDetails = tracker.status === "COMPLETED";
+                    const issued = Number(tracker.qtyIssued);
+                    const used = Number(tracker.qtyUsed || 0);
+                    const returned = Number(tracker.qtyReturned || 0);
+                    const shortage = Number(tracker.qtyShortage || 0);
+                    const accounted = used + returned + shortage;
+                    const remaining = Math.max(0, issued - accounted);
+
                     return (
                       <TableRow key={tracker.id} className="hover:bg-muted/10 transition-colors">
                         <TableCell className="font-bold font-mono text-indigo-700">{tracker.trackerNumber}</TableCell>
@@ -314,30 +321,22 @@ export default function FabricVendorTrackerPage() {
                             </span>
                           </div>
                         </TableCell>
-                        <TableCell className="font-semibold font-mono text-blue-600">
-                          {Number(tracker.qtyIssued).toLocaleString()} {tracker.item?.uom || "m"}
+                        <TableCell className="font-semibold font-mono text-indigo-600">
+                          {issued.toLocaleString()} {tracker.item?.uom || "m"}
                         </TableCell>
                         <TableCell>
-                          {hasDetails ? (
-                            <div className="space-y-1 text-xs">
-                              <span className="block">
-                                <span className="text-muted-foreground">Used:</span>{" "}
-                                <span className="font-semibold text-green-600 font-mono">{Number(tracker.qtyUsed)}</span>
-                              </span>
-                              <span className="block">
-                                <span className="text-muted-foreground">Returned:</span>{" "}
-                                <span className="font-semibold text-blue-600 font-mono">{Number(tracker.qtyReturned)}</span>
-                              </span>
-                              <span className="block">
-                                <span className="text-muted-foreground">Shortage:</span>{" "}
-                                <span className="font-semibold text-red-500 font-mono">{Number(tracker.qtyShortage)}</span>
-                              </span>
+                          <div className="space-y-1 text-xs">
+                            <div className="flex items-center gap-2 font-mono">
+                              <span className="text-green-600 font-semibold">U: {used}m</span>
+                              <span className="text-blue-600 font-semibold">R: {returned}m</span>
+                              {shortage > 0 && <span className="text-red-500 font-semibold">S: {shortage}m</span>}
                             </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground italic flex items-center gap-1">
-                              <AlertCircle className="h-3 w-3 text-amber-500" /> Awaiting consumption report
-                            </span>
-                          )}
+                            {tracker.status !== "COMPLETED" && (
+                              <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 inline-block">
+                                Remaining: {remaining.toFixed(2)}m
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                           <div className="flex flex-col space-y-0.5">
@@ -355,19 +354,25 @@ export default function FabricVendorTrackerPage() {
                         </TableCell>
                         <TableCell>
                           <Badge
-                            className={`font-semibold capitalize px-2.5 py-1 ${
+                            className={`font-semibold px-2.5 py-1 ${
                               tracker.status === "PENDING"
                                 ? "bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100"
+                                : tracker.status === "PARTIAL"
+                                ? "bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100"
                                 : "bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
                             }`}
                             variant="outline"
                           >
-                            {tracker.status.toLowerCase()}
+                            {tracker.status === "PENDING"
+                              ? "Pending"
+                              : tracker.status === "PARTIAL"
+                              ? "Partial"
+                              : "Completed"}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1.5">
-                            {tracker.status === "PENDING" && (
+                            {tracker.status !== "COMPLETED" && (
                               <Button
                                 size="sm"
                                 variant="outline"

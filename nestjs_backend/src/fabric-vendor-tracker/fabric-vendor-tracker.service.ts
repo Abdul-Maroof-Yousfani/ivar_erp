@@ -87,30 +87,67 @@ export class FabricVendorTrackerService {
         throw new BadRequestException('This fabric tracking record has already been marked as COMPLETED.');
       }
 
-      // 2. Validate: qtyUsed + qtyReturned + qtyShortage === qtyIssued
+      const currentUsed = Number(tracker.qtyUsed) || 0;
+      const currentReturned = Number(tracker.qtyReturned) || 0;
+      const currentShortage = Number(tracker.qtyShortage) || 0;
       const qtyIssued = Number(tracker.qtyIssued);
-      const sum = dto.qtyUsed + dto.qtyReturned + dto.qtyShortage;
-      if (Math.abs(sum - qtyIssued) > 0.0001) {
+
+      const previousAccounted = currentUsed + currentReturned + currentShortage;
+      const remainingUnaccounted = qtyIssued - previousAccounted;
+
+      const newEntrySum = Number(dto.qtyUsed || 0) + Number(dto.qtyReturned || 0) + Number(dto.qtyShortage || 0);
+
+      if (newEntrySum <= 0) {
+        throw new BadRequestException('Please enter a quantity for used, returned, or shortage.');
+      }
+
+      if (newEntrySum > remainingUnaccounted + 0.0001) {
         throw new BadRequestException(
-          `Validation failed: Sum of Used (${dto.qtyUsed}), Returned (${dto.qtyReturned}), and Shortage (${dto.qtyShortage}) must exactly equal Issued quantity (${qtyIssued}). Sum is currently ${sum}.`,
+          `Cannot log ${newEntrySum} meters. Remaining unaccounted fabric is only ${remainingUnaccounted.toFixed(2)} meters.`,
         );
       }
+
+      const updatedQtyUsed = currentUsed + Number(dto.qtyUsed || 0);
+      const updatedQtyReturned = currentReturned + Number(dto.qtyReturned || 0);
+      const updatedQtyShortage = currentShortage + Number(dto.qtyShortage || 0);
+      const updatedTotalAccounted = updatedQtyUsed + updatedQtyReturned + updatedQtyShortage;
+
+      const newStatus =
+        Math.abs(updatedTotalAccounted - qtyIssued) < 0.0001 || updatedTotalAccounted >= qtyIssued
+          ? FabricStatus.COMPLETED
+          : FabricStatus.PARTIAL;
 
       // 3. Update the tracker record
       const updatedTracker = await tx.fabricVendorTracker.update({
         where: { id },
         data: {
-          qtyUsed: dto.qtyUsed,
-          qtyReturned: dto.qtyReturned,
-          qtyShortage: dto.qtyShortage,
+          qtyUsed: updatedQtyUsed,
+          qtyReturned: updatedQtyReturned,
+          qtyShortage: updatedQtyShortage,
           consumptionDate: dto.consumptionDate ? new Date(dto.consumptionDate) : new Date(),
-          status: FabricStatus.COMPLETED,
-          notes: dto.notes || tracker.notes,
+          status: newStatus,
+          notes: dto.notes
+            ? tracker.notes
+              ? `${tracker.notes} | ${dto.notes}`
+              : dto.notes
+            : tracker.notes,
         },
       });
 
-      // 4. If qtyReturned > 0, return the returned fabric back to Main Store/Warehouse
-      if (dto.qtyReturned > 0) {
+      // 4. Create consumption log history
+      await tx.fabricVendorConsumptionLog.create({
+        data: {
+          trackerId: id,
+          qtyUsed: Number(dto.qtyUsed || 0),
+          qtyReturned: Number(dto.qtyReturned || 0),
+          qtyShortage: Number(dto.qtyShortage || 0),
+          consumptionDate: dto.consumptionDate ? new Date(dto.consumptionDate) : new Date(),
+          notes: dto.notes,
+        },
+      });
+
+      // 5. If qtyReturned > 0 for this entry, return the returned fabric back to Main Store/Warehouse
+      if (Number(dto.qtyReturned || 0) > 0) {
         const item = await tx.item.findUnique({
           where: { id: tracker.itemId },
         });
@@ -120,7 +157,7 @@ export class FabricVendorTrackerService {
           {
             itemId: tracker.itemId,
             warehouseId: tracker.warehouseId,
-            qty: dto.qtyReturned,
+            qty: Number(dto.qtyReturned),
             movementType: MovementType.INBOUND,
             referenceType: 'FABRIC_RETURN',
             referenceId: tracker.id,
@@ -171,6 +208,9 @@ export class FabricVendorTrackerService {
         warehouse: {
           select: { id: true, code: true, name: true },
         },
+        consumptionLogs: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -188,6 +228,9 @@ export class FabricVendorTrackerService {
         },
         warehouse: {
           select: { id: true, code: true, name: true },
+        },
+        consumptionLogs: {
+          orderBy: { createdAt: 'desc' },
         },
       },
     });
