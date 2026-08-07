@@ -258,6 +258,24 @@ export default function PurchaseInvoiceListPage() {
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
+                            {invoice.status === "DRAFT" && (
+                              <PermissionGuard
+                                permissions="erp.procurement.pi.update"
+                                fallback={null}
+                              >
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    router.push(
+                                      `/erp/procurement/purchase-invoice/${invoice.id}/edit`,
+                                    )
+                                  }
+                                >
+                                  <Edit className="w-4 h-4 text-blue-600" />
+                                </Button>
+                              </PermissionGuard>
+                            )}
                             {/* Only show delete button for DRAFT invoices */}
                             {invoice.status === "DRAFT" && (
                               <PermissionGuard

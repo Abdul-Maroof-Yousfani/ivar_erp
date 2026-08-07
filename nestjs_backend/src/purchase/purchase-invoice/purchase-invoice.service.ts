@@ -239,6 +239,13 @@ export class PurchaseInvoiceService {
 
       // If updating items, recalculate totals
       let updateData: any = { ...updateDto };
+
+      if (updateDto.invoiceDate) {
+        updateData.invoiceDate = new Date(updateDto.invoiceDate);
+      }
+      if (updateDto.dueDate) {
+        updateData.dueDate = new Date(updateDto.dueDate);
+      }
       
       if (updateDto.items) {
         const { subtotal, taxAmount, totalAmount } = this.calculateTotals(updateDto as CreatePurchaseInvoiceDto);
