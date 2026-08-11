@@ -64,6 +64,8 @@ model Location {
   fbrEnabled         Boolean   @default(false) @map("fbr_enabled")
   /// Whether this outlet is currently marked as online.
   isOnline           Boolean   @default(false) @map("is_online")
+  /// Whether this outlet is a stock holding location.
+  isStockLocation    Boolean   @default(true) @map("is_stock_location")
 
   /// Cash GL Codes
   cashGLCode         String?

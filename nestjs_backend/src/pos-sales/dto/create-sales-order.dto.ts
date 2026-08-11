@@ -111,7 +111,7 @@ export class AllianceMetaDto {
     @IsString()
     merchantSlip?: string;
 
-    @ApiPropertyOptional({ description: 'BIN number' })
+    @ApiPropertyOptional({ description: 'Selected BIN number' })
     @IsOptional()
     @IsString()
     binNumber?: string;

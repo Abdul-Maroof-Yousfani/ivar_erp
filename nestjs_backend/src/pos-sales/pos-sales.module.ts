@@ -7,11 +7,6 @@ import { SalesHistoryBulkUploadService } from './sales-history-bulk-upload.servi
 import { SalesHistoryUploadProcessor } from '../queue/processors/sales-history-upload.processor';
 import { SalesHistoryCsvParserService } from '../common/services/sales-history-csv-parser.service';
 import { SalesHistoryValidatorService } from '../common/services/sales-history-validator.service';
-import { OnlineSalesBulkUploadController } from './online-sales-bulk-upload.controller';
-import { OnlineSalesBulkUploadService } from './online-sales-bulk-upload.service';
-import { OnlineSalesUploadProcessor } from '../queue/processors/online-sales-upload.processor';
-import { OnlineSalesCsvParserService } from '../common/services/online-sales-csv-parser.service';
-import { OnlineSalesValidatorService } from '../common/services/online-sales-validator.service';
 import { UploadEventsService } from '../finance/item/upload-events.service';
 import { DatabaseModule } from '../database/database.module';
 import { StockLedgerModule } from '../warehouse/stock-ledger/stock-ledger.module';
@@ -23,14 +18,27 @@ import { ExportHistoryModule } from '../warehouse/export-history/export-history.
 import { UploadModule } from '../upload/upload.module';
 import { NetSalesSummaryExportService } from './net-sales-summary-export.service';
 import { NetSalesSummaryExportProcessor } from './net-sales-summary-export.processor';
+import { PosSalesActivityExportController } from './pos-sales-activity-export.controller';
+import { PosSalesActivityExportService } from './pos-sales-activity-export.service';
+import { PosSalesActivityExportProcessor } from './pos-sales-activity-export.processor';
 import { SalesRegisterExportService } from './sales-register-export.service';
 import { SalesRegisterExportProcessor } from './sales-register-export.processor';
-import { PosSalesExportService } from './pos-sales-export.service';
-import { PosSalesExportProcessor } from './pos-sales-export.processor';
-import { PosSalesExportController } from './pos-sales-export.controller';
-import { SalesActivityExportService } from './sales-activity-export.service';
-import { SalesActivityExportProcessor } from './sales-activity-export.processor';
-import { SalesActivityExportController } from './sales-activity-export.controller';
+import { SalesListExportService } from './sales-list-export.service';
+import { SalesListExportProcessor } from './sales-list-export.processor';
+import { GrossSalesExportService } from './gross-sales-export.service';
+import { GrossSalesExportProcessor } from './gross-sales-export.processor';
+import { AllianceRegisterExportService } from './alliance-register-export.service';
+import { AllianceRegisterExportProcessor } from './alliance-register-export.processor';
+import { CostOfSalesExportService } from './cost-of-sales-export.service';
+import { CostOfSalesExportProcessor } from './cost-of-sales-export.processor';
+import { GiftVoucherSaleRegisterExportService } from './gift-voucher-sale-register-export.service';
+import { GiftVoucherSaleRegisterExportProcessor } from './gift-voucher-sale-register-export.processor';
+import { CorporateVoucherExportService } from './corporate-voucher-export.service';
+import { CorporateVoucherExportProcessor } from './corporate-voucher-export.processor';
+import { CreditVoucherExportService } from './credit-voucher-export.service';
+import { CreditVoucherExportProcessor } from './credit-voucher-export.processor';
+import { VoucherRegisterExportService } from './voucher-register-export.service';
+import { VoucherRegisterExportProcessor } from './voucher-register-export.processor';
 import { WarehouseModule } from '../warehouse/warehouse.module';
 
 @Module({
@@ -45,19 +53,23 @@ import { WarehouseModule } from '../warehouse/warehouse.module';
         UploadModule,
         BullModule.registerQueue(
             { name: 'sales-history-upload' },
-            { name: 'online-sales-upload' },
             { name: 'net-sales-summary-export' },
+            { name: 'pos-sales-activity-export' },
             { name: 'sales-register-export' },
-            { name: 'pos-sales-export' },
-            { name: 'sales-activity-export' },
+            { name: 'sales-list-export' },
+            { name: 'gross-sales-export' },
+            { name: 'alliance-register-export' },
+            { name: 'cost-of-sales-export' },
+            { name: 'gift-voucher-sale-register-export' },
+            { name: 'corporate-voucher-export' },
+            { name: 'credit-voucher-export' },
+            { name: 'voucher-register-export' }
         ),
     ],
     controllers: [
-        PosSalesController,
+        PosSalesController, 
         SalesHistoryBulkUploadController,
-        OnlineSalesBulkUploadController,
-        PosSalesExportController,
-        SalesActivityExportController,
+        PosSalesActivityExportController,
     ],
     providers: [
         PosSalesService,
@@ -66,29 +78,43 @@ import { WarehouseModule } from '../warehouse/warehouse.module';
         SalesHistoryUploadProcessor,
         SalesHistoryCsvParserService,
         SalesHistoryValidatorService,
-        OnlineSalesBulkUploadService,
-        OnlineSalesUploadProcessor,
-        OnlineSalesCsvParserService,
-        OnlineSalesValidatorService,
         UploadEventsService,
         NetSalesSummaryExportService,
         NetSalesSummaryExportProcessor,
+        PosSalesActivityExportService,
+        PosSalesActivityExportProcessor,
         SalesRegisterExportService,
         SalesRegisterExportProcessor,
-        PosSalesExportService,
-        PosSalesExportProcessor,
-        SalesActivityExportService,
-        SalesActivityExportProcessor,
+        SalesListExportService,
+        SalesListExportProcessor,
+        GrossSalesExportService,
+        GrossSalesExportProcessor,
+        AllianceRegisterExportService,
+        AllianceRegisterExportProcessor,
+        CostOfSalesExportService,
+        CostOfSalesExportProcessor,
+        GiftVoucherSaleRegisterExportService,
+        GiftVoucherSaleRegisterExportProcessor,
+        CorporateVoucherExportService,
+        CorporateVoucherExportProcessor,
+        CreditVoucherExportService,
+        CreditVoucherExportProcessor,
+        VoucherRegisterExportService,
+        VoucherRegisterExportProcessor,
     ],
     exports: [
-        PosSalesService,
+        PosSalesService, 
         NetSalesSummaryExportService,
+        PosSalesActivityExportService,
         SalesRegisterExportService,
-        PosSalesExportService,
-        SalesActivityExportService,
-        OnlineSalesBulkUploadService,
+        SalesListExportService,
+        GrossSalesExportService,
+        AllianceRegisterExportService,
+        CostOfSalesExportService,
+        GiftVoucherSaleRegisterExportService,
+        CorporateVoucherExportService,
+        CreditVoucherExportService,
+        VoucherRegisterExportService,
     ],
 })
 export class PosSalesModule { }
-
-

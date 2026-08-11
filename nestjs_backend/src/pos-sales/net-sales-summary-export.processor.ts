@@ -104,16 +104,49 @@ export class NetSalesSummaryExportProcessor {
     try {
       await job.progress(5);
 
-      const location = await prisma.location.findUnique({
-        where: { id: locationId },
-        select: { name: true },
-      });
-      const locationName = location?.name || 'Store';
+      const locIds = locationId ? locationId.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const locationWhere = locIds.length > 1 ? { in: locIds } : (locIds.length === 1 ? locIds[0] : undefined);
+
+      let locationName = '';
+      if (locIds.length > 0) {
+        const locs = await prisma.location.findMany({
+          where: { id: { in: locIds } },
+          select: { name: true },
+        });
+        locationName = locs.map(l => l.name).join(', ');
+      }
+      if (!locationName) locationName = 'All Stores';
 
       const now = new Date();
-      const startDate = startStr ? new Date(startStr) : new Date(now.getFullYear(), now.getMonth(), 1);
-      const endDate = endStr ? new Date(endStr) : new Date(now);
-      endDate.setHours(23, 59, 59, 999);
+
+      // Helper to parse dates robustly in local timezone if plain date strings are passed
+      const parseLocalDate = (dateStr: string | undefined, isEndOfDay = false): Date => {
+        if (!dateStr) {
+          if (isEndOfDay) {
+            const d = new Date(now);
+            d.setHours(23, 59, 59, 999);
+            return d;
+          } else {
+            return new Date(now.getFullYear(), now.getMonth(), 1);
+          }
+        }
+
+        // If it has a time indicator, parse it as-is (e.g. ISO string)
+        if (dateStr.includes('T') || dateStr.includes('Z')) {
+          const d = new Date(dateStr);
+          if (isEndOfDay && !dateStr.includes('T23:59:59')) {
+            d.setHours(23, 59, 59, 999);
+          }
+          return d;
+        }
+
+        // Plain date string like YYYY-MM-DD
+        const timePart = isEndOfDay ? 'T23:59:59.999' : 'T00:00:00.000';
+        return new Date(`${dateStr}${timePart}`);
+      };
+
+      const startDate = parseLocalDate(startStr, false);
+      const endDate = parseLocalDate(endStr, true);
 
       await job.progress(15);
 
@@ -121,7 +154,7 @@ export class NetSalesSummaryExportProcessor {
       const orderItems = await prisma.salesOrderItem.findMany({
         where: {
           salesOrder: {
-            locationId,
+            ...(locationWhere && { locationId: locationWhere }),
             status: { in: ['completed', 'partially_returned', 'refunded', 'exchanged'] },
             createdAt: { gte: startDate, lte: endDate },
             ...(cashierUserId ? { cashierUserId } : {}),
@@ -142,6 +175,90 @@ export class NetSalesSummaryExportProcessor {
           },
         },
       });
+
+      // Query approved claim items for this period
+      const approvedClaimItems = await prisma.posClaimItem.findMany({
+        where: {
+          itemStatus: 'APPROVED',
+          approvedQty: { gt: 0 },
+          claim: {
+            status: { in: ['APPROVED', 'PARTIALLY_APPROVED'] },
+            reviewedAt: { gte: startDate, lte: endDate },
+            salesOrder: {
+              ...(locationWhere && { locationId: locationWhere }),
+              ...(cashierUserId ? { cashierUserId } : {}),
+            },
+          },
+        },
+        include: {
+          claim: {
+            include: {
+              salesOrder: true,
+            },
+          },
+          item: {
+            include: {
+              brand: true,
+              division: true,
+              category: true,
+              gender: true,
+              silhouette: true,
+              size: true,
+              color: true,
+            },
+          },
+        },
+      });
+
+      const salesOrderItemIds = approvedClaimItems.map(ci => ci.salesOrderItemId).filter(Boolean);
+      const originalSalesOrderItems = salesOrderItemIds.length
+        ? await prisma.salesOrderItem.findMany({
+          where: { id: { in: salesOrderItemIds } },
+        })
+        : [];
+      const originalSalesOrderItemMap = new Map<string, any>();
+      for (const oi of originalSalesOrderItems) {
+        originalSalesOrderItemMap.set(oi.id, oi);
+      }
+
+      // Fetch direct returns/refunds from StockLedger within the date range
+      const returnLedgerEntries = await prisma.stockLedger.findMany({
+        where: {
+          referenceType: { in: ['POS_RETURN', 'POS_REFUND'] },
+          createdAt: { gte: startDate, lte: endDate },
+          ...(locationWhere && { locationId: locationWhere }),
+        },
+        include: {
+          item: {
+            include: {
+              brand: true,
+              division: true,
+              category: true,
+              gender: true,
+              silhouette: true,
+              size: true,
+              color: true,
+            },
+          },
+        },
+      });
+
+      const referenceOrderIds = [...new Set(returnLedgerEntries.map(e => e.referenceId).filter(Boolean))];
+      const referenceOrders = referenceOrderIds.length
+        ? await prisma.salesOrder.findMany({
+          where: {
+            id: { in: referenceOrderIds },
+            ...(cashierUserId ? { cashierUserId } : {}),
+          },
+          include: {
+            items: true,
+          },
+        })
+        : [];
+      const referenceOrderMap = new Map<string, any>();
+      for (const order of referenceOrders) {
+        referenceOrderMap.set(order.id, order);
+      }
 
       await job.progress(35);
 
@@ -182,31 +299,37 @@ export class NetSalesSummaryExportProcessor {
       // Resolve cashier names if grouping by salesperson
       const cashierNameMap = new Map<string, string>();
       if (sSalesperson || levels.includes('salesperson')) {
-        const cashierUserIds = [...new Set(orderItems.map(oi => oi.salesOrder?.cashierUserId).filter(Boolean))] as string[];
+        const claimCashierIds = approvedClaimItems.map(ci => ci.claim.salesOrder?.cashierUserId).filter(Boolean);
+        const ledgerCashierIds = referenceOrders.map(o => o.cashierUserId).filter(Boolean);
+        const cashierUserIds = [...new Set([
+          ...orderItems.map(oi => oi.salesOrder?.cashierUserId).filter(Boolean),
+          ...claimCashierIds,
+          ...ledgerCashierIds
+        ])] as string[];
         const cashierUsers = cashierUserIds.length
-            ? await prismaMaster.user.findMany({
-                where: { id: { in: cashierUserIds } },
-                select: { id: true, firstName: true, lastName: true },
-              })
-            : [];
+          ? await prismaMaster.user.findMany({
+            where: { id: { in: cashierUserIds } },
+            select: { id: true, firstName: true, lastName: true },
+          })
+          : [];
         const cashierEmployees = cashierUserIds.length
-            ? await prisma.employee.findMany({
-                where: {
-                    OR: [
-                        { id: { in: cashierUserIds } },
-                        { userId: { in: cashierUserIds } }
-                    ]
-                },
-                select: { id: true, userId: true, employeeName: true }
-            })
-            : [];
+          ? await prisma.employee.findMany({
+            where: {
+              OR: [
+                { id: { in: cashierUserIds } },
+                { userId: { in: cashierUserIds } }
+              ]
+            },
+            select: { id: true, userId: true, employeeName: true }
+          })
+          : [];
 
         for (const u of cashierUsers) {
-            cashierNameMap.set(u.id, `${u.firstName} ${u.lastName}`);
+          cashierNameMap.set(u.id, `${u.firstName} ${u.lastName}`);
         }
         for (const emp of cashierEmployees) {
-            if (emp.userId) cashierNameMap.set(emp.userId, emp.employeeName);
-            cashierNameMap.set(emp.id, emp.employeeName);
+          if (emp.userId) cashierNameMap.set(emp.userId, emp.employeeName);
+          cashierNameMap.set(emp.id, emp.employeeName);
         }
       }
 
@@ -244,7 +367,6 @@ export class NetSalesSummaryExportProcessor {
         const qty = Number(orderItem.quantity || 0);
         const retailPrice = Number(orderItem.unitPrice || 0);
         const taxRate = Number(orderItem.taxPercent || 0);
-        const taxRate2 = Number(orderItem.item.taxRate2 || 0);
 
         const taxDivisor = 1 + (taxRate / 100);
         const wostPerUnit = retailPrice / taxDivisor;
@@ -252,7 +374,7 @@ export class NetSalesSummaryExportProcessor {
         const discountAmount = Number(orderItem.discountAmount || 0);
         const valueExclTax = totalPriceWost - discountAmount;
         const salesTaxAmount = Number(orderItem.taxAmount || 0);
-        const additionalSalesTaxAmount = valueExclTax * (taxRate2 / 100);
+        const additionalSalesTaxAmount = 0; // Force to 0 for POS sales
         const totalTax = salesTaxAmount + additionalSalesTaxAmount;
         const valueInclTax = valueExclTax + totalTax;
 
@@ -338,6 +460,220 @@ export class NetSalesSummaryExportProcessor {
         }
       }
 
+      for (const claimItem of approvedClaimItems) {
+        if (!claimItem.item) continue;
+        const originalOi = originalSalesOrderItemMap.get(claimItem.salesOrderItemId);
+        if (!originalOi) continue;
+
+        const approvedQty = Number(claimItem.approvedQty || 0);
+        const qty = -approvedQty;
+        const retailPrice = Number(originalOi.unitPrice || 0);
+        const taxRate = Number(originalOi.taxPercent || 0);
+
+        const taxDivisor = 1 + (taxRate / 100);
+        const wostPerUnit = retailPrice / taxDivisor;
+        const totalPriceWost = qty * wostPerUnit;
+
+        const originalQty = Number(originalOi.quantity || 1);
+        const discountAmount = -((Number(originalOi.discountAmount || 0) / originalQty) * approvedQty);
+        const salesTaxAmount = -((Number(originalOi.taxAmount || 0) / originalQty) * approvedQty);
+        const additionalSalesTaxAmount = 0;
+        const totalTax = salesTaxAmount + additionalSalesTaxAmount;
+        const valueExclTax = totalPriceWost - discountAmount;
+        const valueInclTax = valueExclTax + totalTax;
+
+        const variantMetrics = {
+          qty,
+          totalRetailValue: qty * retailPrice,
+          totalPriceWost,
+          discountAmount,
+          valueExclTax,
+          salesTaxAmount,
+          additionalSalesTaxAmount,
+          totalTax,
+          valueInclTax,
+        };
+
+        let currentLevelNodes = root;
+        for (let i = 0; i < levels.length; i++) {
+          const levelName = levels[i];
+          let nodeVal = '';
+          let extraFields: any = {};
+
+          if (levelName === 'salesperson') {
+            const cid = claimItem.claim.salesOrder?.cashierUserId || '';
+            nodeVal = cid ? (cashierNameMap.get(cid) || 'Unknown Salesperson') : 'Unknown Salesperson';
+          } else if (levelName === 'year') {
+            nodeVal = claimItem.claim.reviewedAt ? String(claimItem.claim.reviewedAt.getFullYear()) : (claimItem.claim.createdAt ? String(claimItem.claim.createdAt.getFullYear()) : 'Unknown Year');
+          } else if (levelName === 'month') {
+            const date = claimItem.claim.reviewedAt || claimItem.claim.createdAt;
+            if (date) {
+              nodeVal = date.toLocaleString('default', { month: 'long', year: 'numeric' });
+            } else {
+              nodeVal = 'Unknown Month';
+            }
+          } else if (levelName === 'day') {
+            const date = claimItem.claim.reviewedAt || claimItem.claim.createdAt;
+            if (date) {
+              nodeVal = date.toLocaleDateString('default', { day: '2-digit', month: 'short', year: 'numeric' });
+            } else {
+              nodeVal = 'Unknown Day';
+            }
+          } else if (levelName === 'document') {
+            nodeVal = claimItem.claim ? `POS Claim - ${claimItem.claim.claimNumber}` : 'Unknown Document';
+          } else if (levelName === 'brand') {
+            nodeVal = claimItem.item.brand?.name || 'No Brand';
+          } else if (levelName === 'division') {
+            nodeVal = claimItem.item.division?.name || 'No Division';
+          } else if (levelName === 'salesTax') {
+            const rate = Number(originalOi.taxPercent || 0);
+            nodeVal = rate > 0 ? `${rate}% Tax` : 'No Tax';
+          } else if (levelName === 'category') {
+            nodeVal = claimItem.item.category?.name || 'No Category';
+          } else if (levelName === 'gender') {
+            nodeVal = claimItem.item.gender?.name || 'No Gender';
+          } else if (levelName === 'silhouette') {
+            nodeVal = claimItem.item.silhouette?.name || 'No Silhouette';
+          } else if (levelName === 'article') {
+            nodeVal = claimItem.item.sku;
+            extraFields.sku = claimItem.item.sku;
+            extraFields.articleName = claimItem.item.description || 'Unknown Article';
+          } else if (levelName === 'variant') {
+            nodeVal = `${claimItem.item.color?.name || 'Default'}-${claimItem.item.size?.name || 'Default'}`;
+            extraFields.color = claimItem.item.color?.name || 'Default';
+            extraFields.size = claimItem.item.size?.name || 'Default';
+          }
+
+          let existingNode = currentLevelNodes.find(n => n.level === levelName && n.value === nodeVal);
+          if (!existingNode) {
+            existingNode = {
+              level: levelName,
+              value: nodeVal,
+              totals: createEmptyTotals(),
+              ...extraFields,
+              children: [],
+            };
+            currentLevelNodes.push(existingNode);
+          }
+
+          addTotals(existingNode.totals, variantMetrics);
+
+          if (i < levels.length - 1) {
+            currentLevelNodes = existingNode.children;
+          }
+        }
+      }
+
+      for (const ledgerEntry of returnLedgerEntries) {
+        if (!ledgerEntry.item) continue;
+        const originalOrder = referenceOrderMap.get(ledgerEntry.referenceId);
+        if (!originalOrder) continue;
+
+        const originalOi = originalOrder.items.find(oi => oi.itemId === ledgerEntry.itemId);
+        if (!originalOi) continue;
+
+        const returnedQty = Math.abs(Number(ledgerEntry.qty));
+        if (returnedQty <= 0) continue;
+
+        const qty = -returnedQty;
+        const retailPrice = Number(originalOi.unitPrice || 0);
+        const taxRate = Number(originalOi.taxPercent || 0);
+
+        const taxDivisor = 1 + (taxRate / 100);
+        const wostPerUnit = retailPrice / taxDivisor;
+        const totalPriceWost = qty * wostPerUnit;
+
+        const originalQty = Number(originalOi.quantity || 1);
+        const discountAmount = -((Number(originalOi.discountAmount || 0) / originalQty) * returnedQty);
+        const salesTaxAmount = -((Number(originalOi.taxAmount || 0) / originalQty) * returnedQty);
+        const additionalSalesTaxAmount = 0;
+        const totalTax = salesTaxAmount + additionalSalesTaxAmount;
+        const valueExclTax = totalPriceWost - discountAmount;
+        const valueInclTax = valueExclTax + totalTax;
+
+        const variantMetrics = {
+          qty,
+          totalRetailValue: qty * retailPrice,
+          totalPriceWost,
+          discountAmount,
+          valueExclTax,
+          salesTaxAmount,
+          additionalSalesTaxAmount,
+          totalTax,
+          valueInclTax,
+        };
+
+        let currentLevelNodes = root;
+        for (let i = 0; i < levels.length; i++) {
+          const levelName = levels[i];
+          let nodeVal = '';
+          let extraFields: any = {};
+
+          if (levelName === 'salesperson') {
+            const cid = originalOrder.cashierUserId || '';
+            nodeVal = cid ? (cashierNameMap.get(cid) || 'Unknown Salesperson') : 'Unknown Salesperson';
+          } else if (levelName === 'year') {
+            nodeVal = ledgerEntry.createdAt ? String(ledgerEntry.createdAt.getFullYear()) : 'Unknown Year';
+          } else if (levelName === 'month') {
+            if (ledgerEntry.createdAt) {
+              nodeVal = ledgerEntry.createdAt.toLocaleString('default', { month: 'long', year: 'numeric' });
+            } else {
+              nodeVal = 'Unknown Month';
+            }
+          } else if (levelName === 'day') {
+            if (ledgerEntry.createdAt) {
+              nodeVal = ledgerEntry.createdAt.toLocaleDateString('default', { day: '2-digit', month: 'short', year: 'numeric' });
+            } else {
+              nodeVal = 'Unknown Day';
+            }
+          } else if (levelName === 'document') {
+            const docNum = ledgerEntry.referenceType === 'POS_REFUND'
+              ? (originalOrder.refundNumber || `Refund for ${originalOrder.orderNumber}`)
+              : (originalOrder.returnNumber || `Return for ${originalOrder.orderNumber}`);
+            nodeVal = `POS Return - ${docNum}`;
+          } else if (levelName === 'brand') {
+            nodeVal = ledgerEntry.item.brand?.name || 'No Brand';
+          } else if (levelName === 'division') {
+            nodeVal = ledgerEntry.item.division?.name || 'No Division';
+          } else if (levelName === 'salesTax') {
+            const rate = Number(originalOi.taxPercent || 0);
+            nodeVal = rate > 0 ? `${rate}% Tax` : 'No Tax';
+          } else if (levelName === 'category') {
+            nodeVal = ledgerEntry.item.category?.name || 'No Category';
+          } else if (levelName === 'gender') {
+            nodeVal = ledgerEntry.item.gender?.name || 'No Gender';
+          } else if (levelName === 'silhouette') {
+            nodeVal = ledgerEntry.item.silhouette?.name || 'No Silhouette';
+          } else if (levelName === 'article') {
+            nodeVal = ledgerEntry.item.sku;
+            extraFields.sku = ledgerEntry.item.sku;
+            extraFields.articleName = ledgerEntry.item.description || 'Unknown Article';
+          } else if (levelName === 'variant') {
+            nodeVal = `${ledgerEntry.item.color?.name || 'Default'}-${ledgerEntry.item.size?.name || 'Default'}`;
+            extraFields.color = ledgerEntry.item.color?.name || 'Default';
+            extraFields.size = ledgerEntry.item.size?.name || 'Default';
+          }
+
+          let existingNode = currentLevelNodes.find(n => n.level === levelName && n.value === nodeVal);
+          if (!existingNode) {
+            existingNode = {
+              level: levelName,
+              value: nodeVal,
+              totals: createEmptyTotals(),
+              ...extraFields,
+              children: [],
+            };
+            currentLevelNodes.push(existingNode);
+          }
+
+          addTotals(existingNode.totals, variantMetrics);
+
+          if (i < levels.length - 1) {
+            currentLevelNodes = existingNode.children;
+          }
+        }
+      }
+
       await job.progress(65);
 
       const grandTotals = createEmptyTotals();
@@ -354,13 +690,13 @@ export class NetSalesSummaryExportProcessor {
 
         const launchArgs = process.platform === 'linux'
           ? [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-gpu',
-              '--no-first-run',
-              '--no-zygote',
-            ]
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-first-run',
+            '--no-zygote',
+          ]
           : [];
 
         const browser = await puppeteer.launch({
@@ -378,7 +714,7 @@ export class NetSalesSummaryExportProcessor {
           const progressInterval = setInterval(() => {
             if (currentProgress < 94) {
               currentProgress += 1;
-              job.progress(currentProgress).catch(() => {});
+              job.progress(currentProgress).catch(() => { });
             }
           }, 3000);
 
@@ -390,7 +726,7 @@ export class NetSalesSummaryExportProcessor {
               margin: { top: '15mm', bottom: '15mm', left: '10mm', right: '10mm' },
               printBackground: true,
               displayHeaderFooter: true,
-              headerTemplate: '<div style="font-size: 7px; width: 100%; text-align: right; padding-right: 15mm; color: #94a3b8;">Speed (Pvt.) Limited | Net Sales Summary Report</div>',
+              headerTemplate: '<div style="font-size: 7px; width: 100%; text-align: right; padding-right: 15mm; color: #94a3b8;">IVAR | Net Sales Summary Report</div>',
               footerTemplate: '<div style="font-size: 7px; width: 100%; text-align: center; color: #94a3b8;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>',
             });
           } finally {
@@ -496,10 +832,10 @@ export class NetSalesSummaryExportProcessor {
 
         const writeNodeToExcel = (node: any) => {
           const style = LEVEL_EXCEL_STYLES[node.level] || LEVEL_EXCEL_STYLES.brand;
-          
+
           let label = ' '.repeat(style.indent) + style.prefix;
           let sizeVal = '';
-          
+
           if (node.level === 'article') {
             label = ' '.repeat(style.indent) + `SKU: ${node.sku} (${node.articleName})`;
             sizeVal = 'ALL SIZES';
@@ -511,12 +847,12 @@ export class NetSalesSummaryExportProcessor {
           }
 
           const avgRetail = node.totals.qty > 0 ? (node.totals.totalRetailValue / node.totals.qty) : 0;
-          
+
           const rowData = {
             sku: label,
             size: sizeVal,
             qty: node.totals.qty,
-            retailPrice: avgRetail,
+            retailPrice: node.totals.totalRetailValue,
             totalPriceWost: node.totals.totalPriceWost,
             discountAmount: node.totals.discountAmount,
             valueExclTax: node.totals.valueExclTax,
@@ -527,16 +863,16 @@ export class NetSalesSummaryExportProcessor {
           };
 
           const row = ws.addRow(rowData);
-          
-          for (let colNum = 1; colNum <= 11; colNum++) {
+
+          for (let colNum = 1; colNum <= COLUMNS.length; colNum++) {
             const cell = row.getCell(colNum);
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${style.bgHex}` } };
             cell.font = { bold: style.bold, size: style.fontSize, color: { argb: `FF${style.fgHex}` } };
             cell.border = borderThin;
-            cell.alignment = colNum === 2 
-              ? centerAlign 
+            cell.alignment = colNum === 2
+              ? centerAlign
               : (colNum === 1 ? leftAlign : rightAlign);
-            
+
             // Format numbers
             const c = COLUMNS[colNum - 1];
             if (c.numFmt) {
@@ -545,7 +881,7 @@ export class NetSalesSummaryExportProcessor {
           }
           row.height = node.level === 'variant' ? 18 : 20;
           row.commit();
-          
+
           if (node.children && node.children.length > 0) {
             for (const child of node.children) {
               writeNodeToExcel(child);
@@ -562,7 +898,7 @@ export class NetSalesSummaryExportProcessor {
           sku: 'GRAND TOTAL',
           size: '',
           qty: grandTotals.qty,
-          retailPrice: grandTotals.qty > 0 ? (grandTotals.totalRetailValue / grandTotals.qty) : 0,
+          retailPrice: grandTotals.totalRetailValue,
           totalPriceWost: grandTotals.totalPriceWost,
           discountAmount: grandTotals.discountAmount,
           valueExclTax: grandTotals.valueExclTax,
@@ -581,7 +917,7 @@ export class NetSalesSummaryExportProcessor {
             right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
           };
           cell.alignment = colNum === 2 ? centerAlign : (colNum === 1 ? leftAlign : rightAlign);
-          
+
           const c = COLUMNS[colNum - 1];
           if (c.numFmt) {
             cell.numFmt = c.numFmt;
@@ -667,14 +1003,14 @@ export class NetSalesSummaryExportProcessor {
       let html = '';
 
       const avgRetail = node.totals.qty > 0 ? (node.totals.totalRetailValue / node.totals.qty) : 0;
-      
+
       if (node.level === 'article') {
         html += `
           <tr class="${style.className}">
             <td style="${style.indentStyles}">SKU: ${node.sku} (${node.articleName})</td>
             <td class="center">ALL SIZES</td>
             <td class="num">${formatQty(node.totals.qty)}</td>
-            <td class="num">${formatVal(avgRetail)}</td>
+            <td class="num">${formatVal(node.totals.totalRetailValue)}</td>
             <td class="num">${formatVal(node.totals.totalPriceWost)}</td>
             <td class="num">${formatVal(node.totals.discountAmount)}</td>
             <td class="num">${formatVal(node.totals.valueExclTax)}</td>
@@ -690,7 +1026,7 @@ export class NetSalesSummaryExportProcessor {
             <td style="${style.indentStyles} color: #64748b; font-style: italic;">&mdash; Variant Item</td>
             <td class="center">${node.size}</td>
             <td class="num">${formatQty(node.totals.qty)}</td>
-            <td class="num">${formatVal(avgRetail)}</td>
+            <td class="num">${formatVal(node.totals.totalRetailValue)}</td>
             <td class="num">${formatVal(node.totals.totalPriceWost)}</td>
             <td class="num">${formatVal(node.totals.discountAmount)}</td>
             <td class="num">${formatVal(node.totals.valueExclTax)}</td>
@@ -706,7 +1042,7 @@ export class NetSalesSummaryExportProcessor {
             <td style="${style.indentStyles}">${style.prefix}${node.value.toUpperCase()}</td>
             <td class="center">-</td>
             <td class="num">${formatQty(node.totals.qty)}</td>
-            <td class="num">${formatVal(avgRetail)}</td>
+            <td class="num">${formatVal(node.totals.totalRetailValue)}</td>
             <td class="num">${formatVal(node.totals.totalPriceWost)}</td>
             <td class="num">${formatVal(node.totals.discountAmount)}</td>
             <td class="num">${formatVal(node.totals.valueExclTax)}</td>
@@ -717,13 +1053,13 @@ export class NetSalesSummaryExportProcessor {
           </tr>
         `;
       }
-      
+
       if (node.children && node.children.length > 0) {
         for (const child of node.children) {
           html += buildHtmlRows(child);
         }
       }
-      
+
       return html;
     };
 
@@ -823,7 +1159,7 @@ export class NetSalesSummaryExportProcessor {
       </head>
       <body>
         <div class="header-block">
-          <div class="company-name">Speed (Pvt.) Limited</div>
+          <div class="company-name">IVAR</div>
           <div class="report-title">Net Sales Summary Report</div>
           <div class="meta-info">
             <strong>Location:</strong> ${locationName} | 
@@ -852,7 +1188,7 @@ export class NetSalesSummaryExportProcessor {
               <td>GRAND TOTAL</td>
               <td class="center">-</td>
               <td class="num">${formatQty(grandTotals.qty)}</td>
-              <td class="num">${formatVal(grandTotals.qty > 0 ? (grandTotals.totalRetailValue / grandTotals.qty) : 0)}</td>
+              <td class="num">${formatVal(grandTotals.totalRetailValue)}</td>
               <td class="num">${formatVal(grandTotals.totalPriceWost)}</td>
               <td class="num">${formatVal(grandTotals.discountAmount)}</td>
               <td class="num">${formatVal(grandTotals.valueExclTax)}</td>

@@ -15,7 +15,7 @@ export interface SalesRegisterExportJobData {
   userId: string;
   tenantId: string;
   tenantDbUrl: string;
-  locationId?: string;
+  locationId: string;
   startDate?: string;
   endDate?: string;
   cashierUserId?: string;
@@ -26,6 +26,8 @@ export interface SalesRegisterExportJobData {
 const COLUMNS = [
   { header: 'CM #', key: 'cmNo', width: 16 },
   { header: 'Date', key: 'date', width: 12 },
+  { header: 'HS CODE', key: 'hsCode', width: 16, align: 'center' },
+  { header: 'Barcode', key: 'barcodes', width: 22, align: 'center' },
   { header: 'Gross Sale', key: 'grossSale', width: 14, align: 'right', numFmt: '#,##0.00' },
   { header: 'Gross Sale WOST', key: 'grossSaleWost', width: 16, align: 'right', numFmt: '#,##0.00' },
   { header: 'Disc', key: 'disc', width: 12, align: 'right', numFmt: '#,##0.00' },
@@ -67,7 +69,7 @@ export class SalesRegisterExportProcessor {
         const { exec } = require('child_process');
         exec(
           'apt-get update && apt-get install -y libatk1.0-0 libatk-bridge2.0-0 libcups2 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpangocairo-1.0-0 libasound2 libnss3 libxshmfence1 libgtk-3-0',
-          () => {}
+          () => { }
         );
       } catch (e: any) {
         this.logger.warn(`Error installing Chromium dependencies: ${e.message}`);
@@ -125,7 +127,11 @@ export class SalesRegisterExportProcessor {
             },
             items: {
               include: {
-                item: true,
+                item: {
+                  include: {
+                    hsCode: true,
+                  },
+                },
               },
             },
           },
@@ -151,23 +157,27 @@ export class SalesRegisterExportProcessor {
           locationId,
         },
         include: {
-          item: true,
+          item: {
+            include: {
+              hsCode: true,
+            },
+          },
         },
       });
 
       const referenceOrderIds = [...new Set(returnLedgerEntries.map(e => e.referenceId).filter(Boolean))];
       const referenceOrders = referenceOrderIds.length
         ? await prisma.salesOrder.findMany({
-            where: {
-              id: { in: referenceOrderIds },
-              ...(cashierUserId ? { cashierUserId } : {}),
-            },
-            include: {
-              items: { include: { item: true } },
-              alliance: true,
-              voucherRedemptions: { include: { voucher: true } },
-            },
-          })
+          where: {
+            id: { in: referenceOrderIds },
+            ...(cashierUserId ? { cashierUserId } : {}),
+          },
+          include: {
+            items: { include: { item: { include: { hsCode: true } } } },
+            alliance: true,
+            voucherRedemptions: { include: { voucher: true } },
+          },
+        })
         : [];
 
       const referenceOrderMap = new Map<string, any>();
@@ -193,6 +203,19 @@ export class SalesRegisterExportProcessor {
           grossSale += qty * price;
           grossSaleWost += qty * (price / (1 + taxRate / 100));
         }
+
+        const hsCodesStr = [
+          ...new Set(
+            order.items
+              .map((i: any) => i.item?.hsCodeStr || i.item?.hsCode?.hsCode)
+              .filter(Boolean),
+          ),
+        ].join(', ');
+        const barcodesStr = [
+          ...new Set(
+            order.items.map((i: any) => i.item?.barCode).filter(Boolean),
+          ),
+        ].join(', ');
 
         // Tenders
         let cash = Number(order.cashAmount || 0);
@@ -270,6 +293,8 @@ export class SalesRegisterExportProcessor {
           id: order.id,
           cmNo: order.orderNumber,
           date: order.createdAt,
+          hsCode: hsCodesStr || '-',
+          barcodes: barcodesStr || '-',
           grossSale,
           grossSaleWost,
           disc: Number(order.discountAmount || 0),
@@ -332,6 +357,19 @@ export class SalesRegisterExportProcessor {
           sTax += (qty / itemQty) * Number(orderItem.taxAmount || 0);
         }
 
+        const returnHsCodes = [
+          ...new Set(
+            entries
+              .map((e: any) => e.item?.hsCodeStr || e.item?.hsCode?.hsCode)
+              .filter(Boolean),
+          ),
+        ].join(', ');
+        const returnBarcodes = [
+          ...new Set(
+            entries.map((e: any) => e.item?.barCode).filter(Boolean),
+          ),
+        ].join(', ');
+
         const netSale = grossSaleWost - disc + sTax;
 
         // Tenders (negative value for returns)
@@ -355,6 +393,8 @@ export class SalesRegisterExportProcessor {
           id: `${refId}-return`,
           cmNo: docNum,
           date: entries[0].createdAt,
+          hsCode: returnHsCodes || '-',
+          barcodes: returnBarcodes || '-',
           grossSale: -grossSale,
           grossSaleWost: -grossSaleWost,
           disc: -disc,
@@ -651,6 +691,8 @@ export class SalesRegisterExportProcessor {
         <tr class="${r.cmNo.startsWith('SI-') ? '' : 'return-row'}">
           <td>${r.cmNo}</td>
           <td>${dateFormatted}</td>
+          <td class="center">${r.hsCode || '-'}</td>
+          <td class="center">${r.barcodes || '-'}</td>
           <td class="num">${formatVal(r.grossSale)}</td>
           <td class="num">${formatVal(r.grossSaleWost)}</td>
           <td class="num">${formatVal(r.disc)}</td>
@@ -770,7 +812,7 @@ export class SalesRegisterExportProcessor {
       </head>
       <body>
         <div class="header-block">
-          <div class="company-name">Speed (Pvt.) Limited</div>
+          <div class="company-name">IVAR</div>
           <div class="report-title">Sales Register Report</div>
           <div class="meta-info">
             <strong>Location:</strong> ${locationName} | 
@@ -782,6 +824,8 @@ export class SalesRegisterExportProcessor {
             <tr>
               <th>CM #</th>
               <th>Date</th>
+              <th>HS CODE</th>
+              <th>Barcode</th>
               <th>Gross Sale</th>
               <th>Gross WOST</th>
               <th>Disc</th>
@@ -814,6 +858,8 @@ export class SalesRegisterExportProcessor {
             ${rowsHtml}
             <tr class="grand-total-row">
               <td colspan="2">GRAND TOTAL</td>
+              <td class="center">-</td>
+              <td class="center">-</td>
               <td class="num">${formatVal(grandTotals.grossSale)}</td>
               <td class="num">${formatVal(grandTotals.grossSaleWost)}</td>
               <td class="num">${formatVal(grandTotals.disc)}</td>

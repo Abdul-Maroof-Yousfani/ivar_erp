@@ -28,7 +28,7 @@ export class PosSessionService {
     private readonly journalVoucherService: JournalVoucherService,
     private readonly receiptVoucherService: ReceiptVoucherService,
     @InjectQueue('reconciliation-export') private readonly exportQueue?: Queue,
-  ) {}
+  ) { }
 
   /**
    * Get the active session for the provided terminal (UUID),
@@ -379,13 +379,13 @@ export class PosSessionService {
 
     const cashier = session.userId
       ? await this.prismaMaster.user.findUnique({
-          where: { id: session.userId },
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        })
+        where: { id: session.userId },
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      })
       : null;
 
     const start = session.openedAt;
@@ -594,13 +594,13 @@ export class PosSessionService {
     // Fetch Cashier Profile from Central/Master DB
     const cashier = session.userId
       ? await this.prismaMaster.user.findUnique({
-          where: { id: session.userId },
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        })
+        where: { id: session.userId },
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      })
       : null;
 
     const toLocalDateString = (d: Date) => {
@@ -1058,12 +1058,12 @@ export class PosSessionService {
       { type: 'Cash', amount: cashSaleAmt, from: '-' },
       ...(cashGiftVouchersAmt > 0
         ? [
-            {
-              type: 'Cash - Gift Vouchers Issued',
-              amount: cashGiftVouchersAmt,
-              from: '-',
-            },
-          ]
+          {
+            type: 'Cash - Gift Vouchers Issued',
+            amount: cashGiftVouchersAmt,
+            from: '-',
+          },
+        ]
         : []),
       ...redeemedVouchersList,
     ];
@@ -1106,7 +1106,7 @@ export class PosSessionService {
     const returnAmount =
       exchangeAndClaims.reduce((sum, v) => sum + v.amount, 0) +
       refundVouchers.reduce((sum, v) => sum + v.amount, 0);
-      
+
     const creditVouchersTotal = creditVouchers.reduce(
       (sum, v) => sum + v.amount,
       0,
@@ -1237,7 +1237,7 @@ export class PosSessionService {
         : `${formatDate(startRangeStr)} - ${formatDate(endRangeStr)}`;
 
     return {
-      companyName: 'Speed (Private) Limited',
+      companyName: 'IVAR',
       locationName: session.pos.location?.name ?? 'Nike-Dolmen Clifton',
       reportTitle: 'Sales Reconciliation',
       dateRange: dateRange,
@@ -1264,13 +1264,13 @@ export class PosSessionService {
         },
         cashier: cashier
           ? {
-              fullName: `${cashier.firstName} ${cashier.lastName}`.trim(),
-              email: cashier.email,
-            }
+            fullName: `${cashier.firstName} ${cashier.lastName}`.trim(),
+            email: cashier.email,
+          }
           : {
-              fullName: 'N/A',
-              email: 'N/A',
-            },
+            fullName: 'N/A',
+            email: 'N/A',
+          },
       },
       metrics: {
         grossSales: financials.sale,
@@ -1310,7 +1310,9 @@ export class PosSessionService {
         sale: cardSaleAmt,
         giftVouchers: cardGiftVouchersAmt,
         total: totalCardReceived,
-  }}}
+      }
+    }
+  }
 
   async getDaywiseReconciliation(locationId: string, date: string) {
     const locIds = locationId ? locationId.split(',').map((s) => s.trim()).filter(Boolean) : [];
@@ -1713,12 +1715,12 @@ export class PosSessionService {
         { type: 'Cash', amount: cashSaleAmt, from: '-' },
         ...(cashGiftVouchersAmt > 0
           ? [
-              {
-                type: 'Cash - Gift Vouchers Issued',
-                amount: cashGiftVouchersAmt,
-                from: '-',
-              },
-            ]
+            {
+              type: 'Cash - Gift Vouchers Issued',
+              amount: cashGiftVouchersAmt,
+              from: '-',
+            },
+          ]
           : []),
         ...redeemedVouchersList,
       ];
@@ -1773,7 +1775,7 @@ export class PosSessionService {
       };
 
       return {
-        companyName: 'Speed (Private) Limited',
+        companyName: 'IVAR',
         locationId: targetLocId || locationId,
         locationName: displayName,
         reportTitle: 'Sales Reconciliation',
@@ -2171,7 +2173,7 @@ export class PosSessionService {
     stream.on('close', () => {
       fs.unlink(filePath, (err) => {
         if (err) this.logger.warn(`Could not delete export file: ${err.message}`);
-        else     this.logger.log(`[ReconciliationExport] Cleaned up ${filePath}`);
+        else this.logger.log(`[ReconciliationExport] Cleaned up ${filePath}`);
       });
     });
     stream.on('error', (err) => {
@@ -2701,7 +2703,7 @@ export class PosSessionService {
           : (await this.prisma.chartOfAccount.findFirst())?.id || 'MISSING';
 
         await this.receiptVoucherService.create({
-          type: 'cash',
+          type: 'rs_rv',
           rvNo,
           rvDate: date,
           debitAccountId,
@@ -2740,7 +2742,7 @@ export class PosSessionService {
     const locationObj = await this.prisma.location.findUnique({
       where: { id: locationId },
     });
-    
+
     const locCode = locationObj?.code || 'POS';
     const rvNo = `RS-RV-${locCode}-${dateStr}`;
 
@@ -2786,7 +2788,7 @@ export class PosSessionService {
     ];
 
     await this.receiptVoucherService.create({
-      type: 'cash',
+      type: 'rs_rv',
       rvNo,
       rvDate: new Date(dateStr),
       debitAccountId: cashAccount?.id || fallbackAccount,
