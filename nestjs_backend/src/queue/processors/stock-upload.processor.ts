@@ -422,34 +422,30 @@ export class StockUploadProcessor {
         prisma: PrismaService,
         locationByCode: Map<string, { id: string; code: string; warehouseId: string | null }>,
     ): Promise<void> {
-        // Collect unique barcodes for bulk item lookup
+        // Collect unique codes for bulk item lookup
         const barCodes = [...new Set(batch.map((r) => r.data.barCode))];
 
-        // Primary lookup: by barCode field
-        const itemsByBarCode = await prisma.item.findMany({
-            where: { barCode: { in: barCodes } },
-            select: { id: true, barCode: true, itemId: true },
+        // Bulk item lookup by barCode, sku, or itemId
+        const matchedItems = await prisma.item.findMany({
+            where: {
+                OR: [
+                    { barCode: { in: barCodes } },
+                    { sku: { in: barCodes } },
+                    { itemId: { in: barCodes } },
+                ],
+            },
+            select: { id: true, barCode: true, sku: true, itemId: true },
         });
 
-        // Secondary lookup: treat the "barcode" value as an itemId (6-digit code)
-        // for items that don't have a barCode set but do have a matching itemId.
-        const foundBarCodes = new Set(itemsByBarCode.map((i) => i.barCode!));
-        const missingBarCodes = barCodes.filter((bc) => !foundBarCodes.has(bc));
-        const itemsByItemId = missingBarCodes.length > 0
-            ? await prisma.item.findMany({
-                where: { itemId: { in: missingBarCodes } },
-                select: { id: true, barCode: true, itemId: true },
-            })
-            : [];
-
-        // Build unified map: barCode/itemId value → item.id
-        const itemByBarCode = new Map<string, string>();
-        for (const item of itemsByBarCode) {
-            if (item.barCode) itemByBarCode.set(item.barCode, item.id);
-        }
-        for (const item of itemsByItemId) {
-            // Key by the value that was in the sheet (the missing barcode = itemId)
-            itemByBarCode.set(item.itemId, item.id);
+        // Build unified map: code identifier -> list of item.ids (supports duplicate catalog items)
+        const itemsByCode = new Map<string, string[]>();
+        for (const item of matchedItems) {
+            const keys = [item.barCode, item.sku, item.itemId].filter(Boolean) as string[];
+            for (const key of keys) {
+                if (!itemsByCode.has(key)) itemsByCode.set(key, []);
+                const list = itemsByCode.get(key)!;
+                if (!list.includes(item.id)) list.push(item.id);
+            }
         }
 
         const ledgerEntries: any[] = [];
@@ -463,13 +459,13 @@ export class StockUploadProcessor {
         for (const record of batch) {
             const { barCode, locationCode, qty } = record.data;
 
-            const itemId = itemByBarCode.get(barCode);
-            if (!itemId) {
-                this.logger.warn(`BarCode "${barCode}" not found in items at row ${record.row}. Skipping.`);
+            const targetItemIds = itemsByCode.get(barCode) || [];
+            if (targetItemIds.length === 0) {
+                this.logger.warn(`Identifier "${barCode}" not found in items at row ${record.row}. Skipping.`);
                 progress.failedRecords++;
                 progress.errors.push({
                     row: record.row,
-                    reason: `BarCode "${barCode}" not found in the item master.`,
+                    reason: `Item code / SKU / BarCode "${barCode}" not found in item master.`,
                     data: record.data,
                 });
                 progress.processedRecords++;
@@ -492,24 +488,27 @@ export class StockUploadProcessor {
             // Determine movement type based on qty sign
             const movementType: MovementType = qty >= 0 ? MovementType.OPENING_BALANCE : MovementType.OUTBOUND;
 
-            ledgerEntries.push({
-                itemId,
-                warehouseId: location.warehouseId,
-                locationId: location.id,
-                qty,
-                movementType,
-                referenceType: 'BULK_STOCK_UPLOAD',
-                referenceId: uploadId,
-                rate: null,
-                unitCost: null,
-            });
+            // Allocate stock to ALL matching items (handles duplicate catalog entries)
+            for (const itemId of targetItemIds) {
+                ledgerEntries.push({
+                    itemId,
+                    warehouseId: location.warehouseId,
+                    locationId: location.id,
+                    qty,
+                    movementType,
+                    referenceType: 'BULK_STOCK_UPLOAD',
+                    referenceId: uploadId,
+                    rate: null,
+                    unitCost: null,
+                });
 
-            inventoryUpserts.push({
-                itemId,
-                warehouseId: location.warehouseId,
-                locationId: location.id,
-                qty,
-            });
+                inventoryUpserts.push({
+                    itemId,
+                    warehouseId: location.warehouseId,
+                    locationId: location.id,
+                    qty,
+                });
+            }
 
             progress.processedRecords++;
         }
