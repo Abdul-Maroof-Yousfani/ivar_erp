@@ -14,7 +14,7 @@ import {
 import { NetSalesSummaryExportService } from './net-sales-summary-export.service';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PosSalesService } from './pos-sales.service';
-import { CreateSalesOrderDto } from './dto/create-sales-order.dto';
+import { CreatePosSalesOrderDto } from './dto/create-sales-order.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { Permissions } from '../common/decorators/permissions.decorator';
@@ -130,7 +130,7 @@ export class PosSalesController {
     @Post('orders')
     @Permissions('pos.sale.create')
     @ApiOperation({ summary: 'Create a sales order / checkout' })
-    async createOrder(@Body() dto: CreateSalesOrderDto, @Req() req: any) {
+    async createOrder(@Body() dto: CreatePosSalesOrderDto, @Req() req: any) {
         // Use cashierUserId from DTO if provided (manual selection on checkout), 
         // otherwise fall back to the logged-in user's ID
         const cashierUserId = dto.cashierUserId || req.user?.id;
@@ -377,7 +377,7 @@ export class PosSalesController {
     @Post('orders/hold')
     @Permissions('pos.hold.create')
     @ApiOperation({ summary: 'Place current cart on hold (max 1 hour / cleared at midnight)' })
-    async holdOrder(@Body() dto: CreateSalesOrderDto, @Req() req: any) {
+    async holdOrder(@Body() dto: CreatePosSalesOrderDto, @Req() req: any) {
         const cashierUserId = req.user?.id;
         if (req.user?.isPosUser || req.user?.isTerminal) {
             if (!dto.terminalId) dto.terminalId = req.user.terminalId;

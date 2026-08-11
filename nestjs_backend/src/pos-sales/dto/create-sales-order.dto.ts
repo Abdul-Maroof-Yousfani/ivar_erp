@@ -13,7 +13,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class SalesOrderItemDto {
+export class PosSalesOrderItemDto {
     @ApiProperty({ description: 'Item UUID' })
     @IsString()
     itemId: string;
@@ -59,6 +59,7 @@ export class SalesOrderItemDto {
     @Min(0)
     promoDiscountAmount?: number;
 }
+export { PosSalesOrderItemDto as SalesOrderItemDto };
 
 // ── Multi-tender item ────────────────────────────────────────────────────
 export class TenderItemDto {
@@ -111,7 +112,7 @@ export class AllianceMetaDto {
     @IsString()
     merchantSlip?: string;
 
-    @ApiPropertyOptional({ description: 'BIN number of bank card' })
+    @ApiPropertyOptional({ description: 'BIN number' })
     @IsOptional()
     @IsString()
     binNumber?: string;
@@ -147,7 +148,7 @@ export class PromoScopeDto {
     itemIds?: string[];
 }
 
-export class CreateSalesOrderDto {
+export class CreatePosSalesOrderDto {
     @ApiPropertyOptional({ description: 'POS terminal UUID' })
     @IsOptional()
     @IsString()
@@ -292,9 +293,10 @@ export class CreateSalesOrderDto {
     @IsString()
     merchantId?: string;
 
-    @ApiProperty({ type: [SalesOrderItemDto] })
+    @ApiProperty({ type: [PosSalesOrderItemDto] })
     @IsArray()
     @ValidateNested({ each: true })
-    @Type(() => SalesOrderItemDto)
-    items: SalesOrderItemDto[];
+    @Type(() => PosSalesOrderItemDto)
+    items: PosSalesOrderItemDto[];
 }
+export { CreatePosSalesOrderDto as CreateSalesOrderDto };

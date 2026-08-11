@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { PrismaMasterService } from '../database/prisma-master.service';
-import { CreateSalesOrderDto } from './dto/create-sales-order.dto';
+import { CreatePosSalesOrderDto } from './dto/create-sales-order.dto';
 import { StockLedgerService } from '../warehouse/stock-ledger/stock-ledger.service';
 import { MovementType, Prisma } from '@prisma/client';
 import { FbrService } from './fbr.service';
@@ -260,7 +260,7 @@ export class PosSalesService implements OnModuleInit {
 
   // ─── Create sales order ───────────────────────────────────────────
   async createOrder(
-    dto: CreateSalesOrderDto,
+    dto: CreatePosSalesOrderDto,
     cashierUserId?: string,
     ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
@@ -3847,7 +3847,7 @@ export class PosSalesService implements OnModuleInit {
 
   // ─── Hold order (max 1 hour, auto-cleared at midnight) ───────────
   async holdOrder(
-    dto: CreateSalesOrderDto,
+    dto: CreatePosSalesOrderDto,
     cashierUserId?: string,
     ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
