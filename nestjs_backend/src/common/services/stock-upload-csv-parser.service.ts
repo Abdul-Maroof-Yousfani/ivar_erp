@@ -37,6 +37,11 @@ export class StockUploadCsvParserService {
         return str;
     }
 
+    private isBarcodeColumn(header: string): boolean {
+        const norm = header.toLowerCase().replace(/[\s_\-\.]/g, '');
+        return ['barcode', 'barcodes', 'sku', 'skus', 'itemcode', 'itemid', 'code', 'productcode'].includes(norm);
+    }
+
     /**
      * Given a raw row object (header → value) and the list of location-code
      * column headers, emit one StockUploadParsedRecord per non-zero location.
@@ -47,12 +52,10 @@ export class StockUploadCsvParserService {
         fileRowNumber: number,
         onRecord: (r: StockUploadParsedRecord) => void,
     ): void {
-        // Find the barcode column (case-insensitive, strip spaces/underscores)
-        const barcodeKey = Object.keys(rawRow).find((k) =>
-            k.toLowerCase().replace(/[\s_\-\.]/g, '') === 'barcode',
-        );
+        // Find the barcode / SKU / ItemCode column (case-insensitive, strip spaces/underscores)
+        const barcodeKey = Object.keys(rawRow).find((k) => this.isBarcodeColumn(k));
         const barCode = barcodeKey ? this.normalizeValue(rawRow[barcodeKey]) : null;
-        if (!barCode) return; // skip rows with no barcode
+        if (!barCode) return; // skip rows with no barcode/sku
 
         for (const locCode of locationHeaders) {
             const rawQty = this.normalizeValue(rawRow[locCode]);
@@ -90,7 +93,7 @@ export class StockUploadCsvParserService {
                     // Resolve location headers from the first chunk's meta
                     if (!headersResolved && results.meta?.fields) {
                         locationHeaders = results.meta.fields.filter(
-                            (f) => f.toLowerCase().replace(/[\s_\-\.]/g, '') !== 'barcode',
+                            (f) => !this.isBarcodeColumn(f),
                         );
                         headersResolved = true;
                     }
@@ -140,7 +143,7 @@ export class StockUploadCsvParserService {
             }
 
             const locationHeaders = headers.filter(
-                (h) => h.toLowerCase().replace(/[\s_\-\.]/g, '') !== 'barcode',
+                (h) => !this.isBarcodeColumn(h),
             );
 
             let recordCount = 0;
