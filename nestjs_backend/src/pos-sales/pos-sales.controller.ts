@@ -23,7 +23,7 @@ import { CreditVoucherExportService } from './credit-voucher-export.service';
 import { VoucherRegisterExportService } from './voucher-register-export.service';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PosSalesService } from './pos-sales.service';
-import { CreateSalesOrderDto } from './dto/create-sales-order.dto';
+import { CreatePosSalesOrderDto } from './dto/create-sales-order.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { Permissions } from '../common/decorators/permissions.decorator';
@@ -165,7 +165,7 @@ export class PosSalesController {
   @Post('orders')
   @Permissions('pos.sale.create')
   @ApiOperation({ summary: 'Create a sales order / checkout' })
-  async createOrder(@Body() dto: CreateSalesOrderDto, @Req() req: any) {
+  async createOrder(@Body() dto: CreatePosSalesOrderDto, @Req() req: any) {
     // Use cashierUserId from DTO if provided (manual selection on checkout),
     // otherwise fall back to the logged-in user's ID
     const cashierUserId = dto.cashierUserId || req.user?.id;
@@ -230,329 +230,6 @@ export class PosSalesController {
     );
   }
 
-  // ─── List sales activities (Activity Log) ─────────────────────────
-  @Get('activities')
-  @Permissions('pos.sales.history.view')
-  @ApiOperation({
-    summary: 'List sales activities (sales, returns, refunds, claims)',
-  })
-  async listActivities(
-    @Req() req: any,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
-    @Query('posId') posId?: string,
-    @Query('activityType') activityType?: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-    @Query('search') search?: string,
-  ) {
-    // Determine effective filtering context
-    let effectivePosId = posId;
-    let effectiveLocationId: string | undefined = undefined;
-
-    // 1. Context from logged-in user
-    if (req.user?.isPosUser || req.user?.isTerminal) {
-      if (!effectivePosId)
-        effectivePosId = req.user.posId || req.user.terminalId;
-      effectiveLocationId = req.user.locationId;
-    }
-
-    // 2. Fallback to terminal cookie
-    if (!effectivePosId && req.cookies?.posTerminalToken) {
-      try {
-        const decoded: any = jwt.decode(req.cookies.posTerminalToken);
-        effectivePosId = decoded?.posId || decoded?.terminalId;
-        if (!effectiveLocationId) effectiveLocationId = decoded?.locationId;
-      } catch (e) {}
-    }
-
-    // 3. Fallback: any user with a locationId on their token
-    if (!effectiveLocationId && req.user?.locationId) {
-      effectiveLocationId = req.user.locationId;
-    }
-
-    return this.posSalesService.listSalesActivities(
-      req.user,
-      page ? Number(page) : 1,
-      limit ? Number(limit) : 20,
-      effectivePosId,
-      activityType,
-      { startDate, endDate, search },
-      effectiveLocationId,
-    );
-  }
-
-  // ─── Search orders globally for return lookup ─────────────────────
-  // IMPORTANT: Must be BEFORE @Get('orders/:id') — otherwise 'search-for-return' is matched as :id
-  @Get('orders/search-for-return')
-  @Permissions('pos.sales.history.view')
-  @ApiOperation({
-    summary:
-      'Search orders globally for returns lookup (unrestricted by location/posId)',
-  })
-  async searchOrderForReturn(@Query('search') search: string) {
-    return this.posSalesService.searchOrderForReturn(search);
-  }
-
-  // ─── Get return details for printing return slip ──────────────────
-  // IMPORTANT: This must come BEFORE @Get('orders/:id') to avoid route conflict
-  @Get('orders/:id/return-details')
-  @ApiOperation({ summary: 'Get return details for printing return slip' })
-  async getReturnDetails(
-    @Param('id') id: string,
-    @Query('type') type?: 'return' | 'refund',
-  ) {
-    return this.posSalesService.getReturnDetails(id, type);
-  }
-
-  // ─── List hold orders ─────────────────────────────────────────────
-  // IMPORTANT: Must be BEFORE @Get('orders/:id') — otherwise 'holds' is matched as :id
-  @Get('orders/holds')
-  @Permissions('pos.hold.view')
-  @ApiOperation({ summary: 'List active hold orders for this POS/location' })
-  async listHoldOrders(
-    @Req() req: any,
-    @Query('posId') posId?: string,
-    @Query('locationId') locationId?: string,
-  ) {
-    let effectivePosId = posId;
-    let effectiveLocationId = locationId;
-    if (req.user?.isPosUser || req.user?.isTerminal) {
-      if (!effectivePosId) effectivePosId = req.user.posId;
-      if (!effectiveLocationId) effectiveLocationId = req.user.locationId;
-    }
-    return this.posSalesService.listHoldOrders(
-      effectivePosId,
-      effectiveLocationId,
-    );
-  }
-
-  // ─── Get single order ─────────────────────────────────────────────
-  @Get('orders/:id')
-  @ApiOperation({ summary: 'Get sales order by ID' })
-  async getOrder(@Param('id') id: string) {
-    return this.posSalesService.getOrder(id);
-  }
-
-  @Post('orders/:id/return')
-  @Permissions('pos.return.create')
-  @ApiOperation({
-    summary: 'Process a partial or full return for a sales order',
-  })
-  async returnOrder(
-    @Param('id') id: string,
-    @Body()
-    body: {
-      items: { orderItemId: string; itemId: string; quantity: number }[];
-      reason?: string;
-      returnLocationId?: string;
-      locationId?: string;
-    },
-    @Req() req: any,
-  ) {
-    const returnLocationId =
-      body.returnLocationId ||
-      body.locationId ||
-      req.user?.locationId ||
-      req.headers?.['x-location-id'] ||
-      req.headers?.['location-id'];
-    const ctx = {
-      userId: req.user?.id,
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    };
-    return this.posSalesService.returnItems(
-      id,
-      body.items,
-      body.reason,
-      returnLocationId,
-      ctx,
-    );
-  }
-
-  // ─── Exchange items ───────────────────────────────────────────────
-  @Post('orders/:id/exchange')
-  @Permissions('pos.exchange.create')
-  @ApiOperation({
-    summary: 'Exchange items — return old items, issue new items',
-  })
-  async exchangeOrder(
-    @Param('id') id: string,
-    @Body()
-    body: {
-      returnedItems: {
-        orderItemId: string;
-        itemId: string;
-        quantity: number;
-      }[];
-      newItems: { itemId: string; quantity: number; unitPrice: number }[];
-      reason?: string;
-    },
-    @Req() req: any,
-  ) {
-    const exchangeLocationId = req.user?.locationId;
-
-    const ctx = {
-      userId: req.user?.id,
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    };
-    return this.posSalesService.exchangeItems(
-      id,
-      body.returnedItems,
-      body.newItems,
-      body.reason,
-      exchangeLocationId,
-      ctx,
-    );
-  }
-
-  // ─── Refund only (no stock movement) ─────────────────────────────
-  @Post('orders/:id/refund')
-  @ApiOperation({ summary: 'Refund only — money back, no stock movement' })
-  async refundOrder(
-    @Param('id') id: string,
-    @Body()
-    body: {
-      refundAmount: number;
-      items?: { orderItemId: string; itemId: string; quantity: number }[];
-      reason?: string;
-      managerUserId?: string;
-    },
-    @Req() req: any,
-  ) {
-    const ctx = {
-      userId: body.managerUserId || req.user?.id,
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    };
-    return this.posSalesService.refundOnly(
-      id,
-      body.refundAmount,
-      body.items,
-      body.reason,
-      ctx,
-    );
-  }
-
-  // ─── Void order ───────────────────────────────────────────────────
-  @Post('orders/:id/void')
-  @ApiOperation({ summary: 'Void a sales order' })
-  async voidOrder(@Param('id') id: string, @Req() req: any) {
-    const ctx = {
-      userId: req.user?.id,
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    };
-    return this.posSalesService.voidOrder(id, ctx);
-  }
-
-  // ─── Hold order ───────────────────────────────────────────────────
-  @Post('orders/hold')
-  @Permissions('pos.hold.create')
-  @ApiOperation({
-    summary: 'Place current cart on hold (max 1 hour / cleared at midnight)',
-  })
-  async holdOrder(@Body() dto: CreateSalesOrderDto, @Req() req: any) {
-    const cashierUserId = req.user?.id;
-    if (req.user?.isPosUser || req.user?.isTerminal) {
-      if (!dto.terminalId) dto.terminalId = req.user.terminalId;
-      if (!dto.posId) dto.posId = req.user.posId;
-      if (!dto.locationId) dto.locationId = req.user.locationId;
-    }
-    if ((!dto.terminalId || !dto.posId) && req.cookies?.posTerminalToken) {
-      try {
-        const decoded: any = jwt.decode(req.cookies.posTerminalToken);
-        if (decoded) {
-          if (!dto.terminalId) dto.terminalId = decoded.terminalId;
-          if (!dto.posId) dto.posId = decoded.posId;
-          if (!dto.locationId) dto.locationId = decoded.locationId;
-        }
-      } catch (e) {}
-    }
-    const ctx = {
-      userId: req.user?.id,
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    };
-    return this.posSalesService.holdOrder(dto, cashierUserId, ctx);
-  }
-
-  // ─── Resume hold order ────────────────────────────────────────────
-  @Post('orders/:id/resume')
-  @Permissions('pos.hold.resume')
-  @ApiOperation({ summary: 'Resume a held order — returns cart items' })
-  async resumeHoldOrder(@Param('id') id: string) {
-    return this.posSalesService.resumeHoldOrder(id);
-  }
-
-  // ─── Cancel hold order ────────────────────────────────────────────
-  @Post('orders/:id/cancel-hold')
-  @ApiOperation({ summary: 'Cancel a held order — restores stock' })
-  async cancelHoldOrder(@Param('id') id: string, @Req() req: any) {
-    const ctx = {
-      userId: req.user?.id,
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
-    };
-    return this.posSalesService.cancelHoldOrder(id, ctx);
-  }
-
-  // ─── Clear expired holds (internal / cron) ────────────────────────
-  @Post('orders/clear-expired-holds')
-  @ApiOperation({
-    summary: 'Clear all expired hold orders (called by scheduler)',
-  })
-  async clearExpiredHolds() {
-    return this.posSalesService.clearExpiredHolds();
-  }
-
-  // ─── List available cashiers for a location ─────────────────────
-  @Get('cashiers')
-  @ApiOperation({
-    summary: 'List employees/users available as cashiers for a location',
-  })
-  async listCashiers(
-    @Req() req: any,
-    @Query('locationId') locationId?: string,
-  ) {
-    const effectiveLocationId =
-      locationId || req.user?.locationId || this.extractLocationFromCookie(req);
-    if (!effectiveLocationId) {
-      throw new BadRequestException('Location ID is required to list cashiers');
-    }
-    return this.posSalesService.listCashiers(effectiveLocationId);
-  }
-
-  // ─── Update tender ────────────────────────────────────────────────
-  @Post('orders/:id/update-tender')
-  @Permissions('pos.sales.history.update-tender')
-  @ApiOperation({ summary: 'Update payment tender on an existing order' })
-  async updateTender(
-    @Param('id') id: string,
-    @Body()
-    body: {
-      tenders: {
-        method: string;
-        amount: number;
-        cardLast4?: string;
-        slipNo?: string;
-      }[];
-      merchantId?: string;
-    },
-    @Req() req: any,
-  ) {
-    return this.posSalesService.updateTender(
-      id,
-      body.tenders,
-      body.merchantId,
-      {
-        userId: req.user?.id,
-        ipAddress: req.ip,
-        userAgent: req.headers?.['user-agent'],
-      },
-    );
-  }
 
   // ─── Sales Report ─────────────────────────────────────────────────
   @Get('reports/sales')
@@ -733,6 +410,253 @@ export class PosSalesController {
         });
     }
   }
+
+    // ─── List sales activities (Activity Log) ─────────────────────────
+    @Get('activities')
+    @Permissions('pos.sales.history.view')
+    @ApiOperation({ summary: 'List sales activities (sales, returns, refunds, claims)' })
+    async listActivities(
+        @Req() req: any,
+        @Query('page') page?: number,
+        @Query('limit') limit?: number,
+        @Query('posId') posId?: string,
+        @Query('activityType') activityType?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('search') search?: string,
+        @Query('locationId') locationId?: string,
+        @Query('merchantId') merchantId?: string,
+        @Query('paymentMethod') paymentMethod?: string,
+    ) {
+        // Determine effective filtering context
+        let effectivePosId = posId;
+        let effectiveLocationId: string | undefined = locationId;
+
+        if (!effectiveLocationId) {
+            // 1. Context from logged-in user
+            if (req.user?.isPosUser || req.user?.isTerminal) {
+                if (!effectivePosId && !search) effectivePosId = req.user.posId || req.user.terminalId;
+                effectiveLocationId = req.user.locationId;
+            }
+
+            // 2. Fallback to terminal cookie
+            if (!effectivePosId && !search && req.cookies?.posTerminalToken) {
+                try {
+                    const decoded: any = jwt.decode(req.cookies.posTerminalToken);
+                    effectivePosId = decoded?.posId || decoded?.terminalId;
+                    if (!effectiveLocationId) effectiveLocationId = decoded?.locationId;
+                } catch (e) { }
+            }
+
+            // 3. Fallback: any user with a locationId on their token (only if not an admin viewing all)
+            if (!effectiveLocationId && req.user?.locationId && req.user?.isPosUser) {
+                effectiveLocationId = req.user.locationId;
+            }
+        }
+
+        return this.posSalesService.listSalesActivities(
+            req.user,
+            page ? Number(page) : 1,
+            limit ? Number(limit) : 20,
+            effectivePosId,
+            activityType,
+            { startDate, endDate, search, merchantId, paymentMethod },
+            effectiveLocationId,
+        );
+    }
+
+
+    // ─── Search orders globally for return lookup ─────────────────────
+    // IMPORTANT: Must be BEFORE @Get('orders/:id') — otherwise 'search-for-return' is matched as :id
+    @Get('orders/search-for-return')
+    @Permissions('pos.sales.history.view')
+    @ApiOperation({ summary: 'Search orders globally for returns lookup (unrestricted by location/posId)' })
+    async searchOrderForReturn(@Query('search') search: string) {
+        return this.posSalesService.searchOrderForReturn(search);
+    }
+
+    // ─── Get return details for printing return slip ──────────────────
+    // IMPORTANT: This must come BEFORE @Get('orders/:id') to avoid route conflict
+    @Get('orders/:id/return-details')
+    @ApiOperation({ summary: 'Get return details for printing return slip' })
+    async getReturnDetails(@Param('id') id: string, @Query('type') type?: 'return' | 'refund') {
+        return this.posSalesService.getReturnDetails(id, type);
+    }
+
+    // ─── List hold orders ─────────────────────────────────────────────
+    // IMPORTANT: Must be BEFORE @Get('orders/:id') — otherwise 'holds' is matched as :id
+    @Get('orders/holds')
+    @Permissions('pos.hold.view')
+    @ApiOperation({ summary: 'List active hold orders for this POS/location' })
+    async listHoldOrders(@Req() req: any, @Query('posId') posId?: string, @Query('locationId') locationId?: string) {
+        let effectivePosId = posId;
+        let effectiveLocationId = locationId;
+        if (req.user?.isPosUser || req.user?.isTerminal) {
+            if (!effectivePosId) effectivePosId = req.user.posId;
+            if (!effectiveLocationId) effectiveLocationId = req.user.locationId;
+        }
+        return this.posSalesService.listHoldOrders(effectivePosId, effectiveLocationId);
+    }
+
+    // ─── Get single order ─────────────────────────────────────────────
+    @Get('orders/:id')
+    @ApiOperation({ summary: 'Get sales order by ID' })
+    async getOrder(@Param('id') id: string) {
+        return this.posSalesService.getOrder(id);
+    }
+
+
+    @Post('orders/:id/return')
+    @Permissions('pos.return.create')
+    @ApiOperation({ summary: 'Process a partial or full return for a sales order' })
+    async returnOrder(
+        @Param('id') id: string,
+        @Body() body: { items: { orderItemId: string; itemId: string; quantity: number }[]; reason?: string; returnLocationId?: string; locationId?: string },
+        @Req() req: any,
+    ) {
+        const returnLocationId = body.returnLocationId || body.locationId || req.user?.locationId || req.headers?.['x-location-id'] || req.headers?.['location-id'];
+        const ctx = {
+            userId: req.user?.id,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+        };
+        return this.posSalesService.returnItems(id, body.items, body.reason, returnLocationId, ctx);
+    }
+
+    // ─── Exchange items ───────────────────────────────────────────────
+    @Post('orders/:id/exchange')
+    @Permissions('pos.exchange.create')
+    @ApiOperation({ summary: 'Exchange items — return old items, issue new items' })
+    async exchangeOrder(
+        @Param('id') id: string,
+        @Body() body: {
+            returnedItems: { orderItemId: string; itemId: string; quantity: number }[];
+            newItems: { itemId: string; quantity: number; unitPrice: number }[];
+            reason?: string;
+            exchangeLocationId?: string;
+            locationId?: string;
+        },
+        @Req() req: any,
+    ) {
+        const exchangeLocationId = body.exchangeLocationId || body.locationId || req.user?.locationId || req.headers?.['x-location-id'] || req.headers?.['location-id'];
+        const ctx = {
+            userId: req.user?.id,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+        };
+        return this.posSalesService.exchangeItems(id, body.returnedItems, body.newItems, body.reason, exchangeLocationId, ctx);
+    }
+
+    // ─── Refund only (no stock movement) ─────────────────────────────
+    @Post('orders/:id/refund')
+    @ApiOperation({ summary: 'Refund only — money back, no stock movement' })
+    async refundOrder(
+        @Param('id') id: string,
+        @Body() body: { refundAmount: number; items?: { orderItemId: string; itemId: string; quantity: number }[]; reason?: string; managerUserId?: string },
+        @Req() req: any,
+    ) {
+        const ctx = {
+            userId: body.managerUserId || req.user?.id,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+        };
+        return this.posSalesService.refundOnly(id, body.refundAmount, body.items, body.reason, ctx);
+    }
+
+    // ─── Void order ───────────────────────────────────────────────────
+    @Post('orders/:id/void')
+    @ApiOperation({ summary: 'Void a sales order' })
+    async voidOrder(@Param('id') id: string, @Req() req: any) {
+        const ctx = {
+            userId: req.user?.id,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+        };
+        return this.posSalesService.voidOrder(id, ctx);
+    }
+
+    // ─── Hold order ───────────────────────────────────────────────────
+    @Post('orders/hold')
+    @Permissions('pos.hold.create')
+    @ApiOperation({ summary: 'Place current cart on hold (max 1 hour / cleared at midnight)' })
+    async holdOrder(@Body() dto: CreatePosSalesOrderDto, @Req() req: any) {
+        const cashierUserId = req.user?.id;
+        if (req.user?.isPosUser || req.user?.isTerminal) {
+            if (!dto.terminalId) dto.terminalId = req.user.terminalId;
+            if (!dto.posId) dto.posId = req.user.posId;
+            if (!dto.locationId) dto.locationId = req.user.locationId;
+        }
+        if ((!dto.terminalId || !dto.posId) && req.cookies?.posTerminalToken) {
+            try {
+                const decoded: any = jwt.decode(req.cookies.posTerminalToken);
+                if (decoded) {
+                    if (!dto.terminalId) dto.terminalId = decoded.terminalId;
+                    if (!dto.posId) dto.posId = decoded.posId;
+                    if (!dto.locationId) dto.locationId = decoded.locationId;
+                }
+            } catch (e) { }
+        }
+        const ctx = {
+            userId: req.user?.id,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+        };
+        return this.posSalesService.holdOrder(dto, cashierUserId, ctx);
+    }
+
+    // ─── Resume hold order ────────────────────────────────────────────
+    @Post('orders/:id/resume')
+    @Permissions('pos.hold.resume')
+    @ApiOperation({ summary: 'Resume a held order — returns cart items' })
+    async resumeHoldOrder(@Param('id') id: string) {
+        return this.posSalesService.resumeHoldOrder(id);
+    }
+
+    // ─── Cancel hold order ────────────────────────────────────────────
+    @Post('orders/:id/cancel-hold')
+    @ApiOperation({ summary: 'Cancel a held order — restores stock' })
+    async cancelHoldOrder(@Param('id') id: string, @Req() req: any) {
+        const ctx = {
+            userId: req.user?.id,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+        };
+        return this.posSalesService.cancelHoldOrder(id, ctx);
+    }
+
+    // ─── Clear expired holds (internal / cron) ────────────────────────
+    @Post('orders/clear-expired-holds')
+    @ApiOperation({ summary: 'Clear all expired hold orders (called by scheduler)' })
+    async clearExpiredHolds() {
+        return this.posSalesService.clearExpiredHolds();
+    }
+
+    // ─── List available cashiers for a location ─────────────────────
+    @Get('cashiers')
+    @ApiOperation({ summary: 'List employees/users available as cashiers for a location' })
+    async listCashiers(@Req() req: any, @Query('locationId') locationId?: string) {
+        const effectiveLocationId = locationId || req.user?.locationId || this.extractLocationFromCookie(req);
+        if (!effectiveLocationId) {
+            throw new BadRequestException('Location ID is required to list cashiers');
+        }
+        return this.posSalesService.listCashiers(effectiveLocationId);
+    }
+
+    // ─── Update tender ────────────────────────────────────────────────
+    @Post('orders/:id/update-tender')
+    @Permissions('pos.sales.history.update-tender')
+    @ApiOperation({ summary: 'Update payment tender on an existing order' })
+    async updateTender(
+        @Param('id') id: string,
+        @Body() body: { tenders: { method: string; amount: number; cardLast4?: string; slipNo?: string }[]; merchantId?: string },
+        @Req() req: any,
+    ) {
+        return this.posSalesService.updateTender(id, body.tenders, body.merchantId, {
+            userId: req.user?.id,
+            ipAddress: req.ip,
+            userAgent: req.headers?.['user-agent'],
+        });
+    }
 
   // ─── Sales Register Report Endpoints ────────────────────────────
 

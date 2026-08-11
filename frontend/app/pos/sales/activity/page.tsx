@@ -254,6 +254,12 @@ export default function SalesActivityPage() {
                                 <SelectItem value="return">Returns Only</SelectItem>
                                 <SelectItem value="refund">Refunds Only</SelectItem>
                                 <SelectItem value="claim">Claims Only</SelectItem>
+                                <SelectItem value="exchange">Exchanges & Returns</SelectItem>
+                                <SelectItem value="alliance">Alliance Discounts Only</SelectItem>
+                                <SelectItem value="exchange_voucher">Exchange Vouchers Flow</SelectItem>
+                                <SelectItem value="credit_voucher">Credit/Gift Vouchers Flow</SelectItem>
+                                <SelectItem value="cash_split">Cash Split Payments</SelectItem>
+                                <SelectItem value="merchant">Merchant Machine Sales</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
