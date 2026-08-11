@@ -91,6 +91,7 @@ model SalesOrder {
   voucherAmount         Decimal?            @map("voucher_amount") @db.Decimal(15, 2)
   holdExpiresAt         DateTime?           @map("hold_expires_at")
   fbrInvoiceNumber      String?             @map("fbr_invoice_number")
+  referenceNumber       String?             @map("reference_number")
   fbrQrCode             String?             @map("fbr_qr_code") @db.Text
   fbrStatus             String              @default("PENDING") @map("fbr_status")
   isGiftReceipt         Boolean             @default(false) @map("is_gift_receipt")
@@ -112,6 +113,7 @@ model SalesOrder {
   @@index([merchantId])
   @@index([status])
   @@index([orderNumber])
+  @@index([referenceNumber])
   @@map("sales_orders")
 }
 

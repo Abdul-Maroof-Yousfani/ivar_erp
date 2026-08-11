@@ -12,6 +12,34 @@ export interface SalesHistoryValidationError {
 export class SalesHistoryValidatorService {
     private readonly logger = new Logger(SalesHistoryValidatorService.name);
 
+    private parseExcelDate(value: any): Date | undefined {
+        if (value === null || value === undefined) return undefined;
+        if (typeof value === 'number') {
+            const date = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
+            if (!isNaN(date.getTime())) return date;
+        }
+        const s = String(value).trim();
+        if (!s) return undefined;
+        const num = Number(s);
+        if (!isNaN(num) && num > 30000 && num < 70000) {
+            const date = new Date(Date.UTC(1899, 11, 30) + num * 86400000);
+            if (!isNaN(date.getTime())) return date;
+        }
+        const iso = new Date(s);
+        if (!isNaN(iso.getTime()) && iso.getFullYear() > 2000) return iso;
+        const slashParts = s.split('/');
+        if (slashParts.length === 3) {
+            let [a, b, c] = slashParts.map((p) => parseInt(p, 10));
+            if (c < 100) c = c + 2000;
+            let month: number, day: number, year: number;
+            if (a > 12) { day = a; month = b; year = c; }
+            else { month = a; day = b; year = c; }
+            const date = new Date(Date.UTC(year, month - 1, day));
+            if (!isNaN(date.getTime())) return date;
+        }
+        return undefined;
+    }
+
     validateRecord(record: SalesHistoryParsedRecord): SalesHistoryValidationError[] {
         const errors: SalesHistoryValidationError[] = [];
         const { row, data } = record;
@@ -74,8 +102,8 @@ export class SalesHistoryValidatorService {
 
         // DocumentDate — basic format check if provided
         if (data.documentDate) {
-            const d = new Date(data.documentDate);
-            if (isNaN(d.getTime())) {
+            const parsed = this.parseExcelDate(data.documentDate);
+            if (!parsed) {
                 errors.push({
                     row,
                     field: 'documentDate',

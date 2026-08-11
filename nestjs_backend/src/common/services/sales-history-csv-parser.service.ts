@@ -4,11 +4,16 @@ import * as Papa from 'papaparse';
 
 export interface SalesHistoryParsedRecord {
     row: number;
+    sheetName?: string;
     data: {
         // Document / order identity
         documentNumber?: string;   // Sale1, Sale2 … (groups multi-item orders)
         subType?: string;          // "Sale"
         documentDate?: string;     // 7/1/2025
+
+        // Customer identity
+        customerCode?: string;     // CUST-16720
+        customerName?: string;     // mr shaheer ahmed
 
         // Item identity — only barCode is required for lookup
         barCode?: string;          // 4.06789E+12 or plain string
@@ -21,7 +26,7 @@ export interface SalesHistoryParsedRecord {
         discountPercent?: number;
         salesTax?: number;
         additionalSalesTax?: number;
-        totalPriceWithTax?: number;  // Value Incl Sales Tax
+        totalPriceWithTax?: number;  // Value Incl Sales Tax / Amount (POS Invoice Item)
         totalPriceWithoutTax?: number; // Total_Price_W_O_T
 
         // Payment / tender
@@ -113,8 +118,12 @@ export class SalesHistoryCsvParserService {
 
     private isEmptyRow(row: any): boolean {
         if (!row) return true;
-        const docNum = this.normalizeValue(this.getValue(row, ['DocumentNumber', 'Document Number', 'SUB']));
-        const barCode = this.parseBarCode(this.getValue(row, ['BarCode', 'Bar Code', 'Barcode']));
+        const docNum = this.normalizeValue(this.getValue(row, [
+            'DocumentNumber', 'Document Number', 'DocumentNo', 'Doc Number', 'SUB', 'ID', 'Invoice No', 'Invoice Number',
+        ]));
+        const barCode = this.parseBarCode(this.getValue(row, [
+            'BarCode', 'Bar Code', 'Barcode', 'BARCODE', 'Barcode (POS Invoice Item)', 'Item Code', 'ItemCode',
+        ]));
         return !docNum && !barCode;
     }
 
@@ -123,7 +132,7 @@ export class SalesHistoryCsvParserService {
     private mapColumns(row: any): SalesHistoryParsedRecord['data'] {
         return {
             documentNumber: this.normalizeValue(this.getValue(row, [
-                'DocumentNumber', 'Document Number', 'DocumentNo', 'Doc Number', 'SUB',
+                'DocumentNumber', 'Document Number', 'DocumentNo', 'Doc Number', 'SUB', 'ID', 'Invoice No', 'Invoice Number',
             ])) ?? undefined,
 
             subType: this.normalizeValue(this.getValue(row, [
@@ -131,11 +140,19 @@ export class SalesHistoryCsvParserService {
             ])) ?? undefined,
 
             documentDate: this.normalizeValue(this.getValue(row, [
-                'DocumentDate', 'Document Date', 'Date', 'FromDate',
+                'DocumentDate', 'Document Date', 'Date', 'FromDate', 'Invoice Date',
+            ])) ?? undefined,
+
+            customerCode: this.normalizeValue(this.getValue(row, [
+                'Customer', 'Customer Code', 'CustomerCode', 'CustomerID', 'Customer ID',
+            ])) ?? undefined,
+
+            customerName: this.normalizeValue(this.getValue(row, [
+                'Customer Name', 'CustomerName',
             ])) ?? undefined,
 
             barCode: this.parseBarCode(this.getValue(row, [
-                'BarCode', 'Bar Code', 'Barcode', 'BARCODE',
+                'BarCode', 'Bar Code', 'Barcode', 'BARCODE', 'Barcode (POS Invoice Item)', 'Item Code',
             ])) ?? undefined,
 
             sku: this.normalizeValue(this.getValue(row, [
@@ -143,11 +160,11 @@ export class SalesHistoryCsvParserService {
             ])) ?? undefined,
 
             quantity: this.parseNumber(this.getValue(row, [
-                'Quantity', 'QTY', 'Qty', 'quantity',
+                'Quantity', 'QTY', 'Qty', 'quantity', 'Quantity (POS Invoice Item)',
             ])) ?? undefined,
 
             unitPrice: this.parseNumber(this.getValue(row, [
-                'UnitPrice', 'Unit Price', 'unitprice',
+                'UnitPrice', 'Unit Price', 'unitprice', 'Unit Price (POS Invoice Item)',
             ])) ?? undefined,
 
             discountAmount: this.parseNumber(this.getValue(row, [
@@ -167,7 +184,7 @@ export class SalesHistoryCsvParserService {
             ])) ?? undefined,
 
             totalPriceWithTax: this.parseNumber(this.getValue(row, [
-                'Value Incl Sales Tax', 'ValueInclSalesTax', 'Total_Price_W_T',
+                'Value Incl Sales Tax', 'ValueInclSalesTax', 'Total_Price_W_T', 'Amount (POS Invoice Item)', 'Amount', 'Total Amount',
             ])) ?? undefined,
 
             totalPriceWithoutTax: this.parseNumber(this.getValue(row, [
@@ -211,7 +228,7 @@ export class SalesHistoryCsvParserService {
             ])) ?? undefined,
 
             posId: this.normalizeValue(this.getValue(row, [
-                'POS ID', 'POSID', 'PosId',
+                'POS ID', 'POSID', 'PosId', 'POS Profile', 'POS Location', 'Location Code', 'LocationCode', 'Location',
             ])) ?? undefined,
 
             costCentre: this.normalizeValue(this.getValue(row, [
@@ -288,38 +305,40 @@ export class SalesHistoryCsvParserService {
     ): Promise<void> {
         try {
             const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            if (!worksheet) return;
-
-            const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-            const headers: string[] = [];
-            for (let C = range.s.c; C <= range.e.c; ++C) {
-                const cell = worksheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
-                headers.push(cell ? String(cell.v) : `COL_${C}`);
-            }
-
             let rowCount = 0;
-            for (let R = range.s.r + 1; R <= range.e.r; ++R) {
-                const rowObj: any = {};
-                let hasData = false;
+            for (const sheetName of workbook.SheetNames) {
+                const worksheet = workbook.Sheets[sheetName];
+                if (!worksheet) continue;
+
+                const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+                const headers: string[] = [];
                 for (let C = range.s.c; C <= range.e.c; ++C) {
-                    const cell = worksheet[XLSX.utils.encode_cell({ r: R, c: C })];
-                    if (cell && cell.v !== null && cell.v !== undefined) {
-                        // Prefer formatted text (cell.w) to preserve trailing zeros in barcodes
-                        rowObj[headers[C]] = cell.w !== undefined ? cell.w : cell.v;
-                        hasData = true;
+                    const cell = worksheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
+                    headers.push(cell ? String(cell.v) : `COL_${C}`);
+                }
+
+                for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+                    const rowObj: any = {};
+                    let hasData = false;
+                    for (let C = range.s.c; C <= range.e.c; ++C) {
+                        const cell = worksheet[XLSX.utils.encode_cell({ r: R, c: C })];
+                        if (cell && cell.v !== null && cell.v !== undefined) {
+                            // Prefer formatted text (cell.w) to preserve trailing zeros in barcodes
+                            rowObj[headers[C]] = cell.w !== undefined ? cell.w : cell.v;
+                            hasData = true;
+                        }
+                    }
+                    if (hasData && !this.isEmptyRow(rowObj)) {
+                        await onRecord({
+                            row: rowCount + 1,
+                            sheetName,
+                            data: this.mapColumns(rowObj),
+                        });
+                        rowCount++;
                     }
                 }
-                if (hasData && !this.isEmptyRow(rowObj)) {
-                    await onRecord({
-                        row: R + 1,
-                        data: this.mapColumns(rowObj),
-                    });
-                    rowCount++;
-                }
             }
-            this.logger.log(`Processed ${rowCount} sales history records from Excel`);
+            this.logger.log(`Processed ${rowCount} sales history records across ${workbook.SheetNames.length} sheet(s) from Excel`);
         } catch (error) {
             this.logger.error(`Excel processing error: ${error.message}`);
             throw new Error(`Failed to process Excel: ${error.message}`);
