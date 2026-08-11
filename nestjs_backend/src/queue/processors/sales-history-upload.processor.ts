@@ -28,8 +28,7 @@ export interface SalesHistoryUploadProgress {
 interface OrderGroup {
     documentNumber: string;
     rows: SalesHistoryParsedRecord[];
-}
-
+} 
 @Processor('sales-history-upload')
 export class SalesHistoryUploadProcessor {
     private readonly logger = new Logger(SalesHistoryUploadProcessor.name);
@@ -470,6 +469,65 @@ export class SalesHistoryUploadProcessor {
         });
         const existingOrderMap = new Map(existingOrders.map((o) => [o.orderNumber, o.id]));
 
+        // Gather unique customer codes from this batch
+        const allCustomerCodes = [
+            ...new Set(
+                batch.map(([, rows]) => rows[0].data.customerCode).filter(Boolean) as string[]
+            )
+        ];
+
+        // Gather mapping of code to customerName
+        const customerNameByCode = new Map<string, string>();
+        for (const [, rows] of batch) {
+            for (const row of rows) {
+                const code = row.data.customerCode;
+                const name = row.data.customerName;
+                if (code) {
+                    if (name && !customerNameByCode.has(code)) {
+                        customerNameByCode.set(code, name);
+                    }
+                }
+            }
+        }
+
+        // Query existing customers
+        const existingCustomers = await prisma.customer.findMany({
+            where: { code: { in: allCustomerCodes } },
+            select: { id: true, code: true },
+        });
+        const customerIdByCode = new Map<string, string>(
+            existingCustomers.map((c) => [c.code, c.id])
+        );
+
+        // Auto-create missing customers
+        for (const code of allCustomerCodes) {
+            if (!customerIdByCode.has(code)) {
+                const name = customerNameByCode.get(code) || code;
+                try {
+                    const newCustomer = await prisma.customer.create({
+                        data: {
+                            code,
+                            name,
+                            customerType: 'POS',
+                        },
+                        select: { id: true },
+                    });
+                    customerIdByCode.set(code, newCustomer.id);
+                } catch (err) {
+                    // Try to look it up in case it was created concurrently
+                    const existing = await prisma.customer.findUnique({
+                        where: { code },
+                        select: { id: true },
+                    });
+                    if (existing) {
+                        customerIdByCode.set(code, existing.id);
+                    } else {
+                        throw err;
+                    }
+                }
+            }
+        }
+
         for (const [documentNumber, rows] of batch) {
             // Count all rows in this group as processed
             progress.processedRecords += rows.length;
@@ -658,6 +716,7 @@ export class SalesHistoryUploadProcessor {
                     fbrStatus: fbrInvoiceNumber ? 'SYNCED' : 'PENDING',
                     notes: notesParts.join(' | ') || null,
                     createdAt: createdAt || undefined,
+                    customerId: firstRow.customerCode ? customerIdByCode.get(firstRow.customerCode) || null : null,
                 };
 
                 if (existingOrderId) {

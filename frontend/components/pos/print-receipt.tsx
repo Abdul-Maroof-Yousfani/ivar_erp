@@ -429,9 +429,13 @@ export function PrintReceipt({
     return "Order Discount";
   })();
 
+  const fbrInvoiceNum = order?.fbrInvoiceNumber || "";
   const fbrVerifyUrl =
+    order?.fbrQrCode ||
     order?.fbrInvoiceUrl ||
-    `https://taxasaan.fbr.gov.pk/verify?inv=${encodeURIComponent(order?.orderNumber ?? "")}`;
+    (fbrInvoiceNum
+      ? `https://taxasaan.fbr.gov.pk/verify?inv=${encodeURIComponent(fbrInvoiceNum)}`
+      : `https://taxasaan.fbr.gov.pk/verify?inv=${encodeURIComponent(order?.orderNumber ?? "")}`);
 
   const bodyProps: ReceiptBodyProps = {
     isGiftReceipt,
@@ -1000,9 +1004,16 @@ function ReceiptBody({
               unoptimized
             />
           </div>
-          <p className="text-[8px] leading-tight flex-1">
-            Verified by FBR POS. SMS <strong>9966</strong> to verify &amp; win prizes.
-          </p>
+          <div className="flex-1 text-left">
+            <p className="text-[8px] leading-tight">
+              Verified by FBR POS. SMS <strong>9966</strong> to verify &amp; win prizes.
+            </p>
+            {order?.fbrInvoiceNumber && (
+              <p className="text-[8px] font-mono font-bold text-black mt-0.5">
+                FBR Inv #: {order.fbrInvoiceNumber}
+              </p>
+            )}
+          </div>
           <div style={{ flexShrink: 0, textAlign: "center" }}>
             <QRCodeSVG value={fbrVerifyUrl} size={44} level="M" />
             <p className="text-[7px]">Scan</p>
@@ -1273,22 +1284,17 @@ function A4InvoiceBody({
                   {changeAmount > 0 && (
                     <div className="flex justify-between py-1.5 text-zinc-850 font-bold border-t border-zinc-200 mt-1">
                       <span>Change Returned</span>
-                      <span>Rs. {fmt(changeAmount)}</span>
+                      <span className="font-bold">Rs. {fmt(changeAmount)}</span>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* FBR integration info */}
               {hasFbrInfo && (
                 <div className="flex gap-4 items-center bg-zinc-50 border border-zinc-200 rounded-lg p-3">
                   <div className="shrink-0 bg-white p-1 rounded border border-zinc-200">
                     <Image
-                      src={
-                        typeof window !== "undefined"
-                          ? `${window.location.origin}/fbr_logo.png`
-                          : "/fbr_logo.png"
-                      }
+                      src={typeof window !== "undefined" ? `${window.location.origin}/fbr_logo.png` : "/fbr_logo.png"}
                       alt="FBR Logo"
                       width={50}
                       height={50}
@@ -1298,11 +1304,13 @@ function A4InvoiceBody({
                   </div>
                   <div className="space-y-1 flex-1">
                     <p className="text-[10px] text-zinc-600 leading-snug">
-                      This receipt is verified by FBR POS Invoicing System. Verify via FBR Tax Asaan App or SMS at <strong>9966</strong>.
+                      Verified by FBR POS. Verify via FBR Tax Asaan App or SMS at <strong>9966</strong>.
                     </p>
-                    <div className="flex items-center gap-1 text-[9px] text-zinc-400">
-                      <span>Scan verified QR to check invoicing status</span>
-                    </div>
+                    {order?.fbrInvoiceNumber && (
+                      <p className="text-[11px] font-mono font-bold text-zinc-900">
+                        FBR Inv #: {order.fbrInvoiceNumber}
+                      </p>
+                    )}
                   </div>
                   <div className="shrink-0 bg-white p-1 rounded border border-zinc-200">
                     <QRCodeSVG value={fbrVerifyUrl} size={48} level="M" />
@@ -1317,7 +1325,7 @@ function A4InvoiceBody({
                 <span>Subtotal (Excl. Sales Tax)</span>
                 <span className="font-mono font-semibold">{fmt(Math.round(subtotal))}</span>
               </div>
-
+              
               <div className="flex justify-between text-zinc-600 py-0.5">
                 <span>Total Invoice Discounts</span>
                 <span className="font-mono font-semibold text-green-600">
@@ -1345,7 +1353,7 @@ function A4InvoiceBody({
               )}
 
               <div className="flex justify-between items-center text-zinc-900 pt-3 mt-2 border-t-2 border-zinc-800">
-                <span className="font-black text-sm uppercase">Grand Total (Incl. Tax)</span>
+                <span className="font-black text-sm uppercase">Grand Total</span>
                 <span className="font-mono font-black text-lg text-zinc-900 bg-zinc-100 px-3 py-1 rounded border border-zinc-250">
                   Rs. {fmt(Math.round(finalGrandTotal))}
                 </span>
@@ -1398,10 +1406,11 @@ function A4InvoiceBody({
                 Terms &amp; Conditions of Sale
               </p>
               <ul className="list-disc pl-3 space-y-0.5">
-                <li>Sales Tax Invoices must be presented for any queries or claims.</li>
-                <li>Exchange is allowed within 10 days of purchase only on unused items.</li>
-                <li>Items bought on sales and promotional campaigns are non-exchangeable.</li>
-                <li>Product returns and cash refunds are not available under any circumstances.</li>
+                <li>No refund under any circumstances.</li>
+                <li>Exchange is allowed within 10 days of purchase only on unused items from the outlet where purchased.</li>
+                <li>Sales Tax Invoice must be presented for any exchange or claim.</li>
+                <li>Sales and promotional items are strictly non-exchangeable.</li>
+                <li>Items purchased at full price which go on sale will be exchanged at the marked down price.</li>
               </ul>
             </div>
 
