@@ -308,4 +308,41 @@ export async function getSalesRegisterReportExportStatus(jobId: string) {
     }
 }
 
+export async function queueSalesActivityExport(params?: {
+    startDate?: string;
+    endDate?: string;
+    activityType?: string;
+    locationId?: string;
+    posId?: string;
+    search?: string;
+}): Promise<{ status: boolean; data?: { jobId: string }; message?: string }> {
+    try {
+        const res = await authFetch("/pos-sales/activity/export", {
+            method: "POST",
+            params: {
+                startDate: params?.startDate || undefined,
+                endDate: params?.endDate || undefined,
+                activityType: params?.activityType || undefined,
+                locationId: params?.locationId || undefined,
+                posId: params?.posId || undefined,
+                search: params?.search || undefined,
+            },
+        });
+
+        if (res.ok && res.data?.status) {
+            return {
+                status: true,
+                data: res.data.data,
+                message: res.data.message,
+            };
+        }
+
+        return { status: false, message: res.data?.message || "Failed to queue sales activity export" };
+    } catch (error) {
+        console.error("queueSalesActivityExport error:", error);
+        return { status: false, message: "Failed to queue sales activity export" };
+    }
+}
+
+
 

@@ -6,9 +6,9 @@ import { runInBackground } from '../common/utils/run-in-background.util';
 @Injectable()
 export class PosConfigService {
     constructor(
-    private prisma: PrismaService,
-    private activityLogs: ActivityLogsService,
-  ) { }
+        private prisma: PrismaService,
+        private activityLogs: ActivityLogsService,
+    ) { }
 
     // ══════════════════════════════════════════════════════════════
     //  PROMO CAMPAIGNS
@@ -123,7 +123,7 @@ export class PosConfigService {
         try {
             const oldPromo = await this.prisma.promoCampaign.findFirst({ where: { id, isDeleted: false } });
             if (!oldPromo) return { status: false, message: 'Promo campaign not found' };
-            
+
             // If locationIds provided, replace junction records
             if (data.locationIds) {
                 await this.prisma.promoCampaignLocation.deleteMany({ where: { promoId: id } });
@@ -463,6 +463,10 @@ export class PosConfigService {
     //  No location restriction — redeemable at any POS terminal
     // ══════════════════════════════════════════════════════════════
 
+    /**
+     * @deprecated Use VoucherService.listVouchers instead. 
+     * This older implementation operates on CouponCode and is unused.
+     */
     async listVouchers() {
         try {
             const vouchers = await this.prisma.couponCode.findMany({
@@ -584,7 +588,7 @@ export class PosConfigService {
             const voucher = await this.prisma.couponCode.findFirst({ where: { id, isDeleted: false } });
             if (!voucher) return { status: false, message: 'Voucher not found' };
             if (voucher.usedCount > 0) return { status: false, message: 'Cannot delete a voucher that has been redeemed' };
-            
+
             await this.prisma.couponCode.update({
                 where: { id },
                 data: { isDeleted: true, deletedAt: new Date() },
