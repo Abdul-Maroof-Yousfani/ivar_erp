@@ -986,6 +986,7 @@ export const menuData: MenuItem[] = [
       {
         title: "Reports",
         children: [
+          { title: "Sales & Stock Activity", href: "/erp/reports/sales-activity" },
           { title: "Sales Summary", href: "/erp/sales/reports/summary" },
           {
             title: "Customer Ledger",

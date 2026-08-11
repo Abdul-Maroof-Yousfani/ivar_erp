@@ -227,29 +227,34 @@ export class PosSalesController {
         @Query('startDate') startDate?: string,
         @Query('endDate') endDate?: string,
         @Query('search') search?: string,
+        @Query('locationId') locationId?: string,
+        @Query('merchantId') merchantId?: string,
+        @Query('paymentMethod') paymentMethod?: string,
     ) {
         // Determine effective filtering context
         let effectivePosId = posId;
-        let effectiveLocationId: string | undefined = undefined;
+        let effectiveLocationId: string | undefined = locationId;
 
-        // 1. Context from logged-in user
-        if (req.user?.isPosUser || req.user?.isTerminal) {
-            if (!effectivePosId && !search) effectivePosId = req.user.posId || req.user.terminalId;
-            effectiveLocationId = req.user.locationId;
-        }
+        if (!effectiveLocationId) {
+            // 1. Context from logged-in user
+            if (req.user?.isPosUser || req.user?.isTerminal) {
+                if (!effectivePosId && !search) effectivePosId = req.user.posId || req.user.terminalId;
+                effectiveLocationId = req.user.locationId;
+            }
 
-        // 2. Fallback to terminal cookie
-        if (!effectivePosId && !search && req.cookies?.posTerminalToken) {
-            try {
-                const decoded: any = jwt.decode(req.cookies.posTerminalToken);
-                effectivePosId = decoded?.posId || decoded?.terminalId;
-                if (!effectiveLocationId) effectiveLocationId = decoded?.locationId;
-            } catch (e) { }
-        }
+            // 2. Fallback to terminal cookie
+            if (!effectivePosId && !search && req.cookies?.posTerminalToken) {
+                try {
+                    const decoded: any = jwt.decode(req.cookies.posTerminalToken);
+                    effectivePosId = decoded?.posId || decoded?.terminalId;
+                    if (!effectiveLocationId) effectiveLocationId = decoded?.locationId;
+                } catch (e) { }
+            }
 
-        // 3. Fallback: any user with a locationId on their token
-        if (!effectiveLocationId && req.user?.locationId) {
-            effectiveLocationId = req.user.locationId;
+            // 3. Fallback: any user with a locationId on their token (only if not an admin viewing all)
+            if (!effectiveLocationId && req.user?.locationId && req.user?.isPosUser) {
+                effectiveLocationId = req.user.locationId;
+            }
         }
 
         return this.posSalesService.listSalesActivities(
@@ -258,7 +263,7 @@ export class PosSalesController {
             limit ? Number(limit) : 20,
             effectivePosId,
             activityType,
-            { startDate, endDate, search },
+            { startDate, endDate, search, merchantId, paymentMethod },
             effectiveLocationId,
         );
     }

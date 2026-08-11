@@ -36,12 +36,12 @@ export class SalesActivityExportController {
     @Query('locationId')   locationId?: string,
     @Query('posId')        posId?: string,
     @Query('search')       search?: string,
+    @Query('merchantId')   merchantId?: string,
+    @Query('paymentMethod') paymentMethod?: string,
   ) {
     let effectiveLocationId = locationId;
     if (!effectiveLocationId) {
       if (req.user?.isPosUser || req.user?.isTerminal) {
-        effectiveLocationId = req.user.locationId;
-      } else if (req.user?.locationId) {
         effectiveLocationId = req.user.locationId;
       }
     }
@@ -54,6 +54,8 @@ export class SalesActivityExportController {
       locationId: effectiveLocationId,
       posId,
       search,
+      merchantId,
+      paymentMethod,
     });
 
     return {

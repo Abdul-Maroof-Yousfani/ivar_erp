@@ -225,16 +225,24 @@ export async function listSalesActivities(params?: {
     startDate?: string;
     endDate?: string;
     activityType?: string;
+    locationId?: string;
+    posId?: string;
+    merchantId?: string;
+    paymentMethod?: string;
 }) {
     try {
         const res = await authFetch("/pos-sales/activities", {
             params: {
                 page: params?.page ?? 1,
-                limit: params?.limit ?? 100,
+                limit: params?.limit ?? 20,
                 search: params?.search || undefined,
                 startDate: params?.startDate || undefined,
                 endDate: params?.endDate || undefined,
                 activityType: params?.activityType || undefined,
+                locationId: params?.locationId || undefined,
+                posId: params?.posId || undefined,
+                merchantId: params?.merchantId || undefined,
+                paymentMethod: params?.paymentMethod || undefined,
             },
         });
 
@@ -242,14 +250,14 @@ export async function listSalesActivities(params?: {
             return {
                 status: true,
                 data: res.data.data ?? [],
-                meta: res.data.meta ?? { total: 0, page: 1, limit: 100, totalPages: 0 },
+                meta: res.data.meta ?? { total: 0, page: 1, limit: 20, totalPages: 0 },
             };
         }
 
-        return { status: false, data: [], meta: { total: 0, page: 1, limit: 100, totalPages: 0 }, message: res.data?.message };
+        return { status: false, data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 }, message: res.data?.message };
     } catch (error) {
         console.error("listSalesActivities error:", error);
-        return { status: false, data: [], meta: { total: 0, page: 1, limit: 100, totalPages: 0 }, message: "Failed to fetch activities" };
+        return { status: false, data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 }, message: "Failed to fetch activities" };
     }
 }
 
@@ -314,6 +322,8 @@ export async function queueSalesActivityExport(params?: {
     activityType?: string;
     locationId?: string;
     posId?: string;
+    merchantId?: string;
+    paymentMethod?: string;
     search?: string;
 }): Promise<{ status: boolean; data?: { jobId: string }; message?: string }> {
     try {
@@ -325,6 +335,8 @@ export async function queueSalesActivityExport(params?: {
                 activityType: params?.activityType || undefined,
                 locationId: params?.locationId || undefined,
                 posId: params?.posId || undefined,
+                merchantId: params?.merchantId || undefined,
+                paymentMethod: params?.paymentMethod || undefined,
                 search: params?.search || undefined,
             },
         });

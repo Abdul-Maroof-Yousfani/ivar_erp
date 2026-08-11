@@ -19,6 +19,8 @@ export interface SalesActivityExportJobData {
   locationId?: string;
   posId?: string;
   search?: string;
+  merchantId?: string;
+  paymentMethod?: string;
 }
 
 // ── Colour palette ─────────────────────────────────────────────────────────────
@@ -119,6 +121,8 @@ export class SalesActivityExportProcessor {
       locationId,
       posId,
       search,
+      merchantId,
+      paymentMethod,
     } = job.data;
 
     this.logger.log(`[SalesActivityExport ${jobId}] Starting for user ${userId}`);
@@ -140,6 +144,16 @@ export class SalesActivityExportProcessor {
         else where.posId = posId;
       }
       if (locationId) where.locationId = locationId;
+      if (merchantId) where.merchantId = merchantId;
+
+      if (paymentMethod) {
+        const pm = paymentMethod.toLowerCase();
+        if (pm === 'split') where.tenderType = 'split';
+        else if (pm === 'cash') where.OR = [{ paymentMethod: 'cash' }, { cashAmount: { gt: 0 } }];
+        else if (pm === 'card') where.OR = [{ paymentMethod: 'card' }, { cardAmount: { gt: 0 } }];
+        else if (pm === 'voucher') where.OR = [{ paymentMethod: 'voucher' }, { voucherRedemptions: { some: {} } }];
+        else where.paymentMethod = pm;
+      }
 
       where.status = { notIn: ['hold', 'hold_expired', 'hold_cancelled'] };
 

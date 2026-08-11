@@ -1788,7 +1788,13 @@ export class PosSalesService implements OnModuleInit {
     limit = 20,
     posId?: string,
     activityType?: string,
-    filters?: { startDate?: string; endDate?: string; search?: string },
+    filters?: {
+      startDate?: string;
+      endDate?: string;
+      search?: string;
+      merchantId?: string;
+      paymentMethod?: string;
+    },
     locationId?: string,
   ) {
     const skip = (page - 1) * limit;
@@ -1803,6 +1809,28 @@ export class PosSalesService implements OnModuleInit {
     }
     if (locationId) where.locationId = locationId;
 
+    if (filters?.merchantId) {
+      where.merchantId = filters.merchantId;
+    }
+
+    if (filters?.paymentMethod) {
+      const pm = filters.paymentMethod.toLowerCase();
+      if (pm === 'split') {
+        where.tenderType = 'split';
+      } else if (pm === 'cash') {
+        where.OR = [{ paymentMethod: 'cash' }, { cashAmount: { gt: 0 } }];
+      } else if (pm === 'card') {
+        where.OR = [{ paymentMethod: 'card' }, { cardAmount: { gt: 0 } }];
+      } else if (pm === 'voucher') {
+        where.OR = [
+          { paymentMethod: 'voucher' },
+          { voucherRedemptions: { some: {} } },
+        ];
+      } else {
+        where.paymentMethod = pm;
+      }
+    }
+
     // Always exclude hold, hold_expired, and hold_cancelled orders from activity listing
     where.status = { notIn: ['hold', 'hold_expired', 'hold_cancelled'] };
 
@@ -1811,14 +1839,6 @@ export class PosSalesService implements OnModuleInit {
       where: { id: user.roleId },
       include: { permissions: { include: { permission: true } } },
     });
-
-    // const userPerms = role?.permissions.map(p => p.permission.name) || [];
-    // const canViewAll = userPerms.includes('*') || userPerms.includes('pos.sales.history.view_all') ||
-    //     ['super_admin', 'admin'].includes(role?.name.toLowerCase() || '');
-
-    // if (!canViewAll) {
-    //     where.cashierUserId = user.id;
-    // }
 
     // ── Determine Date Range ──
     let start: Date | undefined = undefined;
@@ -1949,6 +1969,14 @@ export class PosSalesService implements OnModuleInit {
     // Apply final resolved order IDs filter
     where.id = { in: Array.from(targetOrderIds) };
 
+    // Fetch locations to map name
+    const locations = await this.prisma.location.findMany({
+      select: { id: true, name: true, code: true },
+    });
+    const locationMap = new Map(
+      locations.map((l) => [l.id, `${l.name} (${l.code})`]),
+    );
+
     // ── Fetch orders with matching IDs ──
     const rawOrders = await this.prisma.salesOrder.findMany({
       where,
@@ -2067,6 +2095,7 @@ export class PosSalesService implements OnModuleInit {
     (rawOrders as any[]).forEach((order) => {
       const orderVouchers = issuedVouchersMap.get(order.id) || [];
       const orderLedgers = returnEntriesMap.get(order.id) || [];
+      const locationName = locationMap.get(order.locationId) || order.locationId;
 
       // 1. Sale Activity
       const saleIssuedVouchers = orderVouchers.filter((v) =>
@@ -2123,8 +2152,13 @@ export class PosSalesService implements OnModuleInit {
         orderId: order.id,
         orderNumber: order.orderNumber,
         locationId: order.locationId,
+        locationName,
         posId: order.posId || order.terminalId,
         customer: order.customer,
+        merchantId: order.merchantId,
+        merchant: order.merchant,
+        alliance: order.alliance,
+        tenderType: order.tenderType,
         tenders,
         issuedVouchers: saleIssuedVouchers.map((v) => ({
           code: v.code,
@@ -2186,8 +2220,12 @@ export class PosSalesService implements OnModuleInit {
           orderId: order.id,
           orderNumber: order.orderNumber,
           locationId: order.locationId,
+          locationName,
           posId: order.posId || order.terminalId,
           customer: order.customer,
+          merchantId: order.merchantId,
+          merchant: order.merchant,
+          alliance: order.alliance,
           items: returnedItems,
           issuedVouchers: exchangeVoucher
             ? [
@@ -2247,8 +2285,12 @@ export class PosSalesService implements OnModuleInit {
           orderId: order.id,
           orderNumber: order.orderNumber,
           locationId: order.locationId,
+          locationName,
           posId: order.posId || order.terminalId,
           customer: order.customer,
+          merchantId: order.merchantId,
+          merchant: order.merchant,
+          alliance: order.alliance,
           items: refundedItems,
           issuedVouchers: refundVouchers.map((v) => ({
             code: v.code,
@@ -2274,8 +2316,12 @@ export class PosSalesService implements OnModuleInit {
           orderId: order.id,
           orderNumber: order.orderNumber,
           locationId: order.locationId,
+          locationName,
           posId: order.posId || order.terminalId,
           customer: order.customer,
+          merchantId: order.merchantId,
+          merchant: order.merchant,
+          alliance: order.alliance,
           issuedVouchers: claim.voucher
             ? [
               {
@@ -2316,15 +2362,50 @@ export class PosSalesService implements OnModuleInit {
 
     // Apply activityType filter
     if (activityType && activityType !== 'all') {
-      if (activityType === 'exchange') {
+      const actType = activityType.toLowerCase();
+      if (actType === 'exchange') {
         filteredActivities = filteredActivities.filter(
           (act) =>
             act.type === 'return' ||
-            (act.type === 'claim' && act.claimType === 'EXCHANGE'),
+            (act.type === 'claim' &&
+              act.issuedVouchers?.some(
+                (v: any) => v.voucherType === 'EXCHANGE',
+              )) ||
+            act.issuedVouchers?.some((v: any) => v.voucherType === 'EXCHANGE'),
+        );
+      } else if (actType === 'alliance') {
+        filteredActivities = filteredActivities.filter(
+          (act) => act.alliance != null,
+        );
+      } else if (actType === 'exchange_voucher') {
+        filteredActivities = filteredActivities.filter(
+          (act) =>
+            act.issuedVouchers?.some(
+              (v: any) => v.voucherType === 'EXCHANGE',
+            ) || act.tenders?.some((t: any) => t.method === 'voucher'),
+        );
+      } else if (actType === 'credit_voucher') {
+        filteredActivities = filteredActivities.filter((act) =>
+          act.issuedVouchers?.some((v: any) =>
+            ['CREDIT', 'GIFT'].includes(v.voucherType),
+          ),
+        );
+      } else if (actType === 'cash_split') {
+        filteredActivities = filteredActivities.filter(
+          (act) =>
+            act.tenderType === 'split' ||
+            (act.tenders && act.tenders.length > 1),
+        );
+      } else if (actType === 'merchant') {
+        filteredActivities = filteredActivities.filter(
+          (act) =>
+            act.merchantId != null ||
+            act.merchant != null ||
+            act.tenders?.some((t: any) => t.method === 'card'),
         );
       } else {
         filteredActivities = filteredActivities.filter(
-          (act) => act.type === activityType,
+          (act) => act.type === actType,
         );
       }
     }
@@ -2334,6 +2415,61 @@ export class PosSalesService implements OnModuleInit {
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
 
+    // Calculate Summary KPIs
+    const summary = {
+      totalCount: filteredActivities.length,
+      totalSalesCount: filteredActivities.filter((a) => a.type === 'sale').length,
+      totalSalesAmount: filteredActivities
+        .filter((a) => a.type === 'sale')
+        .reduce((sum, a) => sum + (Number(a.amount) || 0), 0),
+      totalReturnsCount: filteredActivities.filter((a) => a.type === 'return')
+        .length,
+      totalReturnsAmount: filteredActivities
+        .filter((a) => a.type === 'return')
+        .reduce((sum, a) => sum + (Number(a.amount) || 0), 0),
+      totalRefundsCount: filteredActivities.filter((a) => a.type === 'refund')
+        .length,
+      totalRefundsAmount: filteredActivities
+        .filter((a) => a.type === 'refund')
+        .reduce((sum, a) => sum + (Number(a.amount) || 0), 0),
+      totalClaimsCount: filteredActivities.filter((a) => a.type === 'claim').length,
+      totalClaimsAmount: filteredActivities
+        .filter((a) => a.type === 'claim')
+        .reduce(
+          (sum, a) => sum + (Number(a.approvedAmount ?? a.amount) || 0),
+          0,
+        ),
+      totalNetRevenue: 0,
+      totalIssuedVouchersCount: filteredActivities.reduce(
+        (sum, a) => sum + (a.issuedVouchers?.length || 0),
+        0,
+      ),
+      totalIssuedVouchersAmount: filteredActivities.reduce(
+        (sum, a) =>
+          sum +
+          (a.issuedVouchers?.reduce(
+            (vs: number, v: any) => vs + (Number(v.faceValue) || 0),
+            0,
+          ) || 0),
+        0,
+      ),
+      totalMerchantCommission: filteredActivities.reduce((sum, a) => {
+        if (a.type === 'sale' && a.merchant?.commissionRate) {
+          const commRate = Number(a.merchant.commissionRate);
+          const cardAmt =
+            a.tenders?.find((t: any) => t.method === 'card')?.amount ||
+            a.amount ||
+            0;
+          return sum + cardAmt * commRate;
+        }
+        return sum;
+      }, 0),
+    };
+    summary.totalNetRevenue =
+      summary.totalSalesAmount -
+      summary.totalReturnsAmount -
+      summary.totalRefundsAmount;
+
     // Paginate in memory
     const total = filteredActivities.length;
     const paginatedActivities = filteredActivities.slice(skip, skip + limit);
@@ -2341,7 +2477,13 @@ export class PosSalesService implements OnModuleInit {
     return {
       status: true,
       data: paginatedActivities,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        summary,
+      },
     };
   }
 

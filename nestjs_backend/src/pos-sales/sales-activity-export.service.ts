@@ -14,6 +14,8 @@ export interface QueueSalesActivityExportOptions {
   locationId?: string;
   posId?: string;
   search?: string;
+  merchantId?: string;
+  paymentMethod?: string;
 }
 
 @Injectable()
@@ -44,6 +46,8 @@ export class SalesActivityExportService {
         locationId: opts.locationId,
         posId: opts.posId,
         search: opts.search,
+        merchantId: opts.merchantId,
+        paymentMethod: opts.paymentMethod,
       },
       {
         jobId,
