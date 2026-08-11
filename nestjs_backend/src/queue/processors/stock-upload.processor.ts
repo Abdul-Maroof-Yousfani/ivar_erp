@@ -121,37 +121,40 @@ export class StockUploadProcessor {
                 }));
 
                 // Pre-load location code → id map
-                // Try Location first (POS outlets), then WarehouseLocation (WMS bins).
-                // Location.warehouseId is nullable — for those, derive warehouseId from
-                // the WarehouseLocation table which always has one.
+                // Include Warehouse (main warehouses), Location (POS outlets), and WarehouseLocation (WMS bins).
+                const allWarehouses = await prisma.warehouse.findMany({
+                    where: { isDeleted: false },
+                    select: { id: true, code: true },
+                });
+
                 const allLocations = await prisma.location.findMany({
                     select: { id: true, code: true, warehouseId: true },
                 });
 
-                // Also load WarehouseLocation bins as a fallback
                 const allWarehouseLocations = await (prisma as any).warehouseLocation?.findMany?.({
                     select: { id: true, code: true, warehouseId: true },
                 }).catch(() => []) ?? [];
 
-                // Build a unified map: code.toUpperCase() → { id, warehouseId }
-                // WarehouseLocation entries go in first (lower priority), then Location
-                // entries overwrite so POS outlets take precedence when codes collide.
-                const locationByCode = new Map<string, { id: string; code: string; warehouseId: string | null }>();
+                // Build a unified map: code.toUpperCase() → { id: locationId | null, code, warehouseId }
+                const locationByCode = new Map<string, { id: string | null; code: string; warehouseId: string | null }>();
 
+                // 1. Warehouse entries (e.g. WH-01 → locationId: null, warehouseId: wh.id)
+                for (const wh of allWarehouses) {
+                    locationByCode.set(wh.code.toUpperCase(), { id: null, code: wh.code, warehouseId: wh.id });
+                }
+
+                // 2. WarehouseLocation entries (WMS bins)
                 for (const wl of allWarehouseLocations) {
                     locationByCode.set(wl.code.toUpperCase(), { id: wl.id, code: wl.code, warehouseId: wl.warehouseId });
                 }
 
-                // For Location entries with null warehouseId, try to find a warehouse
-                // via the WarehouseLocation join (locations that are POS outlets linked
-                // to a warehouse bin area). Fall back to the first warehouse in the DB.
+                // 3. Location entries (POS outlets) — POS outlets take precedence if codes collide
                 let fallbackWarehouseId: string | null = null;
 
                 for (const loc of allLocations) {
                     let warehouseId = loc.warehouseId;
 
                     if (!warehouseId) {
-                        // Lazy-load fallback warehouse once
                         if (!fallbackWarehouseId) {
                             const firstWarehouse = await prisma.warehouse.findFirst({
                                 where: { isActive: true },
@@ -239,9 +242,13 @@ export class StockUploadProcessor {
                 let validationBatch: StockUploadParsedRecord[] = [];
                 const allValidationErrors: any[] = [];
 
-                // Pre-load all location codes for existence check during validation
-                // Include both Location (POS outlets) and WarehouseLocation (WMS bins)
-                const allLocations = await prisma.location.findMany({
+                // Pre-load all location/warehouse codes for existence check during validation
+                // Include Warehouse (main warehouses), Location (POS outlets), and WarehouseLocation (WMS bins)
+                const allWarehousesV = await prisma.warehouse.findMany({
+                    where: { isDeleted: false },
+                    select: { code: true },
+                });
+                const allLocationsV = await prisma.location.findMany({
                     select: { code: true },
                 });
                 const allWarehouseLocationsV = await (prisma as any).warehouseLocation?.findMany?.({
@@ -249,7 +256,8 @@ export class StockUploadProcessor {
                 }).catch(() => []) ?? [];
 
                 const validLocationCodes = new Set([
-                    ...allLocations.map((l) => l.code.toUpperCase()),
+                    ...allWarehousesV.map((w) => w.code.toUpperCase()),
+                    ...allLocationsV.map((l) => l.code.toUpperCase()),
                     ...allWarehouseLocationsV.map((wl: any) => wl.code.toUpperCase()),
                 ]);
 
@@ -420,7 +428,7 @@ export class StockUploadProcessor {
         progress: StockUploadProgress,
         uploadId: string,
         prisma: PrismaService,
-        locationByCode: Map<string, { id: string; code: string; warehouseId: string | null }>,
+        locationByCode: Map<string, { id: string | null; code: string; warehouseId: string | null }>,
     ): Promise<void> {
         // Collect unique codes for bulk item lookup
         const barCodes = [...new Set(batch.map((r) => r.data.barCode))];
@@ -452,7 +460,7 @@ export class StockUploadProcessor {
         const inventoryUpserts: Array<{
             itemId: string;
             warehouseId: string;
-            locationId: string;
+            locationId: string | null;
             qty: number;
         }> = [];
 
