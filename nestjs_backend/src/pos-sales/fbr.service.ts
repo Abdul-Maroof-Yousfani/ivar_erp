@@ -51,6 +51,7 @@ export type FbrInvoicePayload = FbrImsInvoicePayload;
 export interface FbrApiResponse {
     Code?: number | string;      // "100" or 100 = success
     InvoiceNumber?: string;
+    FBRInvoiceNumber?: string | number;
     Response?: string;
     Errors?: string | null;
     QRCode?: string;
@@ -65,7 +66,7 @@ export class FbrService {
     // Cloud Production: https://gw.fbr.gov.pk/imsp/v1/api/Live/PostData
     private readonly defaultUrl =
         process.env.FBR_API_URL ||
-        'https://esp.fbr.gov.pk:8244/FBR/v1/api/Live/PostData';
+        'https://esp.fbr.gov.pk:8244/imsp/v1/api/Live/PostData';
 
     private readonly bearerToken = process.env.FBR_BEARER_TOKEN || '';
 

@@ -421,10 +421,19 @@ export default function SalesHistoryPage() {
     const [isRefundPrint, setIsRefundPrint] = useState(false);
     const [showClaimReceipt, setShowClaimReceipt] = useState(false);
     const [selectedClaim, setSelectedClaim] = useState<any>(null);
+    const {user} = useAuth()
+
+    const [filterByPosOnly, setFilterByPosOnly] = useState(true);
+
+    const currentPosId = (user as any)?.terminalId || (user as any)?.terminal?.id || (user as any)?.posId || getCookie("pos_terminal_id") || undefined;
+    const currentLocationId = (user as any)?.locationId || (user as any)?.terminal?.location?.id || getCookie("pos_location_id") || undefined;
 
     const fetchOrders = useCallback(async () => {
         setIsLoading(true);
         try {
+            const activePosId = filterByPosOnly ? currentPosId : undefined;
+            const activeLocationId = filterByPosOnly ? currentLocationId : undefined;
+
             const res = await authFetch("/pos-sales/orders", {
                 params: {
                     page: pagination.pageIndex + 1,
@@ -432,6 +441,8 @@ export default function SalesHistoryPage() {
                     search: search.trim() || undefined,
                     startDate: dateRange.from?.toISOString(),
                     endDate: dateRange.to?.toISOString(),
+                    posId: activePosId,
+                    locationId: activeLocationId,
                 }
             });
             if (res.ok && res.data?.status) {
@@ -442,9 +453,9 @@ export default function SalesHistoryPage() {
             }
         } catch { toast.error("Failed to load sales history"); }
         finally { setIsLoading(false); }
-    }, [pagination.pageIndex, pagination.pageSize, search, dateRange]);
+    }, [pagination.pageIndex, pagination.pageSize, search, dateRange, filterByPosOnly, currentPosId, currentLocationId]);
 
-    useEffect(() => { setPagination(p => ({ ...p, pageIndex: 0 })); }, [search, dateRange]);
+    useEffect(() => { setPagination(p => ({ ...p, pageIndex: 0 })); }, [search, dateRange, filterByPosOnly]);
     useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
     // Refresh table when a bulk import finishes
@@ -761,6 +772,19 @@ export default function SalesHistoryPage() {
                             placeholder="Filter by date"
                         />
                     </div>
+                    {currentPosId && (
+                        <Button
+                            variant={filterByPosOnly ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setFilterByPosOnly(!filterByPosOnly)}
+                            className="gap-1.5 font-medium text-xs h-9 shadow-xs"
+                        >
+                            <Building2 className="h-3.5 w-3.5" />
+                            {filterByPosOnly
+                                ? `This POS (${(user as any)?.terminal?.code || getCookie("pos_terminal_code") || "Active POS"})`
+                                : "All POS Terminals"}
+                        </Button>
+                    )}
                     {/* ── Floating import progress button ── */}
                     {activeUploadId && !isBulkUploadOpen && (
                         <Button

@@ -214,10 +214,34 @@ export class PosSalesController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('search') search?: string,
+    @Query('merchantId') merchantId?: string,
+    @Query('paymentMethod') paymentMethod?: string,
   ) {
-    // Use explicit query parameters if provided, without forcing terminal cookie restrictions on history view
-    const effectivePosId = posId;
-    const effectiveLocationId = locationId;
+    // Determine effective filtering context from query, user session, or terminal cookie
+    let effectivePosId = posId;
+    let effectiveLocationId: string | undefined = locationId;
+
+    if (!effectiveLocationId) {
+      // 1. Context from logged-in user
+      if (req.user?.isPosUser || req.user?.isTerminal) {
+        if (!effectivePosId && !search) effectivePosId = req.user.posId || req.user.terminalId;
+        effectiveLocationId = req.user.locationId;
+      }
+
+      // 2. Fallback to terminal cookie
+      if (!effectivePosId && !search && req.cookies?.posTerminalToken) {
+        try {
+          const decoded: any = jwt.decode(req.cookies.posTerminalToken);
+          effectivePosId = decoded?.posId || decoded?.terminalId;
+          if (!effectiveLocationId) effectiveLocationId = decoded?.locationId;
+        } catch (e) {}
+      }
+
+      // 3. Fallback: any user with a locationId on their token (only if not an admin viewing all)
+      if (!effectiveLocationId && req.user?.locationId && req.user?.isPosUser) {
+        effectiveLocationId = req.user.locationId;
+      }
+    }
 
     return this.posSalesService.listOrders(
       req.user,
@@ -225,7 +249,7 @@ export class PosSalesController {
       limit ? Number(limit) : 20,
       effectivePosId,
       status,
-      { startDate, endDate, search },
+      { startDate, endDate, search, merchantId, paymentMethod },
       effectiveLocationId,
     );
   }

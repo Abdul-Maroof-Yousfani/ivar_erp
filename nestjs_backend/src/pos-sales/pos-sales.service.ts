@@ -1028,190 +1028,156 @@ export class PosSalesService implements OnModuleInit {
   }
 
   // ─── FBR sync helper ──────────────────────────────────────────────
-  private async syncWithFbr(
-    order: any,
-    itemsData: Array<{
-      itemId: string;
-      quantity: number;
-      unitPrice: number;
-      discountAmount: number;
-      taxPercent: number;
-      taxAmount: number;
-      lineTotal: number;
-    }>,
-    tx?: Prisma.TransactionClient,
-  ): Promise<{
-    success: boolean;
-    fbrInvoiceNumber?: string;
-    fbrQrCode?: string;
-    fbrStatus: 'SYNCED' | 'PENDING' | 'SKIPPED';
-    error?: string;
-    responsePayload?: any;
-  }> {
-    this.logger.log(
-      `[FBR Sync] 🚀 Starting FBR sync for order: ${order.orderNumber || order.id}`,
-    );
-    const db = tx || this.prisma;
-    try {
-      // ── Load location FBR config ───────────────────────────────
-      if (!order.locationId) {
-        this.logger.warn(
-          `[FBR Sync] [WARN] Order ${order.orderNumber} has no locationId — skipping FBR sync`,
-        );
-        return {
-          success: false,
-          fbrStatus: 'SKIPPED',
-          error: 'Order has no locationId',
-        };
-      }
+    // ─── FBR sync helper ──────────────────────────────────────────────
+    private async syncWithFbr(
+        order: any,
+        itemsData: Array<{
+            itemId: string;
+            quantity: number;
+            unitPrice: number;
+            discountAmount: number;
+            taxPercent: number;
+            taxAmount: number;
+            lineTotal: number;
+        }>,
+        tx?: any,
+    ): Promise<{
+        success: boolean;
+        fbrInvoiceNumber?: string;
+        fbrQrCode?: string;
+        fbrStatus: 'SYNCED' | 'SKIPPED';
+        error?: string;
+        responsePayload?: any;
+    }> {
+        this.logger.log(`[FBR Sync] 🚀 Starting FBR sync for order: ${order.orderNumber || order.id}`);
+        const db = tx || this.prisma;
+        try {
+            // ── Load location FBR config ───────────────────────────────
+            if (!order.locationId) {
+                this.logger.warn(`[FBR Sync] [WARN] Order ${order.orderNumber} has no locationId — skipping FBR sync`);
+                return { success: false, fbrStatus: 'SKIPPED', error: 'Order has no locationId' };
+            }
 
-      const location = await db.location.findUnique({
-        where: { id: order.locationId },
-        select: {
-          fbrEnabled: true,
-          fbrBposId: true,
-          fbrNtn: true,
-          fbrSellerName: true,
-          address: true,
-        },
-      });
+            const location = await db.location.findUnique({
+                where: { id: order.locationId },
+                select: {
+                    fbrEnabled: true,
+                    fbrBposId: true,
+                    fbrBearerToken: true,
+                    fbrNtn: true,
+                    fbrSellerName: true,
+                    address: true,
+                },
+            });
 
-      this.logger.log(
-        `[FBR Sync] [CONFIG] Location ID: ${order.locationId}, FBR Enabled: ${location?.fbrEnabled}`,
-      );
+            this.logger.log(`[FBR Sync] [CONFIG] Location ID: ${order.locationId}, FBR Enabled: ${location?.fbrEnabled}`);
 
-      if (!location?.fbrEnabled) {
-        this.logger.log(
-          `[FBR Sync] [INFO] FBR not configured or enabled for location ${order.locationId} — skipping`,
-        );
-        return {
-          success: false,
-          fbrStatus: 'SKIPPED',
-          error: 'FBR disabled or not configured',
-        };
-      }
+            if (!location?.fbrEnabled) {
+                this.logger.log(`[FBR Sync] [INFO] FBR not configured or enabled for location ${order.locationId} — skipping`);
+                return { success: false, fbrStatus: 'SKIPPED', error: 'FBR disabled or not configured' };
+            }
 
-      if (!location.fbrBposId) {
-        this.logger.warn(
-          `[FBR Sync] [WARN] Location ${order.locationId} is FBR-enabled but missing bposId or token — setting status to PENDING`,
-        );
-        await db.salesOrder.update({
-          where: { id: order.id },
-          data: { fbrStatus: 'PENDING' },
-        });
-        order.fbrStatus = 'PENDING';
-        return {
-          success: false,
-          fbrStatus: 'PENDING',
-          error: 'Missing FBR BPOS ID or Bearer Token',
-        };
-      }
+            if (!location.fbrBposId || !location.fbrBearerToken) {
+                const missingMsg = 'Location is FBR-enabled but missing FBR BPOS ID or Bearer Token credentials.';
+                this.logger.error(`[FBR Sync] [FAIL] ${missingMsg}`);
+                throw new BadRequestException(`FBR Fiscalization Failed: ${missingMsg}`);
+            }
 
-      // ── Fetch item details (sku, description, hsCode) ──────────
-      const itemIds = itemsData.map((i) => i.itemId);
-      const itemRecords = await db.item.findMany({
-        where: { id: { in: itemIds } },
-        select: { id: true, sku: true, description: true, hsCodeStr: true },
-      });
-      const itemMap = new Map(itemRecords.map((r) => [r.id, r]));
+            // ── Fetch item details (sku, description, hsCode) ──────────
+            const itemIds = itemsData.map((i) => i.itemId);
+            const itemRecords: Array<{ id: string; sku: string; description: string | null; hsCodeStr: string | null }> = await db.item.findMany({
+                where: { id: { in: itemIds } },
+                select: { id: true, sku: true, description: true, hsCodeStr: true },
+            });
+            const itemMap = new Map<string, { id: string; sku: string; description: string | null; hsCodeStr: string | null }>(
+                itemRecords.map((r) => [r.id, r]),
+            );
 
-      // Walk-in buyer defaults when no customer is attached
-      const buyerNtn = '9999999-9';
-      const buyerName = 'Guest';
+            // Customer details if available
+            const buyerName = order.customerName || 'Guest';
+            const buyerNtn = order.customerNtn || null;
+            const buyerCnic = order.customerCnic || null;
+            const buyerPhone = order.customerPhone || null;
 
-      const fbrItems = itemsData.map((line) => {
-        const rec = itemMap.get(line.itemId);
-        return {
-          itemId: line.itemId,
-          sku: rec?.sku ?? line.itemId,
-          description: rec?.description ?? null,
-          hsCode: rec?.hsCodeStr ?? null,
-          quantity: line.quantity,
-          unitPrice: line.unitPrice,
-          taxPercent: line.taxPercent,
-          discountAmount: line.discountAmount,
-          taxAmount: line.taxAmount,
-          lineTotal: line.lineTotal,
-        };
-      });
+            // Map payment mode (1: Cash, 2: Card, 3: Voucher, 4: Loyalty, 5: Mixed, 6: Cheque)
+            let paymentMode = 1;
+            const rawMethod = String(order.paymentMethod || order.paymentMode || '').toLowerCase();
+            if (rawMethod.includes('card')) paymentMode = 2;
+            else if (rawMethod.includes('voucher')) paymentMode = 3;
+            else if (rawMethod.includes('loyalty')) paymentMode = 4;
+            else if (rawMethod.includes('mix') || rawMethod.includes('split')) paymentMode = 5;
+            else if (rawMethod.includes('cheque') || rawMethod.includes('check')) paymentMode = 6;
 
-      const payload = this.fbrService.buildPayload({
-        posId: location.fbrBposId,
-        usin: order.orderNumber || order.id,
-        orderDate: new Date(order.createdAt),
-        buyerNtn,
-        buyerName,
-        items: fbrItems,
-      });
+            const fbrItems = itemsData.map((line) => {
+                const rec = itemMap.get(line.itemId);
+                return {
+                    itemId: line.itemId,
+                    sku: rec?.sku ?? line.itemId,
+                    description: rec?.description ?? null,
+                    hsCode: rec?.hsCodeStr ?? null,
+                    quantity: line.quantity,
+                    unitPrice: line.unitPrice,
+                    taxPercent: line.taxPercent,
+                    discountAmount: line.discountAmount,
+                    taxAmount: line.taxAmount,
+                    lineTotal: line.lineTotal,
+                };
+            });
 
-      this.logger.debug(
-        `[FBR Sync] [PAYLOAD] Generated FBR payload for order ${order.orderNumber}:\n${JSON.stringify(payload, null, 2)}`,
-      );
+            const payload = this.fbrService.buildPayload({
+                posId: location.fbrBposId,
+                usin: order.orderNumber || order.id,
+                orderDate: new Date(order.createdAt || Date.now()),
+                buyerNtn,
+                buyerCnic,
+                buyerName,
+                buyerPhone,
+                paymentMode,
+                items: fbrItems,
+            });
 
-      // Override the bearer token with the per-location token
-      this.logger.log(`[FBR Sync] [HTTP] Sending request to FBR gateway...`);
-      const fbrResponse = await this.fbrService.postInvoice(payload);
-      this.logger.log(
-        `[FBR Sync] [RESPONSE] Received response from FBR gateway. Code: ${fbrResponse.Code}`,
-      );
+            this.logger.debug(`[FBR Sync] [PAYLOAD] Generated FBR IMS payload for order ${order.orderNumber}:\n${JSON.stringify(payload, null, 2)}`);
 
-      if (fbrResponse.Code === 100) {
-        this.logger.log(
-          `[FBR Sync] [SUCCESS] Order ${order.orderNumber} successfully synced with FBR. Invoice Number: ${fbrResponse.InvoiceNumber}`,
-        );
-        await this.prisma.salesOrder.update({
-          where: { id: order.id },
-          data: {
-            fbrInvoiceNumber: fbrResponse.InvoiceNumber,
-            fbrQrCode: fbrResponse.QRCode,
-            fbrStatus: 'SYNCED',
-          },
-        });
-        order.fbrInvoiceNumber = fbrResponse.InvoiceNumber;
-        order.fbrQrCode = fbrResponse.QRCode;
-        order.fbrStatus = 'SYNCED';
+            // Send request to Live FBR Gateway API
+            this.logger.log(`[FBR Sync] [HTTP] Sending request to FBR Live Gateway...`);
+            const fbrResponse = await this.fbrService.postInvoice(payload, undefined, location.fbrBearerToken);
+            this.logger.log(`[FBR Sync] [RESPONSE] Received response from FBR gateway. Code: ${fbrResponse.Code}`);
 
-        return {
-          success: true,
-          fbrInvoiceNumber: fbrResponse.InvoiceNumber,
-          fbrQrCode: fbrResponse.QRCode,
-          fbrStatus: 'SYNCED',
-          responsePayload: fbrResponse,
-        };
-      } else {
-        const errMsg = `FBR non-success code ${fbrResponse.Code}: ${fbrResponse.Errors ?? ''}`;
-        this.logger.error(
-          `[FBR Sync] [FAIL] Order ${order.orderNumber} sync failed. ${errMsg}`,
-        );
-        await this.prisma.salesOrder.update({
-          where: { id: order.id },
-          data: { fbrStatus: 'PENDING' },
-        });
-        order.fbrStatus = 'PENDING';
-        return {
-          success: false,
-          fbrStatus: 'PENDING',
-          error: errMsg,
-          responsePayload: fbrResponse,
-        };
-      }
-    } catch (err: any) {
-      this.logger.error(
-        `[FBR Sync] [EXCEPTION] FBR Sync failed for order ${order?.orderNumber}: ${err.message}`,
-        err.stack,
-      );
-      await this.prisma.salesOrder.update({
-        where: { id: order.id },
-        data: { fbrStatus: 'PENDING' },
-      });
-      order.fbrStatus = 'PENDING';
-      return {
-        success: false,
-        fbrStatus: 'PENDING',
-        error: err.message || 'Unknown integration error',
-      };
+            const responseCodeStr = String(fbrResponse.Code ?? '');
+            if (responseCodeStr === '100' && fbrResponse.InvoiceNumber) {
+                this.logger.log(`[FBR Sync] [SUCCESS] Order ${order.orderNumber} successfully synced with FBR. Invoice Number: ${fbrResponse.InvoiceNumber}`);
+                await db.salesOrder.update({
+                    where: { id: order.id },
+                    data: {
+                        fbrInvoiceNumber: fbrResponse.InvoiceNumber,
+                        fbrQrCode: fbrResponse.QRCode || String(fbrResponse.InvoiceNumber),
+                        fbrStatus: 'SYNCED',
+                    },
+                });
+                order.fbrInvoiceNumber = fbrResponse.InvoiceNumber;
+                order.fbrQrCode = fbrResponse.QRCode || String(fbrResponse.InvoiceNumber);
+                order.fbrStatus = 'SYNCED';
+                
+                return {
+                    success: true,
+                    fbrInvoiceNumber: fbrResponse.InvoiceNumber,
+                    fbrQrCode: fbrResponse.QRCode || String(fbrResponse.InvoiceNumber),
+                    fbrStatus: 'SYNCED',
+                    responsePayload: fbrResponse,
+                };
+            } else {
+                const errMsg = fbrResponse.Errors || fbrResponse.Response || `FBR Error Code ${fbrResponse.Code ?? 'Unknown'}`;
+                this.logger.error(`[FBR Sync] [FAIL] Order ${order.orderNumber} fiscalization failed: ${errMsg}`);
+                throw new BadRequestException(`FBR Fiscalization Failed: ${errMsg}`);
+            }
+        } catch (err: any) {
+            this.logger.error(`[FBR Sync] [EXCEPTION] FBR Sync failed for order ${order?.orderNumber}: ${err.message}`, err.stack);
+            if (err instanceof BadRequestException) {
+                throw err;
+            }
+            throw new BadRequestException(`FBR Fiscalization Failed: ${err.message}`);
+        }
     }
-  }
 
   // ─── Search order for return (unrestricted by location / POS) ─────
   async searchOrderForReturn(orderNumber: string) {
@@ -1421,7 +1387,7 @@ export class PosSalesService implements OnModuleInit {
     limit = 20,
     posId?: string,
     status?: string,
-    filters?: { startDate?: string; endDate?: string; search?: string },
+    filters?: { startDate?: string; endDate?: string; search?: string; merchantId?: string; paymentMethod?: string },
     locationId?: string,
   ) {
     const skip = (page - 1) * limit;
@@ -1441,6 +1407,14 @@ export class PosSalesService implements OnModuleInit {
     } else {
       // Always exclude hold, hold_expired, and hold_cancelled orders from history listing/search
       where.status = { notIn: ['hold', 'hold_expired', 'hold_cancelled'] };
+    }
+
+    if (filters?.merchantId) {
+      where.merchantId = filters.merchantId;
+    }
+
+    if (filters?.paymentMethod) {
+      where.paymentMethod = filters.paymentMethod;
     }
 
     // ── Handle search (by order number) ──
@@ -1480,7 +1454,7 @@ export class PosSalesService implements OnModuleInit {
         where,
         skip,
         take: limit,
-        orderBy: [{ createdAt: 'desc' }, { orderNumber: 'desc' }],
+        orderBy: { createdAt: 'desc' },
         include: {
           items: {
             include: {
@@ -1622,19 +1596,6 @@ export class PosSalesService implements OnModuleInit {
       claimsMap.get(claim.salesOrderId)!.push(claim);
     }
 
-    // Fetch Location details
-    const locIds = [
-      ...new Set(rawOrders.map((o) => o.locationId).filter(Boolean)),
-    ] as string[];
-    const locations =
-      locIds.length > 0
-        ? await this.prisma.location.findMany({
-            where: { id: { in: locIds } },
-            select: { id: true, name: true, code: true, shortCode: true },
-          })
-        : [];
-    const locationMap = new Map(locations.map((l) => [l.id, l]));
-
     // Reconstruct tenders and attach returnedQty and claimedQty to each order item
     const orders = rawOrders.map((order) => {
       const tenders: {
@@ -1762,9 +1723,6 @@ export class PosSalesService implements OnModuleInit {
       };
       return {
         ...order,
-        location: order.locationId
-          ? locationMap.get(order.locationId) || null
-          : null,
         tenders,
         items: enrichedItems,
         claims: orderClaims,
