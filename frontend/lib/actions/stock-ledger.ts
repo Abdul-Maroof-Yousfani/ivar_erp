@@ -147,3 +147,170 @@ export async function getStockActivityReportExportStatus(jobId: string) {
         return { status: false, message: "Failed to get stock activity report export status" };
     }
 }
+
+export async function queueStockTransactionDetailReportExport(filters: any) {
+    try {
+        const response = await authFetch("/stock-ledger/transaction-detail-report/export/queue", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Queue stock transaction detail report export error:", error);
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getStockTransactionDetailReportExportStatus(jobId: string) {
+    try {
+        const response = await authFetch(`/stock-ledger/transaction-detail-report/export/${jobId}/status`, {
+            method: "GET",
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Get stock transaction detail report export status error:", error);
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function queueStockValuationReportExport(filters: any) {
+    try {
+        const response = await authFetch("/stock-ledger/valuation-report/export/queue", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Queue stock valuation report export error:", error);
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getStockValuationReportExportStatus(jobId: string) {
+    try {
+        const response = await authFetch(`/stock-ledger/valuation-report/export/${jobId}/status`, {
+            method: "GET",
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Get stock valuation report export status error:", error);
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function queueOverallAvailableReservedStockReportExport(filters: any) {
+    try {
+        const response = await authFetch("/stock-ledger/overall-available-reserved-stock-report/export/queue", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Queue overall available reserved stock report export error:", error);
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getOverallAvailableReservedStockReportExportStatus(jobId: string) {
+    try {
+        const response = await authFetch(`/stock-ledger/overall-available-reserved-stock-report/export/${jobId}/status`, {
+            method: "GET",
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Get overall available reserved stock report export status error:", error);
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function queueAvailableStockSummaryReportExport(filters: any) {
+    try {
+        const response = await authFetch("/stock-ledger/available-stock-summary-report/export/queue", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Queue available stock summary report export error:", error);
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getAvailableStockSummaryReportExportStatus(jobId: string) {
+    try {
+        const response = await authFetch(`/stock-ledger/available-stock-summary-report/export/${jobId}/status`, {
+            method: "GET",
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Get available stock summary report export status error:", error);
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function getStockTransactionDetailReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        if (filters?.locationId) queryParams.append("locationId", filters.locationId);
+        if (filters?.warehouseId) queryParams.append("warehouseId", filters.warehouseId);
+        if (filters?.startDate) queryParams.append("startDate", filters.startDate);
+        if (filters?.endDate) queryParams.append("endDate", filters.endDate);
+        if (filters?.search) queryParams.append("search", filters.search);
+
+        const response = await authFetch(`/stock-ledger/transaction-detail-report?${queryParams.toString()}`, { method: "GET" });
+        return response.data;
+    } catch (error) {
+        console.error("getStockTransactionDetailReport error:", error);
+        return { status: false, data: [] };
+    }
+}
+
+export async function getStockValuationReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        if (filters?.locationId) queryParams.append("locationId", filters.locationId);
+        if (filters?.warehouseId) queryParams.append("warehouseId", filters.warehouseId);
+        if (filters?.startDate) queryParams.append("startDate", filters.startDate);
+        if (filters?.endDate) queryParams.append("endDate", filters.endDate);
+        if (filters?.search) queryParams.append("search", filters.search);
+
+        const response = await authFetch(`/stock-ledger/valuation-report?${queryParams.toString()}`, { method: "GET" });
+        return response.data;
+    } catch (error) {
+        console.error("getStockValuationReport error:", error);
+        return { status: false, data: [] };
+    }
+}
+
+export async function getAvailableStockSummaryReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        if (filters?.locationId) queryParams.append("locationId", filters.locationId);
+        if (filters?.warehouseId) queryParams.append("warehouseId", filters.warehouseId);
+        if (filters?.search) queryParams.append("search", filters.search);
+
+        const response = await authFetch(`/stock-ledger/available-stock-summary-report?${queryParams.toString()}`, { method: "GET" });
+        return response.data;
+    } catch (error) {
+        console.error("getAvailableStockSummaryReport error:", error);
+        return { status: false, data: [] };
+    }
+}
+
+export async function getOverallAvailableReservedStockReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        if (filters?.locationId) queryParams.append("locationId", filters.locationId);
+        if (filters?.warehouseId) queryParams.append("warehouseId", filters.warehouseId);
+        if (filters?.search) queryParams.append("search", filters.search);
+
+        const response = await authFetch(`/stock-ledger/overall-available-reserved-stock-report?${queryParams.toString()}`, { method: "GET" });
+        return response.data;
+    } catch (error) {
+        console.error("getOverallAvailableReservedStockReport error:", error);
+        return { status: false, data: [] };
+    }
+}
+
+
+
