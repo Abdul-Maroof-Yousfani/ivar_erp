@@ -110,6 +110,11 @@ export class AllianceMetaDto {
     @IsOptional()
     @IsString()
     merchantSlip?: string;
+
+    @ApiPropertyOptional({ description: 'BIN number of bank card' })
+    @IsOptional()
+    @IsString()
+    binNumber?: string;
 }
 
 // ── Voucher redemption item ───────────────────────────────────────────────
