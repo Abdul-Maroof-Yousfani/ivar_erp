@@ -15,12 +15,12 @@ import { PrintClaimReceipt } from "@/components/pos/print-claim-receipt";
 import { authFetch } from "@/lib/auth";
 import { useAuth } from "@/components/providers/auth-provider";
 import { formatCurrency } from "@/lib/utils";
-import { listSalesActivities } from "@/lib/actions/pos-sales";
+import { listSalesActivities, queueSalesActivityExport } from "@/lib/actions/pos-sales";
 import {
     Loader2, Search, Calendar, RefreshCcw, Printer, RotateCcw,
     Banknote, CreditCard, Ticket, BookOpen, AlertCircle, CheckCircle2,
     XCircle, Info, ShoppingBag, Eye, ArrowRight, User, Building, MapPin,
-    ArrowUpDown, History, Receipt
+    ArrowUpDown, History, Receipt, Download
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +66,7 @@ export default function SalesActivityPage() {
     const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
     const [activityType, setActivityType] = useState<string>("all");
     const [currentPage, setCurrentPage] = useState(1);
+    const [isExporting, setIsExporting] = useState(false);
     const pageSize = 15;
 
     // Printing state
@@ -101,6 +102,28 @@ export default function SalesActivityPage() {
     // Reset pagination when filters change
     const handleFilterChange = () => {
         setCurrentPage(1);
+    };
+
+    // Export handler
+    const handleExport = async () => {
+        setIsExporting(true);
+        try {
+            const res = await queueSalesActivityExport({
+                search: search.trim() || undefined,
+                startDate: dateRange.from?.toISOString(),
+                endDate: dateRange.to?.toISOString(),
+                activityType: activityType === "all" ? undefined : activityType,
+            });
+            if (res.status) {
+                toast.success(res.message || "Export job queued. Check notifications when ready.");
+            } else {
+                toast.error(res.message || "Failed to queue export");
+            }
+        } catch {
+            toast.error("Failed to queue export");
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     // Print handlers
@@ -166,10 +189,27 @@ export default function SalesActivityPage() {
                         Trace and audit individual transaction actions (sales, returns, cash refunds, claims) sorted by activity date.
                     </p>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-2 shrink-0">
-                    <RefreshCcw className="h-3.5 w-3.5" /> Refresh
-                </Button>
+                <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExport}
+                        disabled={isExporting}
+                        className="gap-2"
+                    >
+                        {isExporting ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                            <Download className="h-3.5 w-3.5" />
+                        )}
+                        Export Excel
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-2">
+                        <RefreshCcw className="h-3.5 w-3.5" /> Refresh
+                    </Button>
+                </div>
             </div>
+
 
             {/* Filters panel */}
             <div className="bg-card border rounded-xl p-4 shadow-sm space-y-4">

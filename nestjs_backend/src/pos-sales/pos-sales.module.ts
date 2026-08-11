@@ -25,6 +25,12 @@ import { NetSalesSummaryExportService } from './net-sales-summary-export.service
 import { NetSalesSummaryExportProcessor } from './net-sales-summary-export.processor';
 import { SalesRegisterExportService } from './sales-register-export.service';
 import { SalesRegisterExportProcessor } from './sales-register-export.processor';
+import { PosSalesExportService } from './pos-sales-export.service';
+import { PosSalesExportProcessor } from './pos-sales-export.processor';
+import { PosSalesExportController } from './pos-sales-export.controller';
+import { SalesActivityExportService } from './sales-activity-export.service';
+import { SalesActivityExportProcessor } from './sales-activity-export.processor';
+import { SalesActivityExportController } from './sales-activity-export.controller';
 import { WarehouseModule } from '../warehouse/warehouse.module';
 
 @Module({
@@ -42,13 +48,16 @@ import { WarehouseModule } from '../warehouse/warehouse.module';
             { name: 'online-sales-upload' },
             { name: 'net-sales-summary-export' },
             { name: 'sales-register-export' },
+            { name: 'pos-sales-export' },
+            { name: 'sales-activity-export' },
         ),
-        
     ],
     controllers: [
         PosSalesController,
         SalesHistoryBulkUploadController,
         OnlineSalesBulkUploadController,
+        PosSalesExportController,
+        SalesActivityExportController,
     ],
     providers: [
         PosSalesService,
@@ -66,13 +75,20 @@ import { WarehouseModule } from '../warehouse/warehouse.module';
         NetSalesSummaryExportProcessor,
         SalesRegisterExportService,
         SalesRegisterExportProcessor,
+        PosSalesExportService,
+        PosSalesExportProcessor,
+        SalesActivityExportService,
+        SalesActivityExportProcessor,
     ],
     exports: [
         PosSalesService,
         NetSalesSummaryExportService,
         SalesRegisterExportService,
+        PosSalesExportService,
+        SalesActivityExportService,
         OnlineSalesBulkUploadService,
     ],
 })
 export class PosSalesModule { }
+
 

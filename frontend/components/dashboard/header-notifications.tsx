@@ -422,6 +422,27 @@ export function HeaderNotifications() {
       return;
     }
 
+    // sales-activity-export.ready
+    if (n.actionType === "sales-activity-export.ready" && n.actionPayload) {
+      try {
+        const payload = typeof n.actionPayload === "string"
+          ? JSON.parse(n.actionPayload)
+          : n.actionPayload;
+        const jobId = payload?.jobId;
+        if (jobId) {
+          const base = getApiBaseUrl();
+          await triggerDownload(
+            `${base}/pos-sales/activity/export/${jobId}/download`,
+            `sales-activity-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+          );
+        }
+      } catch (e) {
+        console.error("Sales activity export download failed:", e);
+      }
+      return;
+    }
+
+
     const route = getActionRoute(n);
     if (route) router.push(route);
   }, [handleMarkRead, getActionRoute, router]);

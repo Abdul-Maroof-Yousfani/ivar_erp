@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/providers/auth-provider';
 import { PermissionGuard } from '@/components/auth/permission-guard';
+import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 
 interface TransferRequest {
@@ -306,11 +307,23 @@ export default function PLMClaimsPage() {
 
                 {/* Content */}
                 {loading ? (
-                    <div className="flex items-center justify-center py-12">
-                        <div className="text-center space-y-2">
-                            <Package className="h-12 w-12 text-muted-foreground mx-auto animate-pulse" />
-                            <p className="text-muted-foreground">Loading claim transfers...</p>
-                        </div>
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                            <Card key={i} className="p-4 space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <Skeleton className="h-5 w-32" />
+                                    <Skeleton className="h-4 w-20 rounded-full" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Skeleton className="h-4 w-full" />
+                                    <Skeleton className="h-4 w-3/4" />
+                                </div>
+                                <div className="pt-2 border-t flex gap-2">
+                                    <Skeleton className="h-9 flex-1" />
+                                    <Skeleton className="h-9 w-24" />
+                                </div>
+                            </Card>
+                        ))}
                     </div>
                 ) : (
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
