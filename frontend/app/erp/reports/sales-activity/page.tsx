@@ -25,7 +25,7 @@ import {
     Banknote, CreditCard, Ticket, BookOpen, AlertCircle, CheckCircle2,
     XCircle, Info, ShoppingBag, Eye, ArrowRight, User, Building, MapPin,
     ArrowUpDown, History, Receipt, Download, Filter, Store, CreditCard as CardIcon,
-    TrendingUp, FileSpreadsheet, LayoutGrid, ListTable, Layers, DollarSign, PieChart
+    TrendingUp, FileSpreadsheet, LayoutGrid, Table, Layers, DollarSign, PieChart
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -560,7 +560,7 @@ export default function ERPSalesActivityReportPage() {
                                 className="h-7 text-xs px-2.5 gap-1"
                                 onClick={() => setViewMode("grid")}
                             >
-                                <ListTable className="h-3 w-3" /> Grid Table
+                                <Table className="h-3 w-3" /> Grid Table
                             </Button>
                         </div>
 

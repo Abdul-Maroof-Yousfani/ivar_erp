@@ -831,7 +831,7 @@ export const menuData: MenuItem[] = [
           {
             title: "Stock Transfer",
             href: "/erp/inventory/transactions/stock-transfer",
-             permissions: [
+            permissions: [
               "erp.inventory.claims.acknowledge",
               "erp.inventory.warehouse.view",
             ],
@@ -1593,7 +1593,7 @@ export const menuData: MenuItem[] = [
         href: "/pos/sales/history",
         permissions: ["pos.sales.history.view"],
       },
-       {
+      {
         title: "Sales Activity",
         href: "/pos/sales/activity",
         permissions: ["pos.sales.history.view"],
@@ -1719,65 +1719,65 @@ export const menuData: MenuItem[] = [
       },
     ],
   },
-
   {
     title: "POS Reports",
     icon: TrendingUp,
     environment: "ERP",
     permissions: ["erp.report.view"],
     children: [
-      {
-        title: "Stock Activity",
-        href: "/erp/reports/pos/stock-activity",
-        permissions: ["erp.report.view"],
-      },
-      {
-        title: "Available Stock Summary",
-        href: "/erp/reports/pos/available-stock-summary",
-        permissions: ["erp.report.view"],
-      },
-      {
-        title: "Stock Transaction Details",
-        href: "/erp/reports/pos/stock-transaction-detail",
-        permissions: ["erp.report.view"],
-      },
-      {
-        title: "Net Sales Summary",
-        href: "/erp/reports/pos/net-sales-summary",
-        permissions: ["erp.report.view"],
-      },
-      {
-        title: "Sales List Report",
-        href: "/erp/reports/pos/sales-list",
-        permissions: ["erp.report.view"],
-      },
-      {
-        title: "Gross Sales Summary",
-        href: "/erp/reports/pos/gross-sales-summary",
-        permissions: ["erp.report.view"],
-      },
-      {
-        title: "Gross Sales Return",
-        href: "/erp/reports/pos/gross-sales-return",
-        permissions: ["erp.report.view"],
-      },
+      // {
+      //   title: "Stock Activity",
+      //   href: "/erp/reports/pos/stock-activity",
+      //   permissions: ["erp.report.view"],
+      // },
+      // {
+      //   title: "Available Stock Summary",
+      //   href: "/erp/reports/pos/available-stock-summary",
+      //   permissions: ["erp.report.view"],
+      // },
+      // {
+      //   title: "Stock Transaction Details",
+      //   href: "/erp/reports/pos/stock-transaction-detail",
+      //   permissions: ["erp.report.view"],
+      // },
+      // {
+      //   title: "Net Sales Summary",
+      //   href: "/erp/reports/pos/net-sales-summary",
+      //   permissions: ["erp.report.view"],
+      // },
+      // {
+      //   title: "Sales List Report",
+      //   href: "/erp/reports/pos/sales-list",
+      //   permissions: ["erp.report.view"],
+      // },
+      // {
+      //   title: "Gross Sales Summary",
+      //   href: "/erp/reports/pos/gross-sales-summary",
+      //   permissions: ["erp.report.view"],
+      // },
+      // {
+      //   title: "Gross Sales Return",
+      //   href: "/erp/reports/pos/gross-sales-return",
+      //   permissions: ["erp.report.view"],
+      // },
       {
         title: "Sales Reconciliation",
         href: "/erp/reports/pos/reconciliation",
         permissions: ["erp.report.view"],
       },
-      {
-        title: "Sales Register",
-        href: "/erp/reports/pos/sales-register",
-        permissions: ["erp.report.view"],
-      },
-      {
-        title: "Alliance Register",
-        href: "/erp/reports/pos/alliance-register",
-        permissions: ["erp.report.view"],
-      },
+      // {
+      //   href: "/erp/reports/pos/sales-register",
+      //   title: "Sales Register",
+      //   permissions: ["erp.report.view"],
+      // },
+      // {
+      //   href: "/erp/reports/pos/alliance-register",
+      //   title: "Alliance Register",
+      //   permissions: ["erp.report.view"],
+      // },
     ],
   },
+
 
   // ── POS: Terminal ────────────────────────────────────────────────────────────
   {

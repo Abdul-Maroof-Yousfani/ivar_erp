@@ -1,17 +1,26 @@
 import {
-    Controller,
-    Get,
-    Post,
-    Body,
-    Param,
-    Query,
-    Req,
-    Res,
-    UseGuards,
-    BadRequestException,
-    Patch,
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+  BadRequestException,
+  Patch,
 } from '@nestjs/common';
 import { NetSalesSummaryExportService } from './net-sales-summary-export.service';
+import { SalesRegisterExportService } from './sales-register-export.service';
+import { SalesListExportService } from './sales-list-export.service';
+import { GrossSalesExportService } from './gross-sales-export.service';
+import { AllianceRegisterExportService } from './alliance-register-export.service';
+import { CostOfSalesExportService } from './cost-of-sales-export.service';
+import { GiftVoucherSaleRegisterExportService } from './gift-voucher-sale-register-export.service';
+import { CorporateVoucherExportService } from './corporate-voucher-export.service';
+import { CreditVoucherExportService } from './credit-voucher-export.service';
+import { VoucherRegisterExportService } from './voucher-register-export.service';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PosSalesService } from './pos-sales.service';
 import { CreatePosSalesOrderDto } from './dto/create-sales-order.dto';
@@ -19,200 +28,388 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { CustomerService } from '../sales/customer/customer.service';
-import { CreateCustomerDto, UpdateCustomerDto } from '../sales/customer/dto/customer-dto';
+import {
+  CreateCustomerDto,
+  UpdateCustomerDto,
+} from '../sales/customer/dto/customer-dto';
 import * as jwt from 'jsonwebtoken';
-import { SalesRegisterExportService } from './sales-register-export.service';
 
 @ApiTags('POS Sales')
 @Controller('api/pos-sales')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class PosSalesController {
-    constructor(
-        private readonly posSalesService: PosSalesService,
-        private readonly customerService: CustomerService,
-        private readonly netSalesSummaryExportService: NetSalesSummaryExportService,
-        private readonly salesRegisterExportService: SalesRegisterExportService,
-    ) { }
+  constructor(
+    private readonly posSalesService: PosSalesService,
+    private readonly customerService: CustomerService,
+    private readonly netSalesSummaryExportService: NetSalesSummaryExportService,
+    private readonly salesRegisterExportService: SalesRegisterExportService,
+    private readonly salesListExportService: SalesListExportService,
+    private readonly grossSalesExportService: GrossSalesExportService,
+    private readonly allianceRegisterExportService: AllianceRegisterExportService,
+    private readonly costOfSalesExportService: CostOfSalesExportService,
+    private readonly giftVoucherSaleRegisterExportService: GiftVoucherSaleRegisterExportService,
+    private readonly corporateVoucherExportService: CorporateVoucherExportService,
+    private readonly creditVoucherExportService: CreditVoucherExportService,
+    private readonly voucherRegisterExportService: VoucherRegisterExportService,
+  ) {}
 
-    // ─── POS Customer Endpoints ────────────────────────────────────────
-    // These mirror /api/sales/customers but are mounted under /api/pos-sales/customers
-    // so the POS frontend has a single base URL and doesn't need to cross modules.
+  // ─── POS Customer Endpoints ────────────────────────────────────────
+  // These mirror /api/sales/customers but are mounted under /api/pos-sales/customers
+  // so the POS frontend has a single base URL and doesn't need to cross modules.
 
-    @Post('customers')
-    @ApiOperation({ summary: 'Create a new customer from POS' })
-    async createCustomer(@Body() dto: CreateCustomerDto, @Req() req: any) {
-        const ctx = {
-            userId: req.user?.id,
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent'],
-        };
-        return this.customerService.posCreate(dto, ctx);
+  @Post('customers')
+  @ApiOperation({ summary: 'Create a new customer from POS' })
+  async createCustomer(@Body() dto: CreateCustomerDto, @Req() req: any) {
+    const ctx = {
+      userId: req.user?.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    };
+    return this.customerService.posCreate(dto, ctx);
+  }
+
+  @Get('customers')
+  @ApiOperation({ summary: 'Search / list customers from POS' })
+  async listCustomers(@Query('search') search?: string) {
+    return this.customerService.posFindAll(search);
+  }
+
+  @Get('customers/:id')
+  @ApiOperation({ summary: 'Get a single customer by ID' })
+  async getCustomer(@Param('id') id: string) {
+    return this.customerService.findOne(id);
+  }
+
+  @Patch('customers/:id')
+  @ApiOperation({ summary: 'Update a customer from POS' })
+  async updateCustomer(
+    @Param('id') id: string,
+    @Body() dto: UpdateCustomerDto,
+    @Req() req: any,
+  ) {
+    const ctx = {
+      userId: req.user?.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    };
+    return this.customerService.update(id, dto, ctx);
+  }
+
+  @Post('customers/:id/pay-credit')
+  @ApiOperation({
+    summary:
+      'Record credit payment for a customer — marks selected orders as paid',
+  })
+  async recordCreditPayment(
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      orderIds: string[];
+      paymentMethod: string;
+      notes?: string;
+      cardLast4?: string;
+      slipRef?: string;
+    },
+    @Req() req: any,
+  ) {
+    const ctx = {
+      userId: req.user?.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    };
+    return this.customerService.recordCreditPayment(id, dto, ctx);
+  }
+
+  // ─── Item lookup for POS (search by barcode, SKU, description) ────
+  @Get('lookup')
+  @ApiOperation({ summary: 'Search items for POS by barcode/SKU/name' })
+  async lookupItem(@Query('q') query: string, @Req() req: any) {
+    const locationId =
+      req.user?.locationId || this.extractLocationFromCookie(req);
+    if (!locationId) {
+      throw new BadRequestException(
+        'Location context is required for POS search',
+      );
     }
+    return this.posSalesService.lookupItem(query, locationId);
+  }
 
-    @Get('customers')
-    @ApiOperation({ summary: 'Search / list customers from POS' })
-    async listCustomers(@Query('search') search?: string) {
-        return this.customerService.posFindAll(search);
+  // ─── Barcode scan — exact match, single item ──────────────────────
+  @Get('scan')
+  @ApiOperation({ summary: 'Scan barcode — exact match single item' })
+  async scanBarcode(@Query('barcode') barcode: string, @Req() req: any) {
+    const locationId =
+      req.user?.locationId || this.extractLocationFromCookie(req);
+    if (!locationId) {
+      throw new BadRequestException(
+        'Location context is required for POS scan',
+      );
     }
+    return this.posSalesService.scanBarcode(barcode, locationId);
+  }
 
-    @Get('customers/:id')
-    @ApiOperation({ summary: 'Get a single customer by ID' })
-    async getCustomer(@Param('id') id: string) {
-        return this.customerService.findOne(id);
-    }
-
-    @Patch('customers/:id')
-    @ApiOperation({ summary: 'Update a customer from POS' })
-    async updateCustomer(
-        @Param('id') id: string,
-        @Body() dto: UpdateCustomerDto,
-        @Req() req: any,
-    ) {
-        const ctx = {
-            userId: req.user?.id,
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent'],
-        };
-        return this.customerService.update(id, dto, ctx);
-    }
-
-    @Post('customers/:id/pay-credit')
-    @ApiOperation({ summary: 'Record credit payment for a customer — marks selected orders as paid' })
-    async recordCreditPayment(
-        @Param('id') id: string,
-        @Body() dto: { orderIds: string[]; paymentMethod: string; notes?: string; cardLast4?: string; slipRef?: string },
-        @Req() req: any,
-    ) {
-        const ctx = {
-            userId: req.user?.id,
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent'],
-        };
-        return this.customerService.recordCreditPayment(id, dto, ctx);
-    }
-
-    // ─── Item lookup for POS (search by barcode, SKU, description) ────
-    @Get('lookup')
-    @ApiOperation({ summary: 'Search items for POS by barcode/SKU/name' })
-    async lookupItem(@Query('q') query: string, @Req() req: any) {
-        const locationId = req.user?.locationId || this.extractLocationFromCookie(req);
-        if (!locationId) {
-            throw new BadRequestException('Location context is required for POS search');
-        }
-        return this.posSalesService.lookupItem(query, locationId);
-    }
-
-    // ─── Barcode scan — exact match, single item ──────────────────────
-    @Get('scan')
-    @ApiOperation({ summary: 'Scan barcode — exact match single item' })
-    async scanBarcode(@Query('barcode') barcode: string, @Req() req: any) {
-        const locationId = req.user?.locationId || this.extractLocationFromCookie(req);
-        if (!locationId) {
-            throw new BadRequestException('Location context is required for POS scan');
-        }
-        return this.posSalesService.scanBarcode(barcode, locationId);
-    }
-
-    private extractLocationFromCookie(req: any): string | undefined {
-        if (req.cookies?.posTerminalToken) {
-            try {
-                const decoded: any = jwt.decode(req.cookies.posTerminalToken);
-                return decoded?.locationId;
-            } catch (e) {
-                return undefined;
-            }
-        }
+  private extractLocationFromCookie(req: any): string | undefined {
+    if (req.cookies?.posTerminalToken) {
+      try {
+        const decoded: any = jwt.decode(req.cookies.posTerminalToken);
+        return decoded?.locationId;
+      } catch (e) {
         return undefined;
+      }
+    }
+    return undefined;
+  }
+
+  // ─── Create a sales order (checkout) ──────────────────────────────
+  @Post('orders')
+  @Permissions('pos.sale.create')
+  @ApiOperation({ summary: 'Create a sales order / checkout' })
+  async createOrder(@Body() dto: CreatePosSalesOrderDto, @Req() req: any) {
+    // Use cashierUserId from DTO if provided (manual selection on checkout),
+    // otherwise fall back to the logged-in user's ID
+    const cashierUserId = dto.cashierUserId || req.user?.id;
+
+    // 1. Context from req.user (Preferred - comes from combined cashier token)
+    if (req.user?.isPosUser || req.user?.isTerminal) {
+      if (!dto.terminalId) dto.terminalId = req.user.terminalId;
+      if (!dto.posId) dto.posId = req.user.posId;
+      if (!dto.locationId) dto.locationId = req.user.locationId;
     }
 
-    // ─── Create a sales order (checkout) ──────────────────────────────
-    @Post('orders')
-    @Permissions('pos.sale.create')
-    @ApiOperation({ summary: 'Create a sales order / checkout' })
-    async createOrder(@Body() dto: CreatePosSalesOrderDto, @Req() req: any) {
-        // Use cashierUserId from DTO if provided (manual selection on checkout), 
-        // otherwise fall back to the logged-in user's ID
-        const cashierUserId = dto.cashierUserId || req.user?.id;
-
-        // 1. Context from req.user (Preferred - comes from combined cashier token)
-        if (req.user?.isPosUser || req.user?.isTerminal) {
-            if (!dto.terminalId) dto.terminalId = req.user.terminalId;
-            if (!dto.posId) dto.posId = req.user.posId;
-            if (!dto.locationId) dto.locationId = req.user.locationId;
+    // 2. Fallback: Extract from specialized terminal cookie if still missing
+    if ((!dto.terminalId || !dto.posId) && req.cookies?.posTerminalToken) {
+      try {
+        const decoded: any = jwt.decode(req.cookies.posTerminalToken);
+        if (decoded) {
+          if (!dto.terminalId) dto.terminalId = decoded.terminalId;
+          if (!dto.posId) dto.posId = decoded.posId;
+          if (!dto.locationId) dto.locationId = decoded.locationId;
         }
-
-        // 2. Fallback: Extract from specialized terminal cookie if still missing
-        if ((!dto.terminalId || !dto.posId) && req.cookies?.posTerminalToken) {
-            try {
-                const decoded: any = jwt.decode(req.cookies.posTerminalToken);
-                if (decoded) {
-                    if (!dto.terminalId) dto.terminalId = decoded.terminalId;
-                    if (!dto.posId) dto.posId = decoded.posId;
-                    if (!dto.locationId) dto.locationId = decoded.locationId;
-                }
-            } catch (e) {
-                // Ignore decoding errors
-            }
-        }
-
-        const ctx = {
-            userId: req.user?.id,
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent'],
-        };
-
-        return this.posSalesService.createOrder(dto, cashierUserId, ctx);
+      } catch (e) {
+        // Ignore decoding errors
+      }
     }
 
-    // ─── List orders (Sales History) ───────────────────────────────────
-    @Get('orders')
-    @Permissions('pos.sales.history.view')
-    @ApiOperation({ summary: 'List sales orders / Sales History' })
-    async listOrders(
-        @Req() req: any,
-        @Query('page') page?: number,
-        @Query('limit') limit?: number,
-        @Query('posId') posId?: string, // This could be Code or UUID from frontend filter
-        @Query('status') status?: string,
-        @Query('startDate') startDate?: string,
-        @Query('endDate') endDate?: string,
-        @Query('search') search?: string,
-    ) {
-        // Determine effective filtering context
-        let effectivePosId = posId; // The ID/Code to filter by
-        let effectiveLocationId: string | undefined = undefined;
+    const ctx = {
+      userId: req.user?.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    };
 
-        // 1. Context from logged-in user
-        if (req.user?.isPosUser || req.user?.isTerminal) {
-            if (!effectivePosId && !search) effectivePosId = req.user.posId || req.user.terminalId;
-            effectiveLocationId = req.user.locationId;
-        }
+    return this.posSalesService.createOrder(dto, cashierUserId, ctx);
+  }
 
-        // 2. Fallback to terminal cookie
-        if (!effectivePosId && !search && req.cookies?.posTerminalToken) {
-            try {
-                const decoded: any = jwt.decode(req.cookies.posTerminalToken);
-                effectivePosId = decoded?.posId || decoded?.terminalId;
-                if (!effectiveLocationId) effectiveLocationId = decoded?.locationId;
-            } catch (e) { }
-        }
+  // ─── List orders (Sales History) ───────────────────────────────────
+  @Get('orders')
+  @Permissions('pos.sales.history.view')
+  @ApiOperation({ summary: 'List sales orders / Sales History' })
+  async listOrders(
+    @Req() req: any,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('posId') posId?: string, // Explicit query parameter
+    @Query('locationId') locationId?: string, // Explicit query parameter
+    @Query('status') status?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('search') search?: string,
+  ) {
+    // Use explicit query parameters if provided, without forcing terminal cookie restrictions on history view
+    const effectivePosId = posId;
+    const effectiveLocationId = locationId;
 
-        // 3. Fallback: any user with a locationId on their token (e.g. manager/admin scoped to a location)
-        if (!effectiveLocationId && req.user?.locationId) {
-            effectiveLocationId = req.user.locationId;
-        }
+    return this.posSalesService.listOrders(
+      req.user,
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 20,
+      effectivePosId,
+      status,
+      { startDate, endDate, search },
+      effectiveLocationId,
+    );
+  }
 
-        return this.posSalesService.listOrders(
-            req.user,
-            page ? Number(page) : 1,
-            limit ? Number(limit) : 20,
-            effectivePosId,
-            status,
-            { startDate, endDate, search },
-            effectiveLocationId,
-        );
+
+  // ─── Sales Report ─────────────────────────────────────────────────
+  @Get('reports/sales')
+  @Permissions('pos.dashboard.view')
+  @ApiOperation({
+    summary:
+      'POS Sales Report — summary, trends, top items, cashier stats, paginated orders',
+  })
+  async getSalesReport(
+    @Req() req: any,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('locationId') locationId?: string,
+    @Query('cashierUserId') cashierUserId?: string,
+    @Query('paymentMethod') paymentMethod?: string,
+    @Query('status') status?: string,
+    @Query('groupBy') groupBy?: 'day' | 'week' | 'month',
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+  ) {
+    // Scope to user's location if they are a POS user
+    let effectiveLocationId = locationId;
+    if (!effectiveLocationId) {
+      if (req.user?.isPosUser || req.user?.isTerminal) {
+        effectiveLocationId = req.user.locationId;
+      } else if (req.user?.locationId) {
+        effectiveLocationId = req.user.locationId;
+      }
     }
+    if (!effectiveLocationId && req.cookies?.posTerminalToken) {
+      try {
+        const decoded: any = jwt.decode(req.cookies.posTerminalToken);
+        effectiveLocationId = decoded?.locationId;
+      } catch (e) {}
+    }
+
+    return this.posSalesService.getSalesReport(req.user, {
+      startDate,
+      endDate,
+      locationId: effectiveLocationId,
+      cashierUserId,
+      paymentMethod,
+      status,
+      groupBy,
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 50,
+      search,
+    });
+  }
+
+  // ─── Net Sales Summary Endpoints ───────────────────────────────
+
+  @Get('reports/net-sales-summary')
+  @ApiOperation({ summary: 'Get Net Sales Summary Report' })
+  async getNetSalesSummary(
+    @Query('locationId') locationId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('cashierUserId') cashierUserId?: string,
+    @Query('summaryOnly') summaryOnly?: string,
+    @Query('showSalesperson') showSalesperson?: string,
+    @Query('showYear') showYear?: string,
+    @Query('showMonth') showMonth?: string,
+    @Query('showDay') showDay?: string,
+    @Query('showDocument') showDocument?: string,
+    @Query('showBrand') showBrand?: string,
+    @Query('showDivision') showDivision?: string,
+    @Query('showSalesTax') showSalesTax?: string,
+    @Query('showCategory') showCategory?: string,
+    @Query('showGender') showGender?: string,
+    @Query('showSilhouette') showSilhouette?: string,
+    @Query('showArticle') showArticle?: string,
+    @Query('showVariant') showVariant?: string,
+  ) {
+    return this.posSalesService.getNetSalesSummaryReport({
+      locationId,
+      startDate,
+      endDate,
+      cashierUserId,
+      summaryOnly: summaryOnly === 'true',
+      showSalesperson: showSalesperson === 'true',
+      showYear: showYear === 'true',
+      showMonth: showMonth === 'true',
+      showDay: showDay === 'true',
+      showDocument: showDocument === 'true',
+      showBrand: showBrand !== undefined ? showBrand === 'true' : undefined,
+      showDivision:
+        showDivision !== undefined ? showDivision === 'true' : undefined,
+      showSalesTax: showSalesTax === 'true',
+      showCategory:
+        showCategory !== undefined ? showCategory === 'true' : undefined,
+      showGender: showGender !== undefined ? showGender === 'true' : undefined,
+      showSilhouette:
+        showSilhouette !== undefined ? showSilhouette === 'true' : undefined,
+      showArticle:
+        showArticle !== undefined ? showArticle === 'true' : undefined,
+      showVariant:
+        showVariant !== undefined ? showVariant === 'true' : undefined,
+    });
+  }
+
+  @Post('reports/net-sales-summary/export/queue')
+  @ApiOperation({ summary: 'Queue Net Sales Summary Export' })
+  async queueNetSalesSummaryExport(
+    @Req() req: any,
+    @Body()
+    body: {
+      locationId?: string;
+      startDate?: string;
+      endDate?: string;
+      cashierUserId?: string;
+      format: 'xlsx' | 'pdf';
+      summaryOnly?: boolean;
+      showSalesperson?: boolean;
+      showYear?: boolean;
+      showMonth?: boolean;
+      showDay?: boolean;
+      showDocument?: boolean;
+      showBrand?: boolean;
+      showDivision?: boolean;
+      showSalesTax?: boolean;
+      showCategory?: boolean;
+      showGender?: boolean;
+      showSilhouette?: boolean;
+      showArticle?: boolean;
+      showVariant?: boolean;
+    },
+  ) {
+    const userId = req.user?.userId || req.user?.id;
+    const result = await this.netSalesSummaryExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      cashierUserId: body.cashierUserId,
+      format: body.format,
+      summaryOnly: body.summaryOnly,
+      showSalesperson: body.showSalesperson,
+      showYear: body.showYear,
+      showMonth: body.showMonth,
+      showDay: body.showDay,
+      showDocument: body.showDocument,
+      showBrand: body.showBrand,
+      showDivision: body.showDivision,
+      showSalesTax: body.showSalesTax,
+      showCategory: body.showCategory,
+      showGender: body.showGender,
+      showSilhouette: body.showSilhouette,
+      showArticle: body.showArticle,
+      showVariant: body.showVariant,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('reports/net-sales-summary/export/:jobId/status')
+  @ApiOperation({ summary: 'Get Net Sales Summary Export Status' })
+  async getNetSalesSummaryExportStatus(@Param('jobId') jobId: string) {
+    const result = await this.netSalesSummaryExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('reports/net-sales-summary/export/:jobId/download')
+  @ApiOperation({ summary: 'Download Net Sales Summary Export' })
+  async downloadNetSalesSummaryExport(
+    @Param('jobId') jobId: string,
+    @Res() res: any,
+  ) {
+    try {
+      await this.netSalesSummaryExportService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res
+        .status(status)
+        .send({
+          status: false,
+          message: err?.message ?? 'Export file not found',
+        });
+    }
+  }
 
     // ─── List sales activities (Activity Log) ─────────────────────────
     @Get('activities')
@@ -461,170 +658,6 @@ export class PosSalesController {
         });
     }
 
-    // ─── Sales Report ─────────────────────────────────────────────────
-    @Get('reports/sales')
-    @Permissions('pos.dashboard.view')
-    @ApiOperation({ summary: 'POS Sales Report — summary, trends, top items, cashier stats, paginated orders' })
-    async getSalesReport(
-        @Req() req: any,
-        @Query('startDate') startDate?: string,
-        @Query('endDate') endDate?: string,
-        @Query('locationId') locationId?: string,
-        @Query('cashierUserId') cashierUserId?: string,
-        @Query('paymentMethod') paymentMethod?: string,
-        @Query('status') status?: string,
-        @Query('groupBy') groupBy?: 'day' | 'week' | 'month',
-        @Query('page') page?: string,
-        @Query('limit') limit?: string,
-        @Query('search') search?: string,
-    ) {
-        // Scope to user's location if they are a POS user
-        let effectiveLocationId = locationId;
-        if (!effectiveLocationId) {
-            if (req.user?.isPosUser || req.user?.isTerminal) {
-                effectiveLocationId = req.user.locationId;
-            } else if (req.user?.locationId) {
-                effectiveLocationId = req.user.locationId;
-            }
-        }
-        if (!effectiveLocationId && req.cookies?.posTerminalToken) {
-            try {
-                const decoded: any = jwt.decode(req.cookies.posTerminalToken);
-                effectiveLocationId = decoded?.locationId;
-            } catch (e) { }
-        }
-
-        return this.posSalesService.getSalesReport(req.user, {
-            startDate,
-            endDate,
-            locationId: effectiveLocationId,
-            cashierUserId,
-            paymentMethod,
-            status,
-            groupBy,
-            page: page ? Number(page) : 1,
-            limit: limit ? Number(limit) : 50,
-            search,
-        });
-    }
-
-    // ─── Net Sales Summary Endpoints ───────────────────────────────
-
-    @Get('reports/net-sales-summary')
-    @ApiOperation({ summary: 'Get Net Sales Summary Report' })
-    async getNetSalesSummary(
-        @Query('locationId') locationId: string,
-        @Query('startDate') startDate?: string,
-        @Query('endDate') endDate?: string,
-        @Query('cashierUserId') cashierUserId?: string,
-        @Query('summaryOnly') summaryOnly?: string,
-        @Query('showSalesperson') showSalesperson?: string,
-        @Query('showYear') showYear?: string,
-        @Query('showMonth') showMonth?: string,
-        @Query('showDay') showDay?: string,
-        @Query('showDocument') showDocument?: string,
-        @Query('showBrand') showBrand?: string,
-        @Query('showDivision') showDivision?: string,
-        @Query('showSalesTax') showSalesTax?: string,
-        @Query('showCategory') showCategory?: string,
-        @Query('showGender') showGender?: string,
-        @Query('showSilhouette') showSilhouette?: string,
-        @Query('showArticle') showArticle?: string,
-        @Query('showVariant') showVariant?: string,
-    ) {
-        return this.posSalesService.getNetSalesSummaryReport({
-            locationId,
-            startDate,
-            endDate,
-            cashierUserId,
-            summaryOnly: summaryOnly === 'true',
-            showSalesperson: showSalesperson === 'true',
-            showYear: showYear === 'true',
-            showMonth: showMonth === 'true',
-            showDay: showDay === 'true',
-            showDocument: showDocument === 'true',
-            showBrand: showBrand !== undefined ? showBrand === 'true' : undefined,
-            showDivision: showDivision !== undefined ? showDivision === 'true' : undefined,
-            showSalesTax: showSalesTax === 'true',
-            showCategory: showCategory !== undefined ? showCategory === 'true' : undefined,
-            showGender: showGender !== undefined ? showGender === 'true' : undefined,
-            showSilhouette: showSilhouette !== undefined ? showSilhouette === 'true' : undefined,
-            showArticle: showArticle !== undefined ? showArticle === 'true' : undefined,
-            showVariant: showVariant !== undefined ? showVariant === 'true' : undefined,
-        });
-    }
-
-    @Post('reports/net-sales-summary/export/queue')
-    @ApiOperation({ summary: 'Queue Net Sales Summary Export' })
-    async queueNetSalesSummaryExport(
-        @Req() req: any,
-        @Body() body: {
-            locationId: string;
-            startDate?: string;
-            endDate?: string;
-            cashierUserId?: string;
-            format: 'xlsx' | 'pdf';
-            summaryOnly?: boolean;
-            showSalesperson?: boolean;
-            showYear?: boolean;
-            showMonth?: boolean;
-            showDay?: boolean;
-            showDocument?: boolean;
-            showBrand?: boolean;
-            showDivision?: boolean;
-            showSalesTax?: boolean;
-            showCategory?: boolean;
-            showGender?: boolean;
-            showSilhouette?: boolean;
-            showArticle?: boolean;
-            showVariant?: boolean;
-        },
-    ) {
-        const userId = req.user?.userId || req.user?.id;
-        const result = await this.netSalesSummaryExportService.queueExport({
-            userId,
-            locationId: body.locationId,
-            startDate: body.startDate,
-            endDate: body.endDate,
-            cashierUserId: body.cashierUserId,
-            format: body.format,
-            summaryOnly: body.summaryOnly,
-            showSalesperson: body.showSalesperson,
-            showYear: body.showYear,
-            showMonth: body.showMonth,
-            showDay: body.showDay,
-            showDocument: body.showDocument,
-            showBrand: body.showBrand,
-            showDivision: body.showDivision,
-            showSalesTax: body.showSalesTax,
-            showCategory: body.showCategory,
-            showGender: body.showGender,
-            showSilhouette: body.showSilhouette,
-            showArticle: body.showArticle,
-            showVariant: body.showVariant,
-        });
-        return { status: true, data: result };
-    }
-
-    @Get('reports/net-sales-summary/export/:jobId/status')
-    @ApiOperation({ summary: 'Get Net Sales Summary Export Status' })
-    async getNetSalesSummaryExportStatus(@Param('jobId') jobId: string) {
-        const result = await this.netSalesSummaryExportService.getJobStatus(jobId);
-        return { status: true, data: result };
-    }
-
-    @Get('reports/net-sales-summary/export/:jobId/download')
-    @ApiOperation({ summary: 'Download Net Sales Summary Export' })
-    async downloadNetSalesSummaryExport(@Param('jobId') jobId: string, @Res() res: any) {
-        try {
-            await this.netSalesSummaryExportService.streamExportFile(jobId, res);
-        } catch (err: any) {
-            const status = err?.status ?? 404;
-            res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });
-        }
-    }
-
-    
   // ─── Sales Register Report Endpoints ────────────────────────────
 
   @Get('reports/sales-register')
@@ -696,5 +729,637 @@ export class PosSalesController {
           message: err?.message ?? 'Export file not found',
         });
     }
+  }
+
+  // ─── Alliance Register Report Endpoints ──────────────────────────
+
+  @Get('reports/alliance-register')
+  @ApiOperation({
+    summary: 'Get Alliance Register Report (alliance sales only)',
+  })
+  async getAllianceRegister(
+    @Query('locationId') locationId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('cashierUserId') cashierUserId?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.posSalesService.getAllianceRegisterReport({
+      locationId,
+      startDate,
+      endDate,
+      cashierUserId,
+      search,
+    });
+  }
+
+  @Post('reports/alliance-register/export/queue')
+  @ApiOperation({ summary: 'Queue Alliance Register Export' })
+  async queueAllianceRegisterExport(
+    @Req() req: any,
+    @Body()
+    body: {
+      locationId?: string;
+      startDate?: string;
+      endDate?: string;
+      cashierUserId?: string;
+      format: 'xlsx' | 'pdf';
+      search?: string;
+    },
+  ) {
+    const userId = req.user?.userId || req.user?.id;
+    const result = await this.allianceRegisterExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      cashierUserId: body.cashierUserId,
+      format: body.format,
+      search: body.search,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('reports/alliance-register/export/:jobId/status')
+  @ApiOperation({ summary: 'Get Alliance Register Export Status' })
+  async getAllianceRegisterExportStatus(@Param('jobId') jobId: string) {
+    const result = await this.allianceRegisterExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('reports/alliance-register/export/:jobId/download')
+  @ApiOperation({ summary: 'Download Alliance Register Export' })
+  async downloadAllianceRegisterExport(
+    @Param('jobId') jobId: string,
+    @Res() res: any,
+  ) {
+    try {
+      await this.allianceRegisterExportService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res
+        .status(status)
+        .send({
+          status: false,
+          message: err?.message ?? 'Export file not found',
+        });
+    }
+  }
+
+  // ─── Sales List Report Endpoints ─────────────────────────────────
+
+  @Get('reports/sales-list')
+  @ApiOperation({ summary: 'Get Sales List Report' })
+  async getSalesList(
+    @Query('locationId') locationId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('cashierUserId') cashierUserId?: string,
+    @Query('search') search?: string,
+    @Query('paymentModeGroup') paymentModeGroup?: string,
+    @Query('minAmount') minAmount?: number,
+    @Query('maxAmount') maxAmount?: number,
+    @Query('fbrOnly') fbrOnly?: string,
+  ) {
+    return this.posSalesService.getSalesListReport({
+      locationId,
+      startDate,
+      endDate,
+      cashierUserId,
+      search,
+      paymentModeGroup,
+      minAmount: minAmount ? Number(minAmount) : undefined,
+      maxAmount: maxAmount ? Number(maxAmount) : undefined,
+      fbrOnly: fbrOnly === 'true' || fbrOnly === '1' ? true : undefined,
+    });
+  }
+
+  @Post('reports/sales-list/export/queue')
+  @ApiOperation({ summary: 'Queue Sales List Export' })
+  async queueSalesListExport(
+    @Req() req: any,
+    @Body()
+    body: {
+      locationId: string;
+      startDate?: string;
+      endDate?: string;
+      cashierUserId?: string;
+      format: 'xlsx' | 'pdf';
+      search?: string;
+      paymentModeGroup?: string;
+      minAmount?: number;
+      maxAmount?: number;
+      fbrOnly?: boolean;
+    },
+  ) {
+    const userId = req.user?.userId || req.user?.id;
+    const result = await this.salesListExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      cashierUserId: body.cashierUserId,
+      format: body.format,
+      search: body.search,
+      paymentModeGroup: body.paymentModeGroup,
+      minAmount: body.minAmount,
+      maxAmount: body.maxAmount,
+      fbrOnly: body.fbrOnly,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('reports/sales-list/export/:jobId/status')
+  @ApiOperation({ summary: 'Get Sales List Export Status' })
+  async getSalesListExportStatus(@Param('jobId') jobId: string) {
+    const result = await this.salesListExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('reports/sales-list/export/:jobId/download')
+  @ApiOperation({ summary: 'Download Sales List Export' })
+  async downloadSalesListExport(
+    @Param('jobId') jobId: string,
+    @Res() res: any,
+  ) {
+    try {
+      await this.salesListExportService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res
+        .status(status)
+        .send({
+          status: false,
+          message: err?.message ?? 'Export file not found',
+        });
+    }
+  }
+
+  // ─── Gross Sales Summary & Return Reports ─────────────────────────
+  @Get('reports/gross-sales-summary')
+  @ApiOperation({ summary: 'Get Gross Sales Summary Report' })
+  async getGrossSalesSummary(
+    @Query('locationId') locationId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('cashierUserId') cashierUserId?: string,
+    @Query('search') search?: string,
+    @Query('paymentModeGroup') paymentModeGroup?: string,
+    @Query('minAmount') minAmount?: string,
+    @Query('maxAmount') maxAmount?: string,
+    @Query('fbrOnly') fbrOnly?: string,
+    @Query('showBrand') showBrand?: string,
+    @Query('showDivision') showDivision?: string,
+    @Query('showCategory') showCategory?: string,
+    @Query('showGender') showGender?: string,
+    @Query('showSilhouette') showSilhouette?: string,
+    @Query('showArticle') showArticle?: string,
+    @Query('showVariant') showVariant?: string,
+    @Query('showInvoices') showInvoices?: string,
+  ) {
+    return this.posSalesService.getGrossSalesSummaryReport({
+      locationId,
+      startDate,
+      endDate,
+      cashierUserId,
+      search,
+      paymentModeGroup,
+      minAmount: minAmount ? Number(minAmount) : undefined,
+      maxAmount: maxAmount ? Number(maxAmount) : undefined,
+      fbrOnly: fbrOnly === 'true' || fbrOnly === '1' ? true : undefined,
+      showBrand: showBrand !== undefined ? showBrand === 'true' : undefined,
+      showDivision:
+        showDivision !== undefined ? showDivision === 'true' : undefined,
+      showCategory:
+        showCategory !== undefined ? showCategory === 'true' : undefined,
+      showGender: showGender !== undefined ? showGender === 'true' : undefined,
+      showSilhouette:
+        showSilhouette !== undefined ? showSilhouette === 'true' : undefined,
+      showArticle:
+        showArticle !== undefined ? showArticle === 'true' : undefined,
+      showVariant:
+        showVariant !== undefined ? showVariant === 'true' : undefined,
+      showInvoices:
+        showInvoices !== undefined ? showInvoices === 'true' : undefined,
+    });
+  }
+
+  @Post('reports/gross-sales-summary/export/queue')
+  @ApiOperation({ summary: 'Queue Gross Sales Summary Export' })
+  async queueGrossSalesSummaryExport(
+    @Req() req: any,
+    @Body()
+    body: {
+      locationId: string;
+      startDate?: string;
+      endDate?: string;
+      cashierUserId?: string;
+      format: 'xlsx' | 'pdf';
+      search?: string;
+      paymentModeGroup?: string;
+      minAmount?: number;
+      maxAmount?: number;
+      fbrOnly?: boolean;
+      showBrand?: boolean;
+      showDivision?: boolean;
+      showCategory?: boolean;
+      showGender?: boolean;
+      showSilhouette?: boolean;
+      showArticle?: boolean;
+      showVariant?: boolean;
+      showInvoices?: boolean;
+    },
+  ) {
+    const userId = req.user?.userId || req.user?.id;
+    const result = await this.grossSalesExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      cashierUserId: body.cashierUserId,
+      format: body.format,
+      search: body.search,
+      paymentModeGroup: body.paymentModeGroup,
+      minAmount: body.minAmount,
+      maxAmount: body.maxAmount,
+      fbrOnly: body.fbrOnly,
+      showBrand: body.showBrand,
+      showDivision: body.showDivision,
+      showCategory: body.showCategory,
+      showGender: body.showGender,
+      showSilhouette: body.showSilhouette,
+      showArticle: body.showArticle,
+      showVariant: body.showVariant,
+      showInvoices: body.showInvoices,
+      reportType: 'summary',
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('reports/gross-sales-return')
+  @ApiOperation({ summary: 'Get Gross Sales Return Report' })
+  async getGrossSalesReturn(
+    @Query('locationId') locationId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('cashierUserId') cashierUserId?: string,
+    @Query('search') search?: string,
+    @Query('paymentModeGroup') paymentModeGroup?: string,
+    @Query('minAmount') minAmount?: string,
+    @Query('maxAmount') maxAmount?: string,
+    @Query('fbrOnly') fbrOnly?: string,
+    @Query('showBrand') showBrand?: string,
+    @Query('showDivision') showDivision?: string,
+    @Query('showCategory') showCategory?: string,
+    @Query('showGender') showGender?: string,
+    @Query('showSilhouette') showSilhouette?: string,
+    @Query('showArticle') showArticle?: string,
+    @Query('showVariant') showVariant?: string,
+    @Query('showInvoices') showInvoices?: string,
+  ) {
+    return this.posSalesService.getGrossSalesReturnReport({
+      locationId,
+      startDate,
+      endDate,
+      cashierUserId,
+      search,
+      paymentModeGroup,
+      minAmount: minAmount ? Number(minAmount) : undefined,
+      maxAmount: maxAmount ? Number(maxAmount) : undefined,
+      fbrOnly: fbrOnly === 'true' || fbrOnly === '1' ? true : undefined,
+      showBrand: showBrand !== undefined ? showBrand === 'true' : undefined,
+      showDivision:
+        showDivision !== undefined ? showDivision === 'true' : undefined,
+      showCategory:
+        showCategory !== undefined ? showCategory === 'true' : undefined,
+      showGender: showGender !== undefined ? showGender === 'true' : undefined,
+      showSilhouette:
+        showSilhouette !== undefined ? showSilhouette === 'true' : undefined,
+      showArticle:
+        showArticle !== undefined ? showArticle === 'true' : undefined,
+      showVariant:
+        showVariant !== undefined ? showVariant === 'true' : undefined,
+      showInvoices:
+        showInvoices !== undefined ? showInvoices === 'true' : undefined,
+    });
+  }
+
+  @Post('reports/gross-sales-return/export/queue')
+  @ApiOperation({ summary: 'Queue Gross Sales Return Export' })
+  async queueGrossSalesReturnExport(
+    @Req() req: any,
+    @Body()
+    body: {
+      locationId: string;
+      startDate?: string;
+      endDate?: string;
+      cashierUserId?: string;
+      format: 'xlsx' | 'pdf';
+      search?: string;
+      paymentModeGroup?: string;
+      minAmount?: number;
+      maxAmount?: number;
+      fbrOnly?: boolean;
+      showBrand?: boolean;
+      showDivision?: boolean;
+      showCategory?: boolean;
+      showGender?: boolean;
+      showSilhouette?: boolean;
+      showArticle?: boolean;
+      showVariant?: boolean;
+      showInvoices?: boolean;
+    },
+  ) {
+    const userId = req.user?.userId || req.user?.id;
+    const result = await this.grossSalesExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      cashierUserId: body.cashierUserId,
+      format: body.format,
+      search: body.search,
+      paymentModeGroup: body.paymentModeGroup,
+      minAmount: body.minAmount,
+      maxAmount: body.maxAmount,
+      fbrOnly: body.fbrOnly,
+      showBrand: body.showBrand,
+      showDivision: body.showDivision,
+      showCategory: body.showCategory,
+      showGender: body.showGender,
+      showSilhouette: body.showSilhouette,
+      showArticle: body.showArticle,
+      showVariant: body.showVariant,
+      showInvoices: body.showInvoices,
+      reportType: 'return',
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('reports/gross-sales-export/:jobId/status')
+  @ApiOperation({ summary: 'Get Gross Sales Export Status' })
+  async getGrossSalesExportStatus(@Param('jobId') jobId: string) {
+    const result = await this.grossSalesExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('reports/gross-sales-export/:jobId/download')
+  @ApiOperation({ summary: 'Download Gross Sales Export' })
+  async downloadGrossSalesExport(
+    @Param('jobId') jobId: string,
+    @Res() res: any,
+  ) {
+    try {
+      await this.grossSalesExportService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res
+        .status(status)
+        .send({
+          status: false,
+          message: err?.message ?? 'Export file not found',
+        });
+    }
+  }
+
+  // ─── Cost of Sales Report Endpoints ─────────────────────────────────────
+
+  @Get('reports/cost-of-sales')
+  @ApiOperation({ summary: 'Get Cost of Sales report preview data' })
+  async getCostOfSalesReport(
+    @Query('locationId') locationId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('search') search?: string,
+  ) {
+    const data = await this.costOfSalesExportService.getReportData({
+      locationId,
+      startDate,
+      endDate,
+      search,
+    });
+    return { status: true, data };
+  }
+
+  @Post('reports/cost-of-sales/export')
+  @ApiOperation({ summary: 'Queue background export job for Cost of Sales' })
+  async queueCostOfSalesExport(@Body() body: any, @Req() req: any) {
+    const userId = req.user?.userId || req.user?.id;
+    const result = await this.costOfSalesExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      format: body.format || 'xlsx',
+      search: body.search,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('reports/cost-of-sales/export-status/:jobId')
+  @ApiOperation({ summary: 'Get Cost of Sales export job status' })
+  async getCostOfSalesExportStatus(@Param('jobId') jobId: string) {
+    const result = await this.costOfSalesExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('reports/cost-of-sales/export-download/:jobId')
+  @ApiOperation({ summary: 'Download completed Cost of Sales export file' })
+  async streamCostOfSalesExportFile(@Param('jobId') jobId: string, @Res() res: any) {
+    return this.costOfSalesExportService.streamExportFile(jobId, res);
+  }
+
+  // ─── Gift Voucher Sale Register Report Endpoints ────────────────────────
+
+  @Get('reports/gift-voucher-sale-register')
+  @ApiOperation({ summary: 'Get Gift Voucher Sale Register report preview data' })
+  async getGiftVoucherSaleRegisterReport(
+    @Query('locationId') locationId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('search') search?: string,
+  ) {
+    const data = await this.giftVoucherSaleRegisterExportService.getReportData({
+      locationId,
+      startDate,
+      endDate,
+      search,
+    });
+    return { status: true, data };
+  }
+
+  @Post('reports/gift-voucher-sale-register/export')
+  @ApiOperation({ summary: 'Queue background export job for Gift Voucher Sale Register' })
+  async queueGiftVoucherSaleRegisterExport(@Body() body: any, @Req() req: any) {
+    const userId = req.user?.userId || req.user?.id;
+    const result = await this.giftVoucherSaleRegisterExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      format: body.format || 'xlsx',
+      search: body.search,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('reports/gift-voucher-sale-register/export-status/:jobId')
+  @ApiOperation({ summary: 'Get Gift Voucher Sale Register export job status' })
+  async getGiftVoucherSaleRegisterExportStatus(@Param('jobId') jobId: string) {
+    const result = await this.giftVoucherSaleRegisterExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('reports/gift-voucher-sale-register/export-download/:jobId')
+  @ApiOperation({ summary: 'Download completed Gift Voucher Sale Register export file' })
+  async streamGiftVoucherSaleRegisterExportFile(@Param('jobId') jobId: string, @Res() res: any) {
+    return this.giftVoucherSaleRegisterExportService.streamExportFile(jobId, res);
+  }
+
+  // ─── Corporate Voucher Report Endpoints ─────────────────────────────────
+
+  @Get('reports/corporate-voucher')
+  @ApiOperation({ summary: 'Get Corporate Voucher report preview data' })
+  async getCorporateVoucherReport(
+    @Query('locationId') locationId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('search') search?: string,
+  ) {
+    const data = await this.corporateVoucherExportService.getReportData({
+      locationId,
+      startDate,
+      endDate,
+      search,
+    });
+    return { status: true, data };
+  }
+
+  @Post('reports/corporate-voucher/export')
+  @ApiOperation({ summary: 'Queue background export job for Corporate Voucher' })
+  async queueCorporateVoucherExport(@Body() body: any, @Req() req: any) {
+    const userId = req.user?.userId || req.user?.id;
+    const result = await this.corporateVoucherExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      format: body.format || 'xlsx',
+      search: body.search,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('reports/corporate-voucher/export-status/:jobId')
+  @ApiOperation({ summary: 'Get Corporate Voucher export job status' })
+  async getCorporateVoucherExportStatus(@Param('jobId') jobId: string) {
+    const result = await this.corporateVoucherExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('reports/corporate-voucher/export-download/:jobId')
+  @ApiOperation({ summary: 'Download completed Corporate Voucher export file' })
+  async streamCorporateVoucherExportFile(@Param('jobId') jobId: string, @Res() res: any) {
+    return this.corporateVoucherExportService.streamExportFile(jobId, res);
+  }
+
+  // ─── Credit Voucher Report Endpoints ────────────────────────────────────
+
+  @Get('reports/credit-voucher')
+  @ApiOperation({ summary: 'Get Credit Voucher report preview data' })
+  async getCreditVoucherReport(
+    @Query('locationId') locationId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('search') search?: string,
+  ) {
+    const data = await this.creditVoucherExportService.getReportData({
+      locationId,
+      startDate,
+      endDate,
+      search,
+    });
+    return { status: true, data };
+  }
+
+  @Post('reports/credit-voucher/export')
+  @ApiOperation({ summary: 'Queue background export job for Credit Voucher' })
+  async queueCreditVoucherExport(@Body() body: any, @Req() req: any) {
+    const userId = req.user?.userId || req.user?.id;
+    const result = await this.creditVoucherExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      format: body.format || 'xlsx',
+      search: body.search,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('reports/credit-voucher/export-status/:jobId')
+  @ApiOperation({ summary: 'Get Credit Voucher export job status' })
+  async getCreditVoucherExportStatus(@Param('jobId') jobId: string) {
+    const result = await this.creditVoucherExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('reports/credit-voucher/export-download/:jobId')
+  @ApiOperation({ summary: 'Download completed Credit Voucher export file' })
+  async streamCreditVoucherExportFile(@Param('jobId') jobId: string, @Res() res: any) {
+    return this.creditVoucherExportService.streamExportFile(jobId, res);
+  }
+
+  // ─── Unified Voucher Register Platform Endpoints ───────────────────────
+
+  @Get('reports/voucher-register')
+  @ApiOperation({ summary: 'Get Unified Voucher Register report preview data' })
+  async getVoucherRegisterReport(
+    @Query('voucherType') voucherType?: string,
+    @Query('status') status?: string,
+    @Query('locationId') locationId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('search') search?: string,
+  ) {
+    const data = await this.voucherRegisterExportService.getReportData({
+      voucherType,
+      status,
+      locationId,
+      startDate,
+      endDate,
+      search,
+    });
+    return { status: true, data };
+  }
+
+  @Post('reports/voucher-register/export')
+  @ApiOperation({ summary: 'Queue background export job for Unified Voucher Register' })
+  async queueVoucherRegisterExport(@Body() body: any, @Req() req: any) {
+    const userId = req.user?.userId || req.user?.id;
+    const result = await this.voucherRegisterExportService.queueExport({
+      userId,
+      voucherType: body.voucherType,
+      status: body.status,
+      locationId: body.locationId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      format: body.format || 'xlsx',
+      search: body.search,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('reports/voucher-register/export-status/:jobId')
+  @ApiOperation({ summary: 'Get Unified Voucher Register export job status' })
+  async getVoucherRegisterExportStatus(@Param('jobId') jobId: string) {
+    const result = await this.voucherRegisterExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('reports/voucher-register/export-download/:jobId')
+  @ApiOperation({ summary: 'Download completed Unified Voucher Register export file' })
+  async streamVoucherRegisterExportFile(@Param('jobId') jobId: string, @Res() res: any) {
+    return this.voucherRegisterExportService.streamExportFile(jobId, res);
   }
 }

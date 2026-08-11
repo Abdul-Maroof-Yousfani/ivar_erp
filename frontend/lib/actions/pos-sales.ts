@@ -356,5 +356,413 @@ export async function queueSalesActivityExport(params?: {
     }
 }
 
+export async function queueSalesListReportExport(filters: any) {
+    try {
+        const res = await authFetch("/pos-sales/reports/sales-list/export/queue", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("queueSalesListReportExport error:", error);
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getSalesListReportExportStatus(jobId: string) {
+    try {
+        const res = await authFetch(`/pos-sales/reports/sales-list/export/${jobId}/status`, { method: "GET" });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("getSalesListReportExportStatus error:", error);
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function queueGrossSalesSummaryReportExport(filters: any) {
+    try {
+        const res = await authFetch("/pos-sales/reports/gross-sales-summary/export/queue", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("queueGrossSalesSummaryReportExport error:", error);
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getGrossSalesSummaryReportExportStatus(jobId: string) {
+    try {
+        const res = await authFetch(`/pos-sales/reports/gross-sales-export/${jobId}/status`, { method: "GET" });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("getGrossSalesSummaryReportExportStatus error:", error);
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function getGrossSalesExportStatus(jobId: string) {
+    try {
+        const res = await authFetch(`/pos-sales/reports/gross-sales-export/${jobId}/status`, { method: "GET" });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("getGrossSalesExportStatus error:", error);
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function queueGrossSalesReturnReportExport(filters: any) {
+    try {
+        const res = await authFetch("/pos-sales/reports/gross-sales-return/export/queue", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("queueGrossSalesReturnReportExport error:", error);
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getGrossSalesReturnReportExportStatus(jobId: string) {
+    try {
+        const res = await authFetch(`/pos-sales/reports/gross-sales-export/${jobId}/status`, { method: "GET" });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("getGrossSalesReturnReportExportStatus error:", error);
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function queueAllianceRegisterReportExport(filters: any) {
+    try {
+        const res = await authFetch("/pos-sales/reports/alliance-register/export/queue", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("queueAllianceRegisterReportExport error:", error);
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getAllianceRegisterReportExportStatus(jobId: string) {
+    try {
+        const res = await authFetch(`/pos-sales/reports/alliance-register/export/${jobId}/status`, { method: "GET" });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("getAllianceRegisterReportExportStatus error:", error);
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function queueCostOfSalesReportExport(filters: any) {
+    try {
+        const res = await authFetch("/pos-sales/reports/cost-of-sales/export", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getCostOfSalesReportExportStatus(jobId: string) {
+    try {
+        const res = await authFetch(`/pos-sales/reports/cost-of-sales/export-status/${jobId}`, { method: "GET" });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function queueGiftVoucherSaleRegisterReportExport(filters: any) {
+    try {
+        const res = await authFetch("/pos-sales/reports/gift-voucher-sale-register/export", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getGiftVoucherSaleRegisterReportExportStatus(jobId: string) {
+    try {
+        const res = await authFetch(`/pos-sales/reports/gift-voucher-sale-register/export-status/${jobId}`, { method: "GET" });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function queueCorporateVoucherReportExport(filters: any) {
+    try {
+        const res = await authFetch("/pos-sales/reports/corporate-voucher/export", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getCorporateVoucherReportExportStatus(jobId: string) {
+    try {
+        const res = await authFetch(`/pos-sales/reports/corporate-voucher/export-status/${jobId}`, { method: "GET" });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function queueCreditVoucherReportExport(filters: any) {
+    try {
+        const res = await authFetch("/pos-sales/reports/credit-voucher/export", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getCreditVoucherReportExportStatus(jobId: string) {
+    try {
+        const res = await authFetch(`/pos-sales/reports/credit-voucher/export-status/${jobId}`, { method: "GET" });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function queueVoucherRegisterReportExport(filters: any) {
+    try {
+        const res = await authFetch("/pos-sales/reports/voucher-register/export", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function getVoucherRegisterReportExportStatus(jobId: string) {
+    try {
+        const res = await authFetch(`/pos-sales/reports/voucher-register/export-status/${jobId}`, { method: "GET" });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function queueClaimRegisterReportExport(filters: any) {
+    try {
+        const res = await authFetch("/pos-sales/reports/claim-register/export", {
+            method: "POST",
+            body: JSON.stringify(filters),
+        });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        return { status: false, message: "Failed to queue export" };
+    }
+}
+
+export async function queueGiftVoucherSaleRegisterExport(filters: any) {
+    return queueGiftVoucherSaleRegisterReportExport(filters);
+}
+
+export async function getGiftVoucherSaleRegisterExportStatus(jobId: string) {
+    return getGiftVoucherSaleRegisterReportExportStatus(jobId);
+}
+
+export async function queueVoucherRegisterExport(filters: any) {
+    return queueVoucherRegisterReportExport(filters);
+}
+
+export async function getVoucherRegisterExportStatus(jobId: string) {
+    return getVoucherRegisterReportExportStatus(jobId);
+}
+
+export async function queueCorporateVoucherExport(filters: any) {
+    return queueCorporateVoucherReportExport(filters);
+}
+
+export async function getCorporateVoucherExportStatus(jobId: string) {
+    return getCorporateVoucherReportExportStatus(jobId);
+}
+
+export async function queueCreditVoucherExport(filters: any) {
+    return queueCreditVoucherReportExport(filters);
+}
+
+export async function getCreditVoucherExportStatus(jobId: string) {
+    return getCreditVoucherReportExportStatus(jobId);
+}
+
+export async function queueCostOfSalesExport(filters: any) {
+    return queueCostOfSalesReportExport(filters);
+}
+
+export async function getCostOfSalesExportStatus(jobId: string) {
+    return getCostOfSalesReportExportStatus(jobId);
+}
+
+export async function queueClaimRegisterExport(filters: any) {
+    return queueClaimRegisterReportExport(filters);
+}
+
+export async function getClaimRegisterExportStatus(jobId: string) {
+    return getClaimRegisterReportExportStatus(jobId);
+}
+
+export async function getClaimRegisterReportExportStatus(jobId: string) {
+    try {
+        const res = await authFetch(`/pos-sales/reports/claim-register/export-status/${jobId}`, { method: "GET" });
+        return res.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        return { status: false, message: "Failed to get export status" };
+    }
+}
+
+export async function getSalesListReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        Object.entries(filters || {}).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") queryParams.append(k, String(v));
+        });
+        const res = await authFetch(`/pos-sales/reports/sales-list?${queryParams.toString()}`, { method: "GET" });
+        return res.data;
+    } catch (error) {
+        return { status: false, data: [] };
+    }
+}
+
+export async function getGrossSalesSummaryReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        Object.entries(filters || {}).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") queryParams.append(k, String(v));
+        });
+        const res = await authFetch(`/pos-sales/reports/gross-sales-summary?${queryParams.toString()}`, { method: "GET" });
+        return res.data;
+    } catch (error) {
+        return { status: false, data: [] };
+    }
+}
+
+export async function getGrossSalesReturnReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        Object.entries(filters || {}).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") queryParams.append(k, String(v));
+        });
+        const res = await authFetch(`/pos-sales/reports/gross-sales-return?${queryParams.toString()}`, { method: "GET" });
+        return res.data;
+    } catch (error) {
+        return { status: false, data: [] };
+    }
+}
+
+export async function getAllianceRegisterReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        Object.entries(filters || {}).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") queryParams.append(k, String(v));
+        });
+        const res = await authFetch(`/pos-sales/reports/alliance-register?${queryParams.toString()}`, { method: "GET" });
+        return res.data;
+    } catch (error) {
+        return { status: false, data: [] };
+    }
+}
+
+export async function getCostOfSalesReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        Object.entries(filters || {}).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") queryParams.append(k, String(v));
+        });
+        const res = await authFetch(`/pos-sales/reports/cost-of-sales?${queryParams.toString()}`, { method: "GET" });
+        return res.data;
+    } catch (error) {
+        return { status: false, data: [] };
+    }
+}
+
+export async function getGiftVoucherSaleRegisterReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        Object.entries(filters || {}).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") queryParams.append(k, String(v));
+        });
+        const res = await authFetch(`/pos-sales/reports/gift-voucher-sale-register?${queryParams.toString()}`, { method: "GET" });
+        return res.data;
+    } catch (error) {
+        return { status: false, data: [] };
+    }
+}
+
+export async function getCorporateVoucherReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        Object.entries(filters || {}).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") queryParams.append(k, String(v));
+        });
+        const res = await authFetch(`/pos-sales/reports/corporate-voucher?${queryParams.toString()}`, { method: "GET" });
+        return res.data;
+    } catch (error) {
+        return { status: false, data: [] };
+    }
+}
+
+export async function getCreditVoucherReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        Object.entries(filters || {}).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") queryParams.append(k, String(v));
+        });
+        const res = await authFetch(`/pos-sales/reports/credit-voucher?${queryParams.toString()}`, { method: "GET" });
+        return res.data;
+    } catch (error) {
+        return { status: false, data: [] };
+    }
+}
+
+export async function getVoucherRegisterReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        Object.entries(filters || {}).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") queryParams.append(k, String(v));
+        });
+        const res = await authFetch(`/pos-sales/reports/voucher-register?${queryParams.toString()}`, { method: "GET" });
+        return res.data;
+    } catch (error) {
+        return { status: false, data: [] };
+    }
+}
+
+export async function getClaimRegisterReport(filters: any) {
+    try {
+        const queryParams = new URLSearchParams();
+        Object.entries(filters || {}).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") queryParams.append(k, String(v));
+        });
+        const res = await authFetch(`/pos-sales/reports/claim-register?${queryParams.toString()}`, { method: "GET" });
+        return res.data;
+    } catch (error) {
+        return { status: false, data: [] };
+    }
+}
+
+
+
 
 

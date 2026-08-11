@@ -22,7 +22,7 @@ export function PayslipTemplate({ data }: PayslipTemplateProps) {
             {/* Header */}
             <div className="flex justify-between items-start mb-6 border-b-2 border-indigo-600 pb-4">
                 <div>
-                    <h1 className="text-2xl font-bold   text-indigo-700 italic">Speed (Pvt.) Limited</h1>
+                    <h1 className="text-2xl font-bold   text-indigo-700 italic">IVAR</h1>
                 </div>
                 <div className="text-right">
                     <h2 className="text-lg font-bold">Employee Payslip for the month of {format(new Date(Number(payroll.year), Number(payroll.month) - 1), "MMMM yyyy")}</h2>

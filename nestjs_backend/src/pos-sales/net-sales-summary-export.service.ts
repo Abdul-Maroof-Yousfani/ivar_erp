@@ -9,7 +9,7 @@ import { UploadService } from '../upload/upload.service';
 
 export interface QueueNetSalesSummaryExportOptions {
   userId: string;
-  locationId: string;
+  locationId?: string;
   startDate?: string;
   endDate?: string;
   cashierUserId?: string;
@@ -137,15 +137,10 @@ export class NetSalesSummaryExportService {
       return res.redirect(record.filePath, 302);
     }
 
-    let filePath = path.join(process.cwd(), record.filePath);
+    const filePath = path.join(process.cwd(), record.filePath);
 
     if (!fs.existsSync(filePath)) {
-      const publicPath = path.join(process.cwd(), 'public', record.filePath);
-      if (fs.existsSync(publicPath)) {
-        filePath = publicPath;
-      } else {
-        throw new NotFoundException('Export file not found. It may have expired or the job is still running.');
-      }
+      throw new NotFoundException('Export file not found. It may have expired or the job is still running.');
     }
 
     const stat = fs.statSync(filePath);

@@ -778,7 +778,7 @@ export function AppSidebar({
             <div className="flex items-center justify-center size-8 rounded-lg overflow-hidden bg-transparent">
               <Image
                 src="/logo.png"
-                alt="Speed (Pvt.) Limited Logo"
+                alt="IVAR Logo"
                 width={32}
                 height={32}
                 className="object-contain"
@@ -789,7 +789,7 @@ export function AppSidebar({
                 Powered by
               </span>
               <span className="text-xs font-semibold text-sidebar-foreground truncate">
-                {/* Speed (Pvt.) Limited */}
+                {/* IVAR */}
                 Innovative Network
               </span>
             </div>
@@ -798,7 +798,7 @@ export function AppSidebar({
             <div className="flex items-center justify-center size-8 rounded-lg overflow-hidden bg-transparent">
               <Image
                 src="/logo.png"
-                alt="Speed (Pvt.) Limited Logo"
+                alt="IVAR Logo"
                 width={32}
                 height={32}
                 className="object-contain"

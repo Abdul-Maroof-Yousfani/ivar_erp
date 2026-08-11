@@ -168,7 +168,7 @@ export function PosSidebar() {
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                     <SidebarMenuItem>
-                        <SidebarMenuButton 
+                        <SidebarMenuButton
                             onClick={logout}
                             className="text-destructive hover:text-destructive hover:bg-destructive/10 transition-colors pointer-events-auto cursor-pointer"
                         >
@@ -191,7 +191,7 @@ export function PosSidebar() {
                         </div>
                         <div className="flex flex-col min-w-0">
                             <span className="text-xs font-semibold text-sidebar-foreground truncate">
-                                {/* Speed (Pvt.) Limited */}
+                                {/* IVAR */}
                                 Innovative Network
                             </span>
                         </div>

@@ -16,7 +16,8 @@ export interface StockActivityExportJobData {
   userId: string;
   tenantId: string;
   tenantDbUrl: string;
-  locationId: string;
+  locationId?: string;
+  warehouseId?: string;
   startDate?: string;
   endDate?: string;
   format: 'xlsx' | 'pdf';
@@ -91,7 +92,7 @@ export class StockActivityExportProcessor {
   @Process({ concurrency: 1 })
   async handleExport(job: Job<StockActivityExportJobData>): Promise<void> {
     const {
-      jobId, userId, tenantId, tenantDbUrl, locationId, startDate: startStr, endDate: endStr, format, summaryOnly,
+      jobId, userId, tenantId, tenantDbUrl, locationId, warehouseId, startDate: startStr, endDate: endStr, format, summaryOnly,
       showBrand, showDivision, showCategory, showGender, showSilhouette, showArticle, showVariant
     } = job.data;
     this.logger.log(`[StockActivityExport ${jobId}] Starting ${format.toUpperCase()} export for user ${userId}`);
@@ -105,11 +106,31 @@ export class StockActivityExportProcessor {
     try {
       await job.progress(5);
 
-      const location = await prisma.location.findUnique({
-        where: { id: locationId },
-        select: { name: true },
-      });
-      const locationName = location?.name || 'Store';
+      const locIds = locationId ? locationId.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const locationWhere = locIds.length > 1 ? { in: locIds } : (locIds.length === 1 ? locIds[0] : undefined);
+
+      const whIds = warehouseId ? warehouseId.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const warehouseWhere = whIds.length > 1 ? { in: whIds } : (whIds.length === 1 ? whIds[0] : undefined);
+
+      const locOrWhFilters: any[] = [];
+      if (locationWhere) locOrWhFilters.push({ locationId: locationWhere });
+      if (warehouseWhere) locOrWhFilters.push({ warehouseId: warehouseWhere });
+
+      const locationOrWarehouseWhere = locOrWhFilters.length > 1
+        ? { OR: locOrWhFilters }
+        : (locOrWhFilters.length === 1 ? locOrWhFilters[0] : {});
+
+      let locationName = '';
+      if (locIds.length > 0) {
+        const locs = await prisma.location.findMany({ where: { id: { in: locIds } }, select: { name: true } });
+        locationName += locs.map(l => l.name).join(', ');
+      }
+      if (whIds.length > 0) {
+        if (locationName) locationName += ' & ';
+        const whs = await prisma.warehouse.findMany({ where: { id: { in: whIds } }, select: { name: true } });
+        locationName += whs.map(w => w.name).join(', ');
+      }
+      if (!locationName) locationName = 'All Locations & Warehouses';
 
       const now = new Date();
       const startDate = startStr ? new Date(startStr) : new Date(now.getFullYear(), now.getMonth(), 1);
@@ -119,12 +140,15 @@ export class StockActivityExportProcessor {
 
       // Fetch inventory item ids
       const inventoryItems = await prisma.inventoryItem.findMany({
-        where: { locationId, status: 'AVAILABLE' },
+        where: {
+          ...locationOrWarehouseWhere,
+          status: 'AVAILABLE',
+        },
         select: { itemId: true },
       });
 
       const ledgerItems = await prisma.stockLedger.findMany({
-        where: { locationId },
+        where: locationOrWarehouseWhere,
         select: { itemId: true },
         distinct: ['itemId'],
       });
@@ -147,7 +171,12 @@ export class StockActivityExportProcessor {
       await job.progress(20);
 
       const items = await prisma.item.findMany({
-        where: { id: { in: uniqueItemIds } },
+        where: {
+          OR: [
+            { id: { in: uniqueItemIds } },
+            { itemId: { in: uniqueItemIds } },
+          ],
+        },
         include: {
           color: true,
           size: true,
@@ -166,7 +195,7 @@ export class StockActivityExportProcessor {
       const bfGroup = await prisma.stockLedger.groupBy({
         by: ['itemId'],
         where: {
-          locationId,
+          ...locationOrWarehouseWhere,
           itemId: { in: matchedItemIds },
           createdAt: { lt: startDate },
         },
@@ -178,11 +207,37 @@ export class StockActivityExportProcessor {
         bfMap.set(row.itemId, Number(row._sum.qty || 0));
       }
 
-      const ledgerEntries = await prisma.stockLedger.findMany({
+      // Query and add any OPENING_BALANCE entries that were created within the date range
+      const inRangeOpeningGroup = await prisma.stockLedger.groupBy({
+        by: ['itemId'],
         where: {
-          locationId,
+          ...locationOrWarehouseWhere,
           itemId: { in: matchedItemIds },
           createdAt: { gte: startDate, lte: endDate },
+          OR: [
+            { movementType: MovementType.OPENING_BALANCE },
+            { referenceType: 'OPENING_BALANCE' },
+            { referenceType: 'BULK_STOCK_UPLOAD' }
+          ]
+        },
+        _sum: { qty: true },
+      });
+
+      for (const row of inRangeOpeningGroup) {
+        const currentBf = bfMap.get(row.itemId) || 0;
+        bfMap.set(row.itemId, currentBf + Number(row._sum.qty || 0));
+      }
+
+      const ledgerEntries = await prisma.stockLedger.findMany({
+        where: {
+          ...locationOrWarehouseWhere,
+          itemId: { in: matchedItemIds },
+          createdAt: { gte: startDate, lte: endDate },
+          NOT: [
+            { movementType: MovementType.OPENING_BALANCE },
+            { referenceType: 'OPENING_BALANCE' },
+            { referenceType: 'BULK_STOCK_UPLOAD' }
+          ]
         },
         select: {
           itemId: true,
@@ -192,13 +247,21 @@ export class StockActivityExportProcessor {
         },
       });
 
+      const toLocOrWhFilters: any[] = [];
+      if (locationWhere) toLocOrWhFilters.push({ toLocationId: locationWhere });
+      if (warehouseWhere) toLocOrWhFilters.push({ toWarehouseId: warehouseWhere });
+
+      const toLocOrWhWhere = toLocOrWhFilters.length > 1
+        ? { OR: toLocOrWhFilters }
+        : (toLocOrWhFilters.length === 1 ? toLocOrWhFilters[0] : {});
+
       const transitItems = await prisma.transferRequestItem.findMany({
         where: {
           itemId: { in: matchedItemIds },
           transferRequest: {
-            toLocationId: locationId,
+            ...toLocOrWhWhere,
             status: { in: ['PENDING', 'SOURCE_APPROVED'] },
-            transferType: { in: ['WAREHOUSE_TO_OUTLET', 'OUTLET_TO_OUTLET'] },
+            transferType: { in: ['WAREHOUSE_TO_OUTLET', 'OUTLET_TO_OUTLET', 'OUTLET_TO_WAREHOUSE', 'WAREHOUSE_TO_WAREHOUSE'] },
           },
         },
         select: {
@@ -242,7 +305,7 @@ export class StockActivityExportProcessor {
         const ref = entry.referenceType || '';
         const mov = entry.movementType;
 
-        if (mov === MovementType.ADJUSTMENT) {
+        if (mov === MovementType.ADJUSTMENT || ref === 'STOCK_ADJUSTMENT' || ref === 'ADJUSTMENT') {
           m.adj += qty;
         } else if (qty > 0) {
           if (ref === 'TRANSFER_REQUEST') {
@@ -412,13 +475,13 @@ export class StockActivityExportProcessor {
 
         const launchArgs = process.platform === 'linux'
           ? [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-gpu',
-              '--no-first-run',
-              '--no-zygote',
-            ]
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-first-run',
+            '--no-zygote',
+          ]
           : [];
 
         const browser = await puppeteer.launch({
@@ -437,7 +500,7 @@ export class StockActivityExportProcessor {
           const progressInterval = setInterval(() => {
             if (currentProgress < 94) {
               currentProgress += 1;
-              job.progress(currentProgress).catch(() => {});
+              job.progress(currentProgress).catch(() => { });
             }
           }, 3000);
 
@@ -449,7 +512,7 @@ export class StockActivityExportProcessor {
               margin: { top: '15mm', bottom: '15mm', left: '10mm', right: '10mm' },
               printBackground: true,
               displayHeaderFooter: true,
-              headerTemplate: '<div style="font-size: 7px; width: 100%; text-align: right; padding-right: 15mm; color: #94a3b8;">Speed (Pvt.) Limited | Stock Activity Report</div>',
+              headerTemplate: '<div style="font-size: 7px; width: 100%; text-align: right; padding-right: 15mm; color: #94a3b8;">IVAR | Stock Activity Report</div>',
               footerTemplate: '<div style="font-size: 7px; width: 100%; text-align: center; color: #94a3b8;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>',
             });
           } finally {
@@ -562,11 +625,11 @@ export class StockActivityExportProcessor {
 
         const writeNodeToExcel = (node: any) => {
           const style = LEVEL_EXCEL_STYLES[node.level] || LEVEL_EXCEL_STYLES.brand;
-          
+
           let label = ' '.repeat(style.indent) + style.prefix;
           let colorVal = '';
           let sizeVal = '';
-          
+
           if (node.level === 'article') {
             label = ' '.repeat(style.indent) + `SKU: ${node.sku} (${node.articleName})`;
             colorVal = 'ALL COLORS';
@@ -578,7 +641,7 @@ export class StockActivityExportProcessor {
           } else {
             label = ' '.repeat(style.indent) + style.prefix + node.value.toUpperCase();
           }
-          
+
           const row = ws.addRow({
             sku: label,
             color: colorVal,
@@ -599,19 +662,19 @@ export class StockActivityExportProcessor {
             transit: node.totals.transit,
             balance: node.totals.balance,
           });
-          
+
           for (let colNum = 1; colNum <= 18; colNum++) {
             const cell = row.getCell(colNum);
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${style.bgHex}` } };
             cell.font = { bold: style.bold, size: style.fontSize, color: { argb: `FF${style.fgHex}` } };
             cell.border = borderThin;
-            cell.alignment = colNum === 2 || colNum === 3 
-              ? centerAlign 
+            cell.alignment = colNum === 2 || colNum === 3
+              ? centerAlign
               : (colNum === 1 ? leftAlign : rightAlign);
           }
           row.height = node.level === 'variant' ? 18 : 20;
           row.commit();
-          
+
           if (node.children && node.children.length > 0) {
             for (const child of node.children) {
               writeNodeToExcel(child);
@@ -725,7 +788,7 @@ export class StockActivityExportProcessor {
     const buildHtmlRows = (node: any): string => {
       const style = LEVEL_PDF_STYLES[node.level] || LEVEL_PDF_STYLES.brand;
       let html = '';
-      
+
       if (node.level === 'article') {
         html += `
           <tr class="${style.className}">
@@ -794,13 +857,13 @@ export class StockActivityExportProcessor {
           </tr>
         `;
       }
-      
+
       if (node.children && node.children.length > 0) {
         for (const child of node.children) {
           html += buildHtmlRows(child);
         }
       }
-      
+
       return html;
     };
 
@@ -974,7 +1037,7 @@ export class StockActivityExportProcessor {
 
         <!-- Page 2+: Detailed Hierarchy Table -->
         <div class="header-block">
-          <div class="company-name">Speed (Pvt.) Limited</div>
+          <div class="company-name">IVAR</div>
           <div class="report-title">Stock Activity Report — ${locationName}</div>
           <div class="meta-info">Period: ${fromDateStr} to ${toDateStr}</div>
         </div>
@@ -1064,7 +1127,7 @@ export class StockActivityExportProcessor {
     const html = `
       <html>
       <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-        <h2>Speed (Pvt.) Limited - Stock Activity Report</h2>
+        <h2>IVAR - Stock Activity Report</h2>
         <p>Outlet: ${locationName}</p>
         <p>Period: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}</p>
         <div style="margin-top: 30px; color: #666;">No ledger records found matching options.</div>

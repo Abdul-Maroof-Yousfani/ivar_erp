@@ -9,7 +9,8 @@ import { UploadService } from '../../upload/upload.service';
 
 export interface QueueStockActivityExportOptions {
   userId: string;
-  locationId: string;
+  locationId?: string;
+  warehouseId?: string;
   startDate?: string;
   endDate?: string;
   format: 'xlsx' | 'pdf';
@@ -58,6 +59,7 @@ export class StockActivityExportService {
         tenantId,
         tenantDbUrl,
         locationId: opts.locationId,
+        warehouseId: opts.warehouseId,
         startDate: opts.startDate,
         endDate: opts.endDate,
         format: opts.format,
@@ -123,15 +125,10 @@ export class StockActivityExportService {
       return res.redirect(record.filePath, 302);
     }
 
-    let filePath = path.join(process.cwd(), record.filePath);
+    const filePath = path.join(process.cwd(), record.filePath);
 
     if (!fs.existsSync(filePath)) {
-      const publicPath = path.join(process.cwd(), 'public', record.filePath);
-    if (fs.existsSync(publicPath)) {
-        filePath = publicPath;
-      } else {
-        throw new NotFoundException('Export file not found. It may have expired or the job is still running.');
-      }
+      throw new NotFoundException('Export file not found. It may have expired or the job is still running.');
     }
 
     const stat = fs.statSync(filePath);
