@@ -127,7 +127,7 @@ export class StockActivityExportService {
 
     if (!fs.existsSync(filePath)) {
       const publicPath = path.join(process.cwd(), 'public', record.filePath);
-      if (fs.existsSync(publicPath)) {
+    if (fs.existsSync(publicPath)) {
         filePath = publicPath;
       } else {
         throw new NotFoundException('Export file not found. It may have expired or the job is still running.');

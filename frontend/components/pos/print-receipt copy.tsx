@@ -13,7 +13,14 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Printer, Receipt, Loader2, FileSpreadsheet, Download, FileText } from "lucide-react";
+import {
+  Printer,
+  Receipt,
+  Loader2,
+  FileSpreadsheet,
+  Download,
+  FileText,
+} from "lucide-react";
 import type { CartItem } from "@/components/pos/new-sale/cart-table";
 import type { PosSettings } from "@/hooks/use-pos-settings";
 import { POS_SETTINGS_DEFAULTS } from "@/hooks/use-pos-settings";
@@ -175,8 +182,18 @@ export function PrintReceipt({
   // Default layout selection to A4 if invoice grand total >= 1,000,000 PKR
   const defaultLayout =
     (Number(order?.grandTotal ?? 0) ||
-      Number(order?.items?.reduce((acc: number, item: any) => acc + Number(item.lineTotal ?? 0), 0) ?? 0) ||
-      Number(propCartItems?.reduce((acc, item) => acc + (item.price * item.quantity), 0) ?? 0)) >= 1000000
+      Number(
+        order?.items?.reduce(
+          (acc: number, item: any) => acc + Number(item.lineTotal ?? 0),
+          0,
+        ) ?? 0,
+      ) ||
+      Number(
+        propCartItems?.reduce(
+          (acc, item) => acc + item.price * item.quantity,
+          0,
+        ) ?? 0,
+      )) >= 1000000
       ? "a4"
       : "thermal";
 
@@ -245,7 +262,9 @@ export function PrintReceipt({
       }
     } catch (error) {
       console.error("PDF download error:", error);
-      toast.error("An error occurred while downloading the PDF", { id: toastId });
+      toast.error("An error occurred while downloading the PDF", {
+        id: toastId,
+      });
     } finally {
       setIsDownloading(false);
     }
@@ -514,10 +533,12 @@ export function PrintReceipt({
 
       {/* ── Screen: dialog preview ────────────────────────────────── */}
       <Dialog open onOpenChange={onClose}>
-        <DialogContent className={cn(
-          "h-[92vh] flex flex-col p-0 gap-0 transition-all duration-300",
-          layout === "thermal" ? "max-w-2xl w-full" : "max-w-5xl w-full"
-        )}>
+        <DialogContent
+          className={cn(
+            "h-[92vh] flex flex-col p-0 gap-0 transition-all duration-300",
+            layout === "thermal" ? "max-w-2xl w-full" : "max-w-5xl w-full",
+          )}
+        >
           <DialogHeader className="px-5 pt-4 pb-3 border-b shrink-0 flex flex-row items-center gap-4">
             <div className="flex items-center gap-2">
               {isLoading && (
@@ -528,7 +549,7 @@ export function PrintReceipt({
                 Receipt Preview
               </DialogTitle>
             </div>
-            
+
             {/* Format Switcher */}
             {!isLoading && (
               <div className="flex items-center gap-1 bg-muted p-1 rounded-full border ml-auto">
@@ -540,7 +561,7 @@ export function PrintReceipt({
                     "rounded-full h-7 px-3 text-xs font-semibold gap-1 transition-all",
                     layout === "thermal"
                       ? "bg-background shadow text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <Receipt className="w-3.5 h-3.5" />
@@ -554,7 +575,7 @@ export function PrintReceipt({
                     "rounded-full h-7 px-3 text-xs font-semibold gap-1 transition-all",
                     layout === "a4"
                       ? "bg-background shadow text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -568,7 +589,13 @@ export function PrintReceipt({
             {isLoading ? (
               <ReceiptSkeleton />
             ) : (
-              <div className={layout === "thermal" ? "w-[320px] bg-white border shadow-md p-4 rounded-md h-fit" : "w-full max-w-[210mm] h-fit shadow-lg border rounded-sm overflow-hidden bg-white"}>
+              <div
+                className={
+                  layout === "thermal"
+                    ? "w-[320px] bg-white border shadow-md p-4 rounded-md h-fit"
+                    : "w-full max-w-[210mm] h-fit shadow-lg border rounded-sm overflow-hidden bg-white"
+                }
+              >
                 {layout === "thermal" ? (
                   <ReceiptBody {...bodyProps} />
                 ) : (
@@ -590,7 +617,8 @@ export function PrintReceipt({
             >
               {isDownloading ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> Generating PDF…
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />{" "}
+                  Generating PDF…
                 </>
               ) : (
                 <>
@@ -714,10 +742,16 @@ function ReceiptBody({
   const isSavedOrder = !!(order && order.id);
 
   // Normalize customer details
-  const customerName = order?.customer?.name || order?.customerName || "Walk-in Customer";
-  const customerPhone = order?.customer?.phone || order?.customerPhone || order?.customerMobile || "N/A";
+  const customerName =
+    order?.customer?.name || order?.customerName || "Walk-in Customer";
+  const customerPhone =
+    order?.customer?.phone ||
+    order?.customerPhone ||
+    order?.customerMobile ||
+    "N/A";
   const customerEmail = order?.customer?.email || order?.customerEmail || "";
-  const customerAddress = order?.customer?.address || order?.customerAddress || "";
+  const customerAddress =
+    order?.customer?.address || order?.customerAddress || "";
 
   // Calculate total WOST value for proportional discount
   const totalWostValue = items.reduce((sum, item) => {
@@ -767,13 +801,19 @@ function ReceiptBody({
   );
 
   return (
-    <div className="font-mono text-[10px] w-full max-w-[72.1mm] mx-auto" style={{ lineHeight: 1.25 }}>
-
+    <div
+      className="font-mono text-[10px] w-full max-w-[72.1mm] mx-auto"
+      style={{ lineHeight: 1.25 }}
+    >
       {/* ── Store Header ── */}
       <div className="text-center pb-1 border-b border-zinc-400">
         <div className="flex justify-center mb-1.5">
           <Image
-            src={typeof window !== "undefined" ? `${window.location.origin}/image-v2.png` : "/image-v2.png"}
+            src={
+              typeof window !== "undefined"
+                ? `${window.location.origin}/image-v2.png`
+                : "/image-v2.png"
+            }
             alt="Store Logo"
             width={120}
             height={40}
@@ -782,13 +822,22 @@ function ReceiptBody({
             priority
           />
         </div>
-        <p className="font-black text-[13px] leading-tight uppercase tracking-wide">{storeName}</p>
+        <p className="font-black text-[13px] leading-tight uppercase tracking-wide">
+          {storeName}
+        </p>
         {(storeAddress || storePhone) && (
           <p className="text-[9px] leading-snug">
-            {storeAddress}{storeAddress && storePhone ? " | " : ""}{storePhone}
+            {storeAddress}
+            {storeAddress && storePhone ? " | " : ""}
+            {storePhone}
           </p>
         )}
-        {storeNTN && <p className="text-[9px]">NTN: {storeNTN}{storeSTRN ? ` | STRN: ${storeSTRN}` : ""}</p>}
+        {storeNTN && (
+          <p className="text-[9px]">
+            NTN: {storeNTN}
+            {storeSTRN ? ` | STRN: ${storeSTRN}` : ""}
+          </p>
+        )}
       </div>
 
       {/* ── Invoice Title + Meta ── */}
@@ -804,7 +853,9 @@ function ReceiptBody({
           {cashierName && <Row label="Sales By" value={cashierName} />}
           {terminalName && <Row label="Terminal" value={terminalName} />}
           <Row label="Customer" value={customerName} bold />
-          {customerPhone && customerPhone !== "N/A" && <Row label="Phone" value={customerPhone} />}
+          {customerPhone && customerPhone !== "N/A" && (
+            <Row label="Phone" value={customerPhone} />
+          )}
         </div>
       </div>
 
@@ -812,7 +863,11 @@ function ReceiptBody({
       {!isGiftReceipt ? (
         <div
           className="rpt-grid-hdr text-[9px] font-bold border-b border-zinc-400 py-0.5"
-          style={{ display: "grid", gridTemplateColumns: "2fr 0.5fr 0.4fr 0.8fr 0.8fr", gap: "0 3px" }}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "2fr 0.5fr 0.4fr 0.8fr 0.8fr",
+            gap: "0 3px",
+          }}
         >
           <span>Item / SKU</span>
           <span style={{ textAlign: "center" }}>Sz</span>
@@ -823,7 +878,11 @@ function ReceiptBody({
       ) : (
         <div
           className="rpt-grid-hdr-g text-[9px] font-bold border-b border-zinc-400 py-0.5"
-          style={{ display: "grid", gridTemplateColumns: "2fr 0.5fr 0.5fr", gap: "0 3px" }}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "2fr 0.5fr 0.5fr",
+            gap: "0 3px",
+          }}
         >
           <span>Item / SKU</span>
           <span style={{ textAlign: "center" }}>Sz</span>
@@ -852,16 +911,25 @@ function ReceiptBody({
           tax = item.taxAmount ?? 0;
           valueIncludingTax = item.lineTotal ?? amtAfterDisc + tax;
         } else {
-          const itemDiscPct = item.overrideDiscountPercent ?? item.discountPercent ?? 0;
+          const itemDiscPct =
+            item.overrideDiscountPercent ?? item.discountPercent ?? 0;
           const rawDisc = totalWost * (itemDiscPct / 100);
           let disc = suppressItemDiscounts ? 0 : rawDisc;
           displayDisc = disc;
           displayDiscPct = suppressItemDiscounts ? 0 : itemDiscPct;
           if (suppressItemDiscounts) {
-            displayDisc = calculateProportionalDiscount(totalWost, totalWostValue, orderDiscount);
-            displayDiscPct = totalWost > 0 ? Math.round((displayDisc / totalWost) * 100 * 100) / 100 : 0;
+            displayDisc = calculateProportionalDiscount(
+              totalWost,
+              totalWostValue,
+              orderDiscount,
+            );
+            displayDiscPct =
+              totalWost > 0
+                ? Math.round((displayDisc / totalWost) * 100 * 100) / 100
+                : 0;
           }
-          amtAfterDisc = totalWost - (suppressItemDiscounts ? displayDisc : disc);
+          amtAfterDisc =
+            totalWost - (suppressItemDiscounts ? displayDisc : disc);
           tax = amtAfterDisc * (taxPct / 100);
           valueIncludingTax = amtAfterDisc + tax;
         }
@@ -869,34 +937,54 @@ function ReceiptBody({
         const uniqueNo = item.sku || item.upc || "—";
 
         return (
-          <div key={item.id ?? idx} className="border-b border-dashed border-zinc-300 py-0.5">
+          <div
+            key={item.id ?? idx}
+            className="border-b border-dashed border-zinc-300 py-0.5"
+          >
             <p className="font-bold text-[10px] leading-tight">{item.name}</p>
 
             {!isGiftReceipt ? (
               <div
                 className="rpt-grid-item text-[9px]"
-                style={{ display: "grid", gridTemplateColumns: "2fr 0.5fr 0.4fr 0.8fr 0.8fr", gap: "0 3px" }}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "2fr 0.5fr 0.4fr 0.8fr 0.8fr",
+                  gap: "0 3px",
+                }}
               >
                 <span className="truncate text-zinc-600">{uniqueNo}</span>
                 <span style={{ textAlign: "center" }}>{item.size || "—"}</span>
-                <span style={{ textAlign: "center", fontWeight: "bold" }}>{item.quantity}</span>
-                <span style={{ textAlign: "right" }}>{fmtDec(wostPerUnit)}</span>
-                <span style={{ textAlign: "right", fontWeight: "bold" }}>{fmtDec(valueIncludingTax)}</span>
+                <span style={{ textAlign: "center", fontWeight: "bold" }}>
+                  {item.quantity}
+                </span>
+                <span style={{ textAlign: "right" }}>
+                  {fmtDec(wostPerUnit)}
+                </span>
+                <span style={{ textAlign: "right", fontWeight: "bold" }}>
+                  {fmtDec(valueIncludingTax)}
+                </span>
               </div>
             ) : (
               <div
                 className="rpt-grid-gift text-[9px]"
-                style={{ display: "grid", gridTemplateColumns: "2fr 0.5fr 0.5fr", gap: "0 3px" }}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "2fr 0.5fr 0.5fr",
+                  gap: "0 3px",
+                }}
               >
                 <span className="truncate text-zinc-600">{uniqueNo}</span>
                 <span style={{ textAlign: "center" }}>{item.size || "—"}</span>
-                <span style={{ textAlign: "center", fontWeight: "bold" }}>{item.quantity}</span>
+                <span style={{ textAlign: "center", fontWeight: "bold" }}>
+                  {item.quantity}
+                </span>
               </div>
             )}
 
             {!isGiftReceipt && (displayDisc > 0 || taxPct > 0) && (
               <p className="text-[9px] text-zinc-500 leading-tight">
-                {displayDisc > 0 && `${suppressItemDiscounts ? suppressLabel : "Disc"}: -${fmtDec(displayDisc)}`}
+                {displayDisc > 0 &&
+                  `${suppressItemDiscounts ? suppressLabel : "Disc"}: -${fmtDec(displayDisc)}`}
                 {displayDisc > 0 && taxPct > 0 && " | "}
                 {taxPct > 0 && `Tax ${taxPct}%: +${fmtDec(tax)}`}
               </p>
@@ -908,13 +996,31 @@ function ReceiptBody({
       {/* ── Summary totals ── */}
       {!isGiftReceipt ? (
         <div className="py-1 border-b border-zinc-400 space-y-0 text-[9px]">
-          <Row label={`Subtotal Excl. Tax (${items.length})`} value={fmt(Math.round(subtotal))} />
-          {totalDiscount > 0 && <Row label="Total Discount" value={`-${fmt(Math.round(totalDiscount))}`} />}
+          <Row
+            label={`Subtotal Excl. Tax (${items.length})`}
+            value={fmt(Math.round(subtotal))}
+          />
+          {totalDiscount > 0 && (
+            <Row
+              label="Total Discount"
+              value={`-${fmt(Math.round(totalDiscount))}`}
+            />
+          )}
           <Row label="Value for Sales" value={fmt(Math.round(valueForSales))} />
-          {settings.receiptShowTax && <Row label="Sales Tax" value={fmt(Math.round(totalTax))} />}
-          <Row label="Total Incl. Tax" value={fmt(Math.round(finalGrandTotal - fbrPosFee))} bold />
+          {settings.receiptShowTax && (
+            <Row label="Sales Tax" value={fmt(Math.round(totalTax))} />
+          )}
+          <Row
+            label="Total Incl. Tax"
+            value={fmt(Math.round(finalGrandTotal - fbrPosFee))}
+            bold
+          />
           <Row label="FBR POS Fee" value={fmt(Math.round(fbrPosFee))} />
-          <Row label="GRAND TOTAL" value={fmt(Math.round(finalGrandTotal))} bold />
+          <Row
+            label="GRAND TOTAL"
+            value={fmt(Math.round(finalGrandTotal))}
+            bold
+          />
         </div>
       ) : (
         <p className="text-center text-[9px] py-1 border-b border-zinc-400">
@@ -932,19 +1038,32 @@ function ReceiptBody({
               value={fmt(t.amount)}
             />
           ))}
-          {totalPaid > 0 && totalPaid !== finalGrandTotal && <Row label="Total Paid" value={fmt(totalPaid)} />}
-          {changeAmount > 0 && <Row label="Change" value={fmt(changeAmount)} bold />}
+          {totalPaid > 0 && totalPaid !== finalGrandTotal && (
+            <Row label="Total Paid" value={fmt(totalPaid)} />
+          )}
+          {changeAmount > 0 && (
+            <Row label="Change" value={fmt(changeAmount)} bold />
+          )}
         </div>
       )}
 
       {/* ── Credit Vouchers ── */}
       {creditVouchers && creditVouchers.length > 0 && (
         <div className="py-1 border-b border-dashed border-zinc-400 text-[9px] text-center space-y-0.5">
-          <p className="font-bold uppercase tracking-wide">Credit Voucher Issued</p>
+          <p className="font-bold uppercase tracking-wide">
+            Credit Voucher Issued
+          </p>
           {creditVouchers.map((voucher, idx) => (
             <div key={idx}>
-              <p className="font-black text-[13px] tracking-widest">{voucher.code}</p>
-              <p>Rs. {fmt(Number(voucher.faceValue))}{voucher.expiresAt ? ` · Exp: ${new Date(voucher.expiresAt).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}` : ""}</p>
+              <p className="font-black text-[13px] tracking-widest">
+                {voucher.code}
+              </p>
+              <p>
+                Rs. {fmt(Number(voucher.faceValue))}
+                {voucher.expiresAt
+                  ? ` · Exp: ${new Date(voucher.expiresAt).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}`
+                  : ""}
+              </p>
             </div>
           ))}
           <p className="text-[8px]">Use on next purchase</p>
@@ -956,7 +1075,11 @@ function ReceiptBody({
         <div className="py-1 border-b border-dashed border-zinc-400 flex items-center gap-2">
           <div style={{ flexShrink: 0 }}>
             <Image
-              src={typeof window !== "undefined" ? `${window.location.origin}/fbr_logo.png` : "/fbr_logo.png"}
+              src={
+                typeof window !== "undefined"
+                  ? `${window.location.origin}/fbr_pos.png`
+                  : "/fbr_pos.png"
+              }
               alt="FBR"
               width={36}
               height={36}
@@ -965,7 +1088,8 @@ function ReceiptBody({
             />
           </div>
           <p className="text-[8px] leading-tight flex-1">
-            Verified by FBR POS. SMS <strong>9966</strong> to verify &amp; win prizes.
+            Verified by FBR POS. SMS <strong>9966</strong> to verify &amp; win
+            prizes.
           </p>
           <div style={{ flexShrink: 0, textAlign: "center" }}>
             <QRCodeSVG value={fbrVerifyUrl} size={44} level="M" />
@@ -977,7 +1101,11 @@ function ReceiptBody({
       {/* ── Terms ── */}
       <div className="py-1 border-b border-dashed border-zinc-400 text-[8px] leading-snug">
         <p className="font-bold text-[9px] uppercase">Terms &amp; Conditions</p>
-        <p>• No refund. Exchange within 4   days on unused items with invoice. Sale items non-exchangeable. Full-price items go on sale: exchanged at marked-down price.</p>
+        <p>
+          • No refund. Exchange within 4 days on unused items with invoice. Sale
+          items non-exchangeable. Full-price items go on sale: exchanged at
+          marked-down price.
+        </p>
       </div>
 
       {/* ── Footer ── */}
@@ -988,7 +1116,6 @@ function ReceiptBody({
     </div>
   );
 }
-
 
 function A4InvoiceBody({
   isGiftReceipt,
@@ -1022,10 +1149,16 @@ function A4InvoiceBody({
   const isSavedOrder = !!(order && order.id);
 
   // Normalize customer details
-  const customerName = order?.customer?.name || order?.customerName || "Walk-in Customer";
-  const customerPhone = order?.customer?.phone || order?.customerPhone || order?.customerMobile || "N/A";
+  const customerName =
+    order?.customer?.name || order?.customerName || "Walk-in Customer";
+  const customerPhone =
+    order?.customer?.phone ||
+    order?.customerPhone ||
+    order?.customerMobile ||
+    "N/A";
   const customerEmail = order?.customer?.email || order?.customerEmail || "";
-  const customerAddress = order?.customer?.address || order?.customerAddress || "";
+  const customerAddress =
+    order?.customer?.address || order?.customerAddress || "";
 
   // Calculate total WOST value for proportional discount
   const totalWostValue = items.reduce((sum, item) => {
@@ -1055,7 +1188,11 @@ function A4InvoiceBody({
         <div className="flex justify-between items-start border-b-2 border-zinc-800 pb-5 mb-6">
           <div className="space-y-2">
             <Image
-              src={typeof window !== "undefined" ? `${window.location.origin}/image-v2.png` : "/image-v2.png"}
+              src={
+                typeof window !== "undefined"
+                  ? `${window.location.origin}/image-v2.png`
+                  : "/image-v2.png"
+              }
               alt="Store Logo"
               width={140}
               height={50}
@@ -1075,7 +1212,7 @@ function A4InvoiceBody({
               {storeSTRN && <p>STRN: {storeSTRN}</p>}
             </div>
           </div>
-          
+
           <div className="text-right space-y-1.5">
             <h2 className="text-lg font-black tracking-widest text-zinc-850 uppercase">
               {isGiftReceipt ? "GIFT RECEIPT" : "TAX INVOICE"}
@@ -1084,9 +1221,22 @@ function A4InvoiceBody({
               #{order?.orderNumber ?? ""}
             </div>
             <div className="text-[10px] text-zinc-500 space-y-0.5 pt-1">
-              <p><span className="font-semibold text-zinc-700">Date:</span> {fmtDate(order?.createdAt)}</p>
-              {cashierName && <p><span className="font-semibold text-zinc-700">Cashier:</span> {cashierName}</p>}
-              {terminalName && <p><span className="font-semibold text-zinc-700">Terminal:</span> {terminalName}</p>}
+              <p>
+                <span className="font-semibold text-zinc-700">Date:</span>{" "}
+                {fmtDate(order?.createdAt)}
+              </p>
+              {cashierName && (
+                <p>
+                  <span className="font-semibold text-zinc-700">Cashier:</span>{" "}
+                  {cashierName}
+                </p>
+              )}
+              {terminalName && (
+                <p>
+                  <span className="font-semibold text-zinc-700">Terminal:</span>{" "}
+                  {terminalName}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -1184,17 +1334,29 @@ function A4InvoiceBody({
 
               return (
                 <tr key={item.id ?? idx} className="hover:bg-zinc-50/50">
-                  <td className="py-2 px-2 text-zinc-500 font-mono">{idx + 1}</td>
+                  <td className="py-2 px-2 text-zinc-500 font-mono">
+                    {idx + 1}
+                  </td>
                   <td className="py-2 px-2">
                     <div className="font-bold text-zinc-800">{item.name}</div>
-                    <div className="text-[10px] text-zinc-500 font-mono">{uniqueNo}</div>
+                    <div className="text-[10px] text-zinc-500 font-mono">
+                      {uniqueNo}
+                    </div>
                   </td>
-                  <td className="py-2 px-2 text-center text-zinc-700">{item.size || "—"}</td>
-                  <td className="py-2 px-2 text-center font-bold text-zinc-800">{item.quantity}</td>
+                  <td className="py-2 px-2 text-center text-zinc-700">
+                    {item.size || "—"}
+                  </td>
+                  <td className="py-2 px-2 text-center font-bold text-zinc-800">
+                    {item.quantity}
+                  </td>
                   {!isGiftReceipt && (
                     <>
-                      <td className="py-2 px-2 text-right font-mono text-zinc-600">{fmtDec(retailPrice)}</td>
-                      <td className="py-2 px-2 text-right font-mono text-zinc-600">{fmtDec(wostPerUnit)}</td>
+                      <td className="py-2 px-2 text-right font-mono text-zinc-600">
+                        {fmtDec(retailPrice)}
+                      </td>
+                      <td className="py-2 px-2 text-right font-mono text-zinc-600">
+                        {fmtDec(wostPerUnit)}
+                      </td>
                       <td className="py-2 px-2 text-right font-mono text-zinc-650">
                         {taxPct}%
                         {displayDisc > 0 && (
@@ -1232,13 +1394,18 @@ function A4InvoiceBody({
                 </h4>
                 <div className="divide-y divide-zinc-100 bg-zinc-50 rounded-lg p-3 border border-zinc-200 text-xs">
                   {tenders.map((t, i) => (
-                    <div key={i} className="flex justify-between py-1.5 first:pt-0 last:pb-0">
+                    <div
+                      key={i}
+                      className="flex justify-between py-1.5 first:pt-0 last:pb-0"
+                    >
                       <span className="capitalize text-zinc-600 font-medium">
                         {t.method.replace(/_/g, " ")}
                         {t.cardLast4 ? ` •••• ${t.cardLast4}` : ""}
                         {t.slipNo ? ` (${t.slipNo})` : ""}
                       </span>
-                      <span className="font-bold text-zinc-800">Rs. {fmt(t.amount)}</span>
+                      <span className="font-bold text-zinc-800">
+                        Rs. {fmt(t.amount)}
+                      </span>
                     </div>
                   ))}
                   {changeAmount > 0 && (
@@ -1256,8 +1423,8 @@ function A4InvoiceBody({
                   <Image
                     src={
                       typeof window !== "undefined"
-                        ? `${window.location.origin}/fbr_logo.png`
-                        : "/fbr_logo.png"
+                        ? `${window.location.origin}/fbr_pos.png`
+                        : "/fbr_pos.png"
                     }
                     alt="FBR Logo"
                     width={50}
@@ -1268,7 +1435,8 @@ function A4InvoiceBody({
                 </div>
                 <div className="space-y-1 flex-1">
                   <p className="text-[10px] text-zinc-600 leading-snug">
-                    This receipt is verified by FBR POS Invoicing System. Verify via FBR Tax Asaan App or SMS at <strong>9966</strong>.
+                    This receipt is verified by FBR POS Invoicing System. Verify
+                    via FBR Tax Asaan App or SMS at <strong>9966</strong>.
                   </p>
                   <div className="flex items-center gap-1 text-[9px] text-zinc-400">
                     <span>Scan verified QR to check invoicing status</span>
@@ -1284,25 +1452,33 @@ function A4InvoiceBody({
             <div className="space-y-1 bg-zinc-50/50 rounded-lg p-4 border border-zinc-200">
               <div className="flex justify-between text-zinc-600 py-0.5">
                 <span>Subtotal (Excl. Sales Tax)</span>
-                <span className="font-mono font-semibold">{fmt(Math.round(subtotal))}</span>
+                <span className="font-mono font-semibold">
+                  {fmt(Math.round(subtotal))}
+                </span>
               </div>
-              
+
               <div className="flex justify-between text-zinc-600 py-0.5">
                 <span>Total Invoice Discounts</span>
                 <span className="font-mono font-semibold text-green-600">
-                  {totalDiscount > 0 ? `-${fmt(Math.round(totalDiscount))}` : "—"}
+                  {totalDiscount > 0
+                    ? `-${fmt(Math.round(totalDiscount))}`
+                    : "—"}
                 </span>
               </div>
 
               <div className="flex justify-between text-zinc-600 py-0.5">
                 <span>Taxable Value for Sales</span>
-                <span className="font-mono font-semibold">{fmt(Math.round(valueForSales))}</span>
+                <span className="font-mono font-semibold">
+                  {fmt(Math.round(valueForSales))}
+                </span>
               </div>
 
               {settings.receiptShowTax && (
                 <div className="flex justify-between text-zinc-600 py-0.5 border-b border-zinc-200 pb-2 mb-2">
                   <span>Sales Tax Total</span>
-                  <span className="font-mono font-semibold">{fmt(Math.round(totalTax))}</span>
+                  <span className="font-mono font-semibold">
+                    {fmt(Math.round(totalTax))}
+                  </span>
                 </div>
               )}
 
@@ -1312,7 +1488,9 @@ function A4InvoiceBody({
               </div>
 
               <div className="flex justify-between items-center text-zinc-900 pt-3 mt-2 border-t-2 border-zinc-800">
-                <span className="font-black text-sm uppercase">Grand Total (Incl. Tax)</span>
+                <span className="font-black text-sm uppercase">
+                  Grand Total (Incl. Tax)
+                </span>
                 <span className="font-mono font-black text-lg text-zinc-900 bg-zinc-100 px-3 py-1 rounded border border-zinc-250">
                   Rs. {fmt(Math.round(finalGrandTotal))}
                 </span>
@@ -1321,7 +1499,8 @@ function A4InvoiceBody({
           </div>
         ) : (
           <div className="text-center py-6 border-t border-dashed border-zinc-300 text-zinc-500 text-xs">
-            Price details omitted — this is a Gift Receipt. Thank you for your purchase!
+            Price details omitted — this is a Gift Receipt. Thank you for your
+            purchase!
           </div>
         )}
 
@@ -1333,7 +1512,8 @@ function A4InvoiceBody({
                 Credit Voucher Issued
               </h4>
               <p className="text-[10px] text-emerald-600 leading-snug">
-                An unused credit balance has been returned as a store voucher. Use this voucher code on your next purchase.
+                An unused credit balance has been returned as a store voucher.
+                Use this voucher code on your next purchase.
               </p>
             </div>
             <div className="space-y-2">
@@ -1343,12 +1523,20 @@ function A4InvoiceBody({
                   className="bg-white border border-emerald-500 rounded p-2 flex justify-between items-center shadow-sm"
                 >
                   <div>
-                    <span className="text-[10px] text-zinc-400 block font-mono">Code</span>
-                    <span className="font-mono font-black text-sm text-emerald-700 tracking-wider">{voucher.code}</span>
+                    <span className="text-[10px] text-zinc-400 block font-mono">
+                      Code
+                    </span>
+                    <span className="font-mono font-black text-sm text-emerald-700 tracking-wider">
+                      {voucher.code}
+                    </span>
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] text-zinc-400 block">Value</span>
-                    <span className="font-black text-sm text-zinc-900">Rs. {fmt(Number(voucher.faceValue))}</span>
+                    <span className="text-[10px] text-zinc-400 block">
+                      Value
+                    </span>
+                    <span className="font-black text-sm text-zinc-900">
+                      Rs. {fmt(Number(voucher.faceValue))}
+                    </span>
                   </div>
                 </div>
               ))}
@@ -1366,10 +1554,20 @@ function A4InvoiceBody({
               </p>
               <ul className="list-disc pl-3 space-y-0.5">
                 <li>No refund under any circumstances.</li>
-                <li>Exchange is allowed within 10 days of purchase only on unused items from the outlet where purchased.</li>
-                <li>Sales Tax Invoice must be presented for any exchange or claim.</li>
-                <li>Sales and promotional items are strictly non-exchangeable.</li>
-                <li>Items purchased at full price which go on sale will be exchanged at the marked down price.</li>
+                <li>
+                  Exchange is allowed within 10 days of purchase only on unused
+                  items from the outlet where purchased.
+                </li>
+                <li>
+                  Sales Tax Invoice must be presented for any exchange or claim.
+                </li>
+                <li>
+                  Sales and promotional items are strictly non-exchangeable.
+                </li>
+                <li>
+                  Items purchased at full price which go on sale will be
+                  exchanged at the marked down price.
+                </li>
               </ul>
             </div>
 
