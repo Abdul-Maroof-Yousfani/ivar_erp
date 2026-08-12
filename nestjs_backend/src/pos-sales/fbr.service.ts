@@ -138,11 +138,13 @@ export class FbrService {
         paymentMode?: number; // 1=Cash, 2=Card, 3=Gift Voucher, 4=Loyalty Card, 5=Mixed, 6=Cheque
         invoiceType?: number; // 1=New, 2=Debit, 3=Credit
         refUsin?: string | null;
+        locationPct?: string | null;
         items: Array<{
             itemId: string;
             sku: string;
             description: string | null;
             hsCode: string | null;
+            pctCode?: string | null;
             quantity: number;
             unitPrice: number;       // retail price (tax-inclusive)
             taxPercent: number;      // e.g. 18
@@ -157,7 +159,8 @@ export class FbrService {
 
         const items: FbrImsInvoiceItem[] = params.items.map((item) => {
             // PCT Code must be numeric string <= 8 chars (e.g., '01011000' or '00000000')
-            const pctCode = this.formatPctCode(item.hsCode);
+            // Derived via location.pct, item pctCode/hsCode, or fallback
+            const pctCode = this.formatPctCode(params.locationPct || item.pctCode || item.hsCode);
 
             // Calculate WOST (Value Excl. Tax & Discount)
             const taxDivisor = 1 + (item.taxPercent / 100);
@@ -221,7 +224,7 @@ export class FbrService {
     /**
      * Formats PCT/HS Code to match FBR requirement (<= 8 numeric characters).
      */
-    private formatPctCode(hsCode: string | null): string {
+    private formatPctCode(hsCode: string | null | undefined): string {
         if (!hsCode) return '00000000';
         const cleaned = hsCode.replace(/[^0-9]/g, '');
         if (!cleaned) return '00000000';
