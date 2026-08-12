@@ -41,8 +41,10 @@ export default function StockTransferPage() {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
 
-    // Bulk upload state
+    // Bulk upload & draft persistence state
     const STORAGE_KEY = "active_transfer_upload_id";
+    const DRAFT_STORAGE_KEY = "stock_transfer_items_draft";
+    const isInitializedRef = useRef(false);
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [activeUploadId, setActiveUploadId] = useState<string | null>(null);
 
@@ -51,6 +53,25 @@ export default function StockTransferPage() {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) setActiveUploadId(stored);
     }, []);
+
+    const clearDraft = () => {
+        setSelectedItems([]);
+        setGlobalNotes('');
+        try {
+            localStorage.removeItem(DRAFT_STORAGE_KEY);
+        } catch (e) {}
+        toast.info('Draft cleared.');
+    };
+
+    const changeTransferMode = (newMode: 'WAREHOUSE_TO_OUTLET' | 'OUTLET_TO_WAREHOUSE' | 'OUTLET_TO_OUTLET' | 'WAREHOUSE_RECEIVING') => {
+        if (newMode === transferMode) return;
+        if (selectedItems.length > 0) {
+            const confirmSwitch = window.confirm("Switching transfer mode will clear your current transfer items. Are you sure?");
+            if (!confirmSwitch) return;
+        }
+        setTransferMode(newMode);
+        setSelectedItems([]);
+    };
 
     const handleUploadIdChange = (id: string | null) => {
         setActiveUploadId(id);
@@ -545,11 +566,63 @@ export default function StockTransferPage() {
         return () => window.removeEventListener('keydown', handleGlobalKeyDown);
     }, [globalScannerActive, selectedItems, autoIncrement, bulkQty, soundEnabled, selectedWarehouseId, transferMode, destLocationId, sourceLocationId, appliedFilters]);
 
+    // Initialize & restore draft
     useEffect(() => {
-        loadWarehouses();
-        loadMasterLocations();
-        loadFilterData();
+        const initialize = async () => {
+            await loadWarehouses();
+            await loadMasterLocations();
+            await loadFilterData();
+
+            try {
+                const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
+                if (savedDraft) {
+                    const parsed = JSON.parse(savedDraft);
+                    if (parsed && Array.isArray(parsed.selectedItems) && parsed.selectedItems.length > 0) {
+                        if (parsed.transferMode) setTransferMode(parsed.transferMode);
+                        if (parsed.selectedWarehouseId) {
+                            setSelectedWarehouseId(parsed.selectedWarehouseId);
+                            await loadLocations(parsed.selectedWarehouseId);
+                        }
+                        if (parsed.sourceLocationId) setSourceLocationId(parsed.sourceLocationId);
+                        if (parsed.destLocationId) setDestLocationId(parsed.destLocationId);
+                        if (parsed.globalNotes !== undefined) setGlobalNotes(parsed.globalNotes);
+                        setSelectedItems(parsed.selectedItems);
+                        toast.info(`Restored ${parsed.selectedItems.length} draft item(s) from previous session.`);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to load draft from localStorage', err);
+            } finally {
+                isInitializedRef.current = true;
+            }
+        };
+
+        initialize();
     }, []);
+
+    // Auto-save draft to localStorage whenever relevant states update
+    useEffect(() => {
+        if (!isInitializedRef.current) return;
+
+        try {
+            if (selectedItems.length > 0 || globalNotes.trim()) {
+                const draftData = {
+                    transferMode,
+                    selectedWarehouseId,
+                    sourceLocationId,
+                    destLocationId,
+                    globalNotes,
+                    selectedItems,
+                    updatedAt: new Date().toISOString(),
+                };
+                localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draftData));
+            } else {
+                localStorage.removeItem(DRAFT_STORAGE_KEY);
+            }
+        } catch (e) {
+            console.error('Failed to save draft to localStorage', e);
+        }
+    }, [selectedItems, transferMode, selectedWarehouseId, sourceLocationId, destLocationId, globalNotes]);
 
     const loadMasterLocations = async () => {
         try {
@@ -585,10 +658,12 @@ export default function StockTransferPage() {
             setWarehouses(data);
             if (data.length > 0) {
                 setSelectedWarehouseId(data[0].id);
-                loadLocations(data[0].id);
+                await loadLocations(data[0].id);
             }
+            return data;
         } catch (error) {
             toast.error('Failed to load warehouses');
+            return [];
         } finally {
             setLoading(false);
         }
@@ -772,6 +847,9 @@ export default function StockTransferPage() {
 
             setSelectedItems([]);
             setGlobalNotes('');
+            try {
+                localStorage.removeItem(DRAFT_STORAGE_KEY);
+            } catch (e) {}
         } catch (error: any) {
             toast.error(error.message || 'Transfer failed');
         } finally {
@@ -813,7 +891,7 @@ export default function StockTransferPage() {
                         <TooltipTrigger asChild>
                             <Button
                                 variant={transferMode === 'WAREHOUSE_TO_OUTLET' ? 'default' : 'outline'}
-                                onClick={() => { setTransferMode('WAREHOUSE_TO_OUTLET'); setSelectedItems([]); }}
+                                onClick={() => changeTransferMode('WAREHOUSE_TO_OUTLET')}
                                 className="font-bold"
                             >
                                 <ArrowRightLeft className="h-4 w-4 mr-2" /> Transfer Out
@@ -826,7 +904,7 @@ export default function StockTransferPage() {
                         <TooltipTrigger asChild>
                             <Button
                                 variant={transferMode === 'OUTLET_TO_WAREHOUSE' ? 'default' : 'outline'}
-                                onClick={() => { setTransferMode('OUTLET_TO_WAREHOUSE'); setSelectedItems([]); }}
+                                onClick={() => changeTransferMode('OUTLET_TO_WAREHOUSE')}
                                 className="font-bold"
                             >
                                 <RotateCcw className="h-4 w-4 mr-2" /> Return
@@ -839,7 +917,7 @@ export default function StockTransferPage() {
                         <TooltipTrigger asChild>
                             <Button
                                 variant={transferMode === 'OUTLET_TO_OUTLET' ? 'default' : 'outline'}
-                                onClick={() => { setTransferMode('OUTLET_TO_OUTLET'); setSelectedItems([]); }}
+                                onClick={() => changeTransferMode('OUTLET_TO_OUTLET')}
                                 className="font-bold"
                             >
                                 <ArrowRightLeft className="h-4 w-4 mr-2" /> Outlet Transfer
@@ -852,7 +930,7 @@ export default function StockTransferPage() {
                         <TooltipTrigger asChild>
                             <Button
                                 variant={transferMode === 'WAREHOUSE_RECEIVING' ? 'default' : 'outline'}
-                                onClick={() => { setTransferMode('WAREHOUSE_RECEIVING'); setSelectedItems([]); }}
+                                onClick={() => changeTransferMode('WAREHOUSE_RECEIVING')}
                                 className={`font-bold border-2 ${transferMode === 'WAREHOUSE_RECEIVING' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30'}`}
                             >
                                 <PackageCheck className="h-4 w-4 mr-2" /> Receive Stock
@@ -1171,11 +1249,26 @@ export default function StockTransferPage() {
                         <CardTitle>Items & Quantities</CardTitle>
                         <div className="flex items-center gap-2">
                             <div className="flex items-center gap-2">
+                                {selectedItems.length > 0 && (
+                                    <Badge variant="outline" className="bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-300 dark:border-amber-700 font-semibold gap-1 px-2 py-0.5 text-xs">
+                                        <Save className="h-3 w-3 text-amber-600 dark:text-amber-400" /> Draft Saved
+                                    </Badge>
+                                )}
                                 <Badge variant="secondary">{selectedItems.length} Items Selected</Badge>
                                 {selectedItems.length > 0 && (
                                     <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 font-bold">
                                         Total QTY: {selectedItems.reduce((sum, i) => sum + (i.quantity || 0), 0)}
                                     </Badge>
+                                )}
+                                {selectedItems.length > 0 && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 text-xs text-muted-foreground hover:text-destructive font-medium px-2"
+                                        onClick={clearDraft}
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear List
+                                    </Button>
                                 )}
                             </div>
                             {/* Filter Sheet Trigger */}
