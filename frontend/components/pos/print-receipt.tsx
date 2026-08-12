@@ -297,6 +297,17 @@ export function PrintReceipt({
       ? user.terminal.location.phone
       : "") ||
     "";
+  const companyName =
+    settings.receiptCompanyName ||
+    (typeof user?.terminal?.location?.fbrSellerName === "string"
+      ? user.terminal.location.fbrSellerName
+      : "") ||
+    (typeof (user as any)?.company?.name === "string"
+      ? (user as any).company.name
+      : "") ||
+    getCookie("companyName") ||
+    "YAFEEZ & SONS (PRIVATE) LIMITED";
+
   const storeNTN =
     settings.receiptNTN ||
     (typeof user?.terminal?.location?.fbrNtn === "string"
@@ -466,6 +477,7 @@ export function PrintReceipt({
   const bodyProps: ReceiptBodyProps = {
     isGiftReceipt,
     storeName,
+    companyName,
     storeAddress,
     storePhone,
     storeNTN,
@@ -703,6 +715,7 @@ export function PrintReceipt({
 interface ReceiptBodyProps {
   isGiftReceipt: boolean;
   storeName: string;
+  companyName?: string;
   storeAddress: string;
   storePhone: string;
   storeNTN: string;
@@ -738,6 +751,7 @@ interface ReceiptBodyProps {
 function ReceiptBody({
   isGiftReceipt,
   storeName,
+  companyName,
   storeAddress,
   storePhone,
   storeNTN,
@@ -844,6 +858,11 @@ function ReceiptBody({
             {storeAddress}
             {storeAddress && storePhone ? " | " : ""}
             {storePhone}
+          </p>
+        )}
+        {companyName && (
+          <p className="text-[9.5px] font-bold uppercase tracking-wide leading-tight mt-0.5">
+            {companyName}
           </p>
         )}
         {storeNTN && (
@@ -1183,6 +1202,7 @@ function ReceiptBody({
 function A4InvoiceBody({
   isGiftReceipt,
   storeName,
+  companyName,
   storeAddress,
   storePhone,
   storeNTN,
@@ -1259,6 +1279,7 @@ function A4InvoiceBody({
             </p>
             <div className="text-[10px] text-zinc-550 space-y-0.5 pt-1">
               {storePhone && <p>Phone: {storePhone}</p>}
+              {companyName && <p className="font-semibold text-zinc-800 uppercase">{companyName}</p>}
               {storeNTN && <p>NTN: {storeNTN}</p>}
               {storeSTRN && <p>STRN: {storeSTRN}</p>}
             </div>

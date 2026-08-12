@@ -291,6 +291,17 @@ export function PrintReceipt({
       ? user.terminal.location.phone
       : "") ||
     "";
+  const companyName =
+    settings.receiptCompanyName ||
+    (typeof user?.terminal?.location?.fbrSellerName === "string"
+      ? user.terminal.location.fbrSellerName
+      : "") ||
+    (typeof (user as any)?.company?.name === "string"
+      ? (user as any).company.name
+      : "") ||
+    getCookie("companyName") ||
+    "YAFEEZ & SONS (PRIVATE) LIMITED";
+
   const storeNTN =
     settings.receiptNTN ||
     (typeof user?.terminal?.location?.fbrNtn === "string"
@@ -830,6 +841,11 @@ function ReceiptBody({
             {storeAddress}
             {storeAddress && storePhone ? " | " : ""}
             {storePhone}
+          </p>
+        )}
+        {companyName && (
+          <p className="text-[9.5px] font-bold uppercase tracking-wide leading-tight mt-0.5">
+            {companyName}
           </p>
         )}
         {storeNTN && (

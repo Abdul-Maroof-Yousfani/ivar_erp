@@ -558,6 +558,29 @@ export class PosSessionService {
     };
   }
 
+  private getDisplayBankName(
+    merchant?: { bankName?: string | null; description?: string | null } | null,
+    paymentMethod?: string | null,
+    tenders?: any[] | null,
+  ): string {
+    const rawBankName = (merchant?.bankName || merchant?.description || '').trim();
+    const isBankTransfer =
+      paymentMethod === 'bank_transfer' ||
+      (Array.isArray(tenders) &&
+        tenders.some((t: any) => t?.method === 'bank_transfer'));
+
+    if (isBankTransfer) {
+      if (!rawBankName) return 'Bank Transfer';
+      if (rawBankName.toLowerCase().startsWith('bank transfer')) {
+        return rawBankName;
+      }
+      return `Bank Transfer ${rawBankName}`;
+    }
+
+    if (rawBankName) return rawBankName;
+    return 'Other Card / Bank';
+  }
+
   /**
    * Get detailed reconciliation metrics for a specific session ID.
    * Computes all drawer totals, tax/discount and payment method aggregates,
@@ -771,7 +794,11 @@ export class PosSessionService {
         totalCardReceived += card;
 
         // Group by bank / merchant commission rate
-        const bankName = order.merchant?.bankName || 'Unknown Bank';
+        const bankName = this.getDisplayBankName(
+          order.merchant,
+          order.paymentMethod,
+          (order as any).tenders,
+        );
         const rateDecimal = Number(order.merchant?.commissionRate ?? 0);
         const ratePct = rateDecimal * 100; // formatted in percent (e.g. 1.265 for 0.01265)
 
@@ -998,7 +1025,10 @@ export class PosSessionService {
             totalCardReceived += netAmount;
             cardSalesCount++;
 
-            const bankName = v.merchant?.bankName || 'Unknown Bank';
+            const bankName = this.getDisplayBankName(
+              v.merchant,
+              (v as any).paymentMode,
+            );
             const rateDecimal = Number(v.merchant?.commissionRate ?? 0);
             const ratePct = rateDecimal * 100;
 
@@ -1441,7 +1471,11 @@ export class PosSessionService {
           cardSalesCount++;
           totalCardReceived += card;
 
-          const bankName = order.merchant?.bankName || 'Unknown Bank';
+          const bankName = this.getDisplayBankName(
+            order.merchant,
+            order.paymentMethod,
+            (order as any).tenders,
+          );
           const rateDecimal = Number(order.merchant?.commissionRate ?? 0);
           const ratePct = rateDecimal * 100;
 
@@ -1658,7 +1692,10 @@ export class PosSessionService {
               totalCardReceived += netAmount;
               cardSalesCount++;
 
-              const bankName = v.merchant?.bankName || 'Unknown Bank';
+              const bankName = this.getDisplayBankName(
+                v.merchant,
+                (v as any).paymentMode,
+              );
               const rateDecimal = Number(v.merchant?.commissionRate ?? 0);
               const ratePct = rateDecimal * 100;
 

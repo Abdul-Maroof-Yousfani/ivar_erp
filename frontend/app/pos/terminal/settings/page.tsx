@@ -25,6 +25,7 @@ import { ManagerVerificationDialog } from "@/components/auth/manager-verificatio
 interface PosSettings {
     // Receipt
     receiptStoreName: string;
+    receiptCompanyName: string;
     receiptFooter: string;
     receiptShowTax: boolean;
     receiptAutoPrint: boolean;
@@ -40,6 +41,7 @@ interface PosSettings {
 
 const DEFAULTS: PosSettings = {
     receiptStoreName: "",
+    receiptCompanyName: "",
     receiptFooter: "Thank you for your purchase!",
     receiptShowTax: true,
     receiptAutoPrint: false,
@@ -280,6 +282,17 @@ export default function TerminalSettingsPage() {
                             className="rounded-xl bg-muted/30 border-transparent focus-visible:ring-primary"
                         />
                         <p className="text-xs text-muted-foreground">Leave blank to use the company name</p>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>Company Legal Name on Receipt (above NTN)</Label>
+                        <Input
+                            value={settings.receiptCompanyName}
+                            onChange={e => set("receiptCompanyName", e.target.value)}
+                            placeholder={getCookie("companyName") || "e.g. YAFEEZ & SONS (PRIVATE) LIMITED"}
+                            className="rounded-xl bg-muted/30 border-transparent focus-visible:ring-primary"
+                        />
+                        <p className="text-xs text-muted-foreground">Appears above NTN on cash memo / receipts</p>
                     </div>
 
                     <div className="space-y-2">

@@ -16,14 +16,14 @@ import { PosSalesActivityExportService } from './pos-sales-activity-export.servi
 import * as jwt from 'jsonwebtoken';
 
 @ApiTags('POS Sales Activity Export')
-@Controller('api/pos-sales/activities/export')
+@Controller('api/pos-sales/activity/export')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @ApiBearerAuth()
 export class PosSalesActivityExportController {
   constructor(private readonly exportService: PosSalesActivityExportService) {}
 
   /**
-   * POST /api/pos-sales/activities/export
+   * POST /api/pos-sales/activity/export
    * Queues a background POS Sales Activity export job. Returns immediately with a jobId.
    */
   @Post()

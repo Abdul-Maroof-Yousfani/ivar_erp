@@ -5,6 +5,7 @@ import { authFetch } from "@/lib/auth";
 
 export interface PosSettings {
     receiptStoreName: string;
+    receiptCompanyName: string;
     receiptAddress: string;
     receiptPhone: string;
     receiptNTN: string;
@@ -22,6 +23,7 @@ export interface PosSettings {
 
 export const POS_SETTINGS_DEFAULTS: PosSettings = {
     receiptStoreName: "",
+    receiptCompanyName: "",
     receiptAddress: "",
     receiptPhone: "",
     receiptNTN: "",
