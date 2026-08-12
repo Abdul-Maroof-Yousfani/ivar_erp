@@ -1133,6 +1133,7 @@ export class PosSalesService implements OnModuleInit {
                 buyerName,
                 buyerPhone,
                 paymentMode,
+                locationPct: (location as any).pct || null,
                 items: fbrItems,
             });
 
