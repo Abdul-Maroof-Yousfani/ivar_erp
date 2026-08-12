@@ -279,6 +279,7 @@ export class StockLedgerService {
         referenceId,
         locationId,
         rate,
+        allowNegativeStock,
       } = data;
       const quantity = new Prisma.Decimal(qty);
 
@@ -302,7 +303,7 @@ export class StockLedgerService {
 
       const operation = async (transaction: Prisma.TransactionClient) => {
         // Concurrency Safe Negative Stock Check for OUTBOUND
-        if (quantity.isNegative()) {
+        if (quantity.isNegative() && !allowNegativeStock) {
           const currentStock = await transaction.stockLedger.aggregate({
             where: {
               itemId,
