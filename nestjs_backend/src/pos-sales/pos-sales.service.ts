@@ -969,12 +969,18 @@ export class PosSalesService implements OnModuleInit {
           );
         }
 
-        // ── FBR Sync (Mandatory if enabled — fails sale if FBR fails) ──
+        // ── FBR Sync (Attempt once — non-blocking if FBR fails) ──
         const fbrResult = await this.syncWithFbr(order, itemsData, tx);
         if (fbrResult.fbrInvoiceNumber) {
           order.fbrInvoiceNumber = fbrResult.fbrInvoiceNumber;
           order.fbrQrCode = fbrResult.fbrQrCode;
           order.fbrStatus = fbrResult.fbrStatus;
+        } else if (fbrResult.fbrStatus === 'FAILED') {
+          order.fbrStatus = 'FAILED';
+          await tx.salesOrder.update({
+            where: { id: order.id },
+            data: { fbrStatus: 'FAILED' },
+          });
         }
 
         return {
@@ -985,6 +991,8 @@ export class PosSalesService implements OnModuleInit {
             changeAmount,
             creditVouchers:
               creditVouchers.length > 0 ? creditVouchers : undefined,
+            fbrSynced: fbrResult.success,
+            fbrError: fbrResult.error,
           },
           message:
             creditVouchers.length > 0
@@ -1031,7 +1039,6 @@ export class PosSalesService implements OnModuleInit {
   }
 
   // ─── FBR sync helper ──────────────────────────────────────────────
-  // ─── FBR sync helper ──────────────────────────────────────────────
   private async syncWithFbr(
     order: any,
     itemsData: Array<{
@@ -1048,7 +1055,7 @@ export class PosSalesService implements OnModuleInit {
     success: boolean;
     fbrInvoiceNumber?: string;
     fbrQrCode?: string;
-    fbrStatus: 'SYNCED' | 'SKIPPED';
+    fbrStatus: 'SYNCED' | 'SKIPPED' | 'FAILED';
     error?: string;
     responsePayload?: any;
   }> {
@@ -1100,9 +1107,11 @@ export class PosSalesService implements OnModuleInit {
         const missingMsg =
           'Location is FBR-enabled but missing FBR BPOS ID or Bearer Token credentials.';
         this.logger.error(`[FBR Sync] [FAIL] ${missingMsg}`);
-        throw new BadRequestException(
-          `FBR Fiscalization Failed: ${missingMsg}`,
-        );
+        return {
+          success: false,
+          fbrStatus: 'FAILED',
+          error: missingMsg,
+        };
       }
 
       // ── Fetch item details (sku, description, hsCode) ──────────
@@ -1225,17 +1234,109 @@ export class PosSalesService implements OnModuleInit {
         this.logger.error(
           `[FBR Sync] [FAIL] Order ${order.orderNumber} fiscalization failed: ${errMsg}`,
         );
-        throw new BadRequestException(`FBR Fiscalization Failed: ${errMsg}`);
+        return {
+          success: false,
+          fbrStatus: 'FAILED',
+          error: errMsg,
+          responsePayload: fbrResponse,
+        };
       }
     } catch (err: any) {
       this.logger.error(
         `[FBR Sync] [EXCEPTION] FBR Sync failed for order ${order?.orderNumber}: ${err.message}`,
         err.stack,
       );
-      if (err instanceof BadRequestException) {
-        throw err;
-      }
-      throw new BadRequestException(`FBR Fiscalization Failed: ${err.message}`);
+      return {
+        success: false,
+        fbrStatus: 'FAILED',
+        error: err.message,
+      };
+    }
+  }
+
+  // ─── Retry FBR sync for an existing order ─────────────────────────
+  async retryFbrSync(orderId: string) {
+    const order = await this.prisma.salesOrder.findUnique({
+      where: { id: orderId },
+      include: {
+        items: true,
+      },
+    });
+
+    if (!order) {
+      return { status: false, message: 'Sales order not found' };
+    }
+
+    if (order.fbrInvoiceNumber && order.fbrStatus === 'SYNCED') {
+      return {
+        status: true,
+        message: 'Order is already synced with FBR',
+        data: order,
+      };
+    }
+
+    const itemsData = order.items.map((i) => ({
+      itemId: i.itemId,
+      quantity: Number(i.quantity),
+      unitPrice: Number(i.unitPrice),
+      discountAmount: Number(i.discountAmount),
+      taxPercent: Number(i.taxPercent),
+      taxAmount: Number(i.taxAmount),
+      lineTotal: Number(i.lineTotal),
+    }));
+
+    const fbrResult = await this.syncWithFbr(order, itemsData);
+
+    if (fbrResult.success && fbrResult.fbrInvoiceNumber) {
+      const updatedOrder = await this.prisma.salesOrder.findUnique({
+        where: { id: orderId },
+        include: {
+          items: {
+            include: {
+              item: {
+                select: {
+                  description: true,
+                  sku: true,
+                  barCode: true,
+                  size: { select: { name: true } },
+                  color: { select: { name: true } },
+                },
+              },
+            },
+          },
+          promo: { select: { name: true, code: true } },
+          coupon: { select: { code: true, description: true } },
+          alliance: {
+            select: {
+              partnerName: true,
+              code: true,
+              discountPercent: true,
+              maxDiscount: true,
+            },
+          },
+          merchant: {
+            select: {
+              id: true,
+              bankName: true,
+              description: true,
+              commissionRate: true,
+              bankGlCode: true,
+            },
+          },
+        },
+      });
+
+      return {
+        status: true,
+        message: 'FBR invoice submitted successfully',
+        data: updatedOrder,
+      };
+    } else {
+      return {
+        status: false,
+        message: fbrResult.error || 'FBR fiscalization failed',
+        data: order,
+      };
     }
   }
 

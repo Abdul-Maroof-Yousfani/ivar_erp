@@ -15,6 +15,9 @@ export interface SalesOrder {
     cashAmount: number;
     cardAmount: number;
     isGiftReceipt: boolean;
+    fbrInvoiceNumber?: string | null;
+    fbrQrCode?: string | null;
+    fbrStatus?: string;
     createdAt: string;
     updatedAt: string;
     tenders: { method: string; amount: number; cardLast4?: string; slipNo?: string }[];

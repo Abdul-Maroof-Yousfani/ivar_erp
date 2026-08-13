@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, AlertCircle } from "lucide-react";
 import type { CartItem } from "@/components/pos/new-sale/cart-table";
 
 // Sub-components
@@ -61,6 +61,88 @@ function calcPromoDiscount(promo: PromoConfig, subtotal: number): number {
     }
     if (promo.type === "fixed") return Math.min(Number(promo.value), subtotal);
     return 0;
+}
+
+// ─── FBR Retry Modal ───────────────────────────────────────────────────
+function FbrRetryModal({
+    open,
+    onOpenChange,
+    order,
+    onRetrySuccess,
+    onSkip,
+}: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    order: any;
+    onRetrySuccess: (updatedOrder: any) => void;
+    onSkip: () => void;
+}) {
+    const [isRetrying, setIsRetrying] = useState(false);
+
+    const handleRetry = async () => {
+        if (!order?.id) return;
+        setIsRetrying(true);
+        try {
+            const res = await authFetch(`/pos-sales/orders/${order.id}/retry-fbr`, {
+                method: "POST",
+            });
+            if (res.ok && res.data?.status && res.data.data?.fbrInvoiceNumber) {
+                toast.success("FBR invoice submitted successfully!");
+                onRetrySuccess(res.data.data);
+                onOpenChange(false);
+            } else {
+                toast.error(res.data?.message || "FBR data not received. Please try again or print cash memo.");
+            }
+        } catch {
+            toast.error("Failed to re-hit FBR gateway.");
+        } finally {
+            setIsRetrying(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-w-md">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-amber-600">
+                        <AlertCircle className="h-5 w-5 shrink-0" /> FBR Data Not Received
+                    </DialogTitle>
+                </DialogHeader>
+                <div className="py-3 space-y-2 text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground">
+                         Your Order #{order?.orderNumber} have been completed successfully. However, FBR invoice is not generated. 
+                    </p>
+                    <p>
+                        Do you want to generate FBR invoice now?
+                    </p>
+                </div>
+                <DialogFooter className="gap-2 sm:gap-0">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                            onOpenChange(false);
+                            onSkip();
+                        }}
+                        disabled={isRetrying}
+                    >
+                        Print Cash Memo (Without FBR)
+                    </Button>
+                    <Button
+                        type="button"
+                        onClick={handleRetry}
+                        disabled={isRetrying}
+                        className="bg-amber-600 hover:bg-amber-700 text-white"
+                    >
+                        {isRetrying ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : null}
+                        Re-process FBR
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
 }
 
 // ─── Add Customer Modal ─────────────────────────────────────────────────
@@ -260,6 +342,8 @@ export default function CheckoutPage() {
     const [tenderSlip, setTenderSlip] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [completedOrder, setCompletedOrder] = useState<any>(null);
+    const [pendingFbrOrder, setPendingFbrOrder] = useState<any>(null);
+    const [showFbrRetryModal, setShowFbrRetryModal] = useState(false);
     const [isGiftReceipt, setIsGiftReceipt] = useState(false);
     const [showGiftReceiptAfterSales, setShowGiftReceiptAfterSales] = useState(false);
     const [showReceiptPreview, setShowReceiptPreview] = useState(false);
@@ -728,9 +812,15 @@ export default function CheckoutPage() {
 
             const res = await authFetch("/pos-sales/orders", { method: "POST", body });
             if (res.ok && res.data?.status) {
-                setCompletedOrder(res.data.data);
+                const orderData = res.data.data;
                 sessionStorage.removeItem("pos_cart");
                 sessionStorage.removeItem("pos_hold_order_id");
+                if (hasFbrInfo && !orderData?.fbrInvoiceNumber) {
+                    setPendingFbrOrder(orderData);
+                    setShowFbrRetryModal(true);
+                } else {
+                    setCompletedOrder(orderData);
+                }
             } else {
                 toast.error(res.data?.message || "Checkout failed");
             }
@@ -824,9 +914,15 @@ export default function CheckoutPage() {
             const res = await authFetch("/pos-sales/orders", { method: "POST", body });
             if (res.ok && res.data?.status) {
                 toast.success(`Credit sale completed! Balance added to ${selectedCustomer.name}'s ledger.`);
-                setCompletedOrder(res.data.data);
+                const orderData = res.data.data;
                 sessionStorage.removeItem("pos_cart");
                 sessionStorage.removeItem("pos_hold_order_id");
+                if (hasFbrInfo && !orderData?.fbrInvoiceNumber) {
+                    setPendingFbrOrder(orderData);
+                    setShowFbrRetryModal(true);
+                } else {
+                    setCompletedOrder(orderData);
+                }
             } else {
                 toast.error(res.data?.message || "Credit sale failed");
             }
@@ -1301,6 +1397,21 @@ export default function CheckoutPage() {
                     onClose={() => setShowReceiptPreview(false)}
                 />
             )}
+
+            {/* FBR Retry Modal */}
+            <FbrRetryModal
+                open={showFbrRetryModal}
+                onOpenChange={setShowFbrRetryModal}
+                order={pendingFbrOrder}
+                onRetrySuccess={(updatedOrder) => {
+                    setCompletedOrder(updatedOrder);
+                    setPendingFbrOrder(null);
+                }}
+                onSkip={() => {
+                    setCompletedOrder(pendingFbrOrder);
+                    setPendingFbrOrder(null);
+                }}
+            />
 
             {/* Sale completed — show receipt */}
             {completedOrder && !showGiftReceiptAfterSales && (

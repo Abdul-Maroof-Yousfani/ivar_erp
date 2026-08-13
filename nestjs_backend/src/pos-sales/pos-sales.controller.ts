@@ -682,6 +682,14 @@ export class PosSalesController {
         });
     }
 
+    // ─── Retry FBR Sync ──────────────────────────────────────────────
+    @Post('orders/:id/retry-fbr')
+    @Permissions('pos.orders.create')
+    @ApiOperation({ summary: 'Retry FBR fiscalization for a sales order' })
+    async retryFbr(@Param('id') id: string) {
+        return this.posSalesService.retryFbrSync(id);
+    }
+
   // ─── Sales Register Report Endpoints ────────────────────────────
 
   @Get('reports/sales-register')

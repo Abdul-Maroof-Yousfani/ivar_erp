@@ -251,6 +251,27 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
     const [showUpdateTender, setShowUpdateTender] = useState(false);
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
     const [isRefundPrint, setIsRefundPrint] = useState(false);
+    const [retryingFbrOrderId, setRetryingFbrOrderId] = useState<string | null>(null);
+
+    const handleRetryFbr = useCallback(async (order: any) => {
+        setRetryingFbrOrderId(order.id);
+        try {
+            const res = await authFetch(`/pos-sales/orders/${order.id}/retry-fbr`, {
+                method: "POST",
+            });
+            if (res.ok && res.data?.status && res.data.data?.fbrInvoiceNumber) {
+                toast.success(`Order ${order.orderNumber} successfully submitted to FBR!`);
+                const updated = res.data.data;
+                setOrders(prev => prev.map(o => o.id === order.id ? { ...o, ...updated, fbrInvoiceNumber: updated.fbrInvoiceNumber, fbrStatus: 'SYNCED' } : o));
+            } else {
+                toast.error(res.data?.message || "FBR submission failed");
+            }
+        } catch {
+            toast.error("Failed to connect to server for FBR retry");
+        } finally {
+            setRetryingFbrOrderId(null);
+        }
+    }, []);
 
     // ── Bulk-upload modal state ────────────────────────────────────────────────
     const [isBulkUploadOpen,       setIsBulkUploadOpen]       = useState(false);
@@ -493,6 +514,19 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
                                 title="Update tender / payment"
                                 onClick={() => { setSelectedOrder(order); setShowUpdateTender(true); }}>
                                 <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                        )}
+                        {!order.fbrInvoiceNumber && order.status !== "hold" && order.status !== "voided" && order.fbrStatus !== "SKIPPED" && (
+                            <Button variant="ghost" size="icon"
+                                className="h-8 w-8 rounded-full text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                                title="Submit to FBR (Retry)"
+                                disabled={retryingFbrOrderId === order.id}
+                                onClick={() => handleRetryFbr(order)}>
+                                {retryingFbrOrderId === order.id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-600" />
+                                ) : (
+                                    <Globe className="h-3.5 w-3.5" />
+                                )}
                             </Button>
                         )}
                         <Button variant="ghost" size="icon"
