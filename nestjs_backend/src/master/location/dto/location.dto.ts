@@ -36,6 +36,8 @@ export class CreateLocationDto {
   @IsOptional()
   @IsString()
   cashGLCode?: string;
+
+
 }
 
 export class UpdateLocationDto {
@@ -78,6 +80,8 @@ export class UpdateLocationDto {
   @IsOptional()
   @IsString()
   cashGLCode?: string;
+
+
 }
 
 export class UpdateLocationOtherInfoDto {
@@ -140,5 +144,7 @@ export class UpdateLocationOtherInfoDto {
   @IsOptional()
   @IsBoolean()
   fbrEnabled?: boolean;
+
+
 }
 

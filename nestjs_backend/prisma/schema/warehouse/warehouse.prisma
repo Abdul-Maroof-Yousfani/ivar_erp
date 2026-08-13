@@ -62,7 +62,7 @@ model Location {
   fbrNtn             String?   @map("fbr_ntn")
   fbrSellerName      String?   @map("fbr_seller_name")
   fbrEnabled         Boolean   @default(false) @map("fbr_enabled")
-  pct                String?   @map("pct")
+  
   /// Whether this outlet is currently marked as online.
   isOnline           Boolean   @default(false) @map("is_online")
   /// Whether this outlet is a stock holding location.
