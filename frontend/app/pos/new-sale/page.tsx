@@ -73,6 +73,57 @@ function timeLeft(expiresAt: string) {
     return `${mins}m ${secs}s`;
 }
 
+// Web Audio API Synthesized Audio Cues for POS Barcode Scanner
+function playScanSuccessBeep() {
+    if (typeof window === 'undefined') return;
+    try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1050, audioCtx.currentTime); // Crisp positive scan beep
+        gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.09);
+        
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.09);
+    } catch {
+        // Audio not allowed or failed
+    }
+}
+
+function playScanErrorBuzz() {
+    if (typeof window === 'undefined') return;
+    try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const osc1 = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        
+        osc1.connect(gainNode);
+        osc2.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        osc1.type = 'sawtooth';
+        osc2.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(140, audioCtx.currentTime);
+        osc2.frequency.setValueAtTime(143, audioCtx.currentTime);
+        
+        gainNode.gain.setValueAtTime(0.09, audioCtx.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.22);
+        
+        osc1.start();
+        osc2.start();
+        osc1.stop(audioCtx.currentTime + 0.22);
+        osc2.stop(audioCtx.currentTime + 0.22);
+    } catch {
+        // Audio not allowed or failed
+    }
+}
+
 export default function NewSalePage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -225,18 +276,21 @@ export default function NewSalePage() {
     }, [searchQuery]);
 
     // ─── Barcode scan / Search submit ──────────────────────────────
-    const handleSearchSubmit = useCallback(async () => {
-        if (!searchQuery.trim()) return;
+    const handleSearchSubmit = useCallback(async (codeToScan?: string) => {
+        const query = (codeToScan !== undefined ? codeToScan : searchQuery).trim();
+        if (!query) return;
         try {
-            const res = await authFetch(`/pos-sales/scan`, { params: { barcode: searchQuery.trim() } });
+            const res = await authFetch(`/pos-sales/scan`, { params: { barcode: query } });
             if (res.ok && res.data?.status && res.data.data) {
                 const product = res.data.data;
                 const defTax = parseFloat(settings.defaultTaxPercent) || 0;
+                playScanSuccessBeep();
                 setCartItems((prev) => {
                     const existingIndex = prev.findIndex((i) => i.id === product.id);
                     if (existingIndex > -1) {
                         const existing = prev[existingIndex];
                         if (existing.quantity + 1 > product.stockQty) {
+                            playScanErrorBuzz();
                             toast.error(`Only ${product.stockQty} units available in stock`);
                             return prev;
                         }
@@ -250,24 +304,31 @@ export default function NewSalePage() {
                     setTimeout(() => setFocusedCartIndex(prev.length), 0);
                     return [...prev, computeLineItem(product, 1, Number(product.effectiveDiscountPercent ?? product.discountRate) || 0, defTax)];
                 });
+                toast.success(`+1 Scanned: ${product.description || product.sku || "Item"}`);
             } else {
-                toast.error(res.data?.message || "Item not found");
+                playScanErrorBuzz();
+                toast.error(res.data?.message || `Item not found for barcode "${query}"`);
             }
         } catch {
+            playScanErrorBuzz();
             toast.error("Failed to scan item. Check connection.");
+        } finally {
+            setSearchQuery("");
+            setSearchResults([]);
+            searchInputRef.current?.focus();
         }
-        setSearchQuery("");
-        searchInputRef.current?.focus();
     }, [searchQuery, settings.defaultTaxPercent]);
 
     // ─── Select from Autocomplete ───────────────────────────────────
     const handleSelectProduct = useCallback((product: any) => {
         const defTax = parseFloat(settings.defaultTaxPercent) || 0;
+        playScanSuccessBeep();
         setCartItems((prev) => {
             const existingIndex = prev.findIndex((i) => i.id === product.id);
             if (existingIndex > -1) {
                 const existing = prev[existingIndex];
                 if (existing.quantity + 1 > product.stockQty) {
+                    playScanErrorBuzz();
                     toast.error(`Only ${product.stockQty} units available in stock`);
                     return prev;
                 }
@@ -426,16 +487,59 @@ export default function NewSalePage() {
         }
     }, [searchParams, loadHoldOrders]);
 
-    // ─── Keyboard shortcuts ─────────────────────────────────────────
+    // ─── Keyboard shortcuts & Global Barcode Scanner Listener ───────
     useEffect(() => {
+        let scannerBuffer = "";
+        let lastScannerKeyTime = 0;
+        let scannerBufferTimer: NodeJS.Timeout | null = null;
+
         const handleKeyDown = (e: KeyboardEvent) => {
             const activeEl = document.activeElement;
-            const isInputFocused = activeEl && (
+            const isSearchInputFocused = activeEl === searchInputRef.current;
+            const isOtherInputFocused = activeEl && !isSearchInputFocused && (
                 activeEl.tagName === "INPUT" || 
                 activeEl.tagName === "TEXTAREA" || 
                 activeEl.tagName === "SELECT" ||
-                activeEl.getAttribute("contenteditable") === "true"
+                (activeEl as HTMLElement).isContentEditable
             );
+
+            // If user is actively typing in a non-search input (like discount input or hold note), don't intercept
+            if (isOtherInputFocused || showHoldOrders || showHoldModal) {
+                return;
+            }
+
+            const now = Date.now();
+            const diff = now - lastScannerKeyTime;
+            lastScannerKeyTime = now;
+
+            // Global barcode scanner rapid keystroke detection when search input is NOT focused
+            if (!isSearchInputFocused && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                if (diff < 50) {
+                    scannerBuffer += e.key;
+                    if (scannerBufferTimer) clearTimeout(scannerBufferTimer);
+                    scannerBufferTimer = setTimeout(() => {
+                        if (scannerBuffer.length >= 3) {
+                            const code = scannerBuffer;
+                            scannerBuffer = "";
+                            handleSearchSubmit(code);
+                        }
+                        scannerBuffer = "";
+                    }, 80);
+                } else {
+                    scannerBuffer = e.key;
+                    if (scannerBufferTimer) clearTimeout(scannerBufferTimer);
+                    scannerBufferTimer = setTimeout(() => {
+                        scannerBuffer = "";
+                    }, 100);
+                }
+            } else if (!isSearchInputFocused && e.key === "Enter" && scannerBuffer.length >= 3) {
+                e.preventDefault();
+                if (scannerBufferTimer) clearTimeout(scannerBufferTimer);
+                const code = scannerBuffer;
+                scannerBuffer = "";
+                handleSearchSubmit(code);
+                return;
+            }
 
             // Toggle help panel with F1 or Ctrl+/
             if (e.key === "F1" || (e.ctrlKey && e.key === "/")) {
@@ -464,7 +568,7 @@ export default function NewSalePage() {
                 if (showShortcutsHelp) { setShowShortcutsHelp(false); return; }
                 
                 // If focused inside any input, blur it and focus/highlight the cart table/active row
-                if (isInputFocused) {
+                if (isSearchInputFocused || isOtherInputFocused) {
                     (activeEl as HTMLElement).blur();
                     if (cartItems.length > 0 && focusedCartIndex === -1) {
                         setFocusedCartIndex(cartItems.length - 1);
@@ -496,7 +600,7 @@ export default function NewSalePage() {
             }
 
             // --- Cart Table Navigation and Operation Keys (only when not in input) ---
-            if (!isInputFocused && cartItems.length > 0) {
+            if (!isSearchInputFocused && !isOtherInputFocused && cartItems.length > 0) {
                 // Arrow keys navigation
                 if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
@@ -561,34 +665,14 @@ export default function NewSalePage() {
         };
 
         window.addEventListener("keydown", handleKeyDown);
-        return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [cartItems, isProcessing, showHoldOrders, showShortcutsHelp, focusedCartIndex, handleHold, loadHoldOrders, handleQuantityChange, handleRemoveItem, canHold, canViewHolds, handleCheckout]);
-
-    // ─── Debounced Live Search ──────────────────────────────────────
-    useEffect(() => {
-        const timer = setTimeout(async () => {
-            if (searchQuery.trim().length >= 2) {
-                setIsSearching(true);
-                try {
-                    const res = await authFetch(`/pos-sales/lookup`, { params: { q: searchQuery.trim() } });
-                    if (res.ok && res.data?.status && res.data.data) {
-                        setSearchResults(res.data.data);
-                    } else {
-                        setSearchResults([]);
-                    }
-                } catch {
-                    setSearchResults([]);
-                } finally {
-                    setIsSearching(false);
-                }
-            } else {
-                setSearchResults([]);
-            }
-        }, 300);
-        return () => clearTimeout(timer);
-    }, [searchQuery]);
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+            if (scannerBufferTimer) clearTimeout(scannerBufferTimer);
+        };
+    }, [cartItems, isProcessing, showHoldOrders, showHoldModal, showShortcutsHelp, focusedCartIndex, handleHold, loadHoldOrders, handleQuantityChange, handleRemoveItem, canHold, canViewHolds, handleCheckout, handleSearchSubmit]);
 
     // ─── Derived state ──────────────────────────────────────────────
+    const totalQuantity = cartItems.reduce((acc, item) => acc + item.quantity, 0);
     const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
     const totalDiscount = cartItems.reduce((acc, item) => acc + item.discountAmount, 0);
     const totalTax = cartItems.reduce((acc, item) => acc + item.taxAmount, 0);
@@ -626,6 +710,7 @@ export default function NewSalePage() {
             {/* Top bar */}
             <NewSaleTopBar
                 itemCount={cartItems.length}
+                totalQuantity={totalQuantity}
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
                 onSearchSubmit={handleSearchSubmit}

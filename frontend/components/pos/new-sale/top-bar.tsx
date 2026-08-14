@@ -1,18 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import {
     ScanBarcode,
     ShoppingCart,
+    Package,
 } from "lucide-react";
 import { formatCurrency, cn } from "@/lib/utils";
 
 interface TopBarProps {
     itemCount: number;
+    totalQuantity?: number;
     searchQuery: string;
     onSearchChange: (value: string) => void;
-    onSearchSubmit: () => void;
+    onSearchSubmit: (code?: string) => void;
     searchResults: any[];
     isSearching: boolean;
     onSelectProduct: (product: any) => void;
@@ -21,6 +23,7 @@ interface TopBarProps {
 
 export function NewSaleTopBar({
     itemCount,
+    totalQuantity,
     searchQuery,
     onSearchChange,
     onSearchSubmit,
@@ -30,13 +33,82 @@ export function NewSaleTopBar({
     searchInputRef,
 }: TopBarProps) {
     const [activeIndex, setActiveIndex] = useState<number>(-1);
+    const lastKeyTimeRef = useRef<number>(0);
+    const fastKeyCountRef = useRef<number>(0);
+    const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     // Reset active index when search results or query change
     useEffect(() => {
         setActiveIndex(-1);
     }, [searchResults, searchQuery]);
 
+    // Clean up timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+        };
+    }, []);
+
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = e.target.value;
+        const now = Date.now();
+        const timeDiff = now - lastKeyTimeRef.current;
+        lastKeyTimeRef.current = now;
+
+        if (timeDiff < 55) {
+            fastKeyCountRef.current += 1;
+        } else {
+            fastKeyCountRef.current = 1;
+        }
+
+        onSearchChange(val);
+
+        if (scanTimeoutRef.current) {
+            clearTimeout(scanTimeoutRef.current);
+        }
+
+        // Hardware barcode scanner inputs keys rapidly (< 50ms per key)
+        // Auto-submit as soon as the scanner finishes transmitting (80ms pause)
+        if (fastKeyCountRef.current >= 3 && val.trim().length >= 3) {
+            scanTimeoutRef.current = setTimeout(() => {
+                onSearchSubmit(val.trim());
+                fastKeyCountRef.current = 0;
+            }, 80);
+        }
+    };
+
+    const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+        const pasted = e.clipboardData.getData("text").trim();
+        if (pasted.length >= 2) {
+            e.preventDefault();
+            if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+            onSearchSubmit(pasted);
+        }
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+
+            if (activeIndex >= 0 && activeIndex < searchResults.length) {
+                onSelectProduct(searchResults[activeIndex]);
+                setActiveIndex(-1);
+            } else if (searchQuery.trim().length > 0) {
+                onSearchSubmit(searchQuery.trim());
+                setActiveIndex(-1);
+            }
+            return;
+        }
+
+        if (e.key === "Escape") {
+            e.preventDefault();
+            if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+            onSearchChange("");
+            setActiveIndex(-1);
+            return;
+        }
+
         if (searchResults.length === 0) return;
 
         if (e.key === "ArrowDown") {
@@ -45,18 +117,6 @@ export function NewSaleTopBar({
         } else if (e.key === "ArrowUp") {
             e.preventDefault();
             setActiveIndex((prev) => (prev - 1 + searchResults.length) % searchResults.length);
-        } else if (e.key === "Enter") {
-            if (activeIndex >= 0 && activeIndex < searchResults.length) {
-                e.preventDefault();
-                onSelectProduct(searchResults[activeIndex]);
-                setActiveIndex(-1);
-            } else {
-                onSearchSubmit();
-            }
-        } else if (e.key === "Escape") {
-            e.preventDefault();
-            onSearchChange("");
-            setActiveIndex(-1);
         }
     };
 
@@ -82,7 +142,8 @@ export function NewSaleTopBar({
                             ref={searchInputRef}
                             placeholder="Scan Barcode / Search Product by Name or SKU..."
                             value={searchQuery}
-                            onChange={(e) => onSearchChange(e.target.value)}
+                            onChange={handleInputChange}
+                            onPaste={handlePaste}
                             onKeyDown={handleKeyDown}
                             className="pl-9 bg-muted/50 border-input h-10 w-full"
                         />
@@ -143,17 +204,32 @@ export function NewSaleTopBar({
                     </div>
                 </div>
 
-                {/* Right section: Items Count */}
-                <div className="flex items-center gap-6">
-                    {/* Items in Cart */}
-                    <div className="flex flex-col items-center gap-0.5 ml-auto">
+                {/* Right section: Items Count & Total Quantity */}
+                <div className="flex items-center gap-4 sm:gap-6 shrink-0">
+                    {/* Items in Cart (Lines) */}
+                    <div className="flex flex-col items-center gap-0.5">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                             Items in Cart
                         </span>
                         <div className="flex items-center gap-1.5">
-                            <ShoppingCart className="h-4 w-4 text-foreground" />
+                            <ShoppingCart className="h-4 w-4 text-muted-foreground" />
                             <span className="text-2xl font-bold leading-none">
                                 {itemCount}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="h-8 w-px bg-border hidden sm:block" />
+
+                    {/* Total Quantity */}
+                    <div className="flex flex-col items-center gap-0.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                            Total Qty
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                            <Package className="h-4 w-4 text-primary" />
+                            <span className="text-2xl font-black leading-none text-primary">
+                                {totalQuantity !== undefined ? totalQuantity : itemCount}
                             </span>
                         </div>
                     </div>
