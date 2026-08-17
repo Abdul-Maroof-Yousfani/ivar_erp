@@ -106,10 +106,14 @@ export class CorporateVoucherExportProcessor {
       runInBackground(
         this.notificationsService.create({
           userId,
-          title: 'Export Ready',
+          title: 'Corporate Voucher Export Ready',
           message: `Corporate Voucher Report export (${format.toUpperCase()}) is ready for download.`,
           category: 'export',
-          priority: 'normal',
+          priority: 'high',
+          actionType: 'corporate-voucher-export.ready',
+          actionPayload: JSON.stringify({ jobId, format }),
+          entityType: 'corporate-voucher-export',
+          entityId: jobId,
         }),
       );
     } catch (err: any) {

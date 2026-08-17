@@ -101,10 +101,14 @@ export class CostOfSalesExportProcessor {
       runInBackground(
         this.notificationsService.create({
           userId,
-          title: 'Export Ready',
+          title: 'Cost of Sales Export Ready',
           message: `Cost of Sales Report export (${format.toUpperCase()}) is ready for download.`,
           category: 'export',
-          priority: 'normal',
+          priority: 'high',
+          actionType: 'cost-of-sales-export.ready',
+          actionPayload: JSON.stringify({ jobId, format }),
+          entityType: 'cost-of-sales-export',
+          entityId: jobId,
         }),
       );
     } catch (err: any) {
