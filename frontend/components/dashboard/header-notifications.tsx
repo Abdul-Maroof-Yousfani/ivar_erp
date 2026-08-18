@@ -74,7 +74,7 @@ export function HeaderNotifications() {
   const refresh = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
-      const res = await authFetch(`${getApiBaseUrl()}/notifications?limit=10`, {
+      const res = await authFetch(`/notifications?limit=10`, {
         method: "GET",
         cache: "no-store",
       });
@@ -128,7 +128,7 @@ export function HeaderNotifications() {
       if (!current) return;
 
       const res = await authFetch(
-        `${getApiBaseUrl()}/notifications/${id}/read`,
+        `/api/notifications/${id}/read`,
         {
           method: "PUT",
           cache: "no-store",
@@ -148,7 +148,7 @@ export function HeaderNotifications() {
 
   const handleMarkAllRead = useCallback(async () => {
     if (!isAuthenticated) return;
-    const res = await authFetch(`${getApiBaseUrl()}/notifications/read-all`, {
+    const res = await authFetch(`/api/notifications/read-all`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -176,13 +176,29 @@ export function HeaderNotifications() {
       await handleMarkRead(n.id);
 
       // Helper to download binary export file with authentication
-      const triggerDownload = async (url: string, defaultFilename: string) => {
+      const triggerDownload = async (pathOrUrl: string, defaultFilename: string) => {
         const toastId = toast.loading(`Preparing download for ${defaultFilename}...`);
         try {
           const token = await getAccessToken();
           const headers: Record<string, string> = {};
           if (token) {
             headers["Authorization"] = `Bearer ${token}`;
+          }
+
+          const base = getApiBaseUrl();
+          let url = pathOrUrl;
+          if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            const cleanPath = pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`;
+            const apiPath = cleanPath.startsWith("/api/") ? cleanPath : `/api${cleanPath}`;
+            url = `${base}${apiPath}`;
+          } else {
+            try {
+              const parsed = new URL(url);
+              if (!parsed.pathname.startsWith("/api/")) {
+                parsed.pathname = `/api${parsed.pathname}`;
+                url = parsed.toString();
+              }
+            } catch {}
           }
 
           const response = await fetch(url, {
@@ -618,6 +634,19 @@ export function HeaderNotifications() {
         await triggerDownload(
           `${base}/stock-ledger/overall-available-reserved-stock/export/${jobId}/download`,
           `overall-available-reserved-stock-export-${todayStr}.${format}`
+        );
+        return;
+      }
+
+      // 29. Out-of-Stock Report Export
+      if (
+        (actionType === "out-of-stock-export.ready" ||
+          entityType === "out-of-stock-export") &&
+        jobId
+      ) {
+        await triggerDownload(
+          `${base}/stock-ledger/out-of-stock-report/export/${jobId}/download`,
+          `out-of-stock-report-${todayStr}.${format}`
         );
         return;
       }

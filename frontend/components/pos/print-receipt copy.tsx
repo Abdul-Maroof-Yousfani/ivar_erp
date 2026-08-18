@@ -1116,12 +1116,15 @@ function ReceiptBody({
 
       {/* ── Terms ── */}
       <div className="py-1 border-b border-dashed border-zinc-400 text-[8px] leading-snug">
-        <p className="font-bold text-[9px] uppercase">Terms &amp; Conditions</p>
-        <p>
-          • No refund. Exchange within 4 days on unused items with invoice. Sale
-          items non-exchangeable. Full-price items go on sale: exchanged at
-          marked-down price.
-        </p>
+        <p className="font-bold text-[9px] uppercase">Exchange &amp; Refund Policy</p>
+        <ul className="list-disc pl-3 space-y-0.5 mt-0.5">
+          <li>Exchange is allowed within 15 days of the purchase date with the original invoice and tags attached.</li>
+          <li>Refunds are only applicable for items confirmed by the company to have a manufacturing defect. Approved refunds will be processed within 15 working days.</li>
+          <li>Items that are used, washed, altered, damaged, or without original tags/invoice are not eligible for exchange or refund.</li>
+          <li>Only one exchange is allowed per purchase. Exchanged items cannot be exchanged again.</li>
+          <li>Sale, promotional, and discounted items are not eligible for exchange or refund unless a manufacturing defect is confirmed.</li>
+          <li>The company's quality inspection and final decision regarding exchange or refund shall be final.</li>
+        </ul>
       </div>
 
       {/* ── Footer ── */}
@@ -1566,24 +1569,15 @@ function A4InvoiceBody({
             {/* Terms and Conditions */}
             <div className="text-[9px] text-zinc-500 space-y-1">
               <p className="font-bold text-zinc-700 uppercase tracking-wider mb-0.5">
-                Terms &amp; Conditions of Sale
+                Exchange &amp; Refund Policy
               </p>
               <ul className="list-disc pl-3 space-y-0.5">
-                <li>No refund under any circumstances.</li>
-                <li>
-                  Exchange is allowed within 10 days of purchase only on unused
-                  items from the outlet where purchased.
-                </li>
-                <li>
-                  Sales Tax Invoice must be presented for any exchange or claim.
-                </li>
-                <li>
-                  Sales and promotional items are strictly non-exchangeable.
-                </li>
-                <li>
-                  Items purchased at full price which go on sale will be
-                  exchanged at the marked down price.
-                </li>
+                <li>Exchange is allowed within 15 days of the purchase date with the original invoice and tags attached.</li>
+                <li>Refunds are only applicable for items confirmed by the company to have a manufacturing defect. Approved refunds will be processed within 15 working days.</li>
+                <li>Items that are used, washed, altered, damaged, or without original tags/invoice are not eligible for exchange or refund.</li>
+                <li>Only one exchange is allowed per purchase. Exchanged items cannot be exchanged again.</li>
+                <li>Sale, promotional, and discounted items are not eligible for exchange or refund unless a manufacturing defect is confirmed.</li>
+                <li>The company's quality inspection and final decision regarding exchange or refund shall be final.</li>
               </ul>
             </div>
 

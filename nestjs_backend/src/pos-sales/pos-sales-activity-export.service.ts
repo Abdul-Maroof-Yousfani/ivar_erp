@@ -11,8 +11,16 @@ export interface QueuePosSalesActivityExportOptions {
   userId: string;
   posId?: string;
   activityType?: string;
-  filters?: { startDate?: string; endDate?: string; search?: string };
+  filters?: { 
+    startDate?: string; 
+    endDate?: string; 
+    search?: string;
+    merchantId?: string;
+    paymentMethod?: string;
+  };
   locationId?: string;
+  merchantId?: string;
+  paymentMethod?: string;
 }
 
 @Injectable()
@@ -52,6 +60,8 @@ export class PosSalesActivityExportService {
         activityType: opts.activityType,
         filters: opts.filters,
         locationId: opts.locationId,
+        merchantId: opts.merchantId,
+        paymentMethod: opts.paymentMethod,
       },
       {
         jobId,
@@ -106,9 +116,22 @@ export class PosSalesActivityExportService {
       return res.redirect(record.filePath, 302);
     }
 
-    const filePath = path.isAbsolute(record.filePath)
+    let filePath = path.isAbsolute(record.filePath)
       ? record.filePath
       : path.join(process.cwd(), record.filePath);
+
+    if (!fs.existsSync(filePath)) {
+      const cleanRelPath = record.filePath.replace(/^[/\\]+/, '');
+      const altPath = path.join(process.cwd(), cleanRelPath);
+      if (fs.existsSync(altPath)) {
+        filePath = altPath;
+      } else {
+        const publicPath = path.join(process.cwd(), 'public', cleanRelPath);
+        if (fs.existsSync(publicPath)) {
+          filePath = publicPath;
+        }
+      }
+    }
 
     if (!fs.existsSync(filePath)) {
       throw new NotFoundException('Export file not found. It may have expired or the job is still running.');
@@ -116,12 +139,6 @@ export class PosSalesActivityExportService {
 
     const stat = fs.statSync(filePath);
     const stream = fs.createReadStream(filePath);
-    stream.on('close', () => {
-      fs.unlink(filePath, (err) => {
-        if (err) this.logger.warn(`Could not delete export file: ${err.message}`);
-        else this.logger.log(`[PosSalesActivityExport] Cleaned up ${filePath}`);
-      });
-    });
     stream.on('error', (err) => {
       this.logger.error(`[PosSalesActivityExport] Stream error: ${err.message}`);
     });
@@ -130,6 +147,6 @@ export class PosSalesActivityExportService {
     res.header('Content-Disposition', `attachment; filename="${record.fileName}"`);
     res.header('Content-Length', stat.size);
     res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.send(stream);
+    stream.pipe(res);
   }
 }

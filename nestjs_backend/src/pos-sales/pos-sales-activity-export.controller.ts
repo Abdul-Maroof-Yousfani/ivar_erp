@@ -36,42 +36,41 @@ export class PosSalesActivityExportController {
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('search') search?: string,
+    @Query('locationId') locationId?: string,
+    @Query('merchantId') merchantId?: string,
+    @Query('paymentMethod') paymentMethod?: string,
   ) {
-    // Determine effective filtering context (following logic in listActivities)
-    let effectivePosId = posId;
-    let effectiveLocationId: string | undefined = undefined;
+    // Resolve effective location and POS filters
+    let effectiveLocationId = locationId && locationId !== 'all' ? locationId : undefined;
+    let effectivePosId = posId && posId !== 'all' ? posId : undefined;
 
-    // 1. Context from logged-in user
-    if (req.user?.isPosUser || req.user?.isTerminal) {
-      if (!effectivePosId) effectivePosId = req.user.posId || req.user.terminalId;
+    // Only restrict to user's location if it's explicitly a terminal/cashier user with no all-locations permission and no explicit location was provided
+    if (!effectiveLocationId && req.user?.isPosUser && !req.user?.permissions?.includes('pos.reports.all_locations')) {
       effectiveLocationId = req.user.locationId;
-    }
-
-    // 2. Fallback to terminal cookie
-    if (!effectivePosId && req.cookies?.posTerminalToken) {
-      try {
-        const decoded: any = jwt.decode(req.cookies.posTerminalToken);
-        effectivePosId = decoded?.posId || decoded?.terminalId;
-        if (!effectiveLocationId) effectiveLocationId = decoded?.locationId;
-      } catch (e) {}
-    }
-
-    // 3. Fallback: any user with a locationId on their token
-    if (!effectiveLocationId && req.user?.locationId) {
-      effectiveLocationId = req.user.locationId;
+      if (!effectivePosId && !search) {
+        effectivePosId = req.user.posId || req.user.terminalId;
+      }
     }
 
     const result = await this.exportService.queueExport({
       userId: req.user?.userId || req.user?.id,
       posId: effectivePosId,
-      activityType,
-      filters: { startDate, endDate, search },
+      activityType: activityType === 'all' ? undefined : activityType,
+      filters: { 
+        startDate, 
+        endDate, 
+        search,
+        merchantId: merchantId === 'all' ? undefined : merchantId,
+        paymentMethod: paymentMethod === 'all' ? undefined : paymentMethod,
+      },
       locationId: effectiveLocationId,
+      merchantId: merchantId === 'all' ? undefined : merchantId,
+      paymentMethod: paymentMethod === 'all' ? undefined : paymentMethod,
     });
 
     return {
       status: true,
-      message: "Activity log export queued. You'll receive a notification and can track progress.",
+      message: "Sales activity export queued. You'll receive a notification when your file is ready.",
       data: result,
     };
   }

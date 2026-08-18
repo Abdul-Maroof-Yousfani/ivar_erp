@@ -197,7 +197,18 @@ export async function getAccessToken(): Promise<string | null> {
 // Authenticated fetch helper - works on both server and client
 export async function authFetch(url: string, options: any = {}): Promise<any> {
   const BASE_URL = getApiBaseUrl();
-  let fullUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`;
+  let fullUrl = url;
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    const baseClean = BASE_URL.replace(/\/+$/, '');
+    const urlClean = url.startsWith('/') ? url : `/${url}`;
+    if (baseClean.endsWith('/api') && urlClean.startsWith('/api/')) {
+      fullUrl = `${baseClean}${urlClean.substring(4)}`;
+    } else if (!baseClean.endsWith('/api') && !urlClean.startsWith('/api/')) {
+      fullUrl = `${baseClean}/api${urlClean}`;
+    } else {
+      fullUrl = `${baseClean}${urlClean}`;
+    }
+  }
 
   // Handle query parameters
   if (options.params) {
