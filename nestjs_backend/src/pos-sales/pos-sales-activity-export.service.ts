@@ -147,6 +147,6 @@ export class PosSalesActivityExportService {
     res.header('Content-Disposition', `attachment; filename="${record.fileName}"`);
     res.header('Content-Length', stat.size);
     res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
-    stream.pipe(res);
+    res.send(stream);
   }
 }

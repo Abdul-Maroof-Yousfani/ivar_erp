@@ -234,14 +234,42 @@ export class PosSalesActivityExportProcessor {
 
         const ledgersInRange = await prisma.stockLedger.findMany({
           where: {
-            referenceType: { in: ['POS_RETURN', 'POS_REFUND'] },
+            referenceType: { in: ['POS_RETURN', 'POS_REFUND', 'OUTLET_TRANSFER_OUT', 'CROSS_LOCATION_RETURN_TRANSFER'] },
             createdAt: ledgerRangeQuery,
           },
           select: { referenceId: true },
         });
         ledgersInRange.forEach(l => targetOrderIds.add(l.referenceId));
 
-        // 3. Claim Activity in range (from claims)
+        // 3. Orders with return/refund updated in range
+        const ordersUpdatedInRange = await prisma.salesOrder.findMany({
+          where: {
+            ...where,
+            OR: [
+              { returnNumber: { not: null } },
+              { refundNumber: { not: null } },
+              { status: { in: ['returned', 'partially_returned', 'refunded'] } },
+            ],
+            updatedAt: ledgerRangeQuery,
+          },
+          select: { id: true },
+        });
+        ordersUpdatedInRange.forEach(o => targetOrderIds.add(o.id));
+
+        // 4. Vouchers created in range (Exchange or Refund vouchers)
+        const vouchersInRange = await prisma.voucher.findMany({
+          where: {
+            sourceOrderId: { not: null },
+            voucherType: { in: ['EXCHANGE', 'REFUND', 'CREDIT'] },
+            createdAt: ledgerRangeQuery,
+          },
+          select: { sourceOrderId: true },
+        });
+        vouchersInRange.forEach(v => {
+          if (v.sourceOrderId) targetOrderIds.add(v.sourceOrderId);
+        });
+
+        // 5. Claim Activity in range (from claims)
         const claimRangeQuery: any = {};
         if (start) claimRangeQuery.gte = start;
         if (end) claimRangeQuery.lte = end;
@@ -449,7 +477,7 @@ export class PosSalesActivityExportProcessor {
         // Fetch stock ledgers for returns/refunds
         const returnEntries = await prisma.stockLedger.findMany({
           where: {
-            referenceType: { in: ['POS_RETURN', 'POS_REFUND'] },
+            referenceType: { in: ['POS_RETURN', 'POS_REFUND', 'OUTLET_TRANSFER_OUT', 'CROSS_LOCATION_RETURN_TRANSFER'] },
             referenceId: { in: orderIds },
           },
           select: { 
@@ -639,12 +667,13 @@ export class PosSalesActivityExportProcessor {
           });
 
           // 2. Return Activity
-          const returnLedgers = orderLedgers.filter(l => l.referenceType === 'POS_RETURN');
-          if (order.returnNumber || returnLedgers.length > 0) {
+          const returnLedgers = orderLedgers.filter(l => ['POS_RETURN', 'OUTLET_TRANSFER_OUT', 'CROSS_LOCATION_RETURN_TRANSFER'].includes(l.referenceType));
+          const hasReturn = !!(order.returnNumber || returnLedgers.length > 0 || order.status === 'returned' || order.status === 'partially_returned');
+          if (hasReturn) {
             const exchangeVoucher = orderVouchers.find(v => v.voucherType === 'EXCHANGE');
             const returnDate = returnLedgers.length > 0 ? returnLedgers[returnLedgers.length - 1].createdAt : order.updatedAt;
 
-            const returnedItems = returnLedgers.map(l => {
+            let returnedItems = returnLedgers.map(l => {
               const orderItem = order.items.find((oi: any) => oi.itemId === l.itemId);
               const qty = Math.abs(Number(l.qty));
               const origQty = Number(orderItem?.quantity || 1);
@@ -670,6 +699,50 @@ export class PosSalesActivityExportProcessor {
                 manualDiscountNote: '',
               };
             });
+
+            if (returnedItems.length === 0 && order.items && order.items.length > 0) {
+              returnedItems = order.items.map((oi: any) => ({
+                itemId: oi.itemId,
+                sku: oi.item?.sku || oi.item?.barCode || 'N/A',
+                barcode: oi.item?.barCode || '',
+                description: oi.item?.description || 'Item',
+                brand: oi.item?.brand?.name || '',
+                category: oi.item?.category?.name || '',
+                size: oi.item?.size?.name || '',
+                color: oi.item?.color?.name || '',
+                quantity: oi.quantity,
+                unitPrice: Number(oi.unitPrice),
+                lineTotal: Number(oi.lineTotal),
+                taxPercent: Number(oi.taxPercent || 0),
+                taxAmount: Number(oi.taxAmount || 0),
+                discountPercent: Number(oi.discountPercent || 0),
+                discountAmount: Number(oi.discountAmount || 0),
+                manualDiscountApplied: 'NO',
+                manualDiscountNote: '',
+              }));
+            }
+
+            if (returnedItems.length === 0) {
+              returnedItems = [{
+                itemId: '',
+                sku: 'N/A',
+                barcode: '',
+                description: order.returnNumber || 'Sales Return',
+                brand: '',
+                category: '',
+                size: '',
+                color: '',
+                quantity: 1,
+                unitPrice: exchangeVoucher ? Number(exchangeVoucher.faceValue) : Number(order.grandTotal || 0),
+                lineTotal: exchangeVoucher ? Number(exchangeVoucher.faceValue) : Number(order.grandTotal || 0),
+                taxPercent: 0,
+                taxAmount: 0,
+                discountPercent: 0,
+                discountAmount: 0,
+                manualDiscountApplied: 'NO',
+                manualDiscountNote: '',
+              }];
+            }
 
             chunkActivities.push({
               id: `${order.id}-return`,
@@ -723,11 +796,11 @@ export class PosSalesActivityExportProcessor {
 
           // 3. Refund Activity
           const refundLedgers = orderLedgers.filter(l => l.referenceType === 'POS_REFUND');
-          if (order.refundNumber || refundLedgers.length > 0) {
+          if (order.refundNumber || refundLedgers.length > 0 || order.status === 'refunded') {
             const refundVouchers = orderVouchers.filter(v => ['REFUND', 'CREDIT'].includes(v.voucherType) && !saleIssuedVouchers.some(sv => sv.id === v.id));
             const refundDate = refundLedgers.length > 0 ? refundLedgers[refundLedgers.length - 1].createdAt : order.updatedAt;
 
-            const refundedItems = refundLedgers.map(l => {
+            let refundedItems = refundLedgers.map(l => {
               const orderItem = order.items.find((oi: any) => oi.itemId === l.itemId);
               const qty = Math.abs(Number(l.qty));
               const origQty = Number(orderItem?.quantity || 1);
@@ -753,6 +826,50 @@ export class PosSalesActivityExportProcessor {
                 manualDiscountNote: '',
               };
             });
+
+            if (refundedItems.length === 0 && order.items && order.items.length > 0) {
+              refundedItems = order.items.map((oi: any) => ({
+                itemId: oi.itemId,
+                sku: oi.item?.sku || oi.item?.barCode || 'N/A',
+                barcode: oi.item?.barCode || '',
+                description: oi.item?.description || 'Item',
+                brand: oi.item?.brand?.name || '',
+                category: oi.item?.category?.name || '',
+                size: oi.item?.size?.name || '',
+                color: oi.item?.color?.name || '',
+                quantity: oi.quantity,
+                unitPrice: Number(oi.unitPrice),
+                lineTotal: Number(oi.lineTotal),
+                taxPercent: Number(oi.taxPercent || 0),
+                taxAmount: Number(oi.taxAmount || 0),
+                discountPercent: Number(oi.discountPercent || 0),
+                discountAmount: Number(oi.discountAmount || 0),
+                manualDiscountApplied: 'NO',
+                manualDiscountNote: '',
+              }));
+            }
+
+            if (refundedItems.length === 0) {
+              refundedItems = [{
+                itemId: '',
+                sku: 'N/A',
+                barcode: '',
+                description: order.refundNumber || 'Cash Refund',
+                brand: '',
+                category: '',
+                size: '',
+                color: '',
+                quantity: 1,
+                unitPrice: refundVouchers.length > 0 ? refundVouchers.reduce((sum, v) => sum + Number(v.faceValue), 0) : Number(order.grandTotal || 0),
+                lineTotal: refundVouchers.length > 0 ? refundVouchers.reduce((sum, v) => sum + Number(v.faceValue), 0) : Number(order.grandTotal || 0),
+                taxPercent: 0,
+                taxAmount: 0,
+                discountPercent: 0,
+                discountAmount: 0,
+                manualDiscountApplied: 'NO',
+                manualDiscountNote: '',
+              }];
+            }
 
             chunkActivities.push({
               id: `${order.id}-refund`,
@@ -900,7 +1017,7 @@ export class PosSalesActivityExportProcessor {
         }
 
         if (activityType && activityType !== 'all') {
-          if (activityType === 'exchange') {
+          if (['exchange', 'return', 'sales_return', 'returns', 'sale_return'].includes(activityType.toLowerCase())) {
             chunkActivities = chunkActivities.filter(act => 
               act.type === 'return' || (act.type === 'claim' && act.claimType === 'EXCHANGE')
             );
@@ -911,8 +1028,26 @@ export class PosSalesActivityExportProcessor {
 
         // Write chunk activities to worksheet
         for (const act of chunkActivities) {
-          if (act.items && act.items.length > 0) {
-            for (const it of act.items) {
+          const itemsToWrite = act.items && act.items.length > 0 ? act.items : [{
+            sku: 'N/A',
+            barcode: '',
+            description: act.number || 'Activity',
+            brand: '',
+            category: '',
+            size: '',
+            color: '',
+            quantity: 1,
+            unitPrice: act.amount || 0,
+            lineTotal: act.amount || 0,
+            taxPercent: 0,
+            taxAmount: 0,
+            discountPercent: 0,
+            discountAmount: 0,
+            manualDiscountApplied: 'NO',
+            manualDiscountNote: '',
+          }];
+
+          for (const it of itemsToWrite) {
               const isAlt = rowIdx % 2 === 1;
 
               // Format issued vouchers string
@@ -1031,7 +1166,6 @@ export class PosSalesActivityExportProcessor {
               rowIdx++;
             }
           }
-        }
 
         processed += rawOrders.length;
         const pct = totalOrders > 0 ? Math.round((processed / totalOrders) * 95) : 50;
