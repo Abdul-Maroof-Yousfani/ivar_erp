@@ -10,6 +10,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { DateRangePicker, DateRange } from "@/components/ui/date-range-picker";
 import { PrintReceipt } from "@/components/pos/print-receipt";
 import { PrintReturnReceipt } from "@/components/pos/print-return-receipt";
@@ -252,7 +258,8 @@ export default function ERPSalesActivityReportPage() {
         setReturnDetails(null);
         setShowReturnPrint(true);
         try {
-            const retRes = await authFetch(`/pos-sales/orders/${order.id}/return-details?type=${type}`);
+            const orderId = order.orderId || order.id;
+            const retRes = await authFetch(`/pos-sales/orders/${orderId}/return-details?type=${type}`);
             if (retRes.ok && retRes.data?.status) {
                 setReturnDetails(retRes.data.data);
             } else {
@@ -265,12 +272,41 @@ export default function ERPSalesActivityReportPage() {
         }
     };
 
-    const openClaimPrint = (claim: any, originalOrderNumber: string) => {
-        setSelectedClaim({
-            ...claim,
-            salesOrder: { orderNumber: originalOrderNumber }
-        });
+    const openClaimPrint = async (claim: any, originalOrderNumber: string) => {
+        setIsLoadingReceipt(true);
+        setSelectedClaim(null);
         setShowClaimPrint(true);
+        try {
+            const claimId = claim.claimId || claim.id;
+            const res = await authFetch(`/pos-claims/${claimId}`);
+            if (res.ok && res.data?.status) {
+                setSelectedClaim(res.data.data);
+            } else {
+                setSelectedClaim({
+                    ...claim,
+                    claimNumber: claim.number || claim.claimNumber,
+                    salesOrder: { orderNumber: originalOrderNumber || claim.orderNumber },
+                    claimedLines: (claim.items || []).map((it: any) => ({
+                        name: it.description || it.item?.description || "Item",
+                        sku: it.sku || it.item?.sku || "",
+                        claimedQty: it.quantity,
+                        approvedQty: it.approvedQty,
+                        unitPaidPrice: it.price || it.unitPaidPrice || 0,
+                        claimedAmount: it.lineTotal || ((it.price || 0) * (it.quantity || 1)),
+                        approvedAmount: it.approvedAmount,
+                        itemStatus: it.status,
+                    })),
+                });
+            }
+        } catch {
+            setSelectedClaim({
+                ...claim,
+                claimNumber: claim.number || claim.claimNumber,
+                salesOrder: { orderNumber: originalOrderNumber || claim.orderNumber },
+            });
+        } finally {
+            setIsLoadingReceipt(false);
+        }
     };
 
     return (
@@ -659,25 +695,50 @@ export default function ERPSalesActivityReportPage() {
                                         </div>
 
                                         {canPrint && (
-                                            <Button
-                                                variant="outline"
-                                                size="icon"
-                                                className="h-9 w-9 text-primary hover:bg-primary/10 rounded-full shrink-0"
-                                                title={`Print ${cfg.label}`}
-                                                onClick={() => {
-                                                    if (act.type === "sale") {
-                                                        openSalePrint(act.orderId);
-                                                    } else if (act.type === "return") {
-                                                        openReturnPrint({ id: act.orderId, orderNumber: act.orderNumber, grandTotal: act.amount }, "return");
-                                                    } else if (act.type === "refund") {
-                                                        openReturnPrint({ id: act.orderId, orderNumber: act.orderNumber, grandTotal: act.amount }, "refund");
-                                                    } else if (act.type === "claim") {
-                                                        openClaimPrint(act, act.orderNumber);
-                                                    }
-                                                }}
-                                            >
-                                                <Printer className="h-4 w-4" />
-                                            </Button>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                {act.type === "sale" ? (
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="icon"
+                                                                className="h-9 w-9 text-primary hover:bg-primary/10 rounded-full shrink-0"
+                                                                title="Print Options"
+                                                            >
+                                                                <Printer className="h-4 w-4" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end">
+                                                            <DropdownMenuItem onClick={() => openSalePrint(act.orderId || act.id, false)} className="gap-2 cursor-pointer text-xs">
+                                                                <Printer className="h-3.5 w-3.5 text-primary" />
+                                                                Print Sale Receipt
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem onClick={() => openSalePrint(act.orderId || act.id, true)} className="gap-2 cursor-pointer text-xs">
+                                                                <Ticket className="h-3.5 w-3.5 text-rose-500" />
+                                                                Print Gift Receipt
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                ) : (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="icon"
+                                                        className="h-9 w-9 text-primary hover:bg-primary/10 rounded-full shrink-0"
+                                                        title={`Print ${cfg.label}`}
+                                                        onClick={() => {
+                                                            if (act.type === "return") {
+                                                                openReturnPrint({ id: act.orderId || act.id, orderId: act.orderId, number: act.number, orderNumber: act.orderNumber, grandTotal: act.amount, date: act.date }, "return");
+                                                            } else if (act.type === "refund") {
+                                                                openReturnPrint({ id: act.orderId || act.id, orderId: act.orderId, number: act.number, orderNumber: act.orderNumber, grandTotal: act.amount, date: act.date }, "refund");
+                                                            } else if (act.type === "claim") {
+                                                                openClaimPrint(act, act.orderNumber);
+                                                            }
+                                                        }}
+                                                    >
+                                                        <Printer className="h-4 w-4" />
+                                                    </Button>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -880,19 +941,46 @@ export default function ERPSalesActivityReportPage() {
                                             </td>
                                             <td className="p-3 text-center">
                                                 {canPrint && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-8 w-8 text-primary hover:bg-primary/10 rounded-full"
-                                                        onClick={() => {
-                                                            if (act.type === "sale") openSalePrint(act.orderId);
-                                                            else if (act.type === "return") openReturnPrint({ id: act.orderId, orderNumber: act.orderNumber, grandTotal: act.amount }, "return");
-                                                            else if (act.type === "refund") openReturnPrint({ id: act.orderId, orderNumber: act.orderNumber, grandTotal: act.amount }, "refund");
-                                                            else if (act.type === "claim") openClaimPrint(act, act.orderNumber);
-                                                        }}
-                                                    >
-                                                        <Printer className="h-3.5 w-3.5" />
-                                                    </Button>
+                                                    <div className="flex items-center justify-center">
+                                                        {act.type === "sale" ? (
+                                                            <DropdownMenu>
+                                                                <DropdownMenuTrigger asChild>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        className="h-8 w-8 text-primary hover:bg-primary/10 rounded-full"
+                                                                        title="Print Options"
+                                                                    >
+                                                                        <Printer className="h-3.5 w-3.5" />
+                                                                    </Button>
+                                                                </DropdownMenuTrigger>
+                                                                <DropdownMenuContent align="end">
+                                                                    <DropdownMenuItem onClick={() => openSalePrint(act.orderId || act.id, false)} className="gap-2 cursor-pointer text-xs">
+                                                                        <Printer className="h-3.5 w-3.5 text-primary" />
+                                                                        Print Sale Receipt
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuItem onClick={() => openSalePrint(act.orderId || act.id, true)} className="gap-2 cursor-pointer text-xs">
+                                                                        <Ticket className="h-3.5 w-3.5 text-rose-500" />
+                                                                        Print Gift Receipt
+                                                                    </DropdownMenuItem>
+                                                                </DropdownMenuContent>
+                                                            </DropdownMenu>
+                                                        ) : (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 text-primary hover:bg-primary/10 rounded-full"
+                                                                title={`Print ${cfg.label}`}
+                                                                onClick={() => {
+                                                                    if (act.type === "return") openReturnPrint({ id: act.orderId || act.id, orderId: act.orderId, number: act.number, orderNumber: act.orderNumber, grandTotal: act.amount, date: act.date }, "return");
+                                                                    else if (act.type === "refund") openReturnPrint({ id: act.orderId || act.id, orderId: act.orderId, number: act.number, orderNumber: act.orderNumber, grandTotal: act.amount, date: act.date }, "refund");
+                                                                    else if (act.type === "claim") openClaimPrint(act, act.orderNumber);
+                                                                }}
+                                                            >
+                                                                <Printer className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </td>
                                         </tr>
@@ -958,34 +1046,85 @@ export default function ERPSalesActivityReportPage() {
             </div>
 
             {/* Print Modals */}
-            {showPrint && (
+            {showPrint && selectedOrder && (
                 <PrintReceipt
-                    order={selectedOrder}
-                    open={showPrint}
-                    onClose={() => setShowPrint(false)}
+                    order={{ ...selectedOrder, isGiftReceipt: false }}
+                    tenders={selectedOrder.tenders || []}
+                    creditVouchers={selectedOrder.creditVouchers}
+                    isLoading={isLoadingReceipt}
+                    onClose={() => {
+                        setShowPrint(false);
+                        setSelectedOrder(null);
+                        setIsLoadingReceipt(false);
+                    }}
                 />
             )}
-            {showGiftPrint && (
+            {showGiftPrint && selectedOrder && (
                 <PrintReceipt
-                    order={selectedOrder}
-                    open={showGiftPrint}
-                    onClose={() => setShowGiftPrint(false)}
+                    order={{ ...selectedOrder, isGiftReceipt: true }}
+                    tenders={selectedOrder.tenders || []}
+                    creditVouchers={selectedOrder.creditVouchers}
+                    isLoading={isLoadingReceipt}
+                    onClose={() => {
+                        setShowGiftPrint(false);
+                        setSelectedOrder(null);
+                        setIsLoadingReceipt(false);
+                    }}
                 />
             )}
-            {showReturnPrint && (
+            {showReturnPrint && selectedOrder && (
                 <PrintReturnReceipt
-                    order={selectedOrder}
-                    returnDetails={returnDetails}
+                    returnRef={
+                        isRefundPrint
+                            ? (returnDetails?.refundNumber || selectedOrder.refundNumber || selectedOrder.number || selectedOrder.orderNumber || "")
+                            : (returnDetails?.returnNumber || selectedOrder.returnNumber || selectedOrder.number || selectedOrder.orderNumber || "")
+                    }
                     isRefund={isRefundPrint}
-                    open={showReturnPrint}
-                    onClose={() => setShowReturnPrint(false)}
+                    isAlliance={!!selectedOrder.alliance}
+                    originalOrders={[{ orderNumber: selectedOrder.orderNumber || selectedOrder.number, grandTotal: Number(selectedOrder.grandTotal || selectedOrder.amount || 0) }]}
+                    returnedLines={(returnDetails?.items ?? []).map((item: any) => ({
+                        name: item.item?.description || item.description || "Unknown Item",
+                        sku: item.item?.sku || item.sku || "-",
+                        size: typeof item.item?.size === 'object' ? item.item?.size?.name : (item.item?.size || item.size || ""),
+                        brand: item.item?.brand?.name || item.brand,
+                        returnQty: item.returnableQty || item.quantity,
+                        paidPerUnit: Number(item.originalPaidPerUnit || item.unitPrice || item.price || 0),
+                        refundAmount: Number(item.refundAmount || 0),
+                        orderNumber: selectedOrder.orderNumber || selectedOrder.number,
+                        unitPrice: Number(item.unitPrice || item.price || 0),
+                        discountAmount: Number(item.discountAmount || 0),
+                        discountPercent: Number(item.discountPercent || 0),
+                        taxAmount: Number(item.taxAmount || 0),
+                        taxPercent: Number(item.taxPercent || 0),
+                        refundPerUnit: item.refundPerUnit,
+                        priceAdjusted: item.priceAdjusted || false,
+                        originalPaidPerUnit: Number(item.originalPaidPerUnit || item.unitPrice || item.price || 0),
+                        couponDeduction: Number(item.couponDeduction || 0),
+                    }))}
+                    refundTotal={returnDetails?.items?.reduce((sum: number, item: any) => sum + Number(item.refundAmount || 0), 0) ?? 0}
+                    notes={returnDetails?.reason}
+                    discountNotes={returnDetails?.discountNotes}
+                    returnedAt={returnDetails?.returnedAt || selectedOrder.date}
+                    exchangeVoucher={returnDetails?.exchangeVoucher ?? null}
+                    paymentMethod={selectedOrder.paymentMethod}
+                    isLoading={isLoadingReceipt}
+                    onClose={() => {
+                        setShowReturnPrint(false);
+                        setSelectedOrder(null);
+                        setReturnDetails(null);
+                        setIsLoadingReceipt(false);
+                    }}
                 />
             )}
             {showClaimPrint && selectedClaim && (
                 <PrintClaimReceipt
                     claim={selectedClaim}
-                    open={showClaimPrint}
-                    onClose={() => setShowClaimPrint(false)}
+                    isLoading={isLoadingReceipt}
+                    onClose={() => {
+                        setShowClaimPrint(false);
+                        setSelectedClaim(null);
+                        setIsLoadingReceipt(false);
+                    }}
                 />
             )}
         </div>

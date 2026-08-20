@@ -312,5 +312,83 @@ export async function getOverallAvailableReservedStockReport(filters: any) {
     }
 }
 
+// ─── Out-of-Stock Items Report ───────────────────────────────────────────────
+export async function getOutOfStockReport(filters: {
+    locationId?: string;
+    warehouseId?: string;
+    brandIds?: string[];
+    categoryIds?: string[];
+    divisionIds?: string[];
+    genderIds?: string[];
+    seasonIds?: string[];
+    search?: string;
+    threshold?: 'zero' | 'negative' | 'low_stock' | 'all';
+    minThreshold?: number;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+}) {
+    try {
+        const queryParams = new URLSearchParams();
+        if (filters?.locationId && filters.locationId !== "all") queryParams.append("locationId", filters.locationId);
+        if (filters?.warehouseId && filters.warehouseId !== "all") queryParams.append("warehouseId", filters.warehouseId);
+        if (filters?.brandIds && filters.brandIds.length > 0) queryParams.append("brandIds", filters.brandIds.join(","));
+        if (filters?.categoryIds && filters.categoryIds.length > 0) queryParams.append("categoryIds", filters.categoryIds.join(","));
+        if (filters?.divisionIds && filters.divisionIds.length > 0) queryParams.append("divisionIds", filters.divisionIds.join(","));
+        if (filters?.genderIds && filters.genderIds.length > 0) queryParams.append("genderIds", filters.genderIds.join(","));
+        if (filters?.seasonIds && filters.seasonIds.length > 0) queryParams.append("seasonIds", filters.seasonIds.join(","));
+        if (filters?.search) queryParams.append("search", filters.search);
+        if (filters?.threshold) queryParams.append("threshold", filters.threshold);
+        if (filters?.minThreshold) queryParams.append("minThreshold", String(filters.minThreshold));
+        if (filters?.page) queryParams.append("page", String(filters.page));
+        if (filters?.limit) queryParams.append("limit", String(filters.limit));
+        if (filters?.sortBy) queryParams.append("sortBy", filters.sortBy);
+        if (filters?.sortOrder) queryParams.append("sortOrder", filters.sortOrder);
 
+        const response = await authFetch(`/stock-ledger/out-of-stock-report?${queryParams.toString()}`, { method: "GET" });
+        return response.data ?? { status: false, data: { data: [], summary: {}, meta: {} } };
+    } catch (error) {
+        console.error("getOutOfStockReport error:", error);
+        return { status: false, data: { data: [], summary: {}, meta: {} } };
+    }
+}
 
+export async function queueOutOfStockReportExport(payload: {
+    locationId?: string;
+    warehouseId?: string;
+    brandIds?: string[];
+    categoryIds?: string[];
+    divisionIds?: string[];
+    genderIds?: string[];
+    seasonIds?: string[];
+    search?: string;
+    threshold?: 'zero' | 'negative' | 'low_stock' | 'all';
+    minThreshold?: number;
+    format?: 'xlsx' | 'pdf';
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+}) {
+    try {
+        const response = await authFetch("/stock-ledger/out-of-stock-report/export/queue", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+        return response.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("queueOutOfStockReportExport error:", error);
+        return { status: false, message: "Failed to connect to export server" };
+    }
+}
+
+export async function getOutOfStockReportExportStatus(jobId: string) {
+    try {
+        const response = await authFetch(`/stock-ledger/out-of-stock-report/export/${jobId}/status`, {
+            method: "GET",
+        });
+        return response.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("getOutOfStockReportExportStatus error:", error);
+        return { status: false, message: "Failed to connect to server" };
+    }
+}

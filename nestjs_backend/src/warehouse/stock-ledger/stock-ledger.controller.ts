@@ -5,6 +5,7 @@ import { StockValuationExportService } from './stock-valuation-export.service';
 import { StockTransactionDetailExportService } from './stock-transaction-detail-export.service';
 import { AvailableStockSummaryExportService } from './available-stock-summary-export.service';
 import { OverallAvailableReservedStockExportService } from './overall-available-reserved-stock-export.service';
+import { OutOfStockReportService } from './out-of-stock-report.service';
 import { MovementType } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
@@ -17,6 +18,7 @@ export class StockLedgerController {
     private readonly stockTransactionDetailExportService: StockTransactionDetailExportService,
     private readonly availableStockSummaryExportService: AvailableStockSummaryExportService,
     private readonly overallAvailableReservedStockExportService: OverallAvailableReservedStockExportService,
+    private readonly outOfStockReportService: OutOfStockReportService,
   ) { }
 
   @Get('levels')
@@ -553,6 +555,106 @@ export class StockLedgerController {
   async downloadOverallAvailableReservedStockExport(@Param('jobId') jobId: string, @Res() res: any) {
     try {
       await this.overallAvailableReservedStockExportService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });
+    }
+  }
+
+  // ─── Out-of-Stock Items Report Endpoints ─────────────────────────────────────
+  @Get('out-of-stock-report')
+  @UseGuards(JwtAuthGuard)
+  async getOutOfStockReport(
+    @Query('locationId') locationId?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('brandIds') brandIds?: string,
+    @Query('categoryIds') categoryIds?: string,
+    @Query('divisionIds') divisionIds?: string,
+    @Query('genderIds') genderIds?: string,
+    @Query('seasonIds') seasonIds?: string,
+    @Query('search') search?: string,
+    @Query('threshold') threshold?: 'zero' | 'negative' | 'low_stock' | 'all',
+    @Query('minThreshold') minThreshold?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: any,
+    @Query('sortOrder') sortOrder?: 'asc' | 'desc',
+  ) {
+    const parseArray = (val?: string) => (val ? val.split(',').map((s) => s.trim()).filter(Boolean) : []);
+
+    const data = await this.outOfStockReportService.getOutOfStockReport({
+      locationId: locationId && locationId !== 'all' ? locationId : undefined,
+      warehouseId: warehouseId && warehouseId !== 'all' ? warehouseId : undefined,
+      brandIds: parseArray(brandIds),
+      categoryIds: parseArray(categoryIds),
+      divisionIds: parseArray(divisionIds),
+      genderIds: parseArray(genderIds),
+      seasonIds: parseArray(seasonIds),
+      search: search?.trim(),
+      threshold: threshold || 'zero',
+      minThreshold: minThreshold ? parseInt(minThreshold, 10) : 5,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 50,
+      sortBy: sortBy || 'salesLast30Days',
+      sortOrder: sortOrder || 'desc',
+    });
+
+    return { status: true, data };
+  }
+
+  @Post('out-of-stock-report/export/queue')
+  @UseGuards(JwtAuthGuard)
+  async queueOutOfStockReportExport(
+    @Req() req: any,
+    @Body()
+    body: {
+      locationId?: string;
+      warehouseId?: string;
+      brandIds?: string[];
+      categoryIds?: string[];
+      divisionIds?: string[];
+      genderIds?: string[];
+      seasonIds?: string[];
+      search?: string;
+      threshold?: 'zero' | 'negative' | 'low_stock' | 'all';
+      minThreshold?: number;
+      format?: 'xlsx' | 'pdf';
+      sortBy?: any;
+      sortOrder?: 'asc' | 'desc';
+    },
+  ) {
+    const userId = req.user?.id || req.user?.userId;
+    const result = await this.outOfStockReportService.queueExport({
+      userId,
+      locationId: body.locationId && body.locationId !== 'all' ? body.locationId : undefined,
+      warehouseId: body.warehouseId && body.warehouseId !== 'all' ? body.warehouseId : undefined,
+      brandIds: body.brandIds,
+      categoryIds: body.categoryIds,
+      divisionIds: body.divisionIds,
+      genderIds: body.genderIds,
+      seasonIds: body.seasonIds,
+      search: body.search,
+      threshold: body.threshold || 'zero',
+      minThreshold: body.minThreshold || 5,
+      format: body.format || 'xlsx',
+      sortBy: body.sortBy || 'salesLast30Days',
+      sortOrder: body.sortOrder || 'desc',
+    });
+
+    return { status: true, data: result };
+  }
+
+  @Get('out-of-stock-report/export/:jobId/status')
+  @UseGuards(JwtAuthGuard)
+  async getOutOfStockReportStatus(@Param('jobId') jobId: string) {
+    const result = await this.outOfStockReportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('out-of-stock-report/export/:jobId/download')
+  async downloadOutOfStockReportExport(@Param('jobId') jobId: string, @Res() res: any) {
+    try {
+      await this.outOfStockReportService.streamExportFile(jobId, res);
     } catch (err: any) {
       const status = err?.status ?? 404;
       res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });

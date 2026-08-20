@@ -105,10 +105,14 @@ export class CreditVoucherExportProcessor {
       runInBackground(
         this.notificationsService.create({
           userId,
-          title: 'Export Ready',
+          title: 'Credit Voucher Export Ready',
           message: `Credit Voucher Report export (${format.toUpperCase()}) is ready for download.`,
           category: 'export',
-          priority: 'normal',
+          priority: 'high',
+          actionType: 'credit-voucher-export.ready',
+          actionPayload: JSON.stringify({ jobId, format }),
+          entityType: 'credit-voucher-export',
+          entityId: jobId,
         }),
       );
     } catch (err: any) {

@@ -847,6 +847,15 @@ export const menuData: MenuItem[] = [
         ],
       },
       {
+        title: "Reports",
+        children: [
+          {
+            title: "Out-of-Stock Report",
+            href: "/erp/reports/out-of-stock",
+          },
+        ],
+      },
+      {
         title: "Production Fabric Form",
         href: "/erp/inventory/fabric-vendor-tracker",
         permissions: ["inventory.read"],
@@ -986,6 +995,7 @@ export const menuData: MenuItem[] = [
       {
         title: "Reports",
         children: [
+          { title: "Out-of-Stock Report", href: "/erp/reports/out-of-stock" },
           { title: "Sales & Stock Activity", href: "/erp/reports/sales-activity" },
           { title: "Sales Summary", href: "/erp/sales/reports/summary" },
           {

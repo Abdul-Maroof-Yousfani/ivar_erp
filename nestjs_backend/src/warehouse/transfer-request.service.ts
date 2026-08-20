@@ -879,6 +879,9 @@ export class TransferRequestService {
         );
 
         return updated;
+      }, {
+        maxWait: 20000,
+        timeout: 60000,
       });
     } catch (error: any) {
       runInBackground(
@@ -989,6 +992,7 @@ export class TransferRequestService {
               referenceType: 'TRANSFER_REQUEST',
               referenceId: request.id,
               userId: userId,
+              transaction: tx,
             });
           }
         } else if (request.transferType === 'OUTLET_TO_WAREHOUSE') {
@@ -1069,6 +1073,7 @@ export class TransferRequestService {
                 referenceType: 'CLAIM_RETURN_REQUEST',
                 referenceId: request.id,
                 userId: userId,
+                transaction: tx,
               });
             }
           } else {
@@ -1087,6 +1092,7 @@ export class TransferRequestService {
                 referenceType: 'RETURN_REQUEST',
                 referenceId: request.id,
                 userId: userId,
+                transaction: tx,
               });
             }
           }
@@ -1190,6 +1196,9 @@ export class TransferRequestService {
         );
 
         return updated;
+      }, {
+        maxWait: 20000,
+        timeout: 60000,
       });
     } catch (error: any) {
       runInBackground(
@@ -1451,6 +1460,9 @@ export class TransferRequestService {
         }
 
         return updated;
+      }, {
+        maxWait: 20000,
+        timeout: 60000,
       });
     } catch (error: any) {
       runInBackground(

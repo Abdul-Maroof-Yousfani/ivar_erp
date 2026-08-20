@@ -13,6 +13,8 @@ import { AvailableStockSummaryExportService } from './available-stock-summary-ex
 import { AvailableStockSummaryExportProcessor } from './available-stock-summary-export.processor';
 import { OverallAvailableReservedStockExportService } from './overall-available-reserved-stock-export.service';
 import { OverallAvailableReservedStockExportProcessor } from './overall-available-reserved-stock-export.processor';
+import { OutOfStockReportService } from './out-of-stock-report.service';
+import { OutOfStockExportProcessor } from './out-of-stock-export.processor';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 import { ExportHistoryModule } from '../export-history/export-history.module';
@@ -31,6 +33,7 @@ import { UploadModule } from '../../upload/upload.module';
       { name: 'stock-transaction-detail-export' },
       { name: 'available-stock-summary-export' },
       { name: 'overall-available-reserved-stock-export' },
+      { name: 'out-of-stock-export' },
     ),
   ],
   controllers: [StockLedgerController],
@@ -47,6 +50,8 @@ import { UploadModule } from '../../upload/upload.module';
     AvailableStockSummaryExportProcessor,
     OverallAvailableReservedStockExportService,
     OverallAvailableReservedStockExportProcessor,
+    OutOfStockReportService,
+    OutOfStockExportProcessor,
   ],
   exports: [
     StockLedgerService,
@@ -55,6 +60,7 @@ import { UploadModule } from '../../upload/upload.module';
     StockTransactionDetailExportService,
     AvailableStockSummaryExportService,
     OverallAvailableReservedStockExportService,
+    OutOfStockReportService,
   ],
 })
 export class StockLedgerModule {}

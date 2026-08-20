@@ -112,10 +112,14 @@ export class VoucherRegisterExportProcessor {
       runInBackground(
         this.notificationsService.create({
           userId,
-          title: 'Export Ready',
+          title: 'Voucher Register Export Ready',
           message: `Voucher Register Report export (${format.toUpperCase()}) is ready for download.`,
           category: 'export',
-          priority: 'normal',
+          priority: 'high',
+          actionType: 'voucher-register-export.ready',
+          actionPayload: JSON.stringify({ jobId, format }),
+          entityType: 'voucher-register-export',
+          entityId: jobId,
         }),
       );
     } catch (err: any) {

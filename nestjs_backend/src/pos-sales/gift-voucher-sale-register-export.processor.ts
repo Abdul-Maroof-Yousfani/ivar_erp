@@ -105,10 +105,14 @@ export class GiftVoucherSaleRegisterExportProcessor {
       runInBackground(
         this.notificationsService.create({
           userId,
-          title: 'Export Ready',
+          title: 'Gift Voucher Sale Register Export Ready',
           message: `Gift Voucher Sale Register export (${format.toUpperCase()}) is ready for download.`,
           category: 'export',
-          priority: 'normal',
+          priority: 'high',
+          actionType: 'gift-voucher-sale-register-export.ready',
+          actionPayload: JSON.stringify({ jobId, format }),
+          entityType: 'gift-voucher-sale-register-export',
+          entityId: jobId,
         }),
       );
     } catch (err: any) {

@@ -71,29 +71,43 @@ export class SalesActivityExportService {
   }
 
   async streamExportFile(jobId: string, res: any): Promise<void> {
-    const filePath = path.join(process.cwd(), 'uploads', 'exports', `export-${jobId}.xlsx`);
+    const record = await this.prisma.exportHistory.findUnique({
+      where: { id: jobId },
+      select: { fileName: true, filePath: true },
+    });
+
+    let targetPath = record?.filePath || path.join('uploads', 'exports', `export-${jobId}.xlsx`);
+    let finalFileName = record?.fileName || `sales-activity-export-${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+    let filePath = path.isAbsolute(targetPath)
+      ? targetPath
+      : path.join(process.cwd(), targetPath);
+
+    if (!fs.existsSync(filePath)) {
+      const cleanRelPath = targetPath.replace(/^[/\\]+/, '');
+      const altPath = path.join(process.cwd(), cleanRelPath);
+      if (fs.existsSync(altPath)) {
+        filePath = altPath;
+      } else {
+        const publicPath = path.join(process.cwd(), 'public', cleanRelPath);
+        if (fs.existsSync(publicPath)) {
+          filePath = publicPath;
+        }
+      }
+    }
 
     if (!fs.existsSync(filePath)) {
       throw new NotFoundException('Export file not found. It may have expired or the job is still running.');
     }
 
-    const stat      = fs.statSync(filePath);
-    const timestamp = new Date().toISOString().slice(0, 10);
-    const filename  = `sales-activity-export-${timestamp}.xlsx`;
-
+    const stat = fs.statSync(filePath);
     const stream = fs.createReadStream(filePath);
-    stream.on('close', () => {
-      fs.unlink(filePath, (err) => {
-        if (err) this.logger.warn(`Could not delete export file: ${err.message}`);
-        else     this.logger.log(`[SalesActivityExport] Cleaned up ${filePath}`);
-      });
-    });
     stream.on('error', (err) => {
       this.logger.error(`[SalesActivityExport] Stream error: ${err.message}`);
     });
 
     res.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.header('Content-Disposition', `attachment; filename="${filename}"`);
+    res.header('Content-Disposition', `attachment; filename="${finalFileName}"`);
     res.header('Content-Length', stat.size);
     res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.send(stream);

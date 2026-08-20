@@ -198,12 +198,40 @@ export class SalesActivityExportProcessor {
 
         const ledgersInRange = await prisma.stockLedger.findMany({
           where: {
-            referenceType: { in: ['POS_RETURN', 'POS_REFUND'] },
+            referenceType: { in: ['POS_RETURN', 'POS_REFUND', 'OUTLET_TRANSFER_OUT', 'CROSS_LOCATION_RETURN_TRANSFER'] },
             createdAt: ledgerRangeQuery,
           },
           select: { referenceId: true },
         });
         ledgersInRange.forEach((l) => targetOrderIds.add(l.referenceId));
+
+        // Also query salesOrder updated in range with return/refund numbers
+        const returnsInRange = await prisma.salesOrder.findMany({
+          where: {
+            ...where,
+            OR: [
+              { returnNumber: { not: null } },
+              { refundNumber: { not: null } },
+              { status: { in: ['returned', 'partially_returned', 'refunded'] } },
+            ],
+            updatedAt: ledgerRangeQuery,
+          },
+          select: { id: true },
+        });
+        returnsInRange.forEach((o) => targetOrderIds.add(o.id));
+
+        // Also query vouchers created in range (Exchange or Refund vouchers)
+        const vouchersInRange = await prisma.voucher.findMany({
+          where: {
+            sourceOrderId: { not: null },
+            voucherType: { in: ['EXCHANGE', 'REFUND', 'CREDIT'] },
+            createdAt: ledgerRangeQuery,
+          },
+          select: { sourceOrderId: true },
+        });
+        vouchersInRange.forEach((v) => {
+          if (v.sourceOrderId) targetOrderIds.add(v.sourceOrderId);
+        });
 
         const claimRangeQuery: any = {};
         if (start) claimRangeQuery.gte = start;
@@ -395,7 +423,7 @@ export class SalesActivityExportProcessor {
         const orderIds = chunk.map((o) => o.id);
         const returnEntries = await prisma.stockLedger.findMany({
           where: {
-            referenceType: { in: ['POS_RETURN', 'POS_REFUND'] },
+            referenceType: { in: ['POS_RETURN', 'POS_REFUND', 'OUTLET_TRANSFER_OUT', 'CROSS_LOCATION_RETURN_TRANSFER'] },
             referenceId: { in: orderIds },
           },
           select: {
@@ -569,13 +597,14 @@ export class SalesActivityExportProcessor {
           }
 
           // 2. Return Activity
-          const returnLedgers = orderLedgers.filter((l) => l.referenceType === 'POS_RETURN');
-          if (order.returnNumber || returnLedgers.length > 0) {
-            if (!activityType || activityType === 'all' || activityType === 'return') {
+          const returnLedgers = orderLedgers.filter((l) => ['POS_RETURN', 'OUTLET_TRANSFER_OUT', 'CROSS_LOCATION_RETURN_TRANSFER'].includes(l.referenceType));
+          const hasReturn = !!(order.returnNumber || returnLedgers.length > 0 || order.status === 'returned' || order.status === 'partially_returned');
+          if (hasReturn) {
+            if (!activityType || activityType === 'all' || ['return', 'exchange', 'sales_return', 'returns', 'sale_return'].includes(activityType.toLowerCase())) {
               const exchangeVoucher = orderVouchers.find((v) => v.voucherType === 'EXCHANGE');
               const returnDate = returnLedgers.length > 0 ? returnLedgers[returnLedgers.length - 1].createdAt : order.updatedAt;
 
-              const returnedItems = returnLedgers.map((l) => {
+              let returnedItems = returnLedgers.map((l) => {
                 const orderItem = order.items.find((oi) => oi.itemId === l.itemId);
                 const price = orderItem ? Number(orderItem.unitPrice) : 0;
                 const lineTot = orderItem ? Math.abs(Number(l.qty)) * Number(orderItem.unitPrice) : 0;
@@ -599,6 +628,31 @@ export class SalesActivityExportProcessor {
                   lineTotal: lineTot,
                 };
               });
+
+              if (returnedItems.length === 0 && order.items && order.items.length > 0) {
+                returnedItems = order.items.map((oi) => {
+                  const price = Number(oi.unitPrice || 0);
+                  const lineTot = Number(oi.lineTotal || 0);
+                  const taxAmt = Number(oi.taxAmount || 0);
+                  const totWost = lineTot - taxAmt;
+                  const qty = Number(oi.quantity || 1);
+                  return {
+                    sku: oi.item?.sku || oi.item?.barCode || '-',
+                    barcode: oi.item?.barCode || '-',
+                    description: oi.item?.description || 'Item',
+                    category: oi.item?.category?.name || '-',
+                    size: oi.item?.size?.name || '-',
+                    color: oi.item?.color?.name || '-',
+                    brand: oi.item?.brand?.name || '-',
+                    quantity: qty,
+                    price: price,
+                    wostUnit: qty > 0 ? totWost / qty : 0,
+                    totalWost: totWost,
+                    tax: taxAmt,
+                    lineTotal: lineTot,
+                  };
+                });
+              }
 
               const totalReturnAmount = exchangeVoucher
                 ? Number(exchangeVoucher.faceValue)
