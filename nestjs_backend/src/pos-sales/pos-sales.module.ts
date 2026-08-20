@@ -7,6 +7,11 @@ import { SalesHistoryBulkUploadService } from './sales-history-bulk-upload.servi
 import { SalesHistoryUploadProcessor } from '../queue/processors/sales-history-upload.processor';
 import { SalesHistoryCsvParserService } from '../common/services/sales-history-csv-parser.service';
 import { SalesHistoryValidatorService } from '../common/services/sales-history-validator.service';
+import { OnlineSalesBulkUploadController } from './online-sales-bulk-upload.controller';
+import { OnlineSalesBulkUploadService } from './online-sales-bulk-upload.service';
+import { OnlineSalesUploadProcessor } from '../queue/processors/online-sales-upload.processor';
+import { OnlineSalesCsvParserService } from '../common/services/online-sales-csv-parser.service';
+import { OnlineSalesValidatorService } from '../common/services/online-sales-validator.service';
 import { UploadEventsService } from '../finance/item/upload-events.service';
 import { DatabaseModule } from '../database/database.module';
 import { StockLedgerModule } from '../warehouse/stock-ledger/stock-ledger.module';
@@ -53,6 +58,7 @@ import { WarehouseModule } from '../warehouse/warehouse.module';
         UploadModule,
         BullModule.registerQueue(
             { name: 'sales-history-upload' },
+            { name: 'online-sales-upload' },
             { name: 'net-sales-summary-export' },
             { name: 'pos-sales-activity-export' },
             { name: 'sales-register-export' },
@@ -69,6 +75,7 @@ import { WarehouseModule } from '../warehouse/warehouse.module';
     controllers: [
         PosSalesController, 
         SalesHistoryBulkUploadController,
+        OnlineSalesBulkUploadController,
         PosSalesActivityExportController,
     ],
     providers: [
@@ -78,6 +85,10 @@ import { WarehouseModule } from '../warehouse/warehouse.module';
         SalesHistoryUploadProcessor,
         SalesHistoryCsvParserService,
         SalesHistoryValidatorService,
+        OnlineSalesBulkUploadService,
+        OnlineSalesUploadProcessor,
+        OnlineSalesCsvParserService,
+        OnlineSalesValidatorService,
         UploadEventsService,
         NetSalesSummaryExportService,
         NetSalesSummaryExportProcessor,

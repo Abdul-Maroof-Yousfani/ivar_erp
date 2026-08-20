@@ -49,40 +49,116 @@ export class OnlineSalesCsvParserService {
     private getValue(row: any, keys: string[]): any {
         if (!row) return null;
         for (const key of keys) {
-            if (row[key] !== undefined) return row[key];
+            if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
+                return row[key];
+            }
             const lk = key.toLowerCase().replace(/[\s_]/g, '');
             const found = Object.keys(row).find(k => k.toLowerCase().replace(/[\s_]/g, '') === lk);
-            if (found !== undefined && row[found] !== undefined) return row[found];
+            if (found !== undefined && row[found] !== undefined && row[found] !== null && String(row[found]).trim() !== '') {
+                return row[found];
+            }
         }
         return null;
     }
 
     private isEmptyRow(row: any): boolean {
         if (!row) return true;
-        const orderId = this.normalizeValue(this.getValue(row, ['orderId', 'orderName', 'order_id', 'Order ID', 'Order Name', 'Invoice #']));
-        const sku = this.normalizeValue(this.getValue(row, ['sku', 'SKU', 'barCode', 'Barcode', 'Bar Code', 'Item SKU']));
+        const orderId = this.normalizeValue(this.getValue(row, [
+            'orderId', 'orderName', 'order_id', 'Order ID', 'Order Name', 'Invoice #', 'Order #', 'Order Number', 'Name', 'Order', 'Id'
+        ]));
+        const sku = this.normalizeValue(this.getValue(row, [
+            'sku', 'SKU', 'Item SKU', 'Lineitem sku', 'Lineitem SKU', 'Line item sku', 'Line Item SKU', 'Variant SKU', 'Product SKU', 'barCode', 'Barcode', 'Bar Code', 'Item Barcode', 'Lineitem barcode'
+        ]));
         return !orderId && !sku;
     }
 
     private mapColumns(row: any): OnlineSalesParsedRecord['data'] {
+        const orderId = this.normalizeValue(this.getValue(row, [
+            'orderId', 'orderName', 'order_id', 'Order ID', 'Order Name', 'Invoice #', 'Order #', 'Order Number', 'Name', 'Order', 'Id'
+        ])) ?? undefined;
+
+        const orderedAt = this.normalizeValue(this.getValue(row, [
+            'orderedAt', 'createdAt', 'ordered_at', 'created_at', 'Order Date', 'Date', 'Created at', 'Paid at', 'Fulfilled at'
+        ])) ?? undefined;
+
+        const customerName = this.normalizeValue(this.getValue(row, [
+            'customerName', 'customer_name', 'Customer Name', 'Customer', 'Billing Name', 'Shipping Name', 'Client Name'
+        ])) ?? undefined;
+
+        const customerPhone = this.normalizeValue(this.getValue(row, [
+            'customerPhone', 'customer_phone', 'Billing Phone', 'Shipping Phone', 'Phone', 'Contact', 'Mobile', 'Cell'
+        ])) ?? undefined;
+
+        const customerEmail = this.normalizeValue(this.getValue(row, [
+            'customerEmail', 'customer_email', 'email', 'Email', 'Customer Email', 'Contact Email'
+        ])) ?? undefined;
+
+        const customerAddress = this.normalizeValue(this.getValue(row, [
+            'customerAddress', 'customer_address', 'Billing Address1', 'Billing Street', 'Shipping Address1', 'Shipping Street', 'Billing Address', 'Shipping Address', 'Address', 'Street'
+        ])) ?? undefined;
+
+        const customerCity = this.normalizeValue(this.getValue(row, [
+            'customerCity', 'customer_city', 'Billing City', 'Shipping City', 'City'
+        ])) ?? undefined;
+
+        const sku = this.normalizeValue(this.getValue(row, [
+            'sku', 'SKU', 'Item SKU', 'Lineitem sku', 'Lineitem SKU', 'Line item sku', 'Line Item SKU', 'Variant SKU', 'Product SKU'
+        ])) ?? undefined;
+
+        const barCode = this.normalizeValue(this.getValue(row, [
+            'barCode', 'Barcode', 'Bar Code', 'Item Barcode', 'Lineitem barcode', 'Lineitem Barcode', 'Line item barcode', 'Variant Barcode'
+        ])) ?? undefined;
+
+        const itemTitle = this.normalizeValue(this.getValue(row, [
+            'itemTitle', 'title', 'variantTitle', 'Item Name', 'Title', 'Lineitem name', 'Line item name', 'Product Name', 'Item Description', 'Description'
+        ])) ?? undefined;
+
+        const quantity = this.parseNumber(this.getValue(row, [
+            'quantity', 'Qty', 'QTY', 'Quantity', 'Lineitem quantity', 'Line item quantity', 'Lineitem qty', 'Qty Ordered'
+        ])) ?? 1;
+
+        const unitPrice = this.parseNumber(this.getValue(row, [
+            'unitPrice', 'price', 'Price', 'Unit Price', 'Lineitem price', 'Line item price', 'Item Price', 'Rate'
+        ])) ?? undefined;
+
+        const discountTotal = this.parseNumber(this.getValue(row, [
+            'discountTotal', 'discount', 'Discount', 'Discount Total', 'Lineitem discount', 'Line item discount', 'Discount Amount', 'Total Discount'
+        ])) ?? 0;
+
+        const paymentMethod = this.normalizeValue(this.getValue(row, [
+            'paymentMethod', 'method', 'Payment Method', 'Payment Mode', 'Gateway', 'Payment Type'
+        ])) ?? 'COD';
+
+        const paymentStatus = this.normalizeValue(this.getValue(row, [
+            'paymentStatus', 'financialStatus', 'Financial Status', 'Payment Status'
+        ])) ?? 'paid';
+
+        const source = this.normalizeValue(this.getValue(row, [
+            'source', 'Source', 'Channel', 'App'
+        ])) ?? 'Shopify';
+
+        const shop = this.normalizeValue(this.getValue(row, [
+            'shop', 'Shop', 'Store', 'Vendor', 'Location'
+        ])) ?? undefined;
+
         return {
-            orderId: this.normalizeValue(this.getValue(row, ['orderId', 'orderName', 'order_id', 'Order ID', 'Order Name', 'Invoice #'])) ?? undefined,
-            orderedAt: this.normalizeValue(this.getValue(row, ['orderedAt', 'createdAt', 'ordered_at', 'Order Date', 'Date'])) ?? undefined,
-            customerName: this.normalizeValue(this.getValue(row, ['customerName', 'customer_name', 'Customer Name', 'Customer'])) ?? undefined,
-            customerPhone: this.normalizeValue(this.getValue(row, ['customerPhone', 'phone', 'Phone', 'Contact'])) ?? undefined,
-            customerEmail: this.normalizeValue(this.getValue(row, ['customerEmail', 'email', 'Email'])) ?? undefined,
-            customerAddress: this.normalizeValue(this.getValue(row, ['customerAddress', 'address', 'Address'])) ?? undefined,
-            customerCity: this.normalizeValue(this.getValue(row, ['customerCity', 'city', 'City'])) ?? undefined,
-            sku: this.normalizeValue(this.getValue(row, ['sku', 'SKU', 'Item SKU'])) ?? undefined,
-            barCode: this.normalizeValue(this.getValue(row, ['barCode', 'Barcode', 'Bar Code'])) ?? undefined,
-            itemTitle: this.normalizeValue(this.getValue(row, ['itemTitle', 'title', 'variantTitle', 'Item Name', 'Title'])) ?? undefined,
-            quantity: this.parseNumber(this.getValue(row, ['quantity', 'Qty', 'QTY', 'Quantity'])) ?? 1,
-            unitPrice: this.parseNumber(this.getValue(row, ['unitPrice', 'price', 'Price', 'Unit Price'])) ?? undefined,
-            discountTotal: this.parseNumber(this.getValue(row, ['discountTotal', 'discount', 'Discount', 'Discount Total'])) ?? 0,
-            paymentMethod: this.normalizeValue(this.getValue(row, ['paymentMethod', 'method', 'Payment Method', 'Payment Mode'])) ?? 'COD',
-            paymentStatus: this.normalizeValue(this.getValue(row, ['paymentStatus', 'financialStatus', 'Payment Status'])) ?? 'paid',
-            source: this.normalizeValue(this.getValue(row, ['source', 'Source'])) ?? 'Shopify',
-            shop: this.normalizeValue(this.getValue(row, ['shop', 'Shop', 'Store'])) ?? undefined,
+            orderId,
+            orderedAt,
+            customerName,
+            customerPhone,
+            customerEmail,
+            customerAddress,
+            customerCity,
+            sku,
+            barCode,
+            itemTitle,
+            quantity,
+            unitPrice,
+            discountTotal,
+            paymentMethod,
+            paymentStatus,
+            source,
+            shop,
         };
     }
 

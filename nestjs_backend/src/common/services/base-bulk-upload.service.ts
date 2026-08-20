@@ -194,13 +194,13 @@ export abstract class BaseBulkUploadService {
 
     generateErrorReport(errors: any[]): string {
         if (!errors || errors.length === 0) return 'No errors found';
-        let csv = 'Row,Field,Reason,Value\n';
+        let csv = 'Row Number,Field,Error Reason,Original Value\n';
         errors.forEach((e) => {
             const row = e.row || 'N/A';
-            const field = e.field || e.data?.field || 'N/A';
+            const field = e.field || e.data?.field || e.data?.shopifyOrderId || (e.data?.sku ? 'SKU' : 'N/A');
             const reason = (e.reason || '').replace(/"/g, '""');
-            const value = e.value || e.data?.value || 'N/A';
-            csv += `${row},${field},"${reason}",${value}\n`;
+            const value = e.value !== undefined ? e.value : (e.data?.value !== undefined ? e.data?.value : (e.data?.sku || e.data?.barCode || 'N/A'));
+            csv += `${row},${field},"${reason}","${String(value).replace(/"/g, '""')}"\n`;
         });
         return csv;
     }

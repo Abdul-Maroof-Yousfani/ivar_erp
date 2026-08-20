@@ -135,6 +135,7 @@ export abstract class BaseUploadProcessor<TRecord = any> {
                                         processedRecords: progress.processedRecords,
                                         successRecords: progress.successRecords,
                                         failedRecords: progress.failedRecords,
+                                        errors: progress.errors as any,
                                         message: `Importing ${this.uploadType}: ${progress.processedRecords} @ ${recsPerSec} recs/s`,
                                     },
                                 });
@@ -250,6 +251,7 @@ export abstract class BaseUploadProcessor<TRecord = any> {
                     processedRecords: progress.processedRecords,
                     successRecords: progress.successRecords,
                     failedRecords: progress.failedRecords,
+                    errors: progress.errors as any,
                     message: `${this.uploadType} import completed: ${progress.successRecords} records added.`,
                     completedAt: new Date(),
                 },
@@ -269,8 +271,11 @@ export abstract class BaseUploadProcessor<TRecord = any> {
                 type: 'completed',
                 data: {
                     status: 'completed',
+                    totalRecords: progress.totalRecords,
+                    processedRecords: progress.processedRecords,
                     successRecords: progress.successRecords,
                     failedRecords: progress.failedRecords,
+                    errors: progress.errors,
                     progress: 100,
                 },
             });

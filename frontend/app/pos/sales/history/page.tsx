@@ -32,6 +32,7 @@ import { PrintReceipt } from "@/components/pos/print-receipt";
 import { PrintReturnReceipt } from "@/components/pos/print-return-receipt";
 import { PrintClaimReceipt } from "@/components/pos/print-claim-receipt";
 import { SalesHistoryBulkUploadModal } from "@/components/pos/sales-history-bulk-upload-modal";
+import { OnlineSalesBulkUploadModal } from "@/components/pos/online-sales-bulk-upload-modal";
 import { useUploadProgress } from "@/hooks/use-upload-progress";
 import { cn, getCookie } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
@@ -496,6 +497,7 @@ export default function SalesHistoryPage() {
 
     // ── Bulk-upload state ──────────────────────────────────────────────
     const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
+    const [isOnlineSalesUploadOpen, setIsOnlineSalesUploadOpen] = useState(false);
     const [activeUploadId,   setActiveUploadId]   = useState<string | null>(null);
     const { data: uploadProgress } = useUploadProgress(activeUploadId, 'sales-history');
 
@@ -906,14 +908,24 @@ export default function SalesHistoryPage() {
                     )}
                     {/* ── Import History button ── */}
                     {canImport && (
-                        <Button
-                            variant="outline"
-                            onClick={() => setIsBulkUploadOpen(true)}
-                            className="gap-2"
-                        >
-                            <Upload className="h-4 w-4" />
-                            Import History
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => setIsOnlineSalesUploadOpen(true)}
+                                className="gap-2"
+                            >
+                                <ShoppingCart className="h-4 w-4" />
+                                Import Online Sales
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => setIsBulkUploadOpen(true)}
+                                className="gap-2"
+                            >
+                                <Upload className="h-4 w-4" />
+                                Import History
+                            </Button>
+                        </div>
                     )}
                     <Button
                         variant="outline"
@@ -1345,6 +1357,13 @@ export default function SalesHistoryPage() {
                 onOpenChange={setIsBulkUploadOpen}
                 uploadId={activeUploadId}
                 onUploadIdChange={setActiveUploadId}
+                onSuccess={fetchOrders}
+            />
+
+            {/* ── Online Sales Bulk upload modal ── */}
+            <OnlineSalesBulkUploadModal
+                open={isOnlineSalesUploadOpen}
+                onOpenChange={setIsOnlineSalesUploadOpen}
                 onSuccess={fetchOrders}
             />
         </div>
