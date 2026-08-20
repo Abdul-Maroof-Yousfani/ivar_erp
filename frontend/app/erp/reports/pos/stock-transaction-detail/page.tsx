@@ -378,7 +378,7 @@ export default function ErpStockTransactionDetailReportPage() {
             const base = getApiBaseUrl();
             const url = `${base}/stock-ledger/transaction-detail-report/export/${exportJobId}/download`;
             window.open(url, "_blank");
-            
+
             // Reset
             setExportState("idle");
             setExportJobId(null);
@@ -426,7 +426,7 @@ export default function ErpStockTransactionDetailReportPage() {
             const base = getApiBaseUrl();
             const url = `${base}/stock-ledger/transaction-detail-report/export/${pdfJobId}/download`;
             window.open(url, "_blank");
-            
+
             // Reset
             setPdfExportState("idle");
             setPdfJobId(null);
@@ -498,21 +498,21 @@ export default function ErpStockTransactionDetailReportPage() {
     // Flatten nested tree for virtualization
     const flatRows = useMemo(() => {
         const rows: any[] = [];
-        
+
         const visit = (
-            node: any, 
-            path: string = "", 
-            ancestorBrand = "", 
-            ancestorDivision = "", 
-            ancestorGender = "", 
-            ancestorSilhouette = "", 
+            node: any,
+            path: string = "",
+            ancestorBrand = "",
+            ancestorDivision = "",
+            ancestorGender = "",
+            ancestorSilhouette = "",
             ancestorCategory = "",
             ancestorSku = "",
             ancestorArticleName = ""
         ) => {
             if (!node) return;
             const currentPath = path ? `${path}-${node.level}-${node.value}` : `${node.level}-${node.value}`;
-            
+
             const brand = node.level === 'brand' ? node.value : ancestorBrand;
             const division = node.level === 'division' ? node.value : ancestorDivision;
             const gender = node.level === 'gender' ? node.value : ancestorGender;
@@ -612,7 +612,7 @@ export default function ErpStockTransactionDetailReportPage() {
                     brand, division, gender, silhouette, category,
                 });
             }
-            
+
             if (node.children && node.children.length > 0) {
                 for (const child of node.children) {
                     visit(child, currentPath, brand, division, gender, silhouette, category, sku, articleName);
@@ -623,7 +623,7 @@ export default function ErpStockTransactionDetailReportPage() {
         for (const rootNode of reportData) {
             visit(rootNode);
         }
-        
+
         return rows;
     }, [reportData, dateRange]);
 
@@ -882,7 +882,7 @@ export default function ErpStockTransactionDetailReportPage() {
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-xs space-y-3 no-print">
                 <div className="flex flex-wrap items-center gap-3">
                     <div className="relative flex-1 min-w-[200px] max-w-xs">
-                        <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"/></svg>
+                        <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
                         <input
                             type="text"
                             placeholder="Search article name or SKU..."
@@ -892,7 +892,7 @@ export default function ErpStockTransactionDetailReportPage() {
                         />
                         {searchText && (
                             <button onClick={() => setSearchText("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
                         )}
                     </div>
@@ -945,7 +945,7 @@ export default function ErpStockTransactionDetailReportPage() {
                             onClick={clearAllFilters}
                             className="flex items-center gap-1 text-[11px] font-bold text-destructive hover:text-destructive/80 transition-colors"
                         >
-                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                             Clear Filters
                         </button>
                     )}
@@ -1072,7 +1072,7 @@ export default function ErpStockTransactionDetailReportPage() {
                     <div className="space-y-1">
                         <h4 className="font-bold text-xs">Large Report Detected ({flatRows.filter(r => r.type === 'article').length} Articles)</h4>
                         <p className="text-[11px] leading-relaxed opacity-90">
-                            Exporting this volume as a detailed PDF (with all sizes/colors) requires rendering hundreds of pages, which puts heavy load on the server and may take a few minutes. 
+                            Exporting this volume as a detailed PDF (with all sizes/colors) requires rendering hundreds of pages, which puts heavy load on the server and may take a few minutes.
                             We **highly recommend** downloading as **Excel (XLSX)** (which downloads instantly) or checking the **"Summary Only (Hide Sizes)"** filter before exporting to PDF.
                         </p>
                     </div>

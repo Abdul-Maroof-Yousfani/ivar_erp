@@ -14,18 +14,83 @@ export class StockAdjustmentService {
     private activityLogs: ActivityLogsService,
   ) {}
 
+  /**
+   * Generates the next sequential Stock Adjustment number for the current fiscal year.
+   * Fiscal year runs July 1 – June 30 (Pakistan standard).
+   * Format: SADJ-YY-YY-NNNNN  e.g. SADJ-25-26-00001
+   *
+   * @param tx  Optional Prisma transaction client (use when called inside $transaction)
+   */
+  private async generateAdjustmentNumber(tx?: any): Promise<string> {
+    const client = tx || this.prisma;
+
+    // Determine current fiscal year bounds
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth(); // 0-indexed; July = 6
+    const startYear = month >= 6 ? year : year - 1;
+    const endYear = startYear + 1;
+    const fy = `${String(startYear % 100).padStart(2, '0')}-${String(endYear % 100).padStart(2, '0')}`;
+    const prefix = `SADJ-${fy}-`;
+
+    // Find the last Stock Adjustment issued in this fiscal year
+    const fiscalYearStartDate = new Date(Date.UTC(startYear, 6, 1, 0, 0, 0, 0));
+    const lastAdj = await client.stockAdjustment.findFirst({
+      where: {
+        adjustmentNo: { startsWith: prefix },
+        createdAt: { gte: fiscalYearStartDate },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { adjustmentNo: true },
+    });
+
+    let seq = 1;
+    if (lastAdj?.adjustmentNo) {
+      const parts = lastAdj.adjustmentNo.split('-');
+      const lastSeq = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastSeq)) {
+        seq = lastSeq + 1;
+      }
+    }
+
+    // Collision guard — loop until we find an unused number
+    let adjustmentNo = `${prefix}${String(seq).padStart(5, '0')}`;
+    let exists = await client.stockAdjustment.findUnique({
+      where: { adjustmentNo },
+      select: { id: true },
+    });
+    while (exists) {
+      seq++;
+      adjustmentNo = `${prefix}${String(seq).padStart(5, '0')}`;
+      exists = await client.stockAdjustment.findUnique({
+        where: { adjustmentNo },
+        select: { id: true },
+      });
+    }
+
+    return adjustmentNo;
+  }
+
   async findAll(options?: {
     warehouseId?: string;
+    locationId?: string;
     status?: string;
     page?: number;
     limit?: number;
     search?: string;
   }) {
-    const { warehouseId, status, page = 1, limit = 50, search } = options || {};
+    const { warehouseId, locationId, status, page = 1, limit = 50, search } = options || {};
     const skip = (page - 1) * limit;
 
     const where: Prisma.StockAdjustmentWhereInput = {
       ...(warehouseId && { warehouseId }),
+      ...(locationId && {
+        items: {
+          some: {
+            locationId,
+          },
+        },
+      }),
       ...(status && { status }),
       ...(search && {
         OR: [
@@ -46,7 +111,19 @@ export class StockAdjustmentService {
           warehouse: { select: { name: true, code: true } },
           items: {
             include: {
-              item: { select: { sku: true, description: true } },
+              item: {
+                select: {
+                  id: true,
+                  itemId: true,
+                  sku: true,
+                  description: true,
+                  unitPrice: true,
+                  category: { select: { id: true, name: true } },
+                  color: { select: { id: true, name: true } },
+                  division: { select: { id: true, name: true } },
+                  size: { select: { id: true, name: true } },
+                },
+              },
             },
           },
         },
@@ -54,7 +131,7 @@ export class StockAdjustmentService {
       this.prisma.stockAdjustment.count({ where }),
     ]);
 
-    // Enrich items with location details
+    // Enrich items with location details and swapItem details manually
     const locationIds = [
       ...new Set(
         data
@@ -74,11 +151,41 @@ export class StockAdjustmentService {
       }
     }
 
+    const swapItemIds = [
+      ...new Set(
+        data
+          .flatMap((adj) => adj.items.map((item) => item.swapItemId))
+          .filter(Boolean),
+      ),
+    ] as string[];
+
+    const swapItemMap = new Map<string, any>();
+    if (swapItemIds.length > 0) {
+      const items = await this.prisma.item.findMany({
+        where: { id: { in: swapItemIds } },
+        select: {
+          id: true,
+          itemId: true,
+          sku: true,
+          description: true,
+          unitPrice: true,
+          category: { select: { id: true, name: true } },
+          color: { select: { id: true, name: true } },
+          division: { select: { id: true, name: true } },
+          size: { select: { id: true, name: true } },
+        },
+      });
+      for (const item of items) {
+        swapItemMap.set(item.id, item);
+      }
+    }
+
     const enrichedData = data.map((adj) => ({
       ...adj,
       items: adj.items.map((item) => ({
         ...item,
         location: item.locationId ? (locationMap.get(item.locationId) ?? null) : null,
+        swapItem: item.swapItemId ? (swapItemMap.get(item.swapItemId) ?? null) : null,
       })),
     }));
 
@@ -96,7 +203,19 @@ export class StockAdjustmentService {
         warehouse: { select: { id: true, name: true, code: true } },
         items: {
           include: {
-            item: { select: { id: true, itemId: true, sku: true, description: true } },
+            item: {
+              select: {
+                id: true,
+                itemId: true,
+                sku: true,
+                description: true,
+                unitPrice: true,
+                category: { select: { id: true, name: true } },
+                color: { select: { id: true, name: true } },
+                division: { select: { id: true, name: true } },
+                size: { select: { id: true, name: true } },
+              },
+            },
           },
         },
       },
@@ -106,7 +225,7 @@ export class StockAdjustmentService {
       throw new NotFoundException('Stock adjustment not found');
     }
 
-    // Enrich with location
+    // Enrich with location and swapItem manually
     const locationIds = adj.items.map((item) => item.locationId).filter(Boolean) as string[];
     const locationMap = new Map<string, { name: string; code: string }>();
     if (locationIds.length > 0) {
@@ -119,46 +238,83 @@ export class StockAdjustmentService {
       }
     }
 
+    const swapItemIds = adj.items.map((item) => item.swapItemId).filter(Boolean) as string[];
+    const swapItemMap = new Map<string, any>();
+    if (swapItemIds.length > 0) {
+      const items = await this.prisma.item.findMany({
+        where: { id: { in: swapItemIds } },
+        select: {
+          id: true,
+          itemId: true,
+          sku: true,
+          description: true,
+          unitPrice: true,
+          category: { select: { id: true, name: true } },
+          color: { select: { id: true, name: true } },
+          division: { select: { id: true, name: true } },
+          size: { select: { id: true, name: true } },
+        },
+      });
+      for (const item of items) {
+        swapItemMap.set(item.id, item);
+      }
+    }
+
     return {
       ...adj,
       items: adj.items.map((item) => ({
         ...item,
         location: item.locationId ? (locationMap.get(item.locationId) ?? null) : null,
+        swapItem: item.swapItemId ? (swapItemMap.get(item.swapItemId) ?? null) : null,
       })),
     };
   }
 
   async create(dto: CreateStockAdjustmentDto, ctx?: { userId?: string; ipAddress?: string; userAgent?: string }) {
-    const adjustmentNo = `SADJ-${Date.now()}`;
+    const adjustmentNo = await this.generateAdjustmentNumber();
+
+    let warehouseId = dto.warehouseId;
+    if (!warehouseId) {
+      const warehouse = await this.prisma.warehouse.findFirst({
+        where: { isActive: true, isDeleted: false },
+      });
+      if (!warehouse) {
+        throw new BadRequestException('No active warehouse found in the system');
+      }
+      warehouseId = warehouse.id;
+    }
 
     // Get current stock levels and rates for all items
     const resolvedItems = await Promise.all(
       dto.items.map(async (item) => {
-        // Query item UUID and unit cost
+        // Query item UUID and unit price
         const itemRecord = await this.prisma.item.findFirst({
           where: {
             OR: [{ id: item.itemId }, { itemId: item.itemId }],
           },
-          select: { id: true, unitCost: true },
+          select: { id: true, unitPrice: true },
         });
 
         if (!itemRecord) {
           throw new BadRequestException(`Item with ID ${item.itemId} not found`);
         }
 
-        // Query current stock levels
-        const existingStock = await this.prisma.inventoryItem.findFirst({
+        // Query current stock levels across inventory items for this warehouse & location
+        const stockAgg = await this.prisma.inventoryItem.aggregate({
           where: {
-            warehouseId: dto.warehouseId,
+            warehouseId,
             locationId: item.locationId || null,
             itemId: itemRecord.id,
             status: 'AVAILABLE',
           },
+          _sum: {
+            quantity: true,
+          },
         });
 
-        const currentQty = existingStock ? Number(existingStock.quantity) : 0;
+        const currentQty = stockAgg._sum.quantity ? Number(stockAgg._sum.quantity) : 0;
         const adjustedQty = item.physicalQty - currentQty;
-        const finalRate = item.rate !== undefined ? item.rate : (itemRecord.unitCost || 0);
+        const finalRate = item.rate !== undefined ? item.rate : (itemRecord.unitPrice || 0);
 
         return {
           itemId: itemRecord.id,
@@ -167,6 +323,7 @@ export class StockAdjustmentService {
           physicalQty: new Prisma.Decimal(item.physicalQty),
           adjustedQty: new Prisma.Decimal(adjustedQty),
           rate: new Prisma.Decimal(finalRate),
+          swapItemId: item.swapItemId || null,
         };
       }),
     );
@@ -174,10 +331,11 @@ export class StockAdjustmentService {
     const adj = await this.prisma.stockAdjustment.create({
       data: {
         adjustmentNo,
-        warehouseId: dto.warehouseId,
+        warehouseId,
         reason: dto.reason,
         notes: dto.notes,
-        status: 'DRAFT',
+        status: dto.status || 'DRAFT',
+        adjustmentType: dto.adjustmentType || 'STANDARD',
         createdById: ctx?.userId,
         items: {
           create: resolvedItems,
@@ -217,9 +375,11 @@ export class StockAdjustmentService {
       throw new NotFoundException('Stock adjustment not found');
     }
 
-    if (existing.status !== 'DRAFT') {
-      throw new BadRequestException('Can only update stock adjustments in DRAFT status');
+    if (existing.status !== 'DRAFT' && existing.status !== 'PENDING_APPROVAL') {
+      throw new BadRequestException('Can only update stock adjustments in DRAFT or PENDING_APPROVAL status');
     }
+
+    const warehouseId = dto.warehouseId || existing.warehouseId;
 
     // Resolve items
     const resolvedItems = await Promise.all(
@@ -228,25 +388,28 @@ export class StockAdjustmentService {
           where: {
             OR: [{ id: item.itemId }, { itemId: item.itemId }],
           },
-          select: { id: true, unitCost: true },
+          select: { id: true, unitPrice: true },
         });
 
         if (!itemRecord) {
           throw new BadRequestException(`Item with ID ${item.itemId} not found`);
         }
 
-        const existingStock = await this.prisma.inventoryItem.findFirst({
+        const stockAgg = await this.prisma.inventoryItem.aggregate({
           where: {
-            warehouseId: dto.warehouseId,
+            warehouseId,
             locationId: item.locationId || null,
             itemId: itemRecord.id,
             status: 'AVAILABLE',
           },
+          _sum: {
+            quantity: true,
+          },
         });
 
-        const currentQty = existingStock ? Number(existingStock.quantity) : 0;
+        const currentQty = stockAgg._sum.quantity ? Number(stockAgg._sum.quantity) : 0;
         const adjustedQty = item.physicalQty - currentQty;
-        const finalRate = item.rate !== undefined ? item.rate : (itemRecord.unitCost || 0);
+        const finalRate = item.rate !== undefined ? item.rate : (itemRecord.unitPrice || 0);
 
         return {
           itemId: itemRecord.id,
@@ -255,6 +418,7 @@ export class StockAdjustmentService {
           physicalQty: new Prisma.Decimal(item.physicalQty),
           adjustedQty: new Prisma.Decimal(adjustedQty),
           rate: new Prisma.Decimal(finalRate),
+          swapItemId: item.swapItemId || null,
         };
       }),
     );
@@ -269,9 +433,11 @@ export class StockAdjustmentService {
       const updated = await tx.stockAdjustment.update({
         where: { id },
         data: {
-          warehouseId: dto.warehouseId,
+          warehouseId,
           reason: dto.reason,
           notes: dto.notes,
+          status: dto.status || existing.status,
+          adjustmentType: dto.adjustmentType || existing.adjustmentType,
           items: {
             create: resolvedItems,
           },
@@ -308,8 +474,8 @@ export class StockAdjustmentService {
       throw new NotFoundException('Stock adjustment not found');
     }
 
-    if (existing.status !== 'DRAFT') {
-      throw new BadRequestException('Can only delete stock adjustments in DRAFT status');
+    if (existing.status !== 'DRAFT' && existing.status !== 'PENDING_APPROVAL') {
+      throw new BadRequestException('Can only delete stock adjustments in DRAFT or PENDING_APPROVAL status');
     }
 
     await this.prisma.stockAdjustment.delete({
@@ -334,7 +500,14 @@ export class StockAdjustmentService {
     return { status: true, message: 'Stock adjustment deleted successfully' };
   }
 
-  async submit(id: string, ctx?: { userId?: string; ipAddress?: string; userAgent?: string }) {
+  async submit(
+    id: string,
+    dto?: {
+      items?: { itemId: string; physicalQty: number; rate?: number }[];
+      notes?: string;
+    },
+    ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
     const adj = await this.prisma.stockAdjustment.findUnique({
       where: { id },
       include: { items: true },
@@ -344,18 +517,63 @@ export class StockAdjustmentService {
       throw new NotFoundException('Stock adjustment not found');
     }
 
-    if (adj.status !== 'DRAFT') {
-      throw new BadRequestException('Stock adjustment is already submitted or cancelled');
+    if (adj.status !== 'DRAFT' && adj.status !== 'PENDING_APPROVAL') {
+      throw new BadRequestException('Stock adjustment is already submitted, rejected or cancelled');
     }
 
     return this.prisma.$transaction(async (tx) => {
-      for (const line of adj.items) {
+      // If manager updated quantities or instructions during approval
+      if (dto) {
+        if (dto.notes !== undefined) {
+          await tx.stockAdjustment.update({
+            where: { id },
+            data: { notes: dto.notes },
+          });
+        }
+
+        if (dto.items && dto.items.length > 0) {
+          for (const updatedItem of dto.items) {
+            const existingItem = adj.items.find((i) => i.itemId === updatedItem.itemId);
+            if (existingItem) {
+              const adjustedQty = updatedItem.physicalQty - Number(existingItem.currentQty);
+              await tx.stockAdjustmentItem.update({
+                where: { id: existingItem.id },
+                data: {
+                  physicalQty: new Prisma.Decimal(updatedItem.physicalQty),
+                  adjustedQty: new Prisma.Decimal(adjustedQty),
+                  rate: updatedItem.rate !== undefined ? new Prisma.Decimal(updatedItem.rate) : existingItem.rate,
+                },
+              });
+            }
+          }
+        }
+      }
+
+      // Re-fetch adjustment items to get updated quantities
+      const updatedAdj = await tx.stockAdjustment.findUnique({
+        where: { id },
+        include: { items: true },
+      });
+      const linesToPost = updatedAdj ? updatedAdj.items : adj.items;
+
+      for (const line of linesToPost) {
         const adjustedQty = Number(line.adjustedQty);
         if (adjustedQty === 0) continue;
 
         const isPositive = adjustedQty > 0;
 
-        // Process stock update in InventoryItem
+        // Process stock update in InventoryItem for the location/warehouse
+        const stockAgg = await tx.inventoryItem.aggregate({
+          where: {
+            warehouseId: adj.warehouseId,
+            locationId: line.locationId || null,
+            itemId: line.itemId,
+            status: 'AVAILABLE',
+          },
+          _sum: { quantity: true },
+        });
+        const totalAvailableQty = stockAgg._sum.quantity ? Number(stockAgg._sum.quantity) : 0;
+
         const existingStock = await tx.inventoryItem.findFirst({
           where: {
             warehouseId: adj.warehouseId,
@@ -385,18 +603,18 @@ export class StockAdjustmentService {
           }
         } else {
           // Decrement Stock
-          if (!existingStock || Number(existingStock.quantity) < Math.abs(adjustedQty)) {
+          if (totalAvailableQty < Math.abs(adjustedQty)) {
             throw new BadRequestException(
-              `Insufficient stock for item ${line.itemId} in warehouse. Current: ${
-                existingStock ? Number(existingStock.quantity) : 0
-              }, Required Adjustment: ${adjustedQty}`,
+              `Insufficient stock for item ${line.itemId} in location/warehouse. Current: ${totalAvailableQty}, Required Adjustment: ${adjustedQty}`,
             );
           }
 
-          await tx.inventoryItem.update({
-            where: { id: existingStock.id },
-            data: { quantity: { decrement: new Prisma.Decimal(Math.abs(adjustedQty)) } },
-          });
+          if (existingStock) {
+            await tx.inventoryItem.update({
+              where: { id: existingStock.id },
+              data: { quantity: { decrement: new Prisma.Decimal(Math.abs(adjustedQty)) } },
+            });
+          }
         }
 
         // Create Stock Ledger entry
@@ -443,5 +661,50 @@ export class StockAdjustmentService {
 
       return updated;
     });
+  }
+
+  async reject(
+    id: string,
+    dto?: { notes?: string },
+    ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    const adj = await this.prisma.stockAdjustment.findUnique({
+      where: { id },
+    });
+
+    if (!adj) {
+      throw new NotFoundException('Stock adjustment not found');
+    }
+
+    if (adj.status !== 'PENDING_APPROVAL') {
+      throw new BadRequestException('Only pending approval adjustments can be rejected');
+    }
+
+    const updated = await this.prisma.stockAdjustment.update({
+      where: { id },
+      data: {
+        status: 'REJECTED',
+        approvedById: ctx?.userId,
+        ...(dto?.notes !== undefined && { notes: dto.notes }),
+      },
+    });
+
+    runInBackground(
+      'Reject Stock Adjustment',
+      this.activityLogs.log({
+        userId: ctx?.userId,
+        action: 'update',
+        module: 'stock-adjustment',
+        entity: 'StockAdjustment',
+        entityId: updated.id,
+        description: `Rejected stock adjustment request ${updated.adjustmentNo}`,
+        newValues: JSON.stringify({ status: 'REJECTED' }),
+        ipAddress: ctx?.ipAddress,
+        userAgent: ctx?.userAgent,
+        status: 'success',
+      }),
+    );
+
+    return updated;
   }
 }

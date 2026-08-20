@@ -6,21 +6,23 @@ import DataTable from "@/components/common/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
-import { Eye, Plus, FileSpreadsheet, AlertCircle } from "lucide-react";
+import { Eye, Plus, Printer, Repeat, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { getStockAdjustments } from "@/lib/actions/stock-adjustment";
+import { printStockAdjustmentNote } from "@/lib/utils/print-stock-adjustment";
 
 export interface StockAdjustmentRow {
     id: string;
     adjustmentNo: string;
     warehouseId: string;
     adjustmentDate: string;
-    status: "DRAFT" | "SUBMITTED" | "CANCELLED";
+    status: "DRAFT" | "PENDING_APPROVAL" | "SUBMITTED" | "REJECTED" | "CANCELLED";
+    adjustmentType?: "STANDARD" | "SWAP";
     reason: string | null;
     notes: string | null;
     createdAt: string;
-    warehouse: {
+    warehouse?: {
         name: string;
         code: string;
     };
@@ -32,9 +34,17 @@ const STATUS_META: Record<string, { label: string; badgeClass: string }> = {
         label: "Draft",
         badgeClass: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/30 dark:text-amber-300",
     },
+    PENDING_APPROVAL: {
+        label: "Pending Approval",
+        badgeClass: "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/30 dark:text-blue-300",
+    },
     SUBMITTED: {
-        label: "Submitted",
+        label: "Submitted / Approved",
         badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/30 dark:text-emerald-300",
+    },
+    REJECTED: {
+        label: "Rejected",
+        badgeClass: "bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/30 dark:text-rose-300",
     },
     CANCELLED: {
         label: "Cancelled",
@@ -67,20 +77,51 @@ const columns: ColumnDef<StockAdjustmentRow>[] = [
         ),
     },
     {
-        accessorKey: "warehouse",
-        header: "Warehouse",
-        accessorFn: (row) => row.warehouse?.name ?? row.warehouseId,
-        cell: ({ row }) => (
-            <span className="text-sm font-medium">
-                {row.original.warehouse?.name || "Unknown Warehouse"}
-            </span>
-        ),
+        accessorKey: "adjustmentType",
+        header: "Type",
+        cell: ({ row }) => {
+            const isSwap = row.original.adjustmentType === "SWAP";
+            return (
+                <Badge
+                    variant="outline"
+                    className={cn(
+                        "text-[11px] font-semibold px-2 py-0.5 flex items-center gap-1 w-fit",
+                        isSwap
+                            ? "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/30 dark:text-amber-300"
+                            : "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-900 dark:text-slate-300"
+                    )}
+                >
+                    {isSwap ? <Repeat className="h-3 w-3" /> : <ClipboardList className="h-3 w-3" />}
+                    {isSwap ? "Stock Swap" : "Standard Count"}
+                </Badge>
+            );
+        },
+    },
+    {
+        id: "location",
+        header: "Location / Outlet",
+        cell: ({ row }) => {
+            const locationName =
+                row.original.items?.find((i) => i.location?.name)?.location?.name;
+            return (
+                <div className="flex flex-col">
+                    <span className="text-sm font-semibold">
+                        {locationName || row.original.warehouse?.name || "Head Office / Warehouse"}
+                    </span>
+                    {locationName && row.original.warehouse?.name && (
+                        <span className="text-xs text-muted-foreground">
+                            Warehouse: {row.original.warehouse.name}
+                        </span>
+                    )}
+                </div>
+            );
+        },
     },
     {
         accessorKey: "reason",
         header: "Reason",
         cell: ({ row }) => (
-            <span className="text-sm text-muted-foreground truncate max-w-60 block">
+            <span className="text-sm text-muted-foreground truncate max-w-56 block" title={row.original.reason || ""}>
                 {row.original.reason || "—"}
             </span>
         ),
@@ -113,9 +154,18 @@ const columns: ColumnDef<StockAdjustmentRow>[] = [
         id: "actions",
         header: "Actions",
         cell: ({ row }) => (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    title="Print Adjustment Note"
+                    onClick={() => printStockAdjustmentNote(row.original)}
+                >
+                    <Printer className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+                </Button>
                 <Link href={`/erp/inventory/transactions/stock-adjustment/${row.original.id}`}>
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="View Details">
                         <Eye className="h-4 w-4" />
                     </Button>
                 </Link>
@@ -199,7 +249,9 @@ export function StockAdjustmentList({ initialEntries, initialMeta }: StockAdjust
                     label: "Status",
                     options: [
                         { label: "Draft", value: "DRAFT" },
-                        { label: "Submitted", value: "SUBMITTED" },
+                        { label: "Pending Approval", value: "PENDING_APPROVAL" },
+                        { label: "Submitted / Approved", value: "SUBMITTED" },
+                        { label: "Rejected", value: "REJECTED" },
                         { label: "Cancelled", value: "CANCELLED" },
                     ],
                 },

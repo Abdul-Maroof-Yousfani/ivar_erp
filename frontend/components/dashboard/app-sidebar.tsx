@@ -676,6 +676,7 @@ export function AppSidebar({
         "/pos/inventory/inbound",
         "/pos/inventory/receiving",
         "/pos/inventory/ledger",
+        "/pos/inventory/adjustments",
       ];
 
       finalFiltered = envFiltered
