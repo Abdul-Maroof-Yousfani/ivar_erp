@@ -62,37 +62,60 @@ export class OnlineSalesUploadProcessor extends BaseUploadProcessor<OnlineSalesP
 
         const itemMap = new Map<string, typeof items[0]>();
         for (const item of items) {
-            if (item.barCode) itemMap.set(item.barCode, item);
-            if (item.sku) itemMap.set(item.sku, item);
-            if (item.itemId) itemMap.set(item.itemId, item);
+            if (item.barCode) itemMap.set(item.barCode.toLowerCase().trim(), item);
+            if (item.sku) itemMap.set(item.sku.toLowerCase().trim(), item);
+            if (item.itemId) itemMap.set(item.itemId.toLowerCase().trim(), item);
         }
 
-        // Default or contextual location lookup for sequential numbering
-        const defaultLoc = await prisma.location.findFirst({
+        // Online location & terminal lookup
+        const onlineLoc = await prisma.location.findFirst({
+            where: {
+                OR: [
+                    { name: { contains: 'online', mode: 'insensitive' } },
+                    { code: { contains: 'online', mode: 'insensitive' } },
+                    { name: { contains: 'shopify', mode: 'insensitive' } },
+                ],
+            },
+            select: { id: true },
+        });
+
+        const defaultLoc = onlineLoc || await prisma.location.findFirst({
             select: { id: true },
         });
         const locationId = defaultLoc?.id;
 
+        // POS terminal lookup for online outlet
+        const onlinePos = await prisma.pos.findFirst({
+            where: { locationId: locationId || undefined, isDeleted: false },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true, posId: true },
+        });
+        const terminalId = onlinePos?.id || '578aea3a-4e1f-4d00-ac5d-19ff6d08dde7';
+        const posId = onlinePos?.posId || '001';
+
         // Process order groups
         for (const [shopifyOrderId, rows] of orderGroups) {
-            const firstRecord = rows[0];
-            const firstData = firstRecord.data;
-
             progress.processedRecords += rows.length;
 
             try {
-                // 1. Resolve or Auto-Create Customer
+                // 1. Resolve or Auto-Create Customer (search across all rows in order for first non-empty details)
                 let customerId: string | null = null;
-                const phone = firstData.customerPhone;
-                const email = firstData.customerEmail;
-                const name = firstData.customerName || 'Online Customer';
+                const customerName = rows.find(r => r.data.customerName)?.data.customerName || 'Online Customer';
+                const customerPhone = rows.find(r => r.data.customerPhone)?.data.customerPhone;
+                const customerEmail = rows.find(r => r.data.customerEmail)?.data.customerEmail;
+                const customerAddress = rows.find(r => r.data.customerAddress)?.data.customerAddress;
+                const customerCity = rows.find(r => r.data.customerCity)?.data.customerCity;
+                const paymentMethod = rows.find(r => r.data.paymentMethod)?.data.paymentMethod || 'COD';
+                const paymentStatus = rows.find(r => r.data.paymentStatus)?.data.paymentStatus || 'paid';
+                const orderedAt = rows.find(r => r.data.orderedAt)?.data.orderedAt;
+                const shop = rows.find(r => r.data.shop)?.data.shop;
 
-                if (phone || email) {
+                if (customerPhone || customerEmail) {
                     const existingCustomer = await prisma.customer.findFirst({
                         where: {
                             OR: [
-                                ...(phone ? [{ contactNo: phone }] : []),
-                                ...(email ? [{ email }] : []),
+                                ...(customerPhone ? [{ contactNo: customerPhone }] : []),
+                                ...(customerEmail ? [{ email: customerEmail }] : []),
                             ],
                         },
                         select: { id: true },
@@ -109,21 +132,36 @@ export class OnlineSalesUploadProcessor extends BaseUploadProcessor<OnlineSalesP
                         const newCust = await prisma.customer.create({
                             data: {
                                 code,
-                                name,
-                                contactNo: phone || undefined,
-                                email: email || undefined,
-                                address: firstData.customerAddress || firstData.customerCity || undefined,
+                                name: customerName,
+                                contactNo: customerPhone || undefined,
+                                email: customerEmail || undefined,
+                                address: customerAddress || customerCity || undefined,
                                 customerType: 'POS',
                             },
                             select: { id: true },
                         });
                         customerId = newCust.id;
                     } catch (err) {
-                        this.logger.warn(`Failed to auto-create customer for ${name}: ${err.message}`);
+                        this.logger.warn(`Failed to auto-create customer for ${customerName}: ${err.message}`);
                     }
                 }
 
-                // 2. Build Line Items and Perform Tax / WOST Discount Calculations
+                // 2. Calculate Total Order Gross for Proportional Discount Distribution
+                let totalOrderGross = 0;
+                for (const row of rows) {
+                    const d = row.data;
+                    const itemKey = (d.sku || d.barCode || '').toLowerCase().trim();
+                    const matchedItem = itemMap.get(itemKey);
+                    const onlineUnitPrice = d.unitPrice ?? Number(matchedItem?.unitPrice || 0);
+                    const qty = d.quantity && d.quantity > 0 ? d.quantity : 1;
+                    totalOrderGross += onlineUnitPrice * qty;
+                }
+
+                const totalLineDiscounts = rows.reduce((sum, r) => sum + (r.data.discountTotal || 0), 0);
+                const orderLevelDiscount = rows.find(r => (r.data.discountTotal || 0) > 0)?.data.discountTotal || 0;
+                const isSingleDiscountApplied = rows.length > 1 && totalLineDiscounts === orderLevelDiscount && orderLevelDiscount > 0;
+
+                // 3. Build Line Items and Perform Tax / WOST Discount Calculations
                 const lineItems: {
                     itemId: string;
                     quantity: number;
@@ -142,13 +180,13 @@ export class OnlineSalesUploadProcessor extends BaseUploadProcessor<OnlineSalesP
 
                 for (const row of rows) {
                     const d = row.data;
-                    const itemKey = d.sku || d.barCode || '';
+                    const itemKey = (d.sku || d.barCode || '').toLowerCase().trim();
                     const matchedItem = itemMap.get(itemKey);
 
                     if (!matchedItem) {
                         progress.errors.push({
                             row: row.row,
-                            reason: `Item with SKU/Barcode "${itemKey}" not found in IVAR ERP`,
+                            reason: `Item with SKU/Barcode "${d.sku || d.barCode || ''}" not found in IVAR ERP`,
                             data: d,
                         });
                         continue;
@@ -162,8 +200,11 @@ export class OnlineSalesUploadProcessor extends BaseUploadProcessor<OnlineSalesP
                     const onlineUnitPrice = d.unitPrice ?? Number(matchedItem.unitPrice || 0);
                     const lineSubtotalWithTax = onlineUnitPrice * qty;
 
-                    // Discount with tax provided from online store
-                    const discountWithTax = d.discountTotal || 0;
+                    // Distribute discount proportionately if order-level discount, otherwise use line discount
+                    let discountWithTax = d.discountTotal || 0;
+                    if (isSingleDiscountApplied && totalOrderGross > 0) {
+                        discountWithTax = Math.round((lineSubtotalWithTax / totalOrderGross) * orderLevelDiscount * 100) / 100;
+                    }
 
                     // Convert Discount to WOST (Without Sales Tax) -> discount / 1.18
                     const discountWOST = Math.round((discountWithTax / taxDivisor) * 100) / 100;
@@ -202,14 +243,14 @@ export class OnlineSalesUploadProcessor extends BaseUploadProcessor<OnlineSalesP
                     continue;
                 }
 
-                // 3. Generate IVAR ERP Internal Order Number
+                // 4. Generate IVAR ERP Internal Order Number
                 const now = new Date();
                 const year = now.getFullYear();
                 const randomSeq = Math.floor(10000 + Math.random() * 90000);
                 const generatedOrderNumber = `SI-ONL-${year}-${randomSeq}`;
 
-                // 4. Save SalesOrder
-                const createdAt = firstData.orderedAt ? new Date(firstData.orderedAt) : new Date();
+                // 5. Save SalesOrder
+                const createdAt = orderedAt ? new Date(orderedAt) : new Date();
 
                 // Check if this reference order already exists to update
                 const existingOrder = await prisma.salesOrder.findFirst({
@@ -219,16 +260,18 @@ export class OnlineSalesUploadProcessor extends BaseUploadProcessor<OnlineSalesP
 
                 const orderData = {
                     locationId: locationId || null,
+                    posId: posId || null,
+                    terminalId: terminalId || null,
                     customerId,
-                    paymentMethod: firstData.paymentMethod || 'COD',
-                    paymentStatus: firstData.paymentStatus || 'paid',
+                    paymentMethod: paymentMethod || 'COD',
+                    paymentStatus: paymentStatus || 'paid',
                     status: 'completed',
                     subtotal: totalSubtotalWOST,
                     discountAmount: totalDiscountWOST,
                     taxAmount: totalTaxAmount,
                     grandTotal: totalGrandTotal,
                     referenceNumber: shopifyOrderId, // Original Shopify Order Name / Number (#1001)
-                    notes: `Online Store: ${firstData.shop || 'Shopify'} | Ref: ${shopifyOrderId}`,
+                    notes: `Online Store: ${shop || 'Shopify'} | Ref: ${shopifyOrderId}`,
                     createdAt: !isNaN(createdAt.getTime()) ? createdAt : new Date(),
                 };
 

@@ -86,6 +86,9 @@ export function useUploadProgress(uploadId: string | null, uploadType: 'item' | 
         if (uploadType === 'sales-history') {
             return `${baseUrl}/pos-sales/bulk-upload/${endpoint}`;
         }
+        if (uploadType === 'online-sales') {
+            return `${baseUrl}/pos-sales/online-sales/bulk-upload/${endpoint}`;
+        }
         if (uploadType === 'stock') {
             return `${baseUrl}/warehouse/stock/bulk-upload/${endpoint}`;
         }

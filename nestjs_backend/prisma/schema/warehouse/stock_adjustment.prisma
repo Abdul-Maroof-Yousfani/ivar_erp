@@ -3,6 +3,7 @@ model StockAdjustment {
   adjustmentNo   String                @unique @map("adjustment_no")
   warehouseId    String                @map("warehouse_id")
   adjustmentDate DateTime              @default(now()) @map("adjustment_date")
+  adjustmentType String                @default("STANDARD") @map("adjustment_type")
   status         String                @default("DRAFT") // DRAFT, SUBMITTED, CANCELLED
   reason         String?               @map("reason")
   notes          String?               @map("notes")
@@ -23,6 +24,7 @@ model StockAdjustmentItem {
   id                String          @id @default(uuid())
   stockAdjustmentId String          @map("stock_adjustment_id")
   itemId            String          @map("item_id")
+  swapItemId        String?         @map("swap_item_id")
   locationId        String?         @map("location_id")
   currentQty        Decimal         @map("current_qty") @db.Decimal(15, 4)
   physicalQty       Decimal         @map("physical_qty") @db.Decimal(15, 4)

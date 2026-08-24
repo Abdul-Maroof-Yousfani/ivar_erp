@@ -425,41 +425,74 @@ export function GenericBulkUploadModal({
                                                 <p className="text-sm text-muted-foreground">
                                                     {data?.failedRecords === 0
                                                         ? 'All rows are valid and ready to import.'
-                                                        : `${data?.failedRecords} rows have issues and will be skipped during import.`}
+                                                        : `${data?.failedRecords?.toLocaleString()} rows have issues and will be skipped during import.`}
                                                 </p>
                                             </div>
                                         </div>
+                                    </div>
+                                )}
 
-                                        {(data?.failedRecords ?? 0) > 0 && (
-                                            <div className="flex gap-2">
+                                {/* Completion state */}
+                                {data?.status === 'completed' && (
+                                    <div className="p-8 bg-green-500/5 border-2 border-green-500/20 rounded-3xl flex flex-col items-center gap-4 text-center animate-in zoom-in-95 duration-500">
+                                        <div className="h-16 w-16 rounded-full bg-green-500/20 flex items-center justify-center shadow-lg shadow-green-500/10">
+                                            <CheckCircle2 className="h-10 w-10 text-green-600" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <h3 className="text-2xl font-black text-green-700">Import Successful!</h3>
+                                            <p className="text-green-600/80 font-medium">
+                                                {data?.successRecords?.toLocaleString()} rows have been successfully integrated into your system.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Error details & download report — always visible if failedRecords > 0 */}
+                                {(data?.failedRecords ?? 0) > 0 && !isProcessing && (
+                                    <div className="p-6 rounded-2xl border-2 border-destructive/20 bg-destructive/5 space-y-4 animate-in zoom-in-95 duration-500">
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-10 w-10 rounded-full bg-destructive/10 flex items-center justify-center shrink-0">
+                                                    <XCircle className="h-5 w-5 text-destructive" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-black text-sm text-destructive">
+                                                        {data?.failedRecords?.toLocaleString()} Invalid / Skipped Rows
+                                                    </h4>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Download the report to see row numbers, field names, and error reasons.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
                                                     onClick={() => setShowErrors(!showErrors)}
-                                                    className="h-9 font-bold bg-background"
+                                                    className="h-9 font-bold bg-background text-xs"
                                                 >
-                                                    {showErrors ? 'Hide Error Details' : 'View Error Details'}
+                                                    {showErrors ? 'Hide Errors' : 'View Error List'}
                                                 </Button>
                                                 <Button
-                                                    variant="ghost"
+                                                    variant="destructive"
                                                     size="sm"
                                                     onClick={downloadErrorReport}
-                                                    className="h-9 font-bold text-destructive hover:bg-destructive/5"
+                                                    className="h-9 font-bold text-xs shadow-sm"
                                                 >
-                                                    <Download className="h-4 w-4 mr-2" /> Download Full Report
+                                                    <Download className="h-4 w-4 mr-1.5" /> Download Error Report (CSV)
                                                 </Button>
                                             </div>
-                                        )}
+                                        </div>
 
                                         {showErrors && data?.errors && data.errors.length > 0 && (
-                                            <div className="border rounded-xl overflow-hidden shadow-sm bg-background/50">
+                                            <div className="border rounded-xl overflow-hidden shadow-sm bg-background/90">
                                                 <ScrollArea className="h-[250px]">
                                                     <Table>
                                                         <TableHeader className="bg-muted/50 sticky top-0 z-10 backdrop-blur-sm">
                                                             <TableRow>
                                                                 <TableHead className="w-[60px] font-black uppercase text-[10px]">Row</TableHead>
-                                                                <TableHead className="w-[100px] font-black uppercase text-[10px]">Field</TableHead>
-                                                                <TableHead className="font-black uppercase text-[10px]">Issue</TableHead>
+                                                                <TableHead className="w-[120px] font-black uppercase text-[10px]">Field / Order</TableHead>
+                                                                <TableHead className="font-black uppercase text-[10px]">Issue / Reason</TableHead>
                                                                 <TableHead className="text-right font-black uppercase text-[10px]">Value</TableHead>
                                                             </TableRow>
                                                         </TableHeader>
@@ -467,11 +500,11 @@ export function GenericBulkUploadModal({
                                                             {data.errors.slice(0, 100).map((err, i) => (
                                                                 <TableRow key={i} className="hover:bg-muted/20 transition-colors">
                                                                     <TableCell className="font-mono text-xs font-bold text-muted-foreground">{err.row}</TableCell>
-                                                                    <TableCell className="text-xs font-bold capitalize">{err.data?.field || 'unknown'}</TableCell>
+                                                                    <TableCell className="text-xs font-bold capitalize">{err.data?.field || err.data?.shopifyOrderId || 'item'}</TableCell>
                                                                     <TableCell className="text-xs text-destructive font-semibold">{err.reason}</TableCell>
                                                                     <TableCell className="text-right">
                                                                         <Badge variant="outline" className="text-[10px] font-mono font-bold bg-background">
-                                                                            {String(err.data?.value || 'N/A')}
+                                                                            {String(err.data?.value || err.data?.sku || 'N/A')}
                                                                         </Badge>
                                                                     </TableCell>
                                                                 </TableRow>
@@ -492,21 +525,6 @@ export function GenericBulkUploadModal({
                                                 </ScrollArea>
                                             </div>
                                         )}
-                                    </div>
-                                )}
-
-                                {/* Completion state */}
-                                {data?.status === 'completed' && (
-                                    <div className="p-8 bg-green-500/5 border-2 border-green-500/20 rounded-3xl flex flex-col items-center gap-4 text-center animate-in zoom-in-95 duration-500">
-                                        <div className="h-16 w-16 rounded-full bg-green-500/20 flex items-center justify-center shadow-lg shadow-green-500/10">
-                                            <CheckCircle2 className="h-10 w-10 text-green-600" />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <h3 className="text-2xl font-black text-green-700">Import Successful!</h3>
-                                            <p className="text-green-600/80 font-medium">
-                                                {data?.successRecords} rows have been successfully integrated into your system.
-                                            </p>
-                                        </div>
                                     </div>
                                 )}
                             </div>

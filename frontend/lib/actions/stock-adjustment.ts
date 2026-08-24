@@ -12,12 +12,29 @@ export interface StockAdjustmentItem {
     physicalQty: number;
     adjustedQty: number;
     rate: number;
+    swapItemId: string | null;
     item: {
         id: string;
         itemId: string;
         sku: string;
         description: string | null;
+        unitPrice?: number;
+        category?: { id: string; name: string; code: string } | null;
+        color?: { id: string; name: string; code: string } | null;
+        division?: { id: string; name: string; code: string } | null;
+        size?: { id: string; name: string; code: string } | null;
     };
+    swapItem?: {
+        id: string;
+        itemId: string;
+        sku: string;
+        description: string | null;
+        unitPrice?: number;
+        category?: { id: string; name: string; code: string } | null;
+        color?: { id: string; name: string; code: string } | null;
+        division?: { id: string; name: string; code: string } | null;
+        size?: { id: string; name: string; code: string } | null;
+    } | null;
     location?: {
         id: string;
         name: string;
@@ -30,7 +47,8 @@ export interface StockAdjustment {
     adjustmentNo: string;
     warehouseId: string;
     adjustmentDate: string;
-    status: "DRAFT" | "SUBMITTED" | "CANCELLED";
+    status: "DRAFT" | "PENDING_APPROVAL" | "SUBMITTED" | "REJECTED" | "CANCELLED";
+    adjustmentType: "STANDARD" | "SWAP";
     reason: string | null;
     notes: string | null;
     createdById: string | null;
@@ -46,6 +64,7 @@ export interface StockAdjustment {
 
 export async function getStockAdjustments(filters?: {
     warehouseId?: string;
+    locationId?: string;
     status?: string;
     page?: number;
     limit?: number;
@@ -54,6 +73,7 @@ export async function getStockAdjustments(filters?: {
     try {
         const queryParams = new URLSearchParams();
         if (filters?.warehouseId) queryParams.append("warehouseId", filters.warehouseId);
+        if (filters?.locationId) queryParams.append("locationId", filters.locationId);
         if (filters?.status) queryParams.append("status", filters.status);
         if (filters?.page) queryParams.append("page", String(filters.page));
         if (filters?.limit) queryParams.append("limit", String(filters.limit));
@@ -79,10 +99,12 @@ export async function getStockAdjustment(id: string): Promise<StockAdjustment | 
 }
 
 export async function createStockAdjustment(data: {
-    warehouseId: string;
+    warehouseId?: string;
     reason?: string;
     notes?: string;
-    items: { itemId: string; locationId?: string; physicalQty: number; rate?: number }[];
+    status?: string;
+    adjustmentType?: string;
+    items: { itemId: string; locationId?: string; physicalQty: number; rate?: number; swapItemId?: string }[];
 }) {
     try {
         const response = await authFetch("/stock-adjustments", {
@@ -91,6 +113,7 @@ export async function createStockAdjustment(data: {
         });
         const result = response.data;
         revalidatePath("/erp/inventory/transactions/stock-adjustment");
+        revalidatePath("/pos/inventory/adjustments");
         return result;
     } catch (error) {
         console.error("Create stock adjustment error:", error);
@@ -101,10 +124,12 @@ export async function createStockAdjustment(data: {
 export async function updateStockAdjustment(
     id: string,
     data: {
-        warehouseId: string;
+        warehouseId?: string;
         reason?: string;
         notes?: string;
-        items: { itemId: string; locationId?: string; physicalQty: number; rate?: number }[];
+        status?: string;
+        adjustmentType?: string;
+        items: { itemId: string; locationId?: string; physicalQty: number; rate?: number; swapItemId?: string }[];
     },
 ) {
     try {
@@ -115,6 +140,7 @@ export async function updateStockAdjustment(
         const result = response.data;
         revalidatePath("/erp/inventory/transactions/stock-adjustment");
         revalidatePath(`/erp/inventory/transactions/stock-adjustment/${id}`);
+        revalidatePath("/pos/inventory/adjustments");
         return result;
     } catch (error) {
         console.error("Update stock adjustment error:", error);
@@ -122,17 +148,42 @@ export async function updateStockAdjustment(
     }
 }
 
-export async function submitStockAdjustment(id: string) {
+export async function submitStockAdjustment(
+    id: string,
+    data?: {
+        items?: { itemId: string; physicalQty: number; rate?: number }[];
+        notes?: string;
+    },
+) {
     try {
         const response = await authFetch(`/stock-adjustments/${id}/submit`, {
             method: "POST",
+            body: data ? JSON.stringify(data) : undefined,
         });
         const result = response.data;
         revalidatePath("/erp/inventory/transactions/stock-adjustment");
         revalidatePath(`/erp/inventory/transactions/stock-adjustment/${id}`);
+        revalidatePath("/pos/inventory/adjustments");
         return result;
     } catch (error) {
         console.error("Submit stock adjustment error:", error);
+        throw error;
+    }
+}
+
+export async function rejectStockAdjustment(id: string, data?: { notes?: string }) {
+    try {
+        const response = await authFetch(`/stock-adjustments/${id}/reject`, {
+            method: "POST",
+            body: data ? JSON.stringify(data) : undefined,
+        });
+        const result = response.data;
+        revalidatePath("/erp/inventory/transactions/stock-adjustment");
+        revalidatePath(`/erp/inventory/transactions/stock-adjustment/${id}`);
+        revalidatePath("/pos/inventory/adjustments");
+        return result;
+    } catch (error) {
+        console.error("Reject stock adjustment error:", error);
         throw error;
     }
 }
@@ -144,6 +195,7 @@ export async function deleteStockAdjustment(id: string) {
         });
         const result = response.data;
         revalidatePath("/erp/inventory/transactions/stock-adjustment");
+        revalidatePath("/pos/inventory/adjustments");
         return result;
     } catch (error) {
         console.error("Delete stock adjustment error:", error);
@@ -165,4 +217,3 @@ export async function searchInventoryItems(query: string, warehouseId?: string, 
         return { status: false, data: [] };
     }
 }
-
