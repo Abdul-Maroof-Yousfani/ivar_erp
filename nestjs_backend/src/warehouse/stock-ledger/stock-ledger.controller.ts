@@ -379,11 +379,13 @@ export class StockLedgerController {
     }
   }
 
-  @Get('available-stock-summary')
+  @Get(['available-stock-summary', 'available-stock-summary-report'])
   @UseGuards(JwtAuthGuard)
   async getAvailableStockSummaryReport(
     @Query('locationId') locationId?: string,
     @Query('warehouseId') warehouseId?: string,
+    @Query('asOfDate') asOfDate?: string,
+    @Query('date') date?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('summaryOnly') summaryOnly?: string,
@@ -398,6 +400,8 @@ export class StockLedgerController {
     const data = await this.availableStockSummaryExportService.getAvailableStockSummaryReportData({
       locationId,
       warehouseId,
+      asOfDate,
+      date,
       startDate,
       endDate,
       summaryOnly: summaryOnly === 'true',
@@ -412,13 +416,15 @@ export class StockLedgerController {
     return { status: true, data };
   }
 
-  @Post('available-stock-summary/export/queue')
+  @Post(['available-stock-summary/export/queue', 'available-stock-summary-report/export/queue'])
   @UseGuards(JwtAuthGuard)
   async queueAvailableStockSummaryExport(
     @Req() req: any,
     @Body() body: {
       locationId?: string;
       warehouseId?: string;
+      asOfDate?: string;
+      date?: string;
       startDate?: string;
       endDate?: string;
       format: 'xlsx' | 'pdf';
@@ -438,6 +444,8 @@ export class StockLedgerController {
       userId,
       locationId: body.locationId,
       warehouseId: body.warehouseId,
+      asOfDate: body.asOfDate,
+      date: body.date,
       startDate: body.startDate,
       endDate: body.endDate,
       format: body.format,
@@ -454,14 +462,14 @@ export class StockLedgerController {
     return { status: true, data: result };
   }
 
-  @Get('available-stock-summary/export/:jobId/status')
+  @Get(['available-stock-summary/export/:jobId/status', 'available-stock-summary-report/export/:jobId/status'])
   @UseGuards(JwtAuthGuard)
   async getAvailableStockSummaryStatus(@Param('jobId') jobId: string) {
     const result = await this.availableStockSummaryExportService.getJobStatus(jobId);
     return { status: true, data: result };
   }
 
-  @Get('available-stock-summary/export/:jobId/download')
+  @Get(['available-stock-summary/export/:jobId/download', 'available-stock-summary-report/export/:jobId/download'])
   async downloadAvailableStockSummaryExport(@Param('jobId') jobId: string, @Res() res: any) {
     try {
       await this.availableStockSummaryExportService.streamExportFile(jobId, res);

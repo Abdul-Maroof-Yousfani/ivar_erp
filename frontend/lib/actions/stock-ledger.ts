@@ -200,7 +200,7 @@ export async function getStockValuationReportExportStatus(jobId: string) {
 
 export async function queueOverallAvailableReservedStockReportExport(filters: any) {
     try {
-        const response = await authFetch("/stock-ledger/overall-available-reserved-stock-report/export/queue", {
+        const response = await authFetch("/stock-ledger/overall-available-reserved-stock/export/queue", {
             method: "POST",
             body: JSON.stringify(filters),
         });
@@ -213,7 +213,7 @@ export async function queueOverallAvailableReservedStockReportExport(filters: an
 
 export async function getOverallAvailableReservedStockReportExportStatus(jobId: string) {
     try {
-        const response = await authFetch(`/stock-ledger/overall-available-reserved-stock-report/export/${jobId}/status`, {
+        const response = await authFetch(`/stock-ledger/overall-available-reserved-stock/export/${jobId}/status`, {
             method: "GET",
         });
         return response.data;
@@ -225,7 +225,7 @@ export async function getOverallAvailableReservedStockReportExportStatus(jobId: 
 
 export async function queueAvailableStockSummaryReportExport(filters: any) {
     try {
-        const response = await authFetch("/stock-ledger/available-stock-summary-report/export/queue", {
+        const response = await authFetch("/stock-ledger/available-stock-summary/export/queue", {
             method: "POST",
             body: JSON.stringify(filters),
         });
@@ -238,7 +238,7 @@ export async function queueAvailableStockSummaryReportExport(filters: any) {
 
 export async function getAvailableStockSummaryReportExportStatus(jobId: string) {
     try {
-        const response = await authFetch(`/stock-ledger/available-stock-summary-report/export/${jobId}/status`, {
+        const response = await authFetch(`/stock-ledger/available-stock-summary/export/${jobId}/status`, {
             method: "GET",
         });
         return response.data;
@@ -248,48 +248,26 @@ export async function getAvailableStockSummaryReportExportStatus(jobId: string) 
     }
 }
 
-export async function getStockTransactionDetailReport(filters: any) {
-    try {
-        const queryParams = new URLSearchParams();
-        if (filters?.locationId) queryParams.append("locationId", filters.locationId);
-        if (filters?.warehouseId) queryParams.append("warehouseId", filters.warehouseId);
-        if (filters?.startDate) queryParams.append("startDate", filters.startDate);
-        if (filters?.endDate) queryParams.append("endDate", filters.endDate);
-        if (filters?.search) queryParams.append("search", filters.search);
-
-        const response = await authFetch(`/stock-ledger/transaction-detail-report?${queryParams.toString()}`, { method: "GET" });
-        return response.data;
-    } catch (error) {
-        console.error("getStockTransactionDetailReport error:", error);
-        return { status: false, data: [] };
-    }
-}
-
-export async function getStockValuationReport(filters: any) {
-    try {
-        const queryParams = new URLSearchParams();
-        if (filters?.locationId) queryParams.append("locationId", filters.locationId);
-        if (filters?.warehouseId) queryParams.append("warehouseId", filters.warehouseId);
-        if (filters?.startDate) queryParams.append("startDate", filters.startDate);
-        if (filters?.endDate) queryParams.append("endDate", filters.endDate);
-        if (filters?.search) queryParams.append("search", filters.search);
-
-        const response = await authFetch(`/stock-ledger/valuation-report?${queryParams.toString()}`, { method: "GET" });
-        return response.data;
-    } catch (error) {
-        console.error("getStockValuationReport error:", error);
-        return { status: false, data: [] };
-    }
-}
-
 export async function getAvailableStockSummaryReport(filters: any) {
     try {
         const queryParams = new URLSearchParams();
         if (filters?.locationId) queryParams.append("locationId", filters.locationId);
         if (filters?.warehouseId) queryParams.append("warehouseId", filters.warehouseId);
+        if (filters?.asOfDate) queryParams.append("asOfDate", filters.asOfDate);
+        if (filters?.date) queryParams.append("date", filters.date);
+        if (filters?.startDate) queryParams.append("startDate", filters.startDate);
+        if (filters?.endDate) queryParams.append("endDate", filters.endDate);
         if (filters?.search) queryParams.append("search", filters.search);
+        if (filters?.summaryOnly !== undefined) queryParams.append("summaryOnly", String(filters.summaryOnly));
+        if (filters?.showBrand !== undefined) queryParams.append("showBrand", String(filters.showBrand));
+        if (filters?.showDivision !== undefined) queryParams.append("showDivision", String(filters.showDivision));
+        if (filters?.showCategory !== undefined) queryParams.append("showCategory", String(filters.showCategory));
+        if (filters?.showGender !== undefined) queryParams.append("showGender", String(filters.showGender));
+        if (filters?.showSilhouette !== undefined) queryParams.append("showSilhouette", String(filters.showSilhouette));
+        if (filters?.showArticle !== undefined) queryParams.append("showArticle", String(filters.showArticle));
+        if (filters?.showVariant !== undefined) queryParams.append("showVariant", String(filters.showVariant));
 
-        const response = await authFetch(`/stock-ledger/available-stock-summary-report?${queryParams.toString()}`, { method: "GET" });
+        const response = await authFetch(`/stock-ledger/available-stock-summary?${queryParams.toString()}`, { method: "GET" });
         return response.data;
     } catch (error) {
         console.error("getAvailableStockSummaryReport error:", error);
@@ -302,9 +280,10 @@ export async function getOverallAvailableReservedStockReport(filters: any) {
         const queryParams = new URLSearchParams();
         if (filters?.locationId) queryParams.append("locationId", filters.locationId);
         if (filters?.warehouseId) queryParams.append("warehouseId", filters.warehouseId);
+        if (filters?.asOfDate) queryParams.append("asOfDate", filters.asOfDate);
         if (filters?.search) queryParams.append("search", filters.search);
 
-        const response = await authFetch(`/stock-ledger/overall-available-reserved-stock-report?${queryParams.toString()}`, { method: "GET" });
+        const response = await authFetch(`/stock-ledger/overall-available-reserved-stock?${queryParams.toString()}`, { method: "GET" });
         return response.data;
     } catch (error) {
         console.error("getOverallAvailableReservedStockReport error:", error);

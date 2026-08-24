@@ -12,6 +12,8 @@ export interface QueueAvailableStockSummaryExportOptions {
   userId: string;
   locationId?: string;
   warehouseId?: string;
+  asOfDate?: string;
+  date?: string;
   startDate?: string;
   endDate?: string;
   format: 'xlsx' | 'pdf';
@@ -62,6 +64,7 @@ export class AvailableStockSummaryExportService {
         tenantDbUrl,
         locationId: opts.locationId,
         warehouseId: opts.warehouseId,
+        asOfDate: opts.asOfDate || opts.date || opts.endDate,
         startDate: opts.startDate,
         endDate: opts.endDate,
         format: opts.format,
@@ -150,10 +153,11 @@ export class AvailableStockSummaryExportService {
   }
 
   // Get report data in memory for inline UI rendering
-  // Get report data in memory for inline UI rendering
   async getAvailableStockSummaryReportData(opts: {
     locationId?: string;
     warehouseId?: string;
+    asOfDate?: string;
+    date?: string;
     startDate?: string;
     endDate?: string;
     summaryOnly?: boolean;
@@ -178,6 +182,8 @@ export class AvailableStockSummaryExportService {
     opts: {
       locationId?: string;
       warehouseId?: string;
+      asOfDate?: string;
+      date?: string;
       startDate?: string;
       endDate?: string;
       summaryOnly?: boolean;
@@ -193,7 +199,8 @@ export class AvailableStockSummaryExportService {
     const {
       locationId,
       warehouseId,
-      startDate: startStr,
+      asOfDate: asOfStr,
+      date: dateStr,
       endDate: endStr,
       summaryOnly,
       showBrand,
@@ -252,14 +259,19 @@ export class AvailableStockSummaryExportService {
     }
 
     const now = new Date();
-    const startDate = startStr ? new Date(startStr) : new Date(now.getFullYear(), now.getMonth(), 1);
-    const endDate = endStr ? new Date(endStr) : new Date(now);
+    const rawTargetStr = asOfStr || dateStr || endStr;
+    const targetDate = rawTargetStr ? new Date(rawTargetStr) : new Date();
+    targetDate.setHours(23, 59, 59, 999);
 
-    // Fetch inventory item ids
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const isHistorical = targetDate.getTime() < todayStart.getTime();
+
+    // Fetch inventory item ids up to targetDate
     const inventoryItems = await prisma.inventoryItem.findMany({
       where: {
         ...locationOrWarehouseWhere,
         status: 'AVAILABLE',
+        createdAt: { lte: targetDate },
       },
       select: { itemId: true },
     });
@@ -267,6 +279,7 @@ export class AvailableStockSummaryExportService {
     const ledgerItems = await prisma.stockLedger.findMany({
       where: {
         ...locationOrWarehouseWhere,
+        createdAt: { lte: targetDate },
       },
       select: { itemId: true },
       distinct: ['itemId'],
@@ -305,62 +318,40 @@ export class AvailableStockSummaryExportService {
 
     const matchedItemIds = items.map(i => i.id);
 
-    // Compute BF (Opening balance before startDate)
-    const bfGroup = await prisma.stockLedger.groupBy({
-      by: ['itemId'],
-      where: {
-        ...locationOrWarehouseWhere,
-        itemId: { in: matchedItemIds },
-        createdAt: { lt: startDate },
-      },
-      _sum: { qty: true },
-    });
+    // Compute stock balance per item as of targetDate
+    const stockMap = new Map<string, number>();
 
-    const bfMap = new Map<string, number>();
-    for (const row of bfGroup) {
-      bfMap.set(row.itemId, Number(row._sum.qty || 0));
+    if (isHistorical) {
+      // For historical date: calculate sum of all ledger movements up to targetDate
+      const histLedgerGroup = await prisma.stockLedger.groupBy({
+        by: ['itemId'],
+        where: {
+          ...locationOrWarehouseWhere,
+          itemId: { in: matchedItemIds },
+          createdAt: { lte: targetDate },
+        },
+        _sum: { qty: true },
+      });
+
+      for (const row of histLedgerGroup) {
+        stockMap.set(row.itemId, Number(row._sum.qty || 0));
+      }
+    } else {
+      // For real-time / current date: sum available inventory items
+      const currentInvGroup = await prisma.inventoryItem.groupBy({
+        by: ['itemId'],
+        where: {
+          ...locationOrWarehouseWhere,
+          itemId: { in: matchedItemIds },
+          status: 'AVAILABLE',
+        },
+        _sum: { quantity: true },
+      });
+
+      for (const row of currentInvGroup) {
+        stockMap.set(row.itemId, Number(row._sum.quantity || 0));
+      }
     }
-
-    // Query and add any OPENING_BALANCE entries within range
-    const inRangeOpeningGroup = await prisma.stockLedger.groupBy({
-      by: ['itemId'],
-      where: {
-        ...locationOrWarehouseWhere,
-        itemId: { in: matchedItemIds },
-        createdAt: { gte: startDate, lte: endDate },
-        OR: [
-          { movementType: MovementType.OPENING_BALANCE },
-          { referenceType: 'OPENING_BALANCE' },
-          { referenceType: 'BULK_STOCK_UPLOAD' }
-        ]
-      },
-      _sum: { qty: true },
-    });
-
-    for (const row of inRangeOpeningGroup) {
-      const currentBf = bfMap.get(row.itemId) || 0;
-      bfMap.set(row.itemId, currentBf + Number(row._sum.qty || 0));
-    }
-
-    // Query normal ledger entries within range
-    const ledgerEntries = await prisma.stockLedger.findMany({
-      where: {
-        ...locationOrWarehouseWhere,
-        itemId: { in: matchedItemIds },
-        createdAt: { gte: startDate, lte: endDate },
-        NOT: [
-          { movementType: MovementType.OPENING_BALANCE },
-          { referenceType: 'OPENING_BALANCE' },
-          { referenceType: 'BULK_STOCK_UPLOAD' }
-        ]
-      },
-      select: {
-        itemId: true,
-        qty: true,
-        referenceType: true,
-        movementType: true,
-      },
-    });
 
     const toLocOrWhFilters: any[] = [];
     if (locationWhere) toLocOrWhFilters.push({ toLocationId: locationWhere });
@@ -370,12 +361,13 @@ export class AvailableStockSummaryExportService {
       ? { OR: toLocOrWhFilters }
       : (toLocOrWhFilters.length === 1 ? toLocOrWhFilters[0] : {});
 
-    // Query transit items
+    // Query transit items as of targetDate
     const transitItems = await prisma.transferRequestItem.findMany({
       where: {
         itemId: { in: matchedItemIds },
         transferRequest: {
           ...toLocOrWhWhere,
+          createdAt: { lte: targetDate },
           status: { in: ['PENDING', 'SOURCE_APPROVED'] },
           transferType: { in: ['WAREHOUSE_TO_OUTLET', 'OUTLET_TO_OUTLET', 'OUTLET_TO_WAREHOUSE', 'WAREHOUSE_TO_WAREHOUSE'] },
         },
@@ -392,15 +384,16 @@ export class AvailableStockSummaryExportService {
       transitMap.set(row.itemId, (transitMap.get(row.itemId) || 0) + qty);
     }
 
-    // Query reserved stock for matched items (from StockReserve table)
+    // Query reserved stock for matched items as of targetDate
     const reserveGroup = await prisma.stockReserve.groupBy({
       by: ['itemId'],
       where: {
         itemId: { in: matchedItemIds },
+        createdAt: { lte: targetDate },
         ...(warehouseWhere ? { warehouseId: warehouseWhere } : {}),
         OR: [
           { expiresAt: null },
-          { expiresAt: { gte: new Date() } }
+          { expiresAt: { gte: targetDate } }
         ]
       },
       _sum: { quantity: true },
@@ -409,63 +402,6 @@ export class AvailableStockSummaryExportService {
     const reserveMap = new Map<string, number>();
     for (const row of reserveGroup) {
       reserveMap.set(row.itemId, Number(row._sum.quantity || 0));
-    }
-
-    const itemMetricsMap = new Map<string, {
-      fromWarehouse: number;
-      fromOutlet: number;
-      toWarehouse: number;
-      toOutlet: number;
-      exchg: number;
-      refund: number;
-      claim: number;
-      sales: number;
-      adj: number;
-    }>();
-
-    for (const entry of ledgerEntries) {
-      const itemId = entry.itemId;
-      let m = itemMetricsMap.get(itemId);
-      if (!m) {
-        m = {
-          fromWarehouse: 0, fromOutlet: 0, toWarehouse: 0, toOutlet: 0,
-          exchg: 0, refund: 0, claim: 0, sales: 0, adj: 0,
-        };
-        itemMetricsMap.set(itemId, m);
-      }
-
-      const qty = Number(entry.qty || 0);
-      const ref = entry.referenceType || '';
-      const mov = entry.movementType;
-
-      if (mov === MovementType.ADJUSTMENT || ref === 'STOCK_ADJUSTMENT' || ref === 'ADJUSTMENT') {
-        m.adj += qty;
-      } else if (qty > 0) {
-        if (ref === 'TRANSFER_REQUEST') {
-          m.fromWarehouse += qty;
-        } else if (ref === 'OUTLET_TRANSFER_IN') {
-          m.fromOutlet += qty;
-        } else if (['POS_RETURN', 'POS_EXCHANGE_IN'].includes(ref)) {
-          m.exchg += qty;
-        } else if (['POS_REFUND', 'POS_VOID'].includes(ref)) {
-          m.refund += qty;
-        } else if (ref === 'POS_CLAIM_APPROVED') {
-          m.claim += qty;
-        } else {
-          m.adj += qty;
-        }
-      } else if (qty < 0) {
-        const absQty = Math.abs(qty);
-        if (['RETURN_REQUEST', 'CLAIM_RETURN', 'CLAIM_TO_PLM', 'CLAIM_RETURN_REQUEST'].includes(ref)) {
-          m.toWarehouse += absQty;
-        } else if (ref === 'OUTLET_TRANSFER_OUT') {
-          m.toOutlet += absQty;
-        } else if (['POS_SALE', 'POS_EXCHANGE_OUT'].includes(ref)) {
-          m.sales += absQty;
-        } else {
-          m.adj += qty;
-        }
-      }
     }
 
     const root: any[] = [];
@@ -480,17 +416,10 @@ export class AvailableStockSummaryExportService {
     };
 
     for (const item of items) {
-      const bf = bfMap.get(item.id) || 0;
+      const availableStock = stockMap.get(item.id) || 0;
       const transit = transitMap.get(item.id) || 0;
       const reserved = reserveMap.get(item.id) || 0;
-      const m = itemMetricsMap.get(item.id) || {
-        fromWarehouse: 0, fromOutlet: 0, toWarehouse: 0, toOutlet: 0,
-        exchg: 0, refund: 0, claim: 0, sales: 0, adj: 0,
-      };
 
-      const totalTrfIn = m.fromWarehouse + m.fromOutlet;
-      const totalTrfOut = m.toWarehouse + m.toOutlet;
-      const availableStock = bf + totalTrfIn - totalTrfOut + m.exchg + m.refund + m.claim - m.sales + m.adj;
       const balance = availableStock + transit + reserved;
       const unitPrice = item.unitPrice || 0;
       const value = balance * unitPrice;

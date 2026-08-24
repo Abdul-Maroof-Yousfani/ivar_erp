@@ -17,6 +17,8 @@ export interface AvailableStockSummaryExportJobData {
   tenantDbUrl: string;
   locationId?: string;
   warehouseId?: string;
+  asOfDate?: string;
+  date?: string;
   startDate?: string;
   endDate?: string;
   format: 'xlsx' | 'pdf';
@@ -32,35 +34,73 @@ export interface AvailableStockSummaryExportJobData {
 }
 
 const COLUMNS = [
-  { header: 'GPC / Category / Product', key: 'sku', width: 35, align: 'left' as const },
+  {
+    header: 'GPC / Category / Product',
+    key: 'sku',
+    width: 35,
+    align: 'left' as const,
+  },
   { header: 'Size', key: 'size', width: 10, align: 'center' as const },
   { header: 'Color', key: 'color', width: 14, align: 'center' as const },
   { header: 'Quantity', key: 'quantity', width: 14, align: 'right' as const },
   { header: 'In Transit', key: 'transit', width: 12, align: 'right' as const },
-  { header: 'Stock Reserved', key: 'reserved', width: 14, align: 'right' as const },
+  {
+    header: 'Stock Reserved',
+    key: 'reserved',
+    width: 14,
+    align: 'right' as const,
+  },
   { header: 'Total', key: 'total', width: 14, align: 'right' as const },
-  { header: 'Selling Price', key: 'unitPrice', width: 14, align: 'right' as const },
+  {
+    header: 'Selling Price',
+    key: 'unitPrice',
+    width: 14,
+    align: 'right' as const,
+  },
   { header: 'Value (Rs.)', key: 'value', width: 18, align: 'right' as const },
 ];
 
 @Processor('available-stock-summary-export')
 export class AvailableStockSummaryExportProcessor {
-  private readonly logger = new Logger(AvailableStockSummaryExportProcessor.name);
+  private readonly logger = new Logger(
+    AvailableStockSummaryExportProcessor.name,
+  );
 
   constructor(
     private readonly notificationsService: NotificationsService,
     private readonly exportHistoryService: ExportHistoryService,
     private readonly availableStockSummaryService: AvailableStockSummaryExportService,
-  ) { }
+  ) {}
 
   @Process({ concurrency: 1 })
-  async handleExport(job: Job<AvailableStockSummaryExportJobData>): Promise<void> {
+  async handleExport(
+    job: Job<AvailableStockSummaryExportJobData>,
+  ): Promise<void> {
     const {
-      jobId, userId, tenantId, tenantDbUrl, locationId, warehouseId, startDate: startStr, endDate: endStr, format,
-      summaryOnly, showBrand, showDivision, showCategory, showGender, showSilhouette, showArticle, showVariant,
-      includeCosting
+      jobId,
+      userId,
+      tenantId,
+      tenantDbUrl,
+      locationId,
+      warehouseId,
+      asOfDate: asOfParam,
+      date: dateParam,
+      startDate: startStr,
+      endDate: endStr,
+      format,
+      summaryOnly,
+      showBrand,
+      showDivision,
+      showCategory,
+      showGender,
+      showSilhouette,
+      showArticle,
+      showVariant,
+      includeCosting,
     } = job.data;
-    this.logger.log(`[AvailableStockSummaryExport ${jobId}] Starting ${format.toUpperCase()} export for user ${userId}`);
+    this.logger.log(
+      `[AvailableStockSummaryExport ${jobId}] Starting ${format.toUpperCase()} export for user ${userId}`,
+    );
 
     const prisma = new PrismaService({ tenantId, tenantDbUrl } as any);
     const exportDir = path.join(process.cwd(), 'uploads', 'exports');
@@ -71,8 +111,18 @@ export class AvailableStockSummaryExportProcessor {
     try {
       await job.progress(10);
 
-      const locIds = locationId ? locationId.split(',').map(s => s.trim()).filter(Boolean) : [];
-      const whIds = warehouseId ? warehouseId.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const locIds = locationId
+        ? locationId
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+      const whIds = warehouseId
+        ? warehouseId
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
 
       const nameParts: string[] = [];
       if (whIds.length > 0) {
@@ -81,7 +131,9 @@ export class AvailableStockSummaryExportProcessor {
           select: { name: true },
         });
         if (warehouses.length > 0) {
-          nameParts.push(`Warehouses: ${warehouses.map(w => w.name).join(', ')}`);
+          nameParts.push(
+            `Warehouses: ${warehouses.map((w) => w.name).join(', ')}`,
+          );
         }
       }
       if (locIds.length > 0) {
@@ -90,53 +142,65 @@ export class AvailableStockSummaryExportProcessor {
           select: { name: true },
         });
         if (locations.length > 0) {
-          nameParts.push(`Outlets: ${locations.map(l => l.name).join(', ')}`);
+          nameParts.push(`Outlets: ${locations.map((l) => l.name).join(', ')}`);
         }
       }
-      const locationName = nameParts.length > 0 ? nameParts.join(' | ') : 'All Warehouses & Locations';
+      const locationName =
+        nameParts.length > 0
+          ? nameParts.join(' | ')
+          : 'All Warehouses & Locations';
 
-      const now = new Date();
-      const startDate = startStr ? new Date(startStr) : new Date(now.getFullYear(), now.getMonth(), 1);
-      const endDate = endStr ? new Date(endStr) : new Date(now);
+      const targetDateStr =
+        asOfParam || dateParam || endStr || new Date().toISOString();
+      const asOfDate = new Date(targetDateStr);
 
       await job.progress(25);
 
       // Generate structured data using our service core method
-      const { root, grandTotals } = await this.availableStockSummaryService.generateAvailableStockSummaryReportDataInternal(
-        prisma,
-        {
-          locationId,
-          warehouseId,
-          startDate: startStr,
-          endDate: endStr,
-          summaryOnly,
-          showBrand,
-          showDivision,
-          showCategory,
-          showGender,
-          showSilhouette,
-          showArticle,
-          showVariant,
-        }
-      );
+      const { root, grandTotals } =
+        await this.availableStockSummaryService.generateAvailableStockSummaryReportDataInternal(
+          prisma,
+          {
+            locationId,
+            warehouseId,
+            asOfDate: targetDateStr,
+            startDate: startStr,
+            endDate: endStr,
+            summaryOnly,
+            showBrand,
+            showDivision,
+            showCategory,
+            showGender,
+            showSilhouette,
+            showArticle,
+            showVariant,
+          },
+        );
 
       await job.progress(60);
 
       if (format === 'pdf') {
-        const fromDateStr = startDate.toLocaleDateString();
-        const toDateStr = endDate.toLocaleDateString();
-        const html = this.buildPdfHtml(root, locationName, fromDateStr, toDateStr, grandTotals, !!summaryOnly, !!includeCosting);
+        const dateFormattedStr = asOfDate.toLocaleDateString();
+        const html = this.buildPdfHtml(
+          root,
+          locationName,
+          dateFormattedStr,
+          grandTotals,
+          !!summaryOnly,
+          !!includeCosting,
+        );
 
-        const launchArgs = process.platform === 'linux'
-          ? [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-first-run',
-            '--no-zygote',
-          ]
-          : [];
+        const launchArgs =
+          process.platform === 'linux'
+            ? [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--no-first-run',
+                '--no-zygote',
+              ]
+            : [];
 
         const browser = await puppeteer.launch({
           headless: true,
@@ -153,7 +217,7 @@ export class AvailableStockSummaryExportProcessor {
           const progressInterval = setInterval(() => {
             if (currentProgress < 90) {
               currentProgress += 2;
-              job.progress(currentProgress).catch(() => { });
+              job.progress(currentProgress).catch(() => {});
             }
           }, 2000);
 
@@ -162,11 +226,18 @@ export class AvailableStockSummaryExportProcessor {
             pdfBuffer = await page.pdf({
               format: 'A4',
               landscape: true,
-              margin: { top: '15mm', bottom: '15mm', left: '10mm', right: '10mm' },
+              margin: {
+                top: '15mm',
+                bottom: '15mm',
+                left: '10mm',
+                right: '10mm',
+              },
               printBackground: true,
               displayHeaderFooter: true,
-              headerTemplate: '<div style="font-size: 7px; width: 100%; text-align: right; padding-right: 15mm; color: #94a3b8;">IVAR | Available Stock Summary</div>',
-              footerTemplate: '<div style="font-size: 7px; width: 100%; text-align: center; color: #94a3b8;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>',
+              headerTemplate:
+                '<div style="font-size: 7px; width: 100%; text-align: right; padding-right: 15mm; color: #94a3b8;">IVAR | Available Stock Summary</div>',
+              footerTemplate:
+                '<div style="font-size: 7px; width: 100%; text-align: center; color: #94a3b8;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>',
             });
           } finally {
             clearInterval(progressInterval);
@@ -187,26 +258,48 @@ export class AvailableStockSummaryExportProcessor {
         const colsToUse = [...COLUMNS];
         if (includeCosting) {
           colsToUse.push(
-            { header: 'Cost Price', key: 'unitCost', width: 14, align: 'right' as const },
-            { header: 'Total Costing', key: 'costingValue', width: 18, align: 'right' as const }
+            {
+              header: 'Cost Price',
+              key: 'unitCost',
+              width: 14,
+              align: 'right' as const,
+            },
+            {
+              header: 'Total Costing',
+              key: 'costingValue',
+              width: 18,
+              align: 'right' as const,
+            },
           );
         }
 
         const ws = workbook.addWorksheet('Available Stock Summary', {
-          pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+          pageSetup: {
+            paperSize: 9,
+            orientation: 'landscape',
+            fitToPage: true,
+            fitToWidth: 1,
+          },
           views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }],
         });
 
-        ws.columns = colsToUse.map(c => ({ key: c.key, width: c.width }));
+        ws.columns = colsToUse.map((c) => ({ key: c.key, width: c.width }));
 
         // 1. Column headers
         const headerRow = ws.getRow(1);
         colsToUse.forEach((col, idx) => {
           const cell = headerRow.getCell(idx + 1);
           cell.value = col.header;
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF334155' },
+          };
           cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9 };
-          cell.alignment = { horizontal: col.align ?? 'left', vertical: 'middle' };
+          cell.alignment = {
+            horizontal: col.align ?? 'left',
+            vertical: 'middle',
+          };
           cell.border = {
             top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
             left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
@@ -224,29 +317,91 @@ export class AvailableStockSummaryExportProcessor {
           right: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
         };
 
-        const rightAlign = { horizontal: 'right' as const, vertical: 'middle' as const };
-        const leftAlign = { horizontal: 'left' as const, vertical: 'middle' as const };
-        const centerAlign = { horizontal: 'center' as const, vertical: 'middle' as const };
+        const rightAlign = {
+          horizontal: 'right' as const,
+          vertical: 'middle' as const,
+        };
+        const leftAlign = {
+          horizontal: 'left' as const,
+          vertical: 'middle' as const,
+        };
+        const centerAlign = {
+          horizontal: 'center' as const,
+          vertical: 'middle' as const,
+        };
 
-        const LEVEL_EXCEL_STYLES: Record<string, {
-          bgHex: string;
-          fgHex: string;
-          fontSize: number;
-          bold: boolean;
-          indent: number;
-          prefix: string;
-        }> = {
-          brand: { bgHex: '1E293B', fgHex: 'FFFFFF', fontSize: 10, bold: true, indent: 0, prefix: 'BRAND: ' },
-          division: { bgHex: '334155', fgHex: 'FFFFFF', fontSize: 9.5, bold: true, indent: 2, prefix: 'DIVISION: ' },
-          category: { bgHex: '475569', fgHex: 'FFFFFF', fontSize: 9, bold: true, indent: 4, prefix: 'CATEGORY: ' },
-          gender: { bgHex: '64748B', fgHex: 'FFFFFF', fontSize: 9, bold: true, indent: 6, prefix: 'GENDER: ' },
-          silhouette: { bgHex: '94A3B8', fgHex: 'FFFFFF', fontSize: 9, bold: true, indent: 8, prefix: 'SILHOUETTE: ' },
-          article: { bgHex: 'F1F5F9', fgHex: '1E293B', fontSize: 9, bold: true, indent: 10, prefix: 'SKU: ' },
-          variant: { bgHex: 'FFFFFF', fgHex: '475569', fontSize: 9, bold: false, indent: 12, prefix: '' },
+        const LEVEL_EXCEL_STYLES: Record<
+          string,
+          {
+            bgHex: string;
+            fgHex: string;
+            fontSize: number;
+            bold: boolean;
+            indent: number;
+            prefix: string;
+          }
+        > = {
+          brand: {
+            bgHex: '1E293B',
+            fgHex: 'FFFFFF',
+            fontSize: 10,
+            bold: true,
+            indent: 0,
+            prefix: 'BRAND: ',
+          },
+          division: {
+            bgHex: '334155',
+            fgHex: 'FFFFFF',
+            fontSize: 9.5,
+            bold: true,
+            indent: 2,
+            prefix: 'DIVISION: ',
+          },
+          category: {
+            bgHex: '475569',
+            fgHex: 'FFFFFF',
+            fontSize: 9,
+            bold: true,
+            indent: 4,
+            prefix: 'CATEGORY: ',
+          },
+          gender: {
+            bgHex: '64748B',
+            fgHex: 'FFFFFF',
+            fontSize: 9,
+            bold: true,
+            indent: 6,
+            prefix: 'GENDER: ',
+          },
+          silhouette: {
+            bgHex: '94A3B8',
+            fgHex: 'FFFFFF',
+            fontSize: 9,
+            bold: true,
+            indent: 8,
+            prefix: 'SILHOUETTE: ',
+          },
+          article: {
+            bgHex: 'F1F5F9',
+            fgHex: '1E293B',
+            fontSize: 9,
+            bold: true,
+            indent: 10,
+            prefix: 'SKU: ',
+          },
+          variant: {
+            bgHex: 'FFFFFF',
+            fgHex: '475569',
+            fontSize: 9,
+            bold: false,
+            indent: 12,
+            prefix: '',
+          },
         };
 
         const writeNodeToExcel = (node: any) => {
-          const style = LEVEL_EXCEL_STYLES[node.level] || LEVEL_EXCEL_STYLES.brand;
+          const style =
+            LEVEL_EXCEL_STYLES[node.level] || LEVEL_EXCEL_STYLES.brand;
 
           let label = ' '.repeat(style.indent) + style.prefix;
           let colorVal = '';
@@ -256,7 +411,9 @@ export class AvailableStockSummaryExportProcessor {
           let costingValueVal: any = node.totals.costingValue;
 
           if (node.level === 'article') {
-            label = ' '.repeat(style.indent) + `SKU: ${node.sku} (${node.articleName})`;
+            label =
+              ' '.repeat(style.indent) +
+              `SKU: ${node.sku} (${node.articleName})`;
             unitPriceVal = node.totals.unitPrice;
             unitCostVal = node.totals.unitCost;
           } else if (node.level === 'variant') {
@@ -266,7 +423,10 @@ export class AvailableStockSummaryExportProcessor {
             unitPriceVal = '';
             unitCostVal = '';
           } else {
-            label = ' '.repeat(style.indent) + style.prefix + node.value.toUpperCase();
+            label =
+              ' '.repeat(style.indent) +
+              style.prefix +
+              node.value.toUpperCase();
           }
 
           const rowData: any = {
@@ -290,16 +450,37 @@ export class AvailableStockSummaryExportProcessor {
           const numCols = colsToUse.length;
           for (let colNum = 1; colNum <= numCols; colNum++) {
             const cell = row.getCell(colNum);
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${style.bgHex}` } };
-            cell.font = { bold: style.bold, size: style.fontSize, color: { argb: `FF${style.fgHex}` } };
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: `FF${style.bgHex}` },
+            };
+            cell.font = {
+              bold: style.bold,
+              size: style.fontSize,
+              color: { argb: `FF${style.fgHex}` },
+            };
             cell.border = borderThin;
-            cell.alignment = colNum === 2 || colNum === 3
-              ? centerAlign
-              : (colNum === 1 ? leftAlign : rightAlign);
+            cell.alignment =
+              colNum === 2 || colNum === 3
+                ? centerAlign
+                : colNum === 1
+                  ? leftAlign
+                  : rightAlign;
 
-            if ((colNum === 8 || colNum === 9 || colNum === 10 || colNum === 11) && typeof cell.value === 'number') {
+            if (
+              (colNum === 8 ||
+                colNum === 9 ||
+                colNum === 10 ||
+                colNum === 11) &&
+              typeof cell.value === 'number'
+            ) {
               cell.numFmt = '#,##0';
-            } else if (colNum >= 4 && colNum <= 7 && typeof cell.value === 'number') {
+            } else if (
+              colNum >= 4 &&
+              colNum <= 7 &&
+              typeof cell.value === 'number'
+            ) {
               cell.numFmt = '#,##0';
             }
           }
@@ -344,7 +525,11 @@ export class AvailableStockSummaryExportProcessor {
             left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
             right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
           };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFE2E8F0' },
+          };
           cell.alignment = colNum <= 3 ? leftAlign : rightAlign;
 
           if (colNum >= 4 && typeof cell.value === 'number') {
@@ -359,10 +544,14 @@ export class AvailableStockSummaryExportProcessor {
 
       await job.progress(95);
 
-      const mimeType = format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      const fileName = format === 'pdf'
-        ? `available-stock-summary-${new Date().toISOString().slice(0, 10)}.pdf`
-        : `available-stock-summary-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const mimeType =
+        format === 'pdf'
+          ? 'application/pdf'
+          : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      const fileName =
+        format === 'pdf'
+          ? `available-stock-summary-${new Date().toISOString().slice(0, 10)}.pdf`
+          : `available-stock-summary-${new Date().toISOString().slice(0, 10)}.xlsx`;
 
       await this.exportHistoryService.completeAndUploadExport(
         prisma,
@@ -383,9 +572,14 @@ export class AvailableStockSummaryExportProcessor {
       });
 
       await job.progress(100);
-      this.logger.log(`[AvailableStockSummaryExport ${jobId}] Finished processing successfully`);
+      this.logger.log(
+        `[AvailableStockSummaryExport ${jobId}] Finished processing successfully`,
+      );
     } catch (err) {
-      this.logger.error(`[AvailableStockSummaryExport ${jobId}] Failed: ${err.message}`, err.stack);
+      this.logger.error(
+        `[AvailableStockSummaryExport ${jobId}] Failed: ${err.message}`,
+        err.stack,
+      );
       await this.exportHistoryService.failExport(prisma, jobId);
       throw err;
     }
@@ -394,27 +588,53 @@ export class AvailableStockSummaryExportProcessor {
   private buildPdfHtml(
     data: any[],
     locationName: string,
-    fromDateStr: string,
-    toDateStr: string,
+    asOfDateStr: string,
     grandTotals: any,
     summaryOnly: boolean,
     includeCosting: boolean,
   ): string {
     let rowsHtml = '';
-    const formatVal = (val: number) => val === 0 ? '-' : val.toLocaleString();
+    const formatVal = (val: number) => (val === 0 ? '-' : val.toLocaleString());
 
-    const LEVEL_PDF_STYLES: Record<string, {
-      className: string;
-      indentStyles: string;
-      prefix: string;
-    }> = {
+    const LEVEL_PDF_STYLES: Record<
+      string,
+      {
+        className: string;
+        indentStyles: string;
+        prefix: string;
+      }
+    > = {
       brand: { className: 'brand-row', indentStyles: '', prefix: 'BRAND: ' },
-      division: { className: 'division-row', indentStyles: 'padding-left: 10px;', prefix: 'DIVISION: ' },
-      category: { className: 'category-row', indentStyles: 'padding-left: 20px;', prefix: 'CATEGORY: ' },
-      gender: { className: 'gender-row', indentStyles: 'padding-left: 30px;', prefix: 'GENDER: ' },
-      silhouette: { className: 'silhouette-row', indentStyles: 'padding-left: 40px;', prefix: 'SILHOUETTE: ' },
-      article: { className: 'article-row', indentStyles: 'padding-left: 50px;', prefix: 'SKU: ' },
-      variant: { className: 'variant-row', indentStyles: 'padding-left: 60px;', prefix: '' },
+      division: {
+        className: 'division-row',
+        indentStyles: 'padding-left: 10px;',
+        prefix: 'DIVISION: ',
+      },
+      category: {
+        className: 'category-row',
+        indentStyles: 'padding-left: 20px;',
+        prefix: 'CATEGORY: ',
+      },
+      gender: {
+        className: 'gender-row',
+        indentStyles: 'padding-left: 30px;',
+        prefix: 'GENDER: ',
+      },
+      silhouette: {
+        className: 'silhouette-row',
+        indentStyles: 'padding-left: 40px;',
+        prefix: 'SILHOUETTE: ',
+      },
+      article: {
+        className: 'article-row',
+        indentStyles: 'padding-left: 50px;',
+        prefix: 'SKU: ',
+      },
+      variant: {
+        className: 'variant-row',
+        indentStyles: 'padding-left: 60px;',
+        prefix: '',
+      },
     };
 
     const buildHtmlRows = (node: any): void => {
@@ -646,7 +866,7 @@ export class AvailableStockSummaryExportProcessor {
             <p>Outlet: ${locationName}</p>
           </div>
           <div class="meta-area">
-            Period: ${fromDateStr} - ${toDateStr}
+            As of: ${asOfDateStr}
           </div>
         </div>
 

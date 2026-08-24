@@ -10,7 +10,7 @@ import {
 } from "@/lib/actions/stock-ledger";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DateRangePicker, DateRange } from "@/components/ui/date-range-picker";
+import { DatePicker } from "@/components/ui/date-picker";
 import { MultiSelect, MultiSelectOption } from "@/components/ui/multi-select";
 import { Input } from "@/components/ui/input";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -34,7 +34,7 @@ import {
     Package
 } from "lucide-react";
 import { toast } from "sonner";
-import { startOfMonth, endOfMonth, format } from "date-fns";
+import { format } from "date-fns";
 import { cn, getApiBaseUrl, formatCurrency } from "@/lib/utils";
 
 export default function ERPAvailableStockSummaryReportPage() {
@@ -45,10 +45,7 @@ export default function ERPAvailableStockSummaryReportPage() {
     const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
     const [selectedWarehouseIds, setSelectedWarehouseIds] = useState<string[]>([]);
 
-    const [dateRange, setDateRange] = useState<DateRange>({
-        from: startOfMonth(new Date()),
-        to: endOfMonth(new Date()),
-    });
+    const [asOfDate, setAsOfDate] = useState<string>(new Date().toISOString().split("T")[0]);
 
     const [searchQuery, setSearchQuery] = useState("");
 
@@ -138,14 +135,11 @@ export default function ERPAvailableStockSummaryReportPage() {
     }, [selectedWarehouseIds]);
 
     const fetchReport = useCallback(() => {
-        if (!dateRange.from || !dateRange.to) return;
-
         startTransition(async () => {
             const result = await getAvailableStockSummaryReport({
                 locationId: locationParam,
                 warehouseId: warehouseParam,
-                startDate: dateRange.from?.toISOString(),
-                endDate: dateRange.to?.toISOString(),
+                asOfDate,
                 summaryOnly,
                 showBrand: groupingLevels.brand,
                 showDivision: groupingLevels.division,
@@ -167,11 +161,11 @@ export default function ERPAvailableStockSummaryReportPage() {
                 toast.error("Failed to load available stock summary report data");
             }
         });
-    }, [locationParam, warehouseParam, dateRange, groupingLevels, summaryOnly]);
+    }, [locationParam, warehouseParam, asOfDate, groupingLevels, summaryOnly]);
 
     useEffect(() => {
         fetchReport();
-    }, [locationParam, warehouseParam, groupingLevels]);
+    }, [locationParam, warehouseParam, asOfDate, groupingLevels]);
 
     // Poll Excel Export Job Status
     useEffect(() => {
@@ -238,8 +232,6 @@ export default function ERPAvailableStockSummaryReportPage() {
     }, [pdfExportState, pdfJobId]);
 
     const handleExportExcelClick = async () => {
-        if (!dateRange.from || !dateRange.to) return;
-
         if (exportState === "completed" && exportJobId) {
             const base = getApiBaseUrl();
             const url = `${base}/stock-ledger/available-stock-summary/export/${exportJobId}/download`;
@@ -257,8 +249,7 @@ export default function ERPAvailableStockSummaryReportPage() {
             const res = await queueAvailableStockSummaryReportExport({
                 locationId: locationParam,
                 warehouseId: warehouseParam,
-                startDate: dateRange.from.toISOString(),
-                endDate: dateRange.to.toISOString(),
+                asOfDate,
                 format: "xlsx",
                 summaryOnly,
                 showBrand: groupingLevels.brand,
@@ -287,8 +278,6 @@ export default function ERPAvailableStockSummaryReportPage() {
     };
 
     const handleExportPdfClick = async () => {
-        if (!dateRange.from || !dateRange.to) return;
-
         if (pdfExportState === "completed" && pdfJobId) {
             const base = getApiBaseUrl();
             const url = `${base}/stock-ledger/available-stock-summary/export/${pdfJobId}/download`;
@@ -306,8 +295,7 @@ export default function ERPAvailableStockSummaryReportPage() {
             const res = await queueAvailableStockSummaryReportExport({
                 locationId: locationParam,
                 warehouseId: warehouseParam,
-                startDate: dateRange.from.toISOString(),
-                endDate: dateRange.to.toISOString(),
+                asOfDate,
                 format: "pdf",
                 summaryOnly,
                 showBrand: groupingLevels.brand,
@@ -590,7 +578,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                 <h1 className="text-2xl font-bold text-center text-slate-900">Available Stock Summary</h1>
                 <p className="text-sm text-center text-slate-600 mt-1">Locations: {getSelectedLocationText()}</p>
                 <p className="text-xs text-center text-slate-500">
-                    As of: {dateRange.to ? format(dateRange.to, "dd MMM yyyy") : "Today"}
+                    As of: {asOfDate ? format(new Date(asOfDate + "T00:00:00"), "dd MMM yyyy") : "Today"}
                 </p>
             </div>
 
@@ -627,20 +615,16 @@ export default function ERPAvailableStockSummaryReportPage() {
                         />
                     </div>
 
-                    {/* Date period picker */}
+                    {/* Date picker */}
                     <div className="flex flex-col gap-1.5">
                         <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 leading-none">
                             <Calendar className="h-3.5 w-3.5 text-primary" />
-                            As of Period
+                            As of Date
                         </span>
-                        <DateRangePicker
-                            initialDateFrom={dateRange.from}
-                            initialDateTo={dateRange.to}
-                            onUpdate={({ range }: { range: DateRange }) => {
-                                if (range) {
-                                    setDateRange(range);
-                                }
-                            }}
+                        <DatePicker
+                            value={asOfDate}
+                            onChange={(dateStr) => setAsOfDate(dateStr)}
+                            placeholder="Select Cut-off Date"
                         />
                     </div>
 
