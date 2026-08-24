@@ -483,7 +483,11 @@ export default function CheckoutPage() {
         } else {
             // Flat amount capped at 50% of grand total before manual discount
             const maxFlat = Math.round(grandTotalBeforeManual * 0.5 * 100) / 100;
-            orderDiscount = Math.min(manualDiscountValue, maxFlat);
+            const enteredFlatInclusive = Math.min(manualDiscountValue, maxFlat);
+            // Convert entered gross (tax-inclusive) manual discount to WOST discount:
+            // e.g. 2000 gross discount with 18% tax -> 2000 / 1.18 = 1694.92 (or ~1695) WOST discount
+            const taxMultiplier = subtotal > 0 ? (subtotal + defaultItemTax) / subtotal : 1;
+            orderDiscount = Math.round((enteredFlatInclusive / taxMultiplier) * 100) / 100;
         }
         // Manual discount replaces item-level discounts
         finalItemDiscounts = 0;

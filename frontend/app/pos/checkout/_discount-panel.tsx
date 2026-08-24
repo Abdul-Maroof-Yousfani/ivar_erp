@@ -518,7 +518,16 @@ export function DiscountPanel({
                                  );
                              })()}
                              {discountMode === "manual" && orderDiscount > 0 && (
-                                 <p className="text-xs text-primary font-semibold">Discount: −{fmtCurrency(orderDiscount)}</p>
+                                 <div className="text-xs space-y-0.5 mt-1">
+                                     <p className="text-primary font-semibold">
+                                         WOST Discount: −{fmtCurrency(orderDiscount)}
+                                     </p>
+                                     {manualDiscountType === "flat" && (
+                                         <p className="text-[11px] text-muted-foreground">
+                                             (Total Gross Off Bill: −{fmtCurrency(manualDiscountValue)})
+                                         </p>
+                                     )}
+                                 </div>
                              )}
                         </div>
                     </details>
