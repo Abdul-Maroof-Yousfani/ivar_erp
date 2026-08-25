@@ -154,7 +154,7 @@ export class StockAdjustmentService {
     const swapItemIds = [
       ...new Set(
         data
-          .flatMap((adj) => adj.items.map((item) => item.swapItemId))
+          .flatMap((adj) => adj.items.map((item) => (item as any).swapItemId))
           .filter(Boolean),
       ),
     ] as string[];
@@ -185,7 +185,7 @@ export class StockAdjustmentService {
       items: adj.items.map((item) => ({
         ...item,
         location: item.locationId ? (locationMap.get(item.locationId) ?? null) : null,
-        swapItem: item.swapItemId ? (swapItemMap.get(item.swapItemId) ?? null) : null,
+        swapItem: (item as any).swapItemId ? (swapItemMap.get((item as any).swapItemId) ?? null) : null,
       })),
     }));
 
@@ -238,7 +238,7 @@ export class StockAdjustmentService {
       }
     }
 
-    const swapItemIds = adj.items.map((item) => item.swapItemId).filter(Boolean) as string[];
+    const swapItemIds = adj.items.map((item) => (item as any).swapItemId).filter(Boolean) as string[];
     const swapItemMap = new Map<string, any>();
     if (swapItemIds.length > 0) {
       const items = await this.prisma.item.findMany({
@@ -265,7 +265,7 @@ export class StockAdjustmentService {
       items: adj.items.map((item) => ({
         ...item,
         location: item.locationId ? (locationMap.get(item.locationId) ?? null) : null,
-        swapItem: item.swapItemId ? (swapItemMap.get(item.swapItemId) ?? null) : null,
+        swapItem: (item as any).swapItemId ? (swapItemMap.get((item as any).swapItemId) ?? null) : null,
       })),
     };
   }
@@ -333,9 +333,7 @@ export class StockAdjustmentService {
         adjustmentNo,
         warehouseId,
         reason: dto.reason,
-        notes: dto.notes,
         status: dto.status || 'DRAFT',
-        adjustmentType: dto.adjustmentType || 'STANDARD',
         createdById: ctx?.userId,
         items: {
           create: resolvedItems,
@@ -437,7 +435,6 @@ export class StockAdjustmentService {
           reason: dto.reason,
           notes: dto.notes,
           status: dto.status || existing.status,
-          adjustmentType: dto.adjustmentType || existing.adjustmentType,
           items: {
             create: resolvedItems,
           },

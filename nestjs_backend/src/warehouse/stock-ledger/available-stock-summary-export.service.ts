@@ -321,34 +321,35 @@ export class AvailableStockSummaryExportService {
     // Compute stock balance per item as of targetDate
     const stockMap = new Map<string, number>();
 
-    if (isHistorical) {
-      // For historical date: calculate sum of all ledger movements up to targetDate
-      const histLedgerGroup = await prisma.stockLedger.groupBy({
-        by: ['itemId'],
-        where: {
-          ...locationOrWarehouseWhere,
-          itemId: { in: matchedItemIds },
-          createdAt: { lte: targetDate },
-        },
-        _sum: { qty: true },
-      });
+    // Compute stock balance per item from StockLedger movements (IN and OUT) as of targetDate
+    const histLedgerGroup = await prisma.stockLedger.groupBy({
+      by: ['itemId'],
+      where: {
+        ...locationOrWarehouseWhere,
+        itemId: { in: matchedItemIds },
+        createdAt: { lte: targetDate },
+      },
+      _sum: { qty: true },
+    });
 
-      for (const row of histLedgerGroup) {
-        stockMap.set(row.itemId, Number(row._sum.qty || 0));
-      }
-    } else {
-      // For real-time / current date: sum available inventory items
-      const currentInvGroup = await prisma.inventoryItem.groupBy({
-        by: ['itemId'],
-        where: {
-          ...locationOrWarehouseWhere,
-          itemId: { in: matchedItemIds },
-          status: 'AVAILABLE',
-        },
-        _sum: { quantity: true },
-      });
+    for (const row of histLedgerGroup) {
+      stockMap.set(row.itemId, Number(row._sum.qty || 0));
+    }
 
-      for (const row of currentInvGroup) {
+    // Fallback to AVAILABLE InventoryItems if an item has no ledger entries
+    const currentInvGroup = await prisma.inventoryItem.groupBy({
+      by: ['itemId'],
+      where: {
+        ...locationOrWarehouseWhere,
+        itemId: { in: matchedItemIds },
+        status: 'AVAILABLE',
+        createdAt: { lte: targetDate },
+      },
+      _sum: { quantity: true },
+    });
+
+    for (const row of currentInvGroup) {
+      if (!stockMap.has(row.itemId)) {
         stockMap.set(row.itemId, Number(row._sum.quantity || 0));
       }
     }
