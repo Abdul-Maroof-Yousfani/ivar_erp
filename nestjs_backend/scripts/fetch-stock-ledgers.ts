@@ -31,12 +31,10 @@ function decrypt(encryptedText: string, masterKeyString: string): string {
 }
 
 async function getPrismaClient(): Promise<PrismaClient> {
-  const directUrl = process.env.DATABASE_URL_TENANT || process.env.DATABASE_URL;
-  const isTenantDb = directUrl && !directUrl.includes('ivar_managements');
-
-  if (isTenantDb) {
-    console.log('🔗 Connecting using direct tenant DATABASE_URL...');
-    const pool = new Pool({ connectionString: directUrl });
+  const explicitTenantUrl = process.env.DATABASE_URL_TENANT;
+  if (explicitTenantUrl && !explicitTenantUrl.includes('ivar_managements')) {
+    console.log('🔗 Connecting using explicit DATABASE_URL_TENANT...');
+    const pool = new Pool({ connectionString: explicitTenantUrl });
     const adapter = new PrismaPg(pool);
     return new PrismaClient({ adapter } as any);
   }
@@ -50,37 +48,46 @@ async function getPrismaClient(): Promise<PrismaClient> {
     const mAdapter = new PrismaPg(mPool);
     const mClient = new ManagementClient({ adapter: mAdapter } as any);
 
-    await mClient.$connect();
-    const company = await mClient.company.findFirst({
-      where: { status: 'active' },
-    });
+    try {
+      await mClient.$connect();
+      const company = await mClient.company.findFirst({
+        where: { status: 'active' },
+      });
 
-    if (company) {
-      let connectionString = company.dbUrl;
-      if (company.dbPassword) {
-        try {
-          const decPassword = decrypt(company.dbPassword, masterKey);
-          const encUser = encodeURIComponent(company.dbUser || '');
-          const encPassword = encodeURIComponent(decPassword);
-          connectionString = `postgresql://${encUser}:${encPassword}@${company.dbHost || 'localhost'}:${company.dbPort || 5432}/${company.dbName}?schema=public`;
-        } catch (e) {
-          console.warn('⚠️ Password decryption failed, using company.dbUrl fallback');
+      if (company) {
+        let connectionString = company.dbUrl;
+        if (company.dbPassword) {
+          try {
+            const decPassword = decrypt(company.dbPassword, masterKey);
+            const encUser = encodeURIComponent(company.dbUser || '');
+            const encPassword = encodeURIComponent(decPassword);
+            connectionString = `postgresql://${encUser}:${encPassword}@${company.dbHost || 'localhost'}:${company.dbPort || 5432}/${company.dbName}?schema=public`;
+          } catch (e) {
+            console.warn('⚠️ Password decryption failed, using company.dbUrl fallback');
+          }
+        }
+
+        if (connectionString) {
+          console.log(`✅ Connected to active tenant: ${company.name} (${company.dbName})`);
+          await mClient.$disconnect();
+          await mPool.end();
+
+          const tPool = new Pool({ connectionString });
+          const tAdapter = new PrismaPg(tPool);
+          return new PrismaClient({ adapter: tAdapter } as any);
         }
       }
-
-      if (connectionString) {
-        console.log(`✅ Connected to tenant: ${company.name} (${company.dbName})`);
-        await mClient.$disconnect();
-        await mPool.end();
-
-        const tPool = new Pool({ connectionString });
-        const tAdapter = new PrismaPg(tPool);
-        return new PrismaClient({ adapter: tAdapter } as any);
-      }
+    } catch (err: any) {
+      console.warn(`⚠️ Management DB lookup error: ${err.message}`);
+    } finally {
+      await mClient.$disconnect().catch(() => {});
+      await mPool.end().catch(() => {});
     }
   }
 
-  const fallbackPool = new Pool({ connectionString: directUrl || 'postgresql://postgres:root@localhost:5432/ivar_erp?schema=public' });
+  const defaultUrl = process.env.DATABASE_URL || 'postgresql://postgres:root@localhost:5432/ivar_erp?schema=public';
+  console.log(`ℹ️ Falling back to default database URL...`);
+  const fallbackPool = new Pool({ connectionString: defaultUrl });
   const fallbackAdapter = new PrismaPg(fallbackPool);
   return new PrismaClient({ adapter: fallbackAdapter } as any);
 }
