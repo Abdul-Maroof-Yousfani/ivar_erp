@@ -221,7 +221,7 @@ export default function SalesActivityPage() {
                             <Input
                                 id="search"
                                 type="search"
-                                placeholder="Order #, Return #, Claim #, Voucher..."
+                                placeholder="Scan Barcode, SKU, Order #, Return #, Claim #, Voucher..."
                                 value={search}
                                 onChange={e => { setSearch(e.target.value); handleFilterChange(); }}
                                 className="pl-9"
@@ -422,7 +422,9 @@ export default function SalesActivityPage() {
                                                         <tr key={itIdx} className="border-b last:border-0 border-muted/20 hover:bg-muted/5 transition-colors">
                                                             <td className="p-2 font-medium">
                                                                 <div className="font-semibold text-foreground text-sm">{it.description}</div>
-                                                                <div className="text-[10px] text-muted-foreground font-mono">{it.sku}</div>
+                                                                <div className="text-[10px] text-muted-foreground font-mono">
+                                                                    SKU: {it.sku}{it.barCode && it.barCode !== it.sku ? ` | BC: ${it.barCode}` : ""}
+                                                                </div>
                                                             </td>
                                                             <td className="p-2 text-center text-muted-foreground">
                                                                 {it.size || it.color ? `${it.size || "-"} / ${it.color || "-"}` : "—"}

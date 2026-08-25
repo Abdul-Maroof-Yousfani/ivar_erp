@@ -251,6 +251,30 @@ export class SalesActivityExportProcessor {
             { orderNumber: { contains: searchTerm, mode: 'insensitive' } },
             { returnNumber: { contains: searchTerm, mode: 'insensitive' } },
             { refundNumber: { contains: searchTerm, mode: 'insensitive' } },
+            { fbrInvoiceNumber: { contains: searchTerm, mode: 'insensitive' } },
+            { referenceNumber: { contains: searchTerm, mode: 'insensitive' } },
+            {
+              customer: {
+                OR: [
+                  { name: { contains: searchTerm, mode: 'insensitive' } },
+                  { contactNo: { contains: searchTerm, mode: 'insensitive' } },
+                ],
+              },
+            },
+            {
+              items: {
+                some: {
+                  item: {
+                    OR: [
+                      { barCode: { contains: searchTerm, mode: 'insensitive' } },
+                      { sku: { contains: searchTerm, mode: 'insensitive' } },
+                      { itemId: { contains: searchTerm, mode: 'insensitive' } },
+                      { description: { contains: searchTerm, mode: 'insensitive' } },
+                    ],
+                  },
+                },
+              },
+            },
           ],
         };
 
@@ -261,10 +285,44 @@ export class SalesActivityExportProcessor {
         const searchOrderIds = new Set(matchedOrders.map((o) => o.id));
 
         const matchedClaims = await prisma.posClaim.findMany({
-          where: { claimNumber: { contains: searchTerm, mode: 'insensitive' } },
+          where: {
+            OR: [
+              { claimNumber: { contains: searchTerm, mode: 'insensitive' } },
+              {
+                items: {
+                  some: {
+                    item: {
+                      OR: [
+                        { barCode: { contains: searchTerm, mode: 'insensitive' } },
+                        { sku: { contains: searchTerm, mode: 'insensitive' } },
+                        { itemId: { contains: searchTerm, mode: 'insensitive' } },
+                        { description: { contains: searchTerm, mode: 'insensitive' } },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
           select: { salesOrderId: true },
         });
         matchedClaims.forEach((c) => searchOrderIds.add(c.salesOrderId));
+
+        const matchedLedgers = await prisma.stockLedger.findMany({
+          where: {
+            referenceType: { in: ['POS_RETURN', 'POS_REFUND'] },
+            item: {
+              OR: [
+                { barCode: { contains: searchTerm, mode: 'insensitive' } },
+                { sku: { contains: searchTerm, mode: 'insensitive' } },
+                { itemId: { contains: searchTerm, mode: 'insensitive' } },
+                { description: { contains: searchTerm, mode: 'insensitive' } },
+              ],
+            },
+          },
+          select: { referenceId: true },
+        });
+        matchedLedgers.forEach((l) => searchOrderIds.add(l.referenceId));
 
         const matchedIssuedVouchers = await prisma.voucher.findMany({
           where: { code: { contains: searchTerm, mode: 'insensitive' }, sourceOrderId: { not: null } },

@@ -469,7 +469,7 @@ export default function ERPSalesActivityReportPage() {
                             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                             <Input
                                 type="search"
-                                placeholder="Order #, Return #, Claim #, Voucher, SKU..."
+                                placeholder="Scan Barcode, SKU, Order #, Return #, Claim #, Voucher..."
                                 value={search}
                                 onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
                                 className="pl-8 text-xs h-9"
@@ -773,7 +773,9 @@ export default function ERPSalesActivityReportPage() {
                                                         <tr key={itIdx} className="border-b last:border-0 border-muted/20 hover:bg-muted/5 transition-colors">
                                                             <td className="p-2 font-medium">
                                                                 <div className="font-semibold text-foreground text-xs">{it.description}</div>
-                                                                <div className="text-[10px] text-muted-foreground font-mono">{it.sku}</div>
+                                                                <div className="text-[10px] text-muted-foreground font-mono">
+                                                                    SKU: {it.sku}{it.barCode && it.barCode !== it.sku ? ` | BC: ${it.barCode}` : ""}
+                                                                </div>
                                                             </td>
                                                             <td className="p-2 text-center text-muted-foreground">
                                                                 {it.size || it.color ? `${it.size || "-"} / ${it.color || "-"}` : "—"}

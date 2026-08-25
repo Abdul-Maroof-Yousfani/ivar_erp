@@ -1719,9 +1719,38 @@ export class PosSalesService implements OnModuleInit {
       where.paymentMethod = filters.paymentMethod;
     }
 
-    // ── Handle search (by order number) ──
+    // ── Handle search (by order/return/refund/claim/fbr number, customer, item barcode/SKU) ──
     if (filters?.search) {
-      where.orderNumber = { contains: filters.search, mode: 'insensitive' };
+      const searchTerm = filters.search.trim();
+      where.OR = [
+        { orderNumber: { contains: searchTerm, mode: 'insensitive' } },
+        { returnNumber: { contains: searchTerm, mode: 'insensitive' } },
+        { refundNumber: { contains: searchTerm, mode: 'insensitive' } },
+        { fbrInvoiceNumber: { contains: searchTerm, mode: 'insensitive' } },
+        { referenceNumber: { contains: searchTerm, mode: 'insensitive' } },
+        {
+          customer: {
+            OR: [
+              { name: { contains: searchTerm, mode: 'insensitive' } },
+              { contactNo: { contains: searchTerm, mode: 'insensitive' } },
+            ],
+          },
+        },
+        {
+          items: {
+            some: {
+              item: {
+                OR: [
+                  { barCode: { contains: searchTerm, mode: 'insensitive' } },
+                  { sku: { contains: searchTerm, mode: 'insensitive' } },
+                  { itemId: { contains: searchTerm, mode: 'insensitive' } },
+                  { description: { contains: searchTerm, mode: 'insensitive' } },
+                ],
+              },
+            },
+          },
+        },
+      ];
     }
 
     // ── Handle date range ──
@@ -2188,6 +2217,30 @@ export class PosSalesService implements OnModuleInit {
           { orderNumber: { contains: searchTerm, mode: 'insensitive' } },
           { returnNumber: { contains: searchTerm, mode: 'insensitive' } },
           { refundNumber: { contains: searchTerm, mode: 'insensitive' } },
+          { fbrInvoiceNumber: { contains: searchTerm, mode: 'insensitive' } },
+          { referenceNumber: { contains: searchTerm, mode: 'insensitive' } },
+          {
+            customer: {
+              OR: [
+                { name: { contains: searchTerm, mode: 'insensitive' } },
+                { contactNo: { contains: searchTerm, mode: 'insensitive' } },
+              ],
+            },
+          },
+          {
+            items: {
+              some: {
+                item: {
+                  OR: [
+                    { barCode: { contains: searchTerm, mode: 'insensitive' } },
+                    { sku: { contains: searchTerm, mode: 'insensitive' } },
+                    { itemId: { contains: searchTerm, mode: 'insensitive' } },
+                    { description: { contains: searchTerm, mode: 'insensitive' } },
+                  ],
+                },
+              },
+            },
+          },
         ],
       };
 
@@ -2200,12 +2253,47 @@ export class PosSalesService implements OnModuleInit {
       });
       const searchOrderIds = new Set(matchedOrders.map((o) => o.id));
 
-      // Search by Claim Number
+      // Search by Claim Number or Claim Item Barcode/SKU/Description
       const matchedClaims = await this.prisma.posClaim.findMany({
-        where: { claimNumber: { contains: searchTerm, mode: 'insensitive' } },
+        where: {
+          OR: [
+            { claimNumber: { contains: searchTerm, mode: 'insensitive' } },
+            {
+              items: {
+                some: {
+                  item: {
+                    OR: [
+                      { barCode: { contains: searchTerm, mode: 'insensitive' } },
+                      { sku: { contains: searchTerm, mode: 'insensitive' } },
+                      { itemId: { contains: searchTerm, mode: 'insensitive' } },
+                      { description: { contains: searchTerm, mode: 'insensitive' } },
+                    ],
+                  },
+                },
+              },
+            },
+          ],
+        },
         select: { salesOrderId: true },
       });
       matchedClaims.forEach((c) => searchOrderIds.add(c.salesOrderId));
+
+      // Search by Stock Ledger (Returns / Refunds) Item Barcode/SKU
+      const matchedLedgers = await this.prisma.stockLedger.findMany({
+        where: {
+          referenceType: { in: ['POS_RETURN', 'POS_REFUND'] },
+          item: {
+            OR: [
+              { barCode: { contains: searchTerm, mode: 'insensitive' } },
+              { sku: { contains: searchTerm, mode: 'insensitive' } },
+              { itemId: { contains: searchTerm, mode: 'insensitive' } },
+              { description: { contains: searchTerm, mode: 'insensitive' } },
+            ],
+          },
+        },
+        select: { referenceId: true },
+      });
+      matchedLedgers.forEach((l) => searchOrderIds.add(l.referenceId));
 
       // Search by Voucher Code (Issued or Redeemed)
       const matchedIssuedVouchers = await this.prisma.voucher.findMany({
@@ -2443,6 +2531,7 @@ export class PosSalesService implements OnModuleInit {
         items: order.items.map((oi: any) => ({
           itemId: oi.itemId,
           sku: oi.item?.sku || oi.item?.barCode || 'N/A',
+          barCode: oi.item?.barCode || undefined,
           description: oi.item?.description || 'Item',
           quantity: oi.quantity,
           price: Number(oi.unitPrice),
@@ -2472,6 +2561,7 @@ export class PosSalesService implements OnModuleInit {
           return {
             itemId: l.itemId,
             sku: orderItem?.item?.sku || orderItem?.item?.barCode || 'N/A',
+            barCode: orderItem?.item?.barCode || undefined,
             description: orderItem?.item?.description || 'Item',
             quantity: Math.abs(Number(l.qty)),
             price: orderItem ? Number(orderItem.unitPrice) : 0,
@@ -2536,6 +2626,7 @@ export class PosSalesService implements OnModuleInit {
           return {
             itemId: l.itemId,
             sku: orderItem?.item?.sku || orderItem?.item?.barCode || 'N/A',
+            barCode: orderItem?.item?.barCode || undefined,
             description: orderItem?.item?.description || 'Item',
             quantity: Math.abs(Number(l.qty)),
             price: orderItem ? Number(orderItem.unitPrice) : 0,
@@ -2609,6 +2700,7 @@ export class PosSalesService implements OnModuleInit {
           items: claim.items.map((ci: any) => ({
             itemId: ci.itemId,
             sku: ci.item?.sku || ci.item?.barCode || 'N/A',
+            barCode: ci.item?.barCode || undefined,
             description: ci.item?.description || 'Item',
             quantity: ci.claimedQty,
             approvedQty: ci.approvedQty,
