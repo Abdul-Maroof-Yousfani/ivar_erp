@@ -186,6 +186,48 @@ export async function queueStockValuationReportExport(filters: any) {
     }
 }
 
+export async function getStockValuationReport(filters: {
+    locationId?: string;
+    startDate?: string;
+    endDate?: string;
+    summaryOnly?: boolean;
+    showBrand?: boolean;
+    showDivision?: boolean;
+    showCategory?: boolean;
+    showGender?: boolean;
+    showSilhouette?: boolean;
+    showArticle?: boolean;
+    showVariant?: boolean;
+    page?: number;
+    limit?: number;
+}) {
+    try {
+        const queryParams = new URLSearchParams();
+        if (filters.locationId) queryParams.append("locationId", filters.locationId);
+        if (filters.startDate) queryParams.append("startDate", filters.startDate);
+        if (filters.endDate) queryParams.append("endDate", filters.endDate);
+        if (filters.summaryOnly) queryParams.append("summaryOnly", "true");
+        if (filters.showBrand !== undefined) queryParams.append("showBrand", String(filters.showBrand));
+        if (filters.showDivision !== undefined) queryParams.append("showDivision", String(filters.showDivision));
+        if (filters.showCategory !== undefined) queryParams.append("showCategory", String(filters.showCategory));
+        if (filters.showGender !== undefined) queryParams.append("showGender", String(filters.showGender));
+        if (filters.showSilhouette !== undefined) queryParams.append("showSilhouette", String(filters.showSilhouette));
+        if (filters.showArticle !== undefined) queryParams.append("showArticle", String(filters.showArticle));
+        if (filters.showVariant !== undefined) queryParams.append("showVariant", String(filters.showVariant));
+        if (filters.page) queryParams.append("page", String(filters.page));
+        if (filters.limit) queryParams.append("limit", String(filters.limit));
+
+        const queryString = queryParams.toString();
+        const url = `/stock-ledger/valuation-report${queryString ? `?${queryString}` : ""}`;
+
+        const response = await authFetch(url, { method: "GET" });
+        return response.data;
+    } catch (error) {
+        console.error("Get stock valuation report error:", error);
+        return { status: false, data: [], message: "Failed to fetch stock valuation report" };
+    }
+}
+
 export async function getStockValuationReportExportStatus(jobId: string) {
     try {
         const response = await authFetch(`/stock-ledger/valuation-report/export/${jobId}/status`, {
