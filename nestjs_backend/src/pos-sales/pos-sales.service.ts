@@ -498,18 +498,18 @@ export class PosSalesService implements OnModuleInit {
         let couponDiscount = 0;
 
         // 1. Manual discount (from UI) — calculated on full subtotal (replaces item discounts)
-        //    Max 50% allowed; flat amount capped at 50% of Grand Total before manual discount
+        //    Max 100% allowed; flat amount capped at 100% of Grand Total before manual discount
         const grandTotalBeforeManual =
           Math.round(
             (subtotal - lineItemDiscount + recalculatedTotalTax + 1) * 100,
           ) / 100;
         if (dto.globalDiscountPercent) {
-          const cappedPercent = Math.min(dto.globalDiscountPercent, 50);
+          const cappedPercent = Math.min(dto.globalDiscountPercent, 100);
           manualDiscount =
             Math.round(subtotal * (cappedPercent / 100) * 100) / 100;
         } else if (dto.globalDiscountAmount) {
           const maxFlatDiscount =
-            Math.round(grandTotalBeforeManual * 0.5 * 100) / 100;
+            Math.round(grandTotalBeforeManual * 1.0 * 100) / 100;
           manualDiscount = Math.min(dto.globalDiscountAmount, maxFlatDiscount);
         }
         // 2. Alliance discount (calculated on subtotal AFTER item discounts)
@@ -1039,6 +1039,12 @@ export class PosSalesService implements OnModuleInit {
   }
 
   // ─── FBR sync helper ──────────────────────────────────────────────
+  private isNonZeroHsCode(str?: string | null): boolean {
+    if (!str) return false;
+    const cleaned = str.replace(/[^0-9]/g, '');
+    return cleaned.length > 0 && !/^0+$/.test(cleaned);
+  }
+
   private async syncWithFbr(
     order: any,
     itemsData: Array<{
@@ -1158,11 +1164,20 @@ export class PosSalesService implements OnModuleInit {
 
       const fbrItems = itemsData.map((line) => {
         const rec = itemMap.get(line.itemId);
+        const validHsCode: string | null = (
+          this.isNonZeroHsCode(rec?.hsCode?.hsCode)
+            ? rec?.hsCode?.hsCode
+            : this.isNonZeroHsCode(rec?.hsCodeStr)
+              ? rec?.hsCodeStr
+              : rec?.hsCode?.hsCode || rec?.hsCodeStr || null
+        ) ?? null;
+
         return {
           itemId: line.itemId,
           sku: rec?.sku ?? line.itemId,
           description: rec?.description ?? null,
-          hsCode: rec?.hsCodeStr || rec?.hsCode?.hsCode || null,
+          hsCode: validHsCode,
+          pctCode: validHsCode,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
           taxPercent: line.taxPercent,
@@ -1412,12 +1427,21 @@ export class PosSalesService implements OnModuleInit {
 
       const fbrItems = itemRefundDetails.map((line) => {
         const rec = itemMap.get(line.itemId);
+        const validHsCode: string | null = (
+          this.isNonZeroHsCode(rec?.hsCode?.hsCode)
+            ? rec?.hsCode?.hsCode
+            : this.isNonZeroHsCode(rec?.hsCodeStr)
+              ? rec?.hsCodeStr
+              : rec?.hsCode?.hsCode || rec?.hsCodeStr || null
+        ) ?? null;
+
         const lineTotal = (line.unitPrice * line.quantity) - line.discountAmount + line.taxAmount;
         return {
           itemId: line.itemId,
           sku: rec?.sku ?? line.itemId,
           description: rec?.description ?? null,
-          hsCode: rec?.hsCodeStr || rec?.hsCode?.hsCode || null,
+          hsCode: validHsCode,
+          pctCode: validHsCode,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
           taxPercent: line.taxPercent,

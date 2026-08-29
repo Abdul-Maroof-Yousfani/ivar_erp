@@ -73,160 +73,197 @@ export default function TransferSlipPage({ params }: { params: Promise<{ id: str
 
     return (
         <PermissionGuard permissions="erp.inventory.stock-transfer.read">
-            <div className="min-h-screen bg-gray-100 print:bg-white text-black py-6">
-            {/* Non-Printable Action Bar */}
-            <div className="print:hidden bg-white border-b p-4 flex justify-between items-center shadow-sm max-w-4xl mx-auto rounded-t-md mb-6">
-                <Button variant="outline" onClick={() => router.back()}>
-                    <ArrowLeft className="h-4 w-4 mr-2" /> Back
-                </Button>
-                <Button onClick={printSlip}>
-                    <Printer className="h-4 w-4 mr-2" /> 
-                    {transfer?.transferType === 'OUTLET_TO_WAREHOUSE' ? 'Print Return Challan' : 'Print Delivery Challan'}
-                </Button>
-            </div>
+            <>
+                <style jsx global>{`
+                    @media print {
+                        body {
+                            visibility: hidden !important;
+                            background: white !important;
+                        }
+                        #print-section {
+                            visibility: visible !important;
+                            position: absolute !important;
+                            top: 0 !important;
+                            left: 0 !important;
+                            width: 100% !important;
+                            height: auto !important;
+                            margin: 0 !important;
+                            padding: 10mm 12mm !important;
+                            background: white !important;
+                            color: black !important;
+                            z-index: 99999 !important;
+                        }
+                        #print-section * {
+                            visibility: visible !important;
+                        }
+                        @page {
+                            margin: 0;
+                            size: auto;
+                        }
+                        header,
+                        nav,
+                        footer,
+                        aside,
+                        .banner,
+                        .print\:hidden {
+                            display: none !important;
+                        }
+                    }
+                `}</style>
+                <div className="min-h-screen bg-gray-100 print:bg-white text-black py-6">
+                {/* Non-Printable Action Bar */}
+                <div className="print:hidden bg-white border-b p-4 flex justify-between items-center shadow-sm max-w-4xl mx-auto rounded-t-md mb-6">
+                    <Button variant="outline" onClick={() => router.back()}>
+                        <ArrowLeft className="h-4 w-4 mr-2" /> Back
+                    </Button>
+                    <Button onClick={printSlip}>
+                        <Printer className="h-4 w-4 mr-2" /> 
+                        {transfer?.transferType === 'OUTLET_TO_WAREHOUSE' ? 'Print Return Challan' : 'Print Delivery Challan'}
+                    </Button>
+                </div>
 
-            {/* Visual Approval Stepper & Action Panel */}
-            <div className="print:hidden max-w-4xl mx-auto mb-6 space-y-6">
-                <Card className="bg-gradient-to-r from-slate-900/90 to-slate-950/95 text-white border-slate-800 shadow-xl overflow-hidden relative backdrop-blur-md">
-                    <div className="absolute inset-0 bg-grid-white/[0.02] bg-[size:20px_20px]" />
-                    <CardHeader className="relative pb-2">
-                        <CardTitle className="text-lg font-medium text-slate-300">Approval Workflow Progress</CardTitle>
-                    </CardHeader>
-                    <CardContent className="relative py-4">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative">
-                            {/* Connector Line (Only for larger screens) */}
-                            <div className="hidden md:block absolute left-[16.6%] right-[16.6%] top-[24px] h-0.5 bg-slate-800 z-0" />
-                            
-                            {/* Step 1: Prepared */}
-                            <div className="flex items-start md:flex-col gap-4 md:text-center w-full md:w-1/3 z-10">
-                                <div className="flex items-center justify-center w-12 h-12 rounded-full border-2 bg-emerald-500 border-emerald-400 text-white shadow-lg shadow-emerald-500/20 md:mx-auto">
-                                    <CheckCircle2 className="h-6 w-6" />
-                                </div>
-                                <div className="flex flex-col md:items-center">
-                                    <span className="font-semibold text-slate-100 text-sm">1. Prepared (Maker)</span>
-                                    <span className="text-xs text-slate-400 mt-0.5">{transfer.creatorName || 'Prepared'}</span>
-                                    <span className="text-[10px] text-slate-500 mt-0.5">{format(new Date(transfer.createdAt), 'dd MMM yyyy')}</span>
-                                </div>
-                            </div>
-
-                            {/* Step 2: Checked */}
-                            <div className="flex items-start md:flex-col gap-4 md:text-center w-full md:w-1/3 z-10">
-                                <div className={`flex items-center justify-center w-12 h-12 rounded-full border-2 md:mx-auto transition-all duration-300 ${
-                                    transfer.status === 'PENDING_CHECKER'
-                                        ? 'bg-amber-500 border-amber-400 text-white animate-pulse shadow-lg shadow-amber-500/20'
-                                        : transfer.status === 'REJECTED' && !transfer.checkedById
-                                        ? 'bg-rose-500 border-rose-400 text-white shadow-lg shadow-rose-500/20'
-                                        : transfer.checkedById
-                                        ? 'bg-emerald-500 border-emerald-400 text-white shadow-lg shadow-emerald-500/20'
-                                        : 'bg-slate-900 border-slate-700 text-slate-500'
-                                }`}>
-                                    {transfer.checkedById ? (
-                                        <CheckCircle2 className="h-6 w-6" />
-                                    ) : transfer.status === 'PENDING_CHECKER' ? (
-                                        <Clock className="h-6 w-6" />
-                                    ) : transfer.status === 'REJECTED' && !transfer.checkedById ? (
-                                        <XCircle className="h-6 w-6" />
-                                    ) : (
-                                        <div className="h-2.5 w-2.5 rounded-full bg-slate-700" />
-                                    )}
-                                </div>
-                                <div className="flex flex-col md:items-center">
-                                    <span className="font-semibold text-slate-100 text-sm">2. Checked (Checker)</span>
-                                    {transfer.checkedById ? (
-                                        <>
-                                            <span className="text-xs text-slate-400 mt-0.5">{transfer.checkerName}</span>
-                                            <span className="text-[10px] text-slate-500 mt-0.5">{transfer.checkedAt ? format(new Date(transfer.checkedAt), 'dd MMM yyyy') : ''}</span>
-                                        </>
-                                    ) : transfer.status === 'PENDING_CHECKER' ? (
-                                        <span className="text-xs text-amber-400 font-medium animate-pulse mt-0.5">Awaiting Verification</span>
-                                    ) : (
-                                        <span className="text-xs text-slate-500 mt-0.5">Pending</span>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Step 3: Authorized */}
-                            <div className="flex items-start md:flex-col gap-4 md:text-center w-full md:w-1/3 z-10">
-                                <div className={`flex items-center justify-center w-12 h-12 rounded-full border-2 md:mx-auto transition-all duration-300 ${
-                                    transfer.status === 'PENDING' || transfer.status === 'COMPLETED' || transfer.status === 'APPROVED'
-                                        ? 'bg-emerald-500 border-emerald-400 text-white shadow-lg shadow-emerald-500/20'
-                                        : transfer.status === 'PENDING_AUTHORIZER'
-                                        ? 'bg-blue-500 border-blue-400 text-white animate-pulse shadow-lg shadow-blue-500/20'
-                                        : transfer.status === 'REJECTED' && transfer.checkedById
-                                        ? 'bg-rose-500 border-rose-400 text-white shadow-lg shadow-rose-500/20'
-                                        : 'bg-slate-900 border-slate-700 text-slate-500'
-                                }`}>
-                                    {transfer.status === 'PENDING' || transfer.status === 'COMPLETED' || transfer.status === 'APPROVED' ? (
-                                        <CheckCircle2 className="h-6 w-6" />
-                                    ) : transfer.status === 'PENDING_AUTHORIZER' ? (
-                                        <Clock className="h-6 w-6" />
-                                    ) : transfer.status === 'REJECTED' && transfer.checkedById ? (
-                                        <XCircle className="h-6 w-6" />
-                                    ) : (
-                                        <div className="h-2.5 w-2.5 rounded-full bg-slate-700" />
-                                    )}
-                                </div>
-                                <div className="flex flex-col md:items-center">
-                                    <span className="font-semibold text-slate-100 text-sm">3. Authorized (Authorizer)</span>
-                                    {transfer.authorizedById ? (
-                                        <>
-                                            <span className="text-xs text-slate-400 mt-0.5">{transfer.authorizerName}</span>
-                                            <span className="text-[10px] text-slate-500 mt-0.5">{transfer.authorizedAt ? format(new Date(transfer.authorizedAt), 'dd MMM yyyy') : ''}</span>
-                                        </>
-                                    ) : transfer.status === 'PENDING_AUTHORIZER' ? (
-                                        <span className="text-xs text-blue-400 font-medium animate-pulse mt-0.5">Awaiting Authorization</span>
-                                    ) : transfer.status === 'REJECTED' && transfer.checkedById ? (
-                                        <span className="text-xs text-rose-400 font-medium mt-0.5">Rejected</span>
-                                    ) : (
-                                        <span className="text-xs text-slate-500 mt-0.5">Pending</span>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Approval Actions Panel */}
-                {((transfer.status === 'PENDING_CHECKER' && canCheck) || 
-                  (transfer.status === 'PENDING_AUTHORIZER' && canAuthorize)) && (
-                    <Card className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-slate-900/40 dark:to-slate-900/20 border-blue-200/60 dark:border-slate-800 shadow-md">
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-blue-900 dark:text-blue-400 flex items-center gap-2 text-lg">
-                                <ThumbsUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                Pending Approval Action Required
-                            </CardTitle>
+                {/* Visual Approval Stepper & Action Panel */}
+                <div className="print:hidden max-w-4xl mx-auto mb-6 space-y-6">
+                    <Card className="bg-gradient-to-r from-slate-900/90 to-slate-950/95 text-white border-slate-800 shadow-xl overflow-hidden relative backdrop-blur-md">
+                        <div className="absolute inset-0 bg-grid-white/[0.02] bg-[size:20px_20px]" />
+                        <CardHeader className="relative pb-2">
+                            <CardTitle className="text-lg font-medium text-slate-300">Approval Workflow Progress</CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-4">
-                            <p className="text-sm text-blue-700 dark:text-slate-300">
-                                This Stock Transfer request is currently in <strong>{transfer.status === 'PENDING_CHECKER' ? 'Pending Checker Verification' : 'Pending Authorizer Release'}</strong>. 
-                                As an authorized user, you can either approve/verify this transfer to forward it to the next step, or reject it.
-                            </p>
-                            <div className="flex gap-4">
-                                <Button 
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-md hover:shadow-lg transition-all border-none"
-                                    onClick={() => handleAction(transfer.status === 'PENDING_CHECKER' ? 'PENDING_AUTHORIZER' : 'APPROVED')}
-                                    disabled={submitting}
-                                >
-                                    <Check className="mr-2 h-4 w-4" />
-                                    {transfer.status === 'PENDING_CHECKER' ? 'Verify & Forward' : 'Authorize & Release Transfer'}
-                                </Button>
-                                <Button 
-                                    variant="destructive"
-                                    className="bg-rose-600 hover:bg-rose-700 text-white font-medium shadow-md hover:shadow-lg transition-all border-none"
-                                    onClick={() => handleAction('REJECTED')}
-                                    disabled={submitting}
-                                >
-                                    <X className="mr-2 h-4 w-4" />
-                                    Reject Stock Transfer
-                                </Button>
+                        <CardContent className="relative py-4">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative">
+                                {/* Connector Line (Only for larger screens) */}
+                                <div className="hidden md:block absolute left-[16.6%] right-[16.6%] top-[24px] h-0.5 bg-slate-800 z-0" />
+                                
+                                {/* Step 1: Prepared */}
+                                <div className="flex items-start md:flex-col gap-4 md:text-center w-full md:w-1/3 z-10">
+                                    <div className="flex items-center justify-center w-12 h-12 rounded-full border-2 bg-emerald-500 border-emerald-400 text-white shadow-lg shadow-emerald-500/20 md:mx-auto">
+                                        <CheckCircle2 className="h-6 w-6" />
+                                    </div>
+                                    <div className="flex flex-col md:items-center">
+                                        <span className="font-semibold text-slate-100 text-sm">1. Prepared (Maker)</span>
+                                        <span className="text-xs text-slate-400 mt-0.5">{transfer.creatorName || 'Prepared'}</span>
+                                        <span className="text-[10px] text-slate-500 mt-0.5">{format(new Date(transfer.createdAt), 'dd MMM yyyy')}</span>
+                                    </div>
+                                </div>
+
+                                {/* Step 2: Checked */}
+                                <div className="flex items-start md:flex-col gap-4 md:text-center w-full md:w-1/3 z-10">
+                                    <div className={`flex items-center justify-center w-12 h-12 rounded-full border-2 md:mx-auto transition-all duration-300 ${
+                                        transfer.status === 'PENDING_CHECKER'
+                                            ? 'bg-amber-500 border-amber-400 text-white animate-pulse shadow-lg shadow-amber-500/20'
+                                            : transfer.status === 'REJECTED' && !transfer.checkedById
+                                            ? 'bg-rose-500 border-rose-400 text-white shadow-lg shadow-rose-500/20'
+                                            : transfer.checkedById
+                                            ? 'bg-emerald-500 border-emerald-400 text-white shadow-lg shadow-emerald-500/20'
+                                            : 'bg-slate-900 border-slate-700 text-slate-500'
+                                    }`}>
+                                        {transfer.checkedById ? (
+                                            <CheckCircle2 className="h-6 w-6" />
+                                        ) : transfer.status === 'PENDING_CHECKER' ? (
+                                            <Clock className="h-6 w-6" />
+                                        ) : transfer.status === 'REJECTED' && !transfer.checkedById ? (
+                                            <XCircle className="h-6 w-6" />
+                                        ) : (
+                                            <div className="h-2.5 w-2.5 rounded-full bg-slate-700" />
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col md:items-center">
+                                        <span className="font-semibold text-slate-100 text-sm">2. Checked (Checker)</span>
+                                        {transfer.checkedById ? (
+                                            <>
+                                                <span className="text-xs text-slate-400 mt-0.5">{transfer.checkerName}</span>
+                                                <span className="text-[10px] text-slate-500 mt-0.5">{transfer.checkedAt ? format(new Date(transfer.checkedAt), 'dd MMM yyyy') : ''}</span>
+                                            </>
+                                        ) : transfer.status === 'PENDING_CHECKER' ? (
+                                            <span className="text-xs text-amber-400 font-medium animate-pulse mt-0.5">Awaiting Verification</span>
+                                        ) : (
+                                            <span className="text-xs text-slate-500 mt-0.5">Pending</span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Step 3: Authorized */}
+                                <div className="flex items-start md:flex-col gap-4 md:text-center w-full md:w-1/3 z-10">
+                                    <div className={`flex items-center justify-center w-12 h-12 rounded-full border-2 md:mx-auto transition-all duration-300 ${
+                                        transfer.status === 'PENDING' || transfer.status === 'COMPLETED' || transfer.status === 'APPROVED'
+                                            ? 'bg-emerald-500 border-emerald-400 text-white shadow-lg shadow-emerald-500/20'
+                                            : transfer.status === 'PENDING_AUTHORIZER'
+                                            ? 'bg-blue-500 border-blue-400 text-white animate-pulse shadow-lg shadow-blue-500/20'
+                                            : transfer.status === 'REJECTED' && transfer.checkedById
+                                            ? 'bg-rose-500 border-rose-400 text-white shadow-lg shadow-rose-500/20'
+                                            : 'bg-slate-900 border-slate-700 text-slate-500'
+                                    }`}>
+                                        {transfer.status === 'PENDING' || transfer.status === 'COMPLETED' || transfer.status === 'APPROVED' ? (
+                                            <CheckCircle2 className="h-6 w-6" />
+                                        ) : transfer.status === 'PENDING_AUTHORIZER' ? (
+                                            <Clock className="h-6 w-6" />
+                                        ) : transfer.status === 'REJECTED' && transfer.checkedById ? (
+                                            <XCircle className="h-6 w-6" />
+                                        ) : (
+                                            <div className="h-2.5 w-2.5 rounded-full bg-slate-700" />
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col md:items-center">
+                                        <span className="font-semibold text-slate-100 text-sm">3. Authorized (Authorizer)</span>
+                                        {transfer.authorizedById ? (
+                                            <>
+                                                <span className="text-xs text-slate-400 mt-0.5">{transfer.authorizerName}</span>
+                                                <span className="text-[10px] text-slate-500 mt-0.5">{transfer.authorizedAt ? format(new Date(transfer.authorizedAt), 'dd MMM yyyy') : ''}</span>
+                                            </>
+                                        ) : transfer.status === 'PENDING_AUTHORIZER' ? (
+                                            <span className="text-xs text-blue-400 font-medium animate-pulse mt-0.5">Awaiting Authorization</span>
+                                        ) : transfer.status === 'REJECTED' && transfer.checkedById ? (
+                                            <span className="text-xs text-rose-400 font-medium mt-0.5">Rejected</span>
+                                        ) : (
+                                            <span className="text-xs text-slate-500 mt-0.5">Pending</span>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
-                )}
-            </div>
 
-            {/* Printable Area - Centered A4 sizing approx */}
-            <div className="bg-white p-8 md:p-12 max-w-4xl mx-auto shadow-md print:shadow-none print:max-w-none print:p-0 print:m-0">
+                    {/* Approval Actions Panel */}
+                    {((transfer.status === 'PENDING_CHECKER' && canCheck) || 
+                      (transfer.status === 'PENDING_AUTHORIZER' && canAuthorize)) && (
+                        <Card className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 dark:from-slate-900/40 dark:to-slate-900/20 border-blue-200/60 dark:border-slate-800 shadow-md">
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-blue-900 dark:text-blue-400 flex items-center gap-2 text-lg">
+                                    <ThumbsUp className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                    Pending Approval Action Required
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <p className="text-sm text-blue-700 dark:text-slate-300">
+                                    This Stock Transfer request is currently in <strong>{transfer.status === 'PENDING_CHECKER' ? 'Pending Checker Verification' : 'Pending Authorizer Release'}</strong>. 
+                                    As an authorized user, you can either approve/verify this transfer to forward it to the next step, or reject it.
+                                </p>
+                                <div className="flex gap-4">
+                                    <Button 
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-md hover:shadow-lg transition-all border-none"
+                                        onClick={() => handleAction(transfer.status === 'PENDING_CHECKER' ? 'PENDING_AUTHORIZER' : 'APPROVED')}
+                                        disabled={submitting}
+                                    >
+                                        <Check className="mr-2 h-4 w-4" />
+                                        {transfer.status === 'PENDING_CHECKER' ? 'Verify & Forward' : 'Authorize & Release Transfer'}
+                                    </Button>
+                                    <Button 
+                                        variant="destructive"
+                                        className="bg-rose-600 hover:bg-rose-700 text-white font-medium shadow-md hover:shadow-lg transition-all border-none"
+                                        onClick={() => handleAction('REJECTED')}
+                                        disabled={submitting}
+                                    >
+                                        <X className="mr-2 h-4 w-4" />
+                                        Reject Stock Transfer
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+                </div>
+
+                {/* Printable Area - Centered A4 sizing approx */}
+                <div id="print-section" className="bg-white p-8 md:p-12 max-w-4xl mx-auto shadow-md print:shadow-none print:max-w-none print:p-0 print:m-0">
 
                 {/* Header Section */}
                 <div className="flex justify-between items-start border-b-2 border-gray-800 pb-6 mb-8">
@@ -300,9 +337,11 @@ export default function TransferSlipPage({ params }: { params: Promise<{ id: str
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="border-b-2 border-gray-800 text-gray-800">
-                                <th className="py-3 px-2 font-bold text-sm w-12 text-center">#</th>
+                                <th className="py-3 px-2 font-bold text-sm w-10 text-center">#</th>
                                 <th className="py-3 px-2 font-bold text-sm">Item Code (SKU)</th>
                                 <th className="py-3 px-2 font-bold text-sm">Description</th>
+                                <th className="py-3 px-2 font-bold text-sm">Color</th>
+                                <th className="py-3 px-2 font-bold text-sm">Size</th>
                                 <th className="py-3 px-2 font-bold text-sm text-right">Dispatched Qty</th>
                                 <th className="py-3 px-2 font-bold text-sm text-right">Received Qty</th>
                                 <th className="py-3 px-2 font-bold text-sm text-right">Variance</th>
@@ -316,11 +355,37 @@ export default function TransferSlipPage({ params }: { params: Promise<{ id: str
                                     : (transfer.status === 'COMPLETED' ? sent : null);
                                 const diff = rx !== null ? rx - sent : null;
 
+                                const sizeStr = item.item?.size?.name || (typeof item.item?.size === 'string' ? item.item.size : item.size?.name || (typeof item.size === 'string' ? item.size : item.item?.sizeName || item.sizeName || null));
+                                const colorStr = item.item?.color?.name || (typeof item.item?.color === 'string' ? item.item.color : item.color?.name || (typeof item.color === 'string' ? item.color : item.item?.colorName || item.colorName || null));
+
                                 return (
                                     <tr key={item.id} className="border-b border-gray-200">
                                         <td className="py-4 px-2 text-center text-gray-500 text-sm">{index + 1}</td>
-                                        <td className="py-4 px-2 font-mono text-sm font-semibold">{item.item?.sku}</td>
-                                        <td className="py-4 px-2 text-sm">{item.item?.name || item.item?.description || 'N/A'}</td>
+                                        <td className="py-4 px-2 font-mono text-sm font-semibold">{item.item?.sku || 'N/A'}</td>
+                                        <td className="py-4 px-2 text-sm">
+                                            <div className="font-medium text-gray-900">{item.item?.name || item.item?.description || 'N/A'}</div>
+                                            {item.item?.barCode && (
+                                                <div className="text-xs text-gray-400 font-mono mt-0.5">{item.item.barCode}</div>
+                                            )}
+                                        </td>
+                                        <td className="py-4 px-2 text-sm text-gray-700 font-medium">
+                                            {colorStr ? (
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-800 border border-gray-300 print:border-gray-400">
+                                                    {colorStr}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400 text-xs">—</span>
+                                            )}
+                                        </td>
+                                        <td className="py-4 px-2 text-sm text-gray-700 font-medium">
+                                            {sizeStr ? (
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-800 border border-gray-300 print:border-gray-400">
+                                                    {sizeStr}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400 text-xs">—</span>
+                                            )}
+                                        </td>
                                         <td className="py-4 px-2 text-right font-bold text-base bg-gray-50/50">
                                             {sent}
                                         </td>
@@ -336,7 +401,7 @@ export default function TransferSlipPage({ params }: { params: Promise<{ id: str
                         </tbody>
                         <tfoot>
                             <tr className="border-t-2 border-gray-800 font-bold">
-                                <td colSpan={3} className="py-4 px-2 text-right text-gray-800">
+                                <td colSpan={5} className="py-4 px-2 text-right text-gray-800">
                                     Total Summaries:
                                 </td>
                                 <td className="py-4 px-2 text-right font-black text-xl">
@@ -414,6 +479,7 @@ export default function TransferSlipPage({ params }: { params: Promise<{ id: str
 
             </div>
             </div>
+            </>
         </PermissionGuard>
     );
 }

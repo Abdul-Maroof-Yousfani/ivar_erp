@@ -156,10 +156,22 @@ export class FbrService {
         const dateTimeStr = this.formatFbrDateTime(params.orderDate);
         const invType = params.invoiceType ?? 1;
 
+        const isNonZeroHsCode = (str?: string | null): boolean => {
+            if (!str) return false;
+            const cleaned = str.replace(/[^0-9]/g, '');
+            return cleaned.length > 0 && !/^0+$/.test(cleaned);
+        };
+
         const items: FbrImsInvoiceItem[] = params.items.map((item) => {
             // PCT Code must be numeric string <= 8 chars (e.g., '01011000' or '00000000')
-            // Derived via item pctCode/hsCode, or fallback ('00000000')
-            const pctCode = this.formatPctCode(item.pctCode || item.hsCode);
+            // Prioritize valid non-zero PCT/HS code over placeholder zero strings ('000000')
+            const rawHsCode = isNonZeroHsCode(item.pctCode)
+                ? item.pctCode
+                : isNonZeroHsCode(item.hsCode)
+                    ? item.hsCode
+                    : item.pctCode || item.hsCode;
+
+            const pctCode = this.formatPctCode(rawHsCode);
 
             // Calculate WOST (Value Excl. Tax & Discount)
             const taxDivisor = 1 + (item.taxPercent / 100);
@@ -226,7 +238,7 @@ export class FbrService {
     private formatPctCode(hsCode: string | null | undefined): string {
         if (!hsCode) return '00000000';
         const cleaned = hsCode.replace(/[^0-9]/g, '');
-        if (!cleaned) return '00000000';
+        if (!cleaned || /^0+$/.test(cleaned)) return '00000000';
         return cleaned.substring(0, 8).padEnd(8, '0');
     }
 

@@ -86,7 +86,7 @@ export function CartTable({
         if (!item) return;
 
         const currentDiscount = item.overrideDiscountPercent ?? item.discountPercent;
-        const maxAllowedDiscount = 50;
+        const maxAllowedDiscount = 100;
 
         // Validation: Cannot decrease current discount
         if (newDiscount < currentDiscount) {
@@ -330,7 +330,7 @@ export function CartTable({
                                                 id={`discount-input-${index}`}
                                                 type="number"
                                                 min={item.overrideDiscountPercent ?? item.discountPercent}
-                                                max={50}
+                                                max={100}
                                                 value={editingDiscounts[item.id] ?? (item.overrideDiscountPercent ?? item.discountPercent)}
                                                 disabled={!onDiscountChange}
                                                 onChange={(e) =>

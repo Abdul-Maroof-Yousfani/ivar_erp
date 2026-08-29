@@ -35,11 +35,11 @@ export class PosSalesOrderItemDto {
     @Max(100)
     discountPercent?: number;
 
-    @ApiPropertyOptional({ description: 'Manager override discount percentage (0-50)', default: null })
+    @ApiPropertyOptional({ description: 'Manager override discount percentage (0-100)', default: null })
     @IsOptional()
     @IsNumber()
     @Min(0)
-    @Max(50)
+    @Max(100)
     overrideDiscountPercent?: number;
 
     @ApiPropertyOptional({ description: 'Reason/Note for override discount' })
@@ -180,11 +180,11 @@ export class CreatePosSalesOrderDto {
     manualDiscountNote?: string;
 
     // ── Discount fields ──────────────────────────────────────────────────
-    @ApiPropertyOptional({ description: 'Global discount percentage (0-50)' })
+    @ApiPropertyOptional({ description: 'Global discount percentage (0-100)' })
     @IsOptional()
     @IsNumber()
     @Min(0)
-    @Max(50)
+    @Max(100)
     globalDiscountPercent?: number;
 
     @ApiPropertyOptional({ description: 'Global discount flat amount' })
