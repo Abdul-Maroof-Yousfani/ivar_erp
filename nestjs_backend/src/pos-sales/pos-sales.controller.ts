@@ -690,6 +690,37 @@ export class PosSalesController {
         return this.posSalesService.retryFbrSync(id);
     }
 
+    @Get('fbr/unsynced')
+    @Permissions('pos.orders.create')
+    @ApiOperation({ summary: 'Get all sales orders not submitted to FBR' })
+    async getUnsyncedFbrInvoices(
+        @Query('locationId') locationId?: string,
+        @Query('limit') limit?: number,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+    ) {
+        return this.posSalesService.getUnsyncedFbrInvoices({
+            locationId,
+            limit: limit ? Number(limit) : undefined,
+            startDate,
+            endDate,
+        });
+    }
+
+    @Post('fbr/sync-unsynced')
+    @Permissions('pos.orders.create')
+    @ApiOperation({ summary: 'Bulk sync all sales orders not submitted to FBR' })
+    async syncUnsyncedFbrInvoices(
+        @Body() body?: { locationId?: string; limit?: number; startDate?: string; endDate?: string },
+    ) {
+        return this.posSalesService.syncUnsyncedFbrInvoices({
+            locationId: body?.locationId,
+            limit: body?.limit ? Number(body.limit) : undefined,
+            startDate: body?.startDate,
+            endDate: body?.endDate,
+        });
+    }
+
   // ─── Sales Register Report Endpoints ────────────────────────────
 
   @Get('reports/sales-register')

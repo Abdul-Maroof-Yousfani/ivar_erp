@@ -1355,6 +1355,192 @@ export class PosSalesService implements OnModuleInit {
     }
   }
 
+  // ─── Get all unsynced FBR invoices ────────────────────────────────
+  async getUnsyncedFbrInvoices(options?: {
+    locationId?: string;
+    limit?: number;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const { locationId, limit = 500, startDate, endDate } = options || {};
+
+    const whereCondition: Prisma.SalesOrderWhereInput = {
+      status: { notIn: ['hold', 'hold_expired', 'hold_cancelled'] },
+      OR: [
+        { fbrStatus: { not: 'SYNCED' } },
+        { fbrInvoiceNumber: null },
+      ],
+    };
+
+    if (locationId) {
+      whereCondition.locationId = locationId;
+    }
+
+    if (startDate || endDate) {
+      whereCondition.createdAt = {};
+      if (startDate) whereCondition.createdAt.gte = new Date(startDate);
+      if (endDate) whereCondition.createdAt.lte = new Date(endDate);
+    }
+
+    const orders = await this.prisma.salesOrder.findMany({
+      where: whereCondition,
+      include: {
+        items: {
+          select: {
+            id: true,
+            itemId: true,
+            quantity: true,
+            lineTotal: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    const locIds = [
+      ...new Set(orders.map((o) => o.locationId).filter(Boolean)),
+    ] as string[];
+
+    const locations =
+      locIds.length > 0
+        ? await this.prisma.location.findMany({
+            where: { id: { in: locIds } },
+            select: { id: true, name: true, code: true, fbrEnabled: true, fbrBposId: true },
+          })
+        : [];
+    const locationMap = new Map(locations.map((l) => [l.id, l]));
+
+    const invoices = orders.map((order) => {
+      const loc = order.locationId ? locationMap.get(order.locationId) : null;
+      return {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        createdAt: order.createdAt,
+        grandTotal: Number(order.grandTotal),
+        fbrStatus: order.fbrStatus || 'PENDING',
+        fbrInvoiceNumber: order.fbrInvoiceNumber,
+        locationId: order.locationId,
+        locationName: loc?.name || 'Unknown Location',
+        fbrConfigured: !!(loc?.fbrEnabled && loc?.fbrBposId),
+        totalItems: order.items.reduce((acc, item) => acc + Number(item.quantity), 0),
+        itemTypesCount: order.items.length,
+      };
+    });
+
+    const totalUnsyncedAmount = invoices.reduce((sum, item) => sum + item.grandTotal, 0);
+
+    return {
+      status: true,
+      data: {
+        totalCount: invoices.length,
+        totalUnsyncedAmount,
+        invoices,
+      },
+    };
+  }
+
+  // ─── Sync all unsynced FBR invoices ──────────────────────────────
+  async syncUnsyncedFbrInvoices(options?: {
+    locationId?: string;
+    limit?: number;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const { locationId, limit = 500, startDate, endDate } = options || {};
+
+    const whereCondition: Prisma.SalesOrderWhereInput = {
+      status: { notIn: ['hold', 'hold_expired', 'hold_cancelled'] },
+      OR: [
+        { fbrStatus: { not: 'SYNCED' } },
+        { fbrInvoiceNumber: null },
+      ],
+    };
+
+    if (locationId) {
+      whereCondition.locationId = locationId;
+    }
+
+    if (startDate || endDate) {
+      whereCondition.createdAt = {};
+      if (startDate) whereCondition.createdAt.gte = new Date(startDate);
+      if (endDate) whereCondition.createdAt.lte = new Date(endDate);
+    }
+
+    const unsyncedOrders = await this.prisma.salesOrder.findMany({
+      where: whereCondition,
+      include: {
+        items: true,
+      },
+      orderBy: { createdAt: 'asc' },
+      take: limit,
+    });
+
+    this.logger.log(
+      `[FBR Bulk Sync] Found ${unsyncedOrders.length} unsynced orders to process.`,
+    );
+
+    const summary = {
+      totalFound: unsyncedOrders.length,
+      syncedCount: 0,
+      failedCount: 0,
+      skippedCount: 0,
+      details: [] as Array<{
+        orderId: string;
+        orderNumber: string;
+        status: 'SYNCED' | 'FAILED' | 'SKIPPED';
+        fbrInvoiceNumber?: string;
+        error?: string;
+      }>,
+    };
+
+    for (const order of unsyncedOrders) {
+      const itemsData = order.items.map((i) => ({
+        itemId: i.itemId,
+        quantity: Number(i.quantity),
+        unitPrice: Number(i.unitPrice),
+        discountAmount: Number(i.discountAmount),
+        taxPercent: Number(i.taxPercent),
+        taxAmount: Number(i.taxAmount),
+        lineTotal: Number(i.lineTotal),
+      }));
+
+      const fbrResult = await this.syncWithFbr(order, itemsData);
+
+      if (fbrResult.success && fbrResult.fbrInvoiceNumber) {
+        summary.syncedCount++;
+        summary.details.push({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          status: 'SYNCED',
+          fbrInvoiceNumber: fbrResult.fbrInvoiceNumber,
+        });
+      } else if (fbrResult.fbrStatus === 'SKIPPED') {
+        summary.skippedCount++;
+        summary.details.push({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          status: 'SKIPPED',
+          error: fbrResult.error,
+        });
+      } else {
+        summary.failedCount++;
+        summary.details.push({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          status: 'FAILED',
+          error: fbrResult.error,
+        });
+      }
+    }
+
+    return {
+      status: true,
+      message: `FBR bulk sync finished. Synced: ${summary.syncedCount}, Failed: ${summary.failedCount}, Skipped: ${summary.skippedCount}`,
+      data: summary,
+    };
+  }
+
   // ─── FBR return sync helper (Credit Note: InvoiceType 3) ────────────
   private async syncReturnWithFbr(
     order: any,
