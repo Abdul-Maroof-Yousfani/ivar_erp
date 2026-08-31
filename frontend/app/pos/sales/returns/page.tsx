@@ -1075,6 +1075,8 @@ export default function ReturnsPage() {
                     notes={notes || undefined}
                     returnedAt={returnReceipt.returnedAt}
                     exchangeVoucher={returnReceipt.exchangeVoucher}
+                    customerName={loadedOrders[0]?.customer?.name || (loadedOrders[0] as any)?.customerName}
+                    customerPhone={loadedOrders[0]?.customer?.phone || (loadedOrders[0] as any)?.customerPhone || (loadedOrders[0] as any)?.customerMobile}
                     discountNotes={loadedOrders
                         .filter(o => o.coupon || o.promo || o.alliance)
                         .map(o => {

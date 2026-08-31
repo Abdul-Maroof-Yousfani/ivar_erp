@@ -772,6 +772,8 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
                     discountNotes={returnDetails?.discountNotes}
                     returnedAt={returnDetails?.returnedAt}
                     exchangeVoucher={returnDetails?.exchangeVoucher}
+                    customerName={selectedOrder?.customer?.name || (selectedOrder as any)?.customerName}
+                    customerPhone={selectedOrder?.customer?.phone || (selectedOrder as any)?.customerPhone || (selectedOrder as any)?.customerMobile}
                     isLoading={isLoadingReceipt}
                     onClose={() => setShowReturnPrint(false)}
                 />

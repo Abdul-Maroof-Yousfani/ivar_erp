@@ -124,6 +124,8 @@ export interface PrintReturnReceiptProps {
   paymentMethod?: string;
   settings?: Partial<PosSettings>;
   isLoading?: boolean;
+  customerName?: string;
+  customerPhone?: string;
   exchangeVoucher?: {
     code: string;
     faceValue: number;
@@ -203,6 +205,8 @@ export function PrintReturnReceipt({
   paymentMethod,
   settings: settingsOverride,
   isLoading = false,
+  customerName,
+  customerPhone,
   exchangeVoucher,
   onClose,
 }: PrintReturnReceiptProps) {
@@ -294,6 +298,8 @@ export function PrintReturnReceipt({
     returnedAt,
     paymentMethod,
     settings,
+    customerName,
+    customerPhone,
     exchangeVoucher,
     isAlliance,
   };
@@ -445,6 +451,8 @@ interface ReturnBodyProps {
   returnedAt?: string;
   paymentMethod?: string;
   settings: PosSettings;
+  customerName?: string;
+  customerPhone?: string;
   exchangeVoucher?: {
     code: string;
     faceValue: number;
@@ -472,6 +480,8 @@ function ReturnBody({
   returnedAt,
   paymentMethod,
   settings,
+  customerName,
+  customerPhone,
   exchangeVoucher,
 }: ReturnBodyProps) {
   const isAllianceCase =
@@ -567,6 +577,10 @@ function ReturnBody({
           <Row label="Date" value={fmtDate(returnedAt)} />
           {cashierName && <Row label="Processed By" value={cashierName} />}
           {terminalName && <Row label="Terminal" value={terminalName} />}
+          {customerName && <Row label="Customer" value={customerName} bold />}
+          {customerPhone && customerPhone !== "N/A" && (
+            <Row label="Contact #" value={customerPhone} />
+          )}
         </div>
       </div>
 

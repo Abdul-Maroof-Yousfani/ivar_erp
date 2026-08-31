@@ -892,21 +892,19 @@ function ReceiptBody({
             }
             bold
           />
-          {(order?.customer?.phone ||
-            order?.customerPhone ||
-            order?.customerMobile) &&
-            (order?.customer?.phone ||
+          {(() => {
+            const phone =
+              order?.customer?.phone ||
               order?.customerPhone ||
-              order?.customerMobile) !== "N/A" && (
-              <Row
-                label="Phone"
-                value={
-                  order?.customer?.phone ||
-                  order?.customerPhone ||
-                  order?.customerMobile
-                }
-              />
-            )}
+              order?.customerMobile ||
+              order?.customer?.contactNumber ||
+              order?.contactNumber ||
+              order?.phone;
+            if (phone && phone !== "N/A") {
+              return <Row label="Contact #" value={phone} />;
+            }
+            return null;
+          })()}
         </div>
       </div>
 

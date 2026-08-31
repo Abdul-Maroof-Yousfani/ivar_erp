@@ -707,6 +707,8 @@ export default function OrderDetailsPage() {
                     discountNotes={returnDetails?.discountNotes}
                     returnedAt={returnDetails?.returnedAt}
                     paymentMethod={order.paymentMethod}
+                    customerName={order?.customer?.name || (order as any)?.customerName}
+                    customerPhone={order?.customer?.phone || (order as any)?.customerPhone || (order as any)?.customerMobile}
                     isLoading={isLoadingReceipt}
                     onClose={() => { setShowReturnPrint(false); setIsLoadingReceipt(false); }}
                 />
