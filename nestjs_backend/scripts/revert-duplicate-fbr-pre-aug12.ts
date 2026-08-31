@@ -94,7 +94,7 @@ async function getPrismaClient(): Promise<PrismaClient> {
   return new PrismaClient({ adapter: fallbackAdapter } as any);
 }
 
-// ─── FBR Payload & Sync Helpers ─────────────────────────────────────
+// ─── Helpers ────────────────────────────────────────────────────────
 function isNonZeroHsCode(str?: string | null): boolean {
   if (!str) return false;
   const cleaned = str.replace(/[^0-9]/g, '');
@@ -147,129 +147,118 @@ async function postFbrInvoice(payload: any, bearerToken: string): Promise<any> {
   return await response.json();
 }
 
-// ─── Main Script Function ───────────────────────────────────────────
 async function main() {
   console.log('\n==================================================');
-  console.log('🚀 FBR Unsynced Invoices Finder & Sync Script');
+  console.log('🛠️ Pre-12-AUG Duplicate FBR Invoice Reversal Script');
   console.log('==================================================\n');
 
-  // Parse CLI flags
   const args = process.argv.slice(2);
-  const isDryRun = args.includes('--dry-run');
+  const isSendCreditNotes = args.includes('--send-credit-notes');
+  const isResetDbOnly = args.includes('--reset-db-only');
+  const isPreview = !isSendCreditNotes && !isResetDbOnly;
 
-  const prefixIdx = args.findIndex((a) => a === '--prefix' || a === '-p');
-  const orderPrefix = prefixIdx !== -1 && args[prefixIdx + 1] ? args[prefixIdx + 1] : 'SI-';
+  const cutoffDate = new Date('2026-08-12T00:00:00.000Z');
 
-  const startIdx = args.findIndex((a) => a === '--start' || a === '-s');
-  const startDateStr = startIdx !== -1 && args[startIdx + 1] ? args[startIdx + 1] : '2026-08-19';
-
-  const endIdx = args.findIndex((a) => a === '--end' || a === '-e');
-  const endDateStr = endIdx !== -1 && args[endIdx + 1] ? args[endIdx + 1] : '2026-08-26';
-
-  console.log(`📌 Filtering Configuration:`);
-  console.log(`   - Order Prefix Constraint: "${orderPrefix}"`);
-  console.log(`   - Date Range Constraint:  ${startDateStr}  TO  ${endDateStr}`);
-  console.log(`   - Mode:                   ${isDryRun ? '🔍 DRY RUN (Preview only)' : '⚡ LIVE SYNC'}`);
+  console.log(`📌 Operational Mode:`);
+  if (isPreview) {
+    console.log(`   🔍 PREVIEW MODE (Run with --send-credit-notes or --reset-db-only to execute)`);
+  } else if (isSendCreditNotes) {
+    console.log(`   ⚡ CREDIT NOTE MODE (Sending FBR Credit Notes - InvoiceType 3 to reverse on FBR server)`);
+  } else if (isResetDbOnly) {
+    console.log(`   🔄 DB RESET ONLY MODE (Clearing FBR invoice numbers from local DB only)`);
+  }
+  console.log(`   - Cutoff Date: Pre-12-AUG-2026 (< ${cutoffDate.toISOString().split('T')[0]})`);
   console.log(`--------------------------------------------------\n`);
 
   const prisma = await getPrismaClient();
 
   try {
-    const startDate = new Date(`${startDateStr}T00:00:00.000Z`);
-    const endDate = new Date(`${endDateStr}T23:59:59.999Z`);
-
-    // 1. Fetch filtered unsynced sales orders
-    const whereCondition: any = {
-      status: { notIn: ['hold', 'hold_expired', 'hold_cancelled'] },
-      createdAt: {
-        gte: startDate,
-        lte: endDate,
+    // Query all orders created BEFORE 12-AUG-2026 that match store codes (MPI8-, DHAZ-, SHAR-, BKC-) and never start with SI-
+    const duplicateOrders = await prisma.salesOrder.findMany({
+      where: {
+        createdAt: { lt: cutoffDate },
+        fbrStatus: 'SYNCED',
+        fbrInvoiceNumber: { not: null },
+        NOT: {
+          orderNumber: { startsWith: 'SI-', mode: 'insensitive' },
+        },
       },
-      OR: [
-        { fbrStatus: { not: 'SYNCED' } },
-        { fbrInvoiceNumber: null },
-      ],
-    };
-
-    if (orderPrefix && orderPrefix !== 'ALL') {
-      whereCondition.orderNumber = { startsWith: orderPrefix, mode: 'insensitive' };
-    }
-
-    const unsyncedOrders = await prisma.salesOrder.findMany({
-      where: whereCondition,
       include: {
         items: true,
       },
       orderBy: { createdAt: 'asc' },
     });
 
-    console.log(`📋 Total Unsynced Invoices Found (Matching Criteria): ${unsyncedOrders.length}`);
+    console.log(`📋 Found ${duplicateOrders.length} pre-12-AUG store sales order(s) (MPI8-, DHAZ-, SHAR-, BKC-) synced to FBR.`);
 
-    if (unsyncedOrders.length === 0) {
-      console.log('✨ No matching unsynced invoices found for the specified date range and prefix!');
+    if (duplicateOrders.length === 0) {
+      console.log('✨ No pre-12-AUG duplicate FBR invoices found!');
       return;
     }
 
-    // Load locations
-    const locationIds = [...new Set(unsyncedOrders.map((o) => o.locationId).filter(Boolean))] as string[];
+    const totalValue = duplicateOrders.reduce((acc, o) => acc + Number(o.grandTotal), 0);
+
+    console.table(
+      duplicateOrders.map((o) => ({
+        'Order #': o.orderNumber,
+        'Date Created': new Date(o.createdAt).toISOString().split('T')[0],
+        'FBR Invoice #': o.fbrInvoiceNumber,
+        'Amount (PKR)': Number(o.grandTotal).toLocaleString('en-PK', { minimumFractionDigits: 2 }),
+      })),
+    );
+
+    console.log(`\n💰 Total Duplicate Invoices Value: PKR ${totalValue.toLocaleString('en-PK', { minimumFractionDigits: 2 })}\n`);
+
+    if (isPreview) {
+      console.log('==================================================');
+      console.log('💡 INSTRUCTIONS:');
+      console.log('1. To send FBR Credit Notes (InvoiceType 3) to cancel duplicate bills on FBR server:');
+      console.log('   bun scripts/revert-duplicate-fbr-pre-aug12.ts --send-credit-notes\n');
+      console.log('2. To reset database status ONLY (without sending FBR credit notes):');
+      console.log('   bun scripts/revert-duplicate-fbr-pre-aug12.ts --reset-db-only');
+      console.log('==================================================\n');
+      return;
+    }
+
+    // ── Mode 1: Reset DB Only ──
+    if (isResetDbOnly) {
+      console.log('⚡ Resetting database FBR status for pre-12-AUG orders...');
+      const updated = await prisma.salesOrder.updateMany({
+        where: {
+          id: { in: duplicateOrders.map((o) => o.id) },
+        },
+        data: {
+          fbrInvoiceNumber: null,
+          fbrQrCode: null,
+          fbrStatus: 'EXEMPT_PREVIOUS_SYSTEM',
+        },
+      });
+      console.log(`✅ Successfully reset ${updated.count} orders in DB to "EXEMPT_PREVIOUS_SYSTEM".`);
+      return;
+    }
+
+    // ── Mode 2: Send FBR Credit Notes (InvoiceType 3) ──
+    console.log('⚡ Sending FBR Credit Notes (InvoiceType 3 / Returns) to FBR Server...');
+
+    const locationIds = [...new Set(duplicateOrders.map((o) => o.locationId).filter(Boolean))] as string[];
     const locations = locationIds.length > 0
       ? await prisma.location.findMany({
           where: { id: { in: locationIds } },
-          select: {
-            id: true,
-            name: true,
-            fbrEnabled: true,
-            fbrBposId: true,
-            fbrBearerToken: true,
-          },
+          select: { id: true, name: true, fbrEnabled: true, fbrBposId: true, fbrBearerToken: true },
         })
       : [];
     const locationMap = new Map(locations.map((l) => [l.id, l]));
 
-    // Display Table Overview
-    const tableData = unsyncedOrders.map((o) => {
-      const loc = o.locationId ? locationMap.get(o.locationId) : null;
-      return {
-        'Order #': o.orderNumber,
-        'Date': new Date(o.createdAt).toISOString().split('T')[0],
-        'Location': loc?.name || 'Unknown',
-        'Amount (PKR)': Number(o.grandTotal).toLocaleString('en-PK', { minimumFractionDigits: 2 }),
-        'FBR Configured': loc?.fbrEnabled && loc?.fbrBposId ? 'Yes ✅' : 'No ❌',
-        'FBR Status': o.fbrStatus || 'PENDING',
-      };
-    });
-
-    console.log('\n--- Unsynced Invoices List ---');
-    console.table(tableData);
-
-    const totalUnsyncedValue = unsyncedOrders.reduce((sum, o) => sum + Number(o.grandTotal), 0);
-    console.log(`\n💰 Total Pending Invoice Value: PKR ${totalUnsyncedValue.toLocaleString('en-PK', { minimumFractionDigits: 2 })}\n`);
-
-    if (isDryRun) {
-      console.log('🔍 Dry run complete. No invoices were posted to FBR.');
-      console.log('💡 To perform live sync, run without --dry-run flag.');
-      return;
-    }
-
-    // 2. Perform FBR Sync Iteration
-    console.log('==================================================');
-    console.log('⚡ Starting Bulk FBR Submission...');
-    console.log('==================================================\n');
-
-    let syncedCount = 0;
+    let reversedCount = 0;
     let failedCount = 0;
-    let skippedCount = 0;
 
-    for (const order of unsyncedOrders) {
+    for (const order of duplicateOrders) {
       const loc = order.locationId ? locationMap.get(order.locationId) : null;
-
       if (!loc || !loc.fbrEnabled || !loc.fbrBposId || !loc.fbrBearerToken) {
-        console.log(`⏭️ [SKIPPED] Order ${order.orderNumber} - FBR disabled or credentials missing for location "${loc?.name || order.locationId}"`);
-        skippedCount++;
+        console.log(`⏭️ [SKIPPED] Order ${order.orderNumber} - FBR credentials missing`);
         continue;
       }
 
-      // Fetch items for HS Code
       const itemIds = order.items.map((i) => i.itemId);
       const itemRecords = await prisma.item.findMany({
         where: { id: { in: itemIds } },
@@ -312,7 +301,8 @@ async function main() {
           FurtherTax: 0,
           TaxCharged: taxCharged,
           TotalAmount: totalAmount,
-          InvoiceType: 1,
+          InvoiceType: 3, // Credit Note
+          RefUSIN: order.orderNumber || order.id,
         };
       });
 
@@ -323,12 +313,13 @@ async function main() {
       const totalBillAmount = Math.round((totalSaleValue + totalTaxCharged) * 100) / 100;
 
       const posIdNum = parseInt(String(loc.fbrBposId), 10) || 0;
+      const creditNoteUsin = `CN-${order.orderNumber}`;
 
       const payload = {
         InvoiceNumber: '',
         POSID: posIdNum,
-        USIN: order.orderNumber || order.id,
-        DateTime: formatFbrDateTime(new Date(order.createdAt)),
+        USIN: creditNoteUsin,
+        DateTime: formatFbrDateTime(new Date()),
         BuyerNTN: null,
         BuyerCNIC: null,
         BuyerName: 'Guest',
@@ -340,7 +331,8 @@ async function main() {
         FurtherTax: 0,
         TotalBillAmount: totalBillAmount,
         PaymentMode: 1,
-        InvoiceType: 1,
+        InvoiceType: 3, // Credit Note / Return
+        RefUSIN: order.orderNumber || order.id,
         Items: fbrItems,
       };
 
@@ -349,40 +341,31 @@ async function main() {
         const codeStr = String(response.Code ?? '');
 
         if (codeStr === '100' && response.InvoiceNumber) {
-          console.log(`✅ [SYNCED] Order ${order.orderNumber} -> FBR Invoice #: ${response.InvoiceNumber}`);
+          console.log(`✅ [CREDIT NOTE ISSUED] Order ${order.orderNumber} -> FBR Credit Note #: ${response.InvoiceNumber}`);
           await prisma.salesOrder.update({
             where: { id: order.id },
             data: {
-              fbrInvoiceNumber: String(response.InvoiceNumber),
-              fbrQrCode: response.QRCode || String(response.InvoiceNumber),
-              fbrStatus: 'SYNCED',
+              fbrInvoiceNumber: null,
+              fbrQrCode: null,
+              fbrStatus: 'EXEMPT_PREVIOUS_SYSTEM',
             },
           });
-          syncedCount++;
+          reversedCount++;
         } else {
           const errMsg = response.Errors || response.Response || `Code ${response.Code}`;
-          console.error(`❌ [FAILED] Order ${order.orderNumber} -> ${errMsg}`);
-          await prisma.salesOrder.update({
-            where: { id: order.id },
-            data: { fbrStatus: 'FAILED' },
-          });
+          console.error(`❌ [FAILED] Order ${order.orderNumber} Credit Note -> ${errMsg}`);
           failedCount++;
         }
       } catch (err: any) {
         console.error(`❌ [EXCEPTION] Order ${order.orderNumber} -> ${err.message}`);
-        await prisma.salesOrder.update({
-          where: { id: order.id },
-          data: { fbrStatus: 'FAILED' },
-        });
         failedCount++;
       }
     }
 
     console.log('\n==================================================');
-    console.log('🏁 Execution Finished!');
-    console.log(`   - Synced:  ${syncedCount}`);
-    console.log(`   - Failed:  ${failedCount}`);
-    console.log(`   - Skipped: ${skippedCount}`);
+    console.log('🏁 Credit Note Execution Finished!');
+    console.log(`   - Reversed on FBR: ${reversedCount}`);
+    console.log(`   - Failed:           ${failedCount}`);
     console.log('==================================================\n');
 
   } catch (err: any) {

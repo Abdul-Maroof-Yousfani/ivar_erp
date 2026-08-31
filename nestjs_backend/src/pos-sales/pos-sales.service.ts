@@ -1361,8 +1361,9 @@ export class PosSalesService implements OnModuleInit {
     limit?: number;
     startDate?: string;
     endDate?: string;
+    orderNumberPrefix?: string;
   }) {
-    const { locationId, limit = 500, startDate, endDate } = options || {};
+    const { locationId, limit = 500, startDate, endDate, orderNumberPrefix = 'SI-' } = options || {};
 
     const whereCondition: Prisma.SalesOrderWhereInput = {
       status: { notIn: ['hold', 'hold_expired', 'hold_cancelled'] },
@@ -1374,6 +1375,10 @@ export class PosSalesService implements OnModuleInit {
 
     if (locationId) {
       whereCondition.locationId = locationId;
+    }
+
+    if (orderNumberPrefix && orderNumberPrefix !== 'ALL') {
+      whereCondition.orderNumber = { startsWith: orderNumberPrefix, mode: 'insensitive' };
     }
 
     if (startDate || endDate) {
@@ -1446,8 +1451,9 @@ export class PosSalesService implements OnModuleInit {
     limit?: number;
     startDate?: string;
     endDate?: string;
+    orderNumberPrefix?: string;
   }) {
-    const { locationId, limit = 500, startDate, endDate } = options || {};
+    const { locationId, limit = 500, startDate, endDate, orderNumberPrefix = 'SI-' } = options || {};
 
     const whereCondition: Prisma.SalesOrderWhereInput = {
       status: { notIn: ['hold', 'hold_expired', 'hold_cancelled'] },
@@ -1459,6 +1465,10 @@ export class PosSalesService implements OnModuleInit {
 
     if (locationId) {
       whereCondition.locationId = locationId;
+    }
+
+    if (orderNumberPrefix && orderNumberPrefix !== 'ALL') {
+      whereCondition.orderNumber = { startsWith: orderNumberPrefix, mode: 'insensitive' };
     }
 
     if (startDate || endDate) {
