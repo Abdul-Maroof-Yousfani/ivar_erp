@@ -264,7 +264,12 @@ export function OrderSummary({
                             <div key={item.id} className="flex items-start gap-3 px-4 py-3">
                                 <div className="flex-1 min-w-0">
                                     <p className="font-medium text-sm truncate">{item.name}</p>
-                                    <p className="text-xs text-muted-foreground">{item.sku} · {item.brand}</p>
+                                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                                        <span>{item.sku}</span>
+                                        {item.brand && item.brand !== "-" && <span>· {item.brand}</span>}
+                                        {item.size && item.size !== "-" && <span>· Size: <strong className="font-semibold text-foreground">{item.size}</strong></span>}
+                                        {item.color && item.color !== "-" && <span>· Color: <strong className="font-semibold text-foreground">{item.color}</strong></span>}
+                                    </div>
 
                                     <div className="mt-2 space-y-0.5 text-xs text-muted-foreground font-mono">
                                         <div className="flex justify-between">

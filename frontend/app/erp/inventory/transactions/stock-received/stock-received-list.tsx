@@ -107,18 +107,37 @@ export const columns: ColumnDef<StockLedgerEntry>[] = [
         accessorKey: "sku",
         header: "Item",
         accessorFn: (row) => row.item?.sku ?? row.itemId,
-        cell: ({ row }) => (
-            <div className="flex flex-col min-w-35">
-                <span className="font-semibold text-sm font-mono">
-                    {row.original.item?.sku || row.original.itemId}
-                </span>
-                {row.original.item?.description && (
-                    <span className="text-xs text-muted-foreground truncate max-w-50">
-                        {row.original.item.description}
+        cell: ({ row }) => {
+            const item = row.original.item;
+            const size = typeof item?.size === "object" ? item?.size?.name : item?.size;
+            const color = typeof item?.color === "object" ? item?.color?.name : item?.color;
+            return (
+                <div className="flex flex-col min-w-35">
+                    <span className="font-semibold text-sm font-mono">
+                        {item?.sku || row.original.itemId}
                     </span>
-                )}
-            </div>
-        ),
+                    {item?.description && (
+                        <span className="text-xs text-muted-foreground truncate max-w-50">
+                            {item.description}
+                        </span>
+                    )}
+                    {(size || color) && (
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            {size && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 ring-1 ring-inset ring-indigo-700/10 dark:ring-indigo-300/20">
+                                    Size: {size}
+                                </span>
+                            )}
+                            {color && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-pink-50 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300 ring-1 ring-inset ring-pink-700/10 dark:ring-pink-300/20">
+                                    Color: {color}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        },
     },
     {
         accessorKey: "warehouse",

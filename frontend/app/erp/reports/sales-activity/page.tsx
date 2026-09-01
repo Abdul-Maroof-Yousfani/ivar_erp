@@ -759,7 +759,7 @@ export default function ERPSalesActivityReportPage() {
                                                 <thead>
                                                     <tr className="bg-muted/40 border-b text-muted-foreground">
                                                         <th className="font-semibold p-2">SKU / Item Description</th>
-                                                        <th className="font-semibold p-2 text-center">Attributes</th>
+                                                        <th className="font-semibold p-2 text-center">Size / Color</th>
                                                         <th className="font-semibold p-2 text-center">
                                                             {act.type === "claim" ? "Claim / Appr Qty" : "Qty"}
                                                         </th>
@@ -773,12 +773,27 @@ export default function ERPSalesActivityReportPage() {
                                                         <tr key={itIdx} className="border-b last:border-0 border-muted/20 hover:bg-muted/5 transition-colors">
                                                             <td className="p-2 font-medium">
                                                                 <div className="font-semibold text-foreground text-xs">{it.description}</div>
-                                                                <div className="text-[10px] text-muted-foreground font-mono">
-                                                                    SKU: {it.sku}{it.barCode && it.barCode !== it.sku ? ` | BC: ${it.barCode}` : ""}
+                                                                <div className="text-[10px] text-muted-foreground font-mono flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
+                                                                    <span>SKU: {it.sku}</span>
+                                                                    {it.barCode && it.barCode !== it.sku && <span>| BC: {it.barCode}</span>}
                                                                 </div>
                                                             </td>
-                                                            <td className="p-2 text-center text-muted-foreground">
-                                                                {it.size || it.color ? `${it.size || "-"} / ${it.color || "-"}` : "—"}
+                                                            <td className="p-2 text-center">
+                                                                <div className="inline-flex items-center justify-center gap-1.5 flex-wrap">
+                                                                    {it.size && it.size !== "-" && (
+                                                                        <Badge variant="secondary" className="text-[11px] font-semibold px-2 py-0.5 rounded-md">
+                                                                            {it.size}
+                                                                        </Badge>
+                                                                    )}
+                                                                    {it.color && it.color !== "-" && (
+                                                                        <Badge variant="outline" className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted/30">
+                                                                            {it.color}
+                                                                        </Badge>
+                                                                    )}
+                                                                    {(!it.size || it.size === "-") && (!it.color || it.color === "-") && (
+                                                                        <span className="text-muted-foreground">—</span>
+                                                                    )}
+                                                                </div>
                                                             </td>
                                                             <td className="p-2 text-center font-semibold">
                                                                 {act.type === "claim" ? (

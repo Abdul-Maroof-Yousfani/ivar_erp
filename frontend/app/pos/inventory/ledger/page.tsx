@@ -155,10 +155,14 @@ export default function PosStockLedgerPage() {
             const dateStr = entry.createdAt
                 ? format(new Date(entry.createdAt), "dd MMM yyyy HH:mm")
                 : "";
+            const sizeStr = typeof entry.item?.size === "object" ? entry.item?.size?.name || "" : entry.item?.size || "";
+            const colorStr = typeof entry.item?.color === "object" ? entry.item?.color?.name || "" : entry.item?.color || "";
             return {
                 ...entry,
                 sku: entry.item?.sku || entry.itemId || "",
                 itemDescription: entry.item?.description || "",
+                size: sizeStr,
+                color: colorStr,
                 warehouseName: entry.warehouse?.name || entry.warehouseId || "",
                 locationName: entry.location?.name || "",
                 referenceIdStr: entry.referenceId || "",
@@ -250,6 +254,8 @@ export default function PosStockLedgerPage() {
                 searchFields={[
                     { key: "sku", label: "SKU" },
                     { key: "itemDescription", label: "Item" },
+                    { key: "size", label: "Size" },
+                    { key: "color", label: "Color" },
                     { key: "warehouseName", label: "Warehouse" },
                     { key: "referenceIdStr", label: "Ref ID" },
                     { key: "referenceTypeStr", label: "Source" },
