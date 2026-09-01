@@ -35,7 +35,7 @@ export interface UploadStatusResponse {
     completedAt: string | null;
 }
 
-export function useUploadProgress(uploadId: string | null, uploadType: 'item' | 'item-update' | 'hscode' | 'employee' | 'attendance' | 'coa' | 'alliance' | 'sales-history' | 'online-sales' | 'stock' | 'merchant' | 'srn' | 'po' = 'item') {
+export function useUploadProgress(uploadId: string | null, uploadType: 'item' | 'item-update' | 'hscode' | 'employee' | 'attendance' | 'coa' | 'alliance' | 'sales-history' | 'online-sales' | 'stock' | 'merchant' | 'srn' | 'po' | 'direct-pi' | 'transfer' = 'item') {
     const [data, setData] = useState<UploadStatusResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -97,6 +97,9 @@ export function useUploadProgress(uploadId: string | null, uploadType: 'item' | 
         }
         if (uploadType === 'po') {
             return `${baseUrl}/purchase-order/bulk-upload/${endpoint}`;
+        }
+        if (uploadType === 'direct-pi') {
+            return `${baseUrl}/purchase-invoice/bulk-upload/${endpoint}`;
         }
         return `${baseUrl}/items/bulk-upload/${endpoint}`;
     }, [uploadType]);
