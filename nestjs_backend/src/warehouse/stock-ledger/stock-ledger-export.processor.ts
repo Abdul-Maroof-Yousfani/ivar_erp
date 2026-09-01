@@ -24,18 +24,18 @@ export interface StockLedgerExportJobData {
 // ── Colour palette ─────────────────────────────────────────────────────────────
 const SUBHEADER_BG = '1E3A5F';
 const SUBHEADER_FG = 'F1F5F9';
-const ALT_ROW_BG   = 'F0F4F8';
+const ALT_ROW_BG = 'F0F4F8';
 const BORDER_COLOR = 'CBD5E1';
-const ACTIVE_FG    = '15803D';
-const INACTIVE_FG  = 'B91C1C';
-const AMOUNT_FG    = '0F766E';
+const ACTIVE_FG = '15803D';
+const INACTIVE_FG = 'B91C1C';
+const AMOUNT_FG = '0F766E';
 
 const GROUP_COLORS: Record<string, string> = {
-  Item:       '1E3A5F',
-  Location:   '1E4D2B',
-  Details:    '4A1942',
-  Financial:  '1A3A4A',
-  Reference:  '3D2B00',
+  Item: '1E3A5F',
+  Location: '1E4D2B',
+  Details: '4A1942',
+  Financial: '1A3A4A',
+  Reference: '3D2B00',
 };
 
 const COLUMNS: {
@@ -46,23 +46,26 @@ const COLUMNS: {
   numFmt?: string;
   align?: ExcelJS.Alignment['horizontal'];
 }[] = [
-  // Item Info
-  { header: 'SKU',             key: 'sku',             width: 16, group: 'Item',      align: 'center' },
-  { header: 'Description',     key: 'description',     width: 30, group: 'Item' },
-  // Location Info
-  { header: 'Warehouse',       key: 'warehouse',       width: 20, group: 'Location' },
-  { header: 'Location',        key: 'location',        width: 20, group: 'Location' },
-  // Details
-  { header: 'Movement Type',   key: 'movementType',    width: 16, group: 'Details',   align: 'center' },
-  { header: 'Quantity',        key: 'qty',             width: 14, group: 'Details',   numFmt: '#,##0.00', align: 'right' },
-  // Financial
-  { header: 'Unit Price',      key: 'unitPrice',       width: 14, group: 'Financial', numFmt: '#,##0.00', align: 'right' },
-  { header: 'Total Price',     key: 'totalPrice',      width: 16, group: 'Financial', numFmt: '#,##0.00', align: 'right' },
-  // Reference
-  { header: 'Source',          key: 'referenceType',   width: 18, group: 'Reference', align: 'center' },
-  { header: 'Reference ID',    key: 'referenceId',     width: 36, group: 'Reference', align: 'center' },
-  { header: 'Date',            key: 'createdAt',       width: 20, group: 'Reference', numFmt: 'dd-mmm-yyyy hh:mm', align: 'center' },
-];
+    // Item Info
+    { header: 'SKU', key: 'sku', width: 16, group: 'Item', align: 'center' },
+    { header: 'Barcode', key: 'barcode', width: 16, group: 'Item', align: 'center' },
+    { header: 'Description', key: 'description', width: 30, group: 'Item' },
+    { header: 'Size', key: 'size', width: 12, group: 'Item', align: 'center' },
+    { header: 'Color', key: 'color', width: 14, group: 'Item', align: 'center' },
+    // Location Info
+    { header: 'Warehouse', key: 'warehouse', width: 20, group: 'Location' },
+    { header: 'Location', key: 'location', width: 20, group: 'Location' },
+    // Details
+    { header: 'Movement Type', key: 'movementType', width: 16, group: 'Details', align: 'center' },
+    { header: 'Quantity', key: 'qty', width: 14, group: 'Details', numFmt: '#,##0.00', align: 'right' },
+    // Financial
+    { header: 'Unit Price', key: 'unitPrice', width: 14, group: 'Financial', numFmt: '#,##0.00', align: 'right' },
+    { header: 'Total Price', key: 'totalPrice', width: 16, group: 'Financial', numFmt: '#,##0.00', align: 'right' },
+    // Reference
+    { header: 'Source', key: 'referenceType', width: 18, group: 'Reference', align: 'center' },
+    { header: 'Reference ID', key: 'referenceId', width: 36, group: 'Reference', align: 'center' },
+    { header: 'Date', key: 'createdAt', width: 20, group: 'Reference', numFmt: 'dd-mmm-yyyy hh:mm', align: 'center' },
+  ];
 
 @Processor('stock-ledger-export')
 export class StockLedgerExportProcessor {
@@ -70,7 +73,7 @@ export class StockLedgerExportProcessor {
 
   constructor(
     private readonly notificationsService: NotificationsService,
-  ) {}
+  ) { }
 
   @Process()
   async handleExport(job: Job<StockLedgerExportJobData>): Promise<void> {
@@ -189,14 +192,14 @@ export class StockLedgerExportProcessor {
         const cell = groupRow.getCell(idx + 1);
         const { start } = groups[col.group];
         if (idx + 1 === start) cell.value = col.group.toUpperCase();
-        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${GROUP_COLORS[col.group] ?? '1E293B'}` } };
-        cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9 };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${GROUP_COLORS[col.group] ?? '1E293B'}` } };
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9 };
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        cell.border    = {
-          top:    { style: 'thin', color: { argb: `FF${BORDER_COLOR}` } },
-          left:   { style: 'thin', color: { argb: `FF${BORDER_COLOR}` } },
+        cell.border = {
+          top: { style: 'thin', color: { argb: `FF${BORDER_COLOR}` } },
+          left: { style: 'thin', color: { argb: `FF${BORDER_COLOR}` } },
           bottom: { style: 'thin', color: { argb: `FF${BORDER_COLOR}` } },
-          right:  { style: 'thin', color: { argb: `FF${BORDER_COLOR}` } },
+          right: { style: 'thin', color: { argb: `FF${BORDER_COLOR}` } },
         };
       });
       groupRow.height = 22;
@@ -206,15 +209,15 @@ export class StockLedgerExportProcessor {
       const headerRow = ws.getRow(2);
       COLUMNS.forEach((col, idx) => {
         const cell = headerRow.getCell(idx + 1);
-        cell.value     = col.header;
-        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${SUBHEADER_BG}` } };
-        cell.font      = { bold: true, color: { argb: `FF${SUBHEADER_FG}` }, size: 9 };
+        cell.value = col.header;
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${SUBHEADER_BG}` } };
+        cell.font = { bold: true, color: { argb: `FF${SUBHEADER_FG}` }, size: 9 };
         cell.alignment = { horizontal: col.align ?? 'left', vertical: 'middle' };
-        cell.border    = {
-          top:    { style: 'thin',   color: { argb: `FF${BORDER_COLOR}` } },
-          left:   { style: 'thin',   color: { argb: `FF${BORDER_COLOR}` } },
+        cell.border = {
+          top: { style: 'thin', color: { argb: `FF${BORDER_COLOR}` } },
+          left: { style: 'thin', color: { argb: `FF${BORDER_COLOR}` } },
           bottom: { style: 'medium', color: { argb: `FF${BORDER_COLOR}` } },
-          right:  { style: 'thin',   color: { argb: `FF${BORDER_COLOR}` } },
+          right: { style: 'thin', color: { argb: `FF${BORDER_COLOR}` } },
         };
       });
       headerRow.height = 20;
@@ -244,7 +247,17 @@ export class StockLedgerExportProcessor {
             referenceId: true,
             locationId: true,
             createdAt: true,
-            item: { select: { itemId: true, sku: true, description: true, unitPrice: true } },
+            item: {
+              select: {
+                itemId: true,
+                sku: true,
+                barCode: true,
+                description: true,
+                unitPrice: true,
+                size: { select: { name: true } },
+                color: { select: { name: true } },
+              },
+            },
             warehouse: { select: { name: true } },
           },
         });
@@ -274,7 +287,10 @@ export class StockLedgerExportProcessor {
 
           const rowData: Record<string, any> = {
             sku: entry.item?.sku || entry.itemId,
+            barcode: entry.item?.barCode || '-',
             description: entry.item?.description || '',
+            size: entry.item?.size?.name || '',
+            color: entry.item?.color?.name || '',
             warehouse: entry.warehouse?.name || entry.warehouseId,
             location: locationName,
             movementType: entry.movementType,
@@ -289,10 +305,10 @@ export class StockLedgerExportProcessor {
           const dataRow = ws.getRow(rowIdx + 3);
           COLUMNS.forEach((col, colIdx) => {
             const cell = dataRow.getCell(colIdx + 1);
-            cell.value     = rowData[col.key] ?? null;
+            cell.value = rowData[col.key] ?? null;
             if (col.numFmt) cell.numFmt = col.numFmt;
             cell.alignment = { horizontal: col.align ?? 'left', vertical: 'middle' };
-            cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${isAlt ? ALT_ROW_BG : 'FFFFFF'}` } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${isAlt ? ALT_ROW_BG : 'FFFFFF'}` } };
 
             if (col.key === 'qty') {
               const isOut = qtyNum < 0;
@@ -304,10 +320,10 @@ export class StockLedgerExportProcessor {
             }
 
             cell.border = {
-              top:    { style: 'hair', color: { argb: `FF${BORDER_COLOR}` } },
-              left:   { style: 'hair', color: { argb: `FF${BORDER_COLOR}` } },
+              top: { style: 'hair', color: { argb: `FF${BORDER_COLOR}` } },
+              left: { style: 'hair', color: { argb: `FF${BORDER_COLOR}` } },
               bottom: { style: 'hair', color: { argb: `FF${BORDER_COLOR}` } },
-              right:  { style: 'hair', color: { argb: `FF${BORDER_COLOR}` } },
+              right: { style: 'hair', color: { argb: `FF${BORDER_COLOR}` } },
             };
           });
           dataRow.height = 16;
@@ -330,29 +346,29 @@ export class StockLedgerExportProcessor {
       summary.columns = [{ key: 'label', width: 28 }, { key: 'value', width: 22 }];
 
       const titleRow = summary.getRow(1);
-      titleRow.getCell(1).value     = 'Stock Ledger Export Summary';
-      titleRow.getCell(1).font      = { bold: true, size: 14, color: { argb: 'FF1E293B' } };
-      titleRow.getCell(1).fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+      titleRow.getCell(1).value = 'Stock Ledger Export Summary';
+      titleRow.getCell(1).font = { bold: true, size: 14, color: { argb: 'FF1E293B' } };
+      titleRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
       titleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
       titleRow.height = 28;
       titleRow.commit();
 
       const summaryRows = [
-        ['Export Date',    new Date().toLocaleString('en-PK')],
-        ['Total Rows',     rowIdx],
-        ['Warehouse ID',   warehouseId ?? '(all)'],
-        ['Movement Type',  movementType ?? '(all)'],
-        ['Item ID',        itemId ?? '(all)'],
+        ['Export Date', new Date().toLocaleString('en-PK')],
+        ['Total Rows', rowIdx],
+        ['Warehouse ID', warehouseId ?? '(all)'],
+        ['Movement Type', movementType ?? '(all)'],
+        ['Item ID', itemId ?? '(all)'],
         ['Reference Type', referenceType ?? '(all)'],
       ];
       summaryRows.forEach(([label, value], idx) => {
         const r = summary.getRow(idx + 2);
         r.getCell(1).value = label;
-        r.getCell(1).font  = { bold: true, size: 10 };
-        r.getCell(1).fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: idx % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF' } };
+        r.getCell(1).font = { bold: true, size: 10 };
+        r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: idx % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF' } };
         r.getCell(2).value = value;
-        r.getCell(2).font  = { size: 10 };
-        r.getCell(2).fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: idx % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF' } };
+        r.getCell(2).font = { size: 10 };
+        r.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: idx % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF' } };
         r.height = 18;
         r.commit();
       });

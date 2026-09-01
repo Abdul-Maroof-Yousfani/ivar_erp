@@ -46,6 +46,8 @@ interface Item {
     brand?: { name: string } | null;
     category?: { name: string } | null;
     division?: { name: string } | null;
+    size?: { name: string } | null;
+    color?: { name: string } | null;
 }
 
 // ─── Filter Sheet ─────────────────────────────────────────────────────────────
@@ -229,11 +231,20 @@ function useItemColumns(onDelete: (id: string) => void, canUpdate: boolean, canD
                 <div className="flex flex-col gap-0.5 min-w-0">
                     <span className="font-mono text-sm font-medium">{row.original.sku}</span>
                     {row.original.description && (
-                        <span className="text-xs text-muted-foreground truncate max-w-[220px]">
+                        <span className="text-xs text-muted-foreground truncate max-w-55">
                             {row.original.description}
                         </span>
                     )}
                 </div>
+            ),
+        },
+        {
+            accessorKey: "barCode",
+            header: "Barcode",
+            cell: ({ row }) => row.original.barCode ? (
+                <span className="font-mono text-sm">{row.original.barCode}</span>
+            ) : (
+                <span className="text-muted-foreground">—</span>
             ),
         },
         {
@@ -250,6 +261,25 @@ function useItemColumns(onDelete: (id: string) => void, canUpdate: boolean, canD
             accessorKey: "division",
             header: "Division",
             cell: ({ row }) => row.original.division?.name ?? <span className="text-muted-foreground">—</span>,
+        },
+        {
+            accessorKey: "size",
+            header: "Size",
+            cell: ({ row }) => row.original.size?.name ?? <span className="text-muted-foreground">—</span>,
+        },
+        {
+            accessorKey: "color",
+            header: "Color",
+            cell: ({ row }) => {
+                const color = row.original.color?.name;
+                return color ? (
+                    <span title={color} className="inline-block max-w-40 whitespace-normal break-words text-sm leading-tight">
+                        {color}
+                    </span>
+                ) : (
+                    <span className="text-muted-foreground">—</span>
+                );
+            },
         },
         {
             accessorKey: "unitPrice",
@@ -620,7 +650,7 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
                     {activeUpdateUploadId && !isBulkUpdateOpen && (
                         <Button
                             variant={updateProgress?.status === 'failed' ? 'destructive' : updateProgress?.status === 'completed' ? 'default' : 'outline'}
-                            className={`border-primary text-primary relative overflow-hidden min-w-[180px] ${updateProgress?.status === 'failed' ? 'text-primary-foreground! bg-destructive!' : updateProgress?.status === 'completed' ? 'text-primary-foreground! bg-primary!' : ''}`}
+                            className={`border-primary text-primary relative overflow-hidden min-w-45 ${updateProgress?.status === 'failed' ? 'text-primary-foreground! bg-destructive!' : updateProgress?.status === 'completed' ? 'text-primary-foreground! bg-primary!' : ''}`}
                             onClick={() => setIsBulkUpdateOpen(true)}
                         >
                             <div
@@ -650,7 +680,7 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
                     {activeUploadId && !isBulkUploadOpen && (
                         <Button
                             variant={uploadProgress?.status === 'failed' ? 'destructive' : uploadProgress?.status === 'completed' ? 'default' : 'outline'}
-                            className={`border-primary text-primary relative overflow-hidden min-w-[180px] ${uploadProgress?.status === 'failed' ? 'text-destructive-foreground! bg-destructive!' : uploadProgress?.status === 'completed' ? 'text-primary-foreground! bg-primary!' : ''}`}
+                            className={`border-primary text-primary relative overflow-hidden min-w-45 ${uploadProgress?.status === 'failed' ? 'text-destructive-foreground! bg-destructive!' : uploadProgress?.status === 'completed' ? 'text-primary-foreground! bg-primary!' : ''}`}
                             onClick={() => setIsBulkUploadOpen(true)}
                         >
                             <div
@@ -748,10 +778,13 @@ export function ItemList({ initialItems, initialMeta }: ItemListProps) {
                     tableId="items-catalog"
                     searchFields={[
                         { key: "sku", label: "SKU" },
+                        { key: "barCode", label: "Barcode" },
                         { key: "description", label: "Description" },
                         { key: "brand", label: "Brand" },
                         { key: "category", label: "Category" },
                         { key: "division", label: "Division" },
+                        { key: "size", label: "Size" },
+                        { key: "color", label: "Color" },
                     ]}
                     filterSlot={filterSlot}
                     /* ── Server-side controls ── */

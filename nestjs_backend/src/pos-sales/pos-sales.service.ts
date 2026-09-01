@@ -2627,7 +2627,13 @@ export class PosSalesService implements OnModuleInit {
             items: {
               include: {
                 item: {
-                  select: { description: true, sku: true, barCode: true },
+                  select: {
+                    description: true,
+                    sku: true,
+                    barCode: true,
+                    size: { select: { name: true } },
+                    color: { select: { name: true } },
+                  },
                 },
               },
             },
@@ -2984,6 +2990,8 @@ export class PosSalesService implements OnModuleInit {
             price: Number(ci.unitPaidPrice),
             lineTotal: Number(ci.claimedAmount),
             approvedAmount: Number(ci.approvedAmount),
+            size: ci.item?.size?.name || (typeof ci.item?.size === 'string' ? ci.item.size : undefined),
+            color: ci.item?.color?.name || (typeof ci.item?.color === 'string' ? ci.item.color : undefined),
             status: ci.itemStatus,
           })),
         });

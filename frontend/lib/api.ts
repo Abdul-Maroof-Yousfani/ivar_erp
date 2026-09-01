@@ -851,7 +851,16 @@ export interface StockLedgerEntry {
   locationId?: string;
   createdAt: string;
   // Optional expanded relations if backend includes them
-  item?: { itemId: string; sku: string; description: string | null; name?: string };
+  item?: {
+    itemId: string;
+    sku: string;
+    barCode?: string | null;
+    description: string | null;
+    name?: string;
+    size?: { name: string } | string | null;
+    color?: { name: string } | string | null;
+    brand?: { name: string } | string | null;
+  };
   warehouse?: { name: string };
   location?: { name: string; code: string } | null;
 }
@@ -1573,4 +1582,4 @@ export const fabricVendorTrackerApi = {
       { method: 'POST' }
     );
   },
-};
+};

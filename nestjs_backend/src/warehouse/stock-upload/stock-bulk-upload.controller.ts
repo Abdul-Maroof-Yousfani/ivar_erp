@@ -138,12 +138,12 @@ export class StockBulkUploadController {
         // Static example template — matches the wide-format the parser expects.
         // In production you could fetch real location codes from the DB here.
         const template = [
-            'BarCode,C40001,N10001,SS1001,SS1002,SS1011,CK1001,CK1002,P10001,P10002,P10004,A10002,W10012',
-            '4055013454094,-,-,-,1,-,-,-,-,-,-,-,10',
-            '4059809047132,2,-,-,-,-,-,-,-,-,-,1,10',
-            '4059809047095,1,-,-,-,-,-,-,-,-,-,2,10',
-            '4059809047101,-,5,-,-,3,-,-,2,-,-,-,-',
-            '4059809047118,-,-,4,-,-,1,-,-,6,-,-,-',
+            'BarCode,Size,Color,C40001,N10001,SS1001,SS1002,SS1011,CK1001,CK1002,P10001,P10002,P10004,A10002,W10012',
+            '4055013454094,M,Red,-,-,-,1,-,-,-,-,-,-,-,10',
+            '4059809047132,L,Blue,2,-,-,-,-,-,-,-,-,-,1,10',
+            '4059809047095,S,Black,1,-,-,-,-,-,-,-,-,-,2,10',
+            '4059809047101,XL,White,-,5,-,-,3,-,-,2,-,-,-,-',
+            '4059809047118,M,Green,-,-,4,-,-,1,-,-,6,-,-,-',
         ].join('\n');
 
         res.header('Content-Type', 'text/csv');

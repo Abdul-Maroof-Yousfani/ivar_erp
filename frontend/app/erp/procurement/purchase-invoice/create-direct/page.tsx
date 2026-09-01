@@ -21,7 +21,7 @@ import { toast } from 'sonner';
 import {
     Search, Filter, X, ChevronRight, Plus, CheckCircle2, Info,
     Loader2, Trash2, Save, FileText, ScanBarcode, Volume2, VolumeX,
-    Keyboard, Sparkles
+    Keyboard, Sparkles, Upload
 } from 'lucide-react';
 import { supplierApi, warehouseApi } from '@/lib/api';
 import { brandApi, categoryApi, silhouetteApi, genderApi } from '@/lib/api';
@@ -32,6 +32,7 @@ import {
 } from '@/lib/actions/purchase-invoice';
 import Link from 'next/link';
 import { PermissionGuard } from "@/components/auth/permission-guard";
+import { DirectPiBulkUploadModal } from '@/components/purchase-invoice/direct-pi-bulk-upload-modal';
 
 interface Supplier { id: string; name: string; code: string; }
 
@@ -46,6 +47,9 @@ interface SelectedItem {
     taxRate: number;
     discountRate: number;
     notes: string;
+    color?: string;
+    size?: string;
+    barCode?: string;
 }
 
 export default function CreateDirectPurchaseInvoicePage() {
@@ -59,6 +63,9 @@ export default function CreateDirectPurchaseInvoicePage() {
     const [supplierId, setSupplierId] = useState('');
     const [notes, setNotes] = useState('');
     const [discountAmount, setDiscountAmount] = useState(0);
+
+    // Bulk upload modal state
+    const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
 
     // Supplier list
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -203,10 +210,13 @@ export default function CreateDirectPurchaseInvoicePage() {
             const itemData = {
                 id: matchedItem.id,
                 sku: matchedItem.sku ?? matchedItem.itemId ?? '',
+                barCode: matchedItem.barCode ?? '',
                 description: matchedItem.description ?? matchedItem.name ?? '',
                 unitPrice: matchedItem.unitPrice ?? matchedItem.unitCost ?? 0,
                 uom: matchedItem.uom ?? 'Pcs',
                 rollSize: matchedItem.rollSize,
+                color: matchedItem.color?.name ?? '',
+                size: matchedItem.size?.name ?? '',
             };
 
             const existingIndex = selectedItems.findIndex(i => i.id === itemData.id);
@@ -239,6 +249,9 @@ export default function CreateDirectPurchaseInvoicePage() {
                     taxRate: 0,
                     discountRate: 0,
                     notes: '',
+                    color: itemData.color,
+                    size: itemData.size,
+                    barCode: itemData.barCode,
                 }]);
                 if (soundEnabled) playScanSuccessBeep();
                 toast.success(`Added ${itemData.sku} to invoice.`, {
@@ -351,7 +364,8 @@ export default function CreateDirectPurchaseInvoicePage() {
         ]);
         if (suppliersRes.status === 'fulfilled') {
             const d = suppliersRes.value;
-            setSuppliers((d as any).data ?? d ?? []);
+            const list = (d as any).data ?? d ?? [];
+            setSuppliers(Array.isArray(list) ? list : []);
         }
         if (warehousesRes.status === 'fulfilled') {
             const whs = warehousesRes.value as any[];
@@ -384,10 +398,13 @@ export default function CreateDirectPurchaseInvoicePage() {
                 item: {
                     id: item.id,
                     sku: item.sku ?? item.itemId ?? '',
+                    barCode: item.barCode ?? '',
                     description: item.description ?? item.name ?? '',
                     unitPrice: item.unitPrice ?? item.unitCost ?? 0,
                     uom: item.uom ?? 'Pcs',
                     rollSize: item.rollSize,
+                    color: item.color?.name ?? '',
+                    size: item.size?.name ?? '',
                 },
             }));
             setItemOptions(options);
@@ -416,6 +433,9 @@ export default function CreateDirectPurchaseInvoicePage() {
                 taxRate: 0,
                 discountRate: 0,
                 notes: '',
+                color: itemData.color,
+                size: itemData.size,
+                barCode: itemData.barCode,
             }]);
         }
     };
@@ -501,7 +521,15 @@ export default function CreateDirectPurchaseInvoicePage() {
                         <h1 className="text-3xl font-bold tracking-tight">Direct Purchase Invoice</h1>
                         <p className="text-muted-foreground">Create a supplier invoice without GRN or PO</p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            onClick={() => setIsBulkUploadOpen(true)}
+                            className="gap-1.5"
+                        >
+                            <Upload className="h-4 w-4" />
+                            Bulk Upload
+                        </Button>
                         <Link href="/erp/procurement/purchase-invoice" transitionTypes={['nav-forward']}>
                             <Button variant="outline">Cancel</Button>
                         </Link>
@@ -1182,7 +1210,10 @@ export default function CreateDirectPurchaseInvoicePage() {
                                 <TableHeader>
                                     <TableRow className="bg-muted/50">
                                         <TableHead className="w-[130px]">SKU</TableHead>
+                                        <TableHead className="w-[120px]">Barcode</TableHead>
                                         <TableHead>Description</TableHead>
+                                        <TableHead className="w-[90px]">Color</TableHead>
+                                        <TableHead className="w-[80px]">Size</TableHead>
                                         <TableHead className="w-[90px] text-center">Qty</TableHead>
                                         {searchItemType === 'RAW_FABRIC' && <TableHead className="w-[85px] text-center">UOM</TableHead>}
                                         {searchItemType === 'RAW_FABRIC' && <TableHead className="w-[100px] text-center">Roll Size</TableHead>}
@@ -1196,7 +1227,7 @@ export default function CreateDirectPurchaseInvoicePage() {
                                 <TableBody>
                                     {selectedItems.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={searchItemType === 'RAW_FABRIC' ? 10 : 8} className="h-32 text-center text-muted-foreground italic">
+                                            <TableCell colSpan={searchItemType === 'RAW_FABRIC' ? 13 : 11} className="h-32 text-center text-muted-foreground italic">
                                                 No items added yet. Search and add items above.
                                             </TableCell>
                                         </TableRow>
@@ -1207,8 +1238,23 @@ export default function CreateDirectPurchaseInvoicePage() {
                                             return (
                                                 <TableRow key={item.id} className="group hover:bg-muted/30 transition-colors">
                                                     <TableCell className="font-mono text-xs font-semibold">{item.sku}</TableCell>
+                                                    <TableCell className="font-mono text-xs text-muted-foreground">{item.barCode || '—'}</TableCell>
                                                     <TableCell>
                                                         <span className="text-sm font-medium">{item.description}</span>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {item.color ? (
+                                                            <span className="text-sm">{item.color}</span>
+                                                        ) : (
+                                                            <span className="text-muted-foreground">—</span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        {item.size ? (
+                                                            <span className="text-sm">{item.size}</span>
+                                                        ) : (
+                                                            <span className="text-muted-foreground">—</span>
+                                                        )}
                                                     </TableCell>
                                                     <TableCell>
                                                         <Input
@@ -1293,6 +1339,21 @@ export default function CreateDirectPurchaseInvoicePage() {
                     </CardContent>
                 </Card>
             </div>
+
+            <DirectPiBulkUploadModal
+                open={isBulkUploadOpen}
+                onOpenChange={setIsBulkUploadOpen}
+                defaultSupplierId={supplierId}
+                defaultWarehouseId={warehouseId}
+                defaultInvoiceDate={invoiceDate}
+                defaultNotes={notes}
+                onSuccess={() => {
+                    startTransition(() => {
+                        addTransitionType('nav-forward');
+                        router.push('/erp/procurement/purchase-invoice');
+                    });
+                }}
+            />
         </div>
         </PermissionGuard>
     );

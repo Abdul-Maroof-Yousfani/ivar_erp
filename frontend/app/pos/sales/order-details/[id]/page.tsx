@@ -246,14 +246,14 @@ export default function OrderDetailsPage() {
                                                         <p className="text-xs text-muted-foreground font-mono mt-0.5">{item.item?.sku}</p>
                                                     </div>
                                                     <div className="flex flex-wrap gap-1.5 justify-end">
-                                                        {item.item?.size?.name && (
+                                                        {(item.item?.size?.name || (typeof item.item?.size === "string" && item.item.size)) && (
                                                             <Badge variant="secondary" className="text-[10px] py-0 px-2 font-bold bg-muted/65">
-                                                                Size: {item.item.size.name}
+                                                                Size: {typeof item.item.size === "object" ? item.item.size.name : item.item.size}
                                                             </Badge>
                                                         )}
-                                                        {item.item?.color?.name && (
+                                                        {(item.item?.color?.name || (typeof item.item?.color === "string" && item.item.color)) && (
                                                             <Badge variant="secondary" className="text-[10px] py-0 px-2 font-bold bg-muted/65">
-                                                                Color: {item.item.color.name}
+                                                                Color: {typeof item.item.color === "object" ? item.item.color.name : item.item.color}
                                                             </Badge>
                                                         )}
                                                         <Badge variant="outline" className="text-[10px] py-0 px-2 font-bold border-primary/20 text-primary">

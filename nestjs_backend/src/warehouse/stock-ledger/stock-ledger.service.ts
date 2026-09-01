@@ -125,7 +125,17 @@ export class StockLedgerService {
           referenceId: true,
           locationId: true,
           createdAt: true,
-          item: { select: { itemId: true, sku: true, description: true } },
+          item: {
+            select: {
+              itemId: true,
+              sku: true,
+              barCode: true,
+              description: true,
+              size: { select: { name: true } },
+              color: { select: { name: true } },
+              brand: { select: { name: true } },
+            },
+          },
           warehouse: { select: { name: true } },
         },
       }),
@@ -195,9 +205,9 @@ export class StockLedgerService {
       }),
       locationIds.length > 0
         ? this.prisma.location.findMany({
-            where: { id: { in: locationIds } },
-            select: { id: true, name: true, code: true },
-          })
+          where: { id: { in: locationIds } },
+          select: { id: true, name: true, code: true },
+        })
         : Promise.resolve([] as { id: string; name: string; code: string }[]),
       this.prisma.stockReserve.groupBy({
         by: ['itemId', 'warehouseId'],
@@ -245,10 +255,10 @@ export class StockLedgerService {
         warehouse: wh ? { name: wh.name, code: wh.code } : null,
         location: loc
           ? {
-              name: loc.name,
-              code: loc.code,
-              warehouse: wh ? { name: wh.name } : null,
-            }
+            name: loc.name,
+            code: loc.code,
+            warehouse: wh ? { name: wh.name } : null,
+          }
           : null,
       };
     });
@@ -415,13 +425,13 @@ export class StockLedgerService {
     const jobId = uuidv4();
 
     // Read tenant credentials from the live request context
-    const tenantId    = this.prisma.getTenantId()    ?? '';
+    const tenantId = this.prisma.getTenantId() ?? '';
     const tenantDbUrl = this.prisma.getTenantDbUrl() ?? '';
 
     await this.exportQueue.add(
       {
         jobId,
-        userId:   opts.userId,
+        userId: opts.userId,
         tenantId,
         tenantDbUrl,
         warehouseId: opts.warehouseId,
@@ -447,7 +457,7 @@ export class StockLedgerService {
   async getJobStatus(jobId: string): Promise<{ state: string; progress: number }> {
     const job = await this.exportQueue.getJob(jobId);
     if (!job) throw new NotFoundException(`Export job ${jobId} not found`);
-    const state    = await job.getState();
+    const state = await job.getState();
     const progress = typeof job.progress() === 'number' ? (job.progress() as number) : 0;
     return { state, progress };
   }
@@ -459,15 +469,15 @@ export class StockLedgerService {
       throw new NotFoundException('Export file not found. It may have expired or the job is still running.');
     }
 
-    const stat      = fs.statSync(filePath);
+    const stat = fs.statSync(filePath);
     const timestamp = new Date().toISOString().slice(0, 10);
-    const filename  = `stock-ledger-export-${timestamp}.xlsx`;
+    const filename = `stock-ledger-export-${timestamp}.xlsx`;
 
     const stream = fs.createReadStream(filePath);
     stream.on('close', () => {
       fs.unlink(filePath, (err) => {
         if (err) this.logger.warn(`Could not delete export file: ${err.message}`);
-        else     this.logger.log(`[StockLedgerExport] Cleaned up ${filePath}`);
+        else this.logger.log(`[StockLedgerExport] Cleaned up ${filePath}`);
       });
     });
     stream.on('error', (err) => {
@@ -543,7 +553,7 @@ export class StockLedgerService {
       },
       select: { itemId: true },
     });
-    
+
     const ledgerItems = await this.prisma.stockLedger.findMany({
       where: locationOrWarehouseWhere,
       select: { itemId: true },

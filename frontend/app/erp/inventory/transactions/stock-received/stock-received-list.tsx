@@ -107,17 +107,66 @@ export const columns: ColumnDef<StockLedgerEntry>[] = [
         accessorKey: "sku",
         header: "Item",
         accessorFn: (row) => row.item?.sku ?? row.itemId,
-        cell: ({ row }) => (
-            <div className="flex flex-col min-w-35">
-                <span className="font-semibold text-sm font-mono">
-                    {row.original.item?.sku || row.original.itemId}
-                </span>
-                {row.original.item?.description && (
-                    <span className="text-xs text-muted-foreground truncate max-w-50">
-                        {row.original.item.description}
+        cell: ({ row }) => {
+            const item = row.original.item;
+            const size = typeof item?.size === "object" ? item?.size?.name : item?.size;
+            const color = typeof item?.color === "object" ? item?.color?.name : item?.color;
+            return (
+                <div className="flex flex-col min-w-35">
+                    <span className="font-semibold text-sm font-mono">
+                        {item?.sku || row.original.itemId}
                     </span>
-                )}
-            </div>
+                    {item?.description && (
+                        <span className="text-xs text-muted-foreground truncate max-w-50">
+                            {item.description}
+                        </span>
+                    )}
+                    {(size || color) && (
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            {size && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 ring-1 ring-inset ring-indigo-700/10 dark:ring-indigo-300/20">
+                                    Size: {size}
+                                </span>
+                            )}
+                            {color && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-pink-50 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300 ring-1 ring-inset ring-pink-700/10 dark:ring-pink-300/20">
+                                    Color: {color}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        },
+    },
+    {
+        accessorKey: "barcode",
+        header: "Barcode",
+        accessorFn: (row) => row.item?.barCode ?? "-",
+        cell: ({ row }) => (
+            <span className="text-sm text-muted-foreground whitespace-nowrap">
+                {row.original.item?.barCode || "-"}
+            </span>
+        ),
+    },
+    {
+        accessorKey: "size",
+        header: "Size",
+        accessorFn: (row) => row.item?.size?.name ?? "-",
+        cell: ({ row }) => (
+            <span className="text-sm font-medium">
+                {row.original.item?.size?.name || "-"}
+            </span>
+        ),
+    },
+    {
+        accessorKey: "color",
+        header: "Color",
+        accessorFn: (row) => row.item?.color?.name ?? "-",
+        cell: ({ row }) => (
+            <span className="text-sm font-medium">
+                {row.original.item?.color?.name || "-"}
+            </span>
         ),
     },
     {
@@ -601,6 +650,9 @@ export function StockReceivedList({ initialEntries, initialMeta }: StockReceived
                 ...entry,
                 sku: entry.item?.sku || entry.itemId || "",
                 itemDescription: entry.item?.description || "",
+                barcode: entry.item?.barCode || "",
+                size: entry.item?.size?.name || "",
+                color: entry.item?.color?.name || "",
                 warehouseName: entry.warehouse?.name || entry.warehouseId || "",
                 locationName: entry.location?.name || "",
                 referenceIdStr: entry.referenceId || "",
@@ -636,7 +688,10 @@ export function StockReceivedList({ initialEntries, initialMeta }: StockReceived
                 }}
                 searchFields={[
                     { key: "sku", label: "SKU" },
+                    { key: "barcode", label: "Barcode" },
                     { key: "itemDescription", label: "Item" },
+                    { key: "size", label: "Size" },
+                    { key: "color", label: "Color" },
                     { key: "warehouseName", label: "Warehouse" },
                     { key: "locationName", label: "Location" },
                     { key: "referenceIdStr", label: "Ref ID" },

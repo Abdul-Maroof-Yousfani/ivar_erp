@@ -333,13 +333,17 @@ export function PrintReceipt({
     order?.items && order.items.length > 0
       ? order.items.map((oi: any) => ({
           id: oi.id,
-          name: oi.item?.description || oi.item?.sku || "Item",
+          name: oi.item?.description || oi.item?.name || oi.item?.sku || "Item",
           sku: oi.item?.sku || "",
           upc: oi.item?.upc || oi.upc || "",
           size:
             typeof oi.item?.size === "object"
               ? oi.item?.size?.name
               : oi.item?.size || oi.size || "",
+          color:
+            typeof oi.item?.color === "object"
+              ? oi.item?.color?.name
+              : oi.item?.color || oi.color || "",
           price: Number(oi.unitPrice),
           quantity: Number(oi.quantity),
           discountPercent: Number(oi.discountPercent ?? 0),
@@ -352,7 +356,11 @@ export function PrintReceipt({
           taxAmount: Number(oi.taxAmount ?? 0),
           lineTotal: oi.lineTotal != null ? Number(oi.lineTotal) : undefined,
         }))
-      : (propCartItems ?? []);
+      : (propCartItems ?? []).map((ci: any) => ({
+          ...ci,
+          size: typeof ci.size === "object" ? ci.size?.name : ci.size || "",
+          color: typeof ci.color === "object" ? ci.color?.name : ci.color || "",
+        }));
 
   // ── Totals ────────────────────────────────────────────────────────
   // Subtotal should be sum of WOST (not retail price × quantity)
@@ -1006,7 +1014,10 @@ function ReceiptBody({
             key={item.id ?? idx}
             className="border-b border-dashed border-zinc-300 py-0.5"
           >
-            <p className="font-bold text-[10px] leading-tight">{item.name}</p>
+            <p className="font-bold text-[10px] leading-tight">
+              {item.name}
+              {item.color && item.color !== "-" ? ` (${item.color})` : ""}
+            </p>
 
             {!isGiftReceipt ? (
               <div
@@ -1410,8 +1421,11 @@ function A4InvoiceBody({
                   </td>
                   <td className="py-2 px-2">
                     <div className="font-bold text-zinc-800">{item.name}</div>
-                    <div className="text-[10px] text-zinc-500 font-mono">
-                      {uniqueNo}
+                    <div className="text-[10px] text-zinc-500 font-mono flex items-center gap-2">
+                      <span>{uniqueNo}</span>
+                      {item.color && item.color !== "-" && (
+                        <span>• Color: <strong className="font-medium text-zinc-700">{item.color}</strong></span>
+                      )}
                     </div>
                   </td>
                   <td className="py-2 px-2 text-center text-zinc-700">

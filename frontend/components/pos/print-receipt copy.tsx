@@ -334,6 +334,10 @@ export function PrintReceipt({
             typeof oi.item?.size === "object"
               ? oi.item?.size?.name
               : oi.item?.size || oi.size || "",
+          color:
+            typeof oi.item?.color === "object"
+              ? oi.item?.color?.name
+              : oi.item?.color || oi.color || "",
           price: Number(oi.unitPrice),
           quantity: Number(oi.quantity),
           discountPercent: Number(oi.discountPercent ?? 0),
@@ -346,7 +350,11 @@ export function PrintReceipt({
           taxAmount: Number(oi.taxAmount ?? 0),
           lineTotal: oi.lineTotal != null ? Number(oi.lineTotal) : undefined,
         }))
-      : (propCartItems ?? []);
+      : (propCartItems ?? []).map((ci: any) => ({
+          ...ci,
+          size: typeof ci.size === "object" ? ci.size?.name : ci.size || "",
+          color: typeof ci.color === "object" ? ci.color?.name : ci.color || "",
+        }));
 
   // ── Totals ────────────────────────────────────────────────────────
   // Subtotal should be sum of WOST (not retail price × quantity)
@@ -843,11 +851,9 @@ function ReceiptBody({
             {storePhone}
           </p>
         )}
-        {companyName && (
-          <p className="text-[9.5px] font-bold uppercase tracking-wide leading-tight mt-0.5">
-            {companyName}
-          </p>
-        )}
+        <p className="text-[9.5px] font-bold uppercase tracking-wide leading-tight mt-0.5">
+          {settings.receiptCompanyName || "YAFEEZ & SONS (PRIVATE) LIMITED"}
+        </p>
         {storeNTN && (
           <p className="text-[9px]">
             NTN: {storeNTN}
@@ -957,7 +963,10 @@ function ReceiptBody({
             key={item.id ?? idx}
             className="border-b border-dashed border-zinc-300 py-0.5"
           >
-            <p className="font-bold text-[10px] leading-tight">{item.name}</p>
+            <p className="font-bold text-[10px] leading-tight">
+              {item.name}
+              {item.color && item.color !== "-" ? ` (${item.color})` : ""}
+            </p>
 
             {!isGiftReceipt ? (
               <div
