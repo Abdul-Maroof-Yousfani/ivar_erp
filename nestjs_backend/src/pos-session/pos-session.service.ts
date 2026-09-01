@@ -28,7 +28,7 @@ export class PosSessionService {
     private readonly journalVoucherService: JournalVoucherService,
     private readonly receiptVoucherService: ReceiptVoucherService,
     @InjectQueue('reconciliation-export') private readonly exportQueue?: Queue,
-  ) {}
+  ) { }
 
   /**
    * Get the active session for the provided terminal (UUID),
@@ -387,13 +387,13 @@ export class PosSessionService {
 
     const cashier = session.userId
       ? await this.prismaMaster.user.findUnique({
-          where: { id: session.userId },
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        })
+        where: { id: session.userId },
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      })
       : null;
 
     const start = session.openedAt;
@@ -634,13 +634,13 @@ export class PosSessionService {
     // Fetch Cashier Profile from Central/Master DB
     const cashier = session.userId
       ? await this.prismaMaster.user.findUnique({
-          where: { id: session.userId },
-          select: {
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        })
+        where: { id: session.userId },
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      })
       : null;
 
     const toLocalDateString = (d: Date) => {
@@ -1110,12 +1110,12 @@ export class PosSessionService {
       { type: 'Cash', amount: cashSaleAmt, from: '-' },
       ...(cashGiftVouchersAmt > 0
         ? [
-            {
-              type: 'Cash - Gift Vouchers Issued',
-              amount: cashGiftVouchersAmt,
-              from: '-',
-            },
-          ]
+          {
+            type: 'Cash - Gift Vouchers Issued',
+            amount: cashGiftVouchersAmt,
+            from: '-',
+          },
+        ]
         : []),
       ...redeemedVouchersList,
     ];
@@ -1320,13 +1320,13 @@ export class PosSessionService {
         },
         cashier: cashier
           ? {
-              fullName: `${cashier.firstName} ${cashier.lastName}`.trim(),
-              email: cashier.email,
-            }
+            fullName: `${cashier.firstName} ${cashier.lastName}`.trim(),
+            email: cashier.email,
+          }
           : {
-              fullName: 'N/A',
-              email: 'N/A',
-            },
+            fullName: 'N/A',
+            email: 'N/A',
+          },
       },
       metrics: {
         grossSales: financials.sale,
@@ -1373,9 +1373,9 @@ export class PosSessionService {
   async getDaywiseReconciliation(locationId: string, date: string) {
     const locIds = locationId
       ? locationId
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
       : [];
 
     const computeSingleReconciliation = async (
@@ -1796,12 +1796,12 @@ export class PosSessionService {
         { type: 'Cash', amount: cashSaleAmt, from: '-' },
         ...(cashGiftVouchersAmt > 0
           ? [
-              {
-                type: 'Cash - Gift Vouchers Issued',
-                amount: cashGiftVouchersAmt,
-                from: '-',
-              },
-            ]
+            {
+              type: 'Cash - Gift Vouchers Issued',
+              amount: cashGiftVouchersAmt,
+              from: '-',
+            },
+          ]
           : []),
         ...redeemedVouchersList,
       ];

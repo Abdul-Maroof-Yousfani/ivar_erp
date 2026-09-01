@@ -585,7 +585,7 @@ export function StockTransferHistoryList({
 
             {/* Item Details Inspection Modal */}
             <Dialog open={!!selectedTransferForDetails} onOpenChange={(open) => !open && setSelectedTransferForDetails(null)}>
-                <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+                <DialogContent className="sm:max-w-5xl max-h-[85vh] flex flex-col">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-xl font-bold">
                             <Boxes className="h-6 w-6 text-primary" />
@@ -597,13 +597,16 @@ export function StockTransferHistoryList({
                     </DialogHeader>
 
                     {selectedTransferForDetails && (
-                        <div className="flex-1 overflow-y-auto space-y-4 my-2 pr-2">
-                            <div className="border rounded-lg overflow-hidden">
+                        <div className="flex-1 overflow-y-auto overflow-x-auto space-y-4 my-2 pr-2">
+                            <div className="border rounded-lg overflow-hidden min-w-max">
                                 <table className="w-full text-left border-collapse text-xs">
                                     <thead className="bg-muted/80 font-bold uppercase text-[10px] tracking-wider text-muted-foreground">
                                         <tr>
                                             <th className="p-3">#</th>
                                             <th className="p-3">Item SKU / Description</th>
+                                            <th className="p-3">Barcode</th>
+                                            <th className="p-3">Color</th>
+                                            <th className="p-3">Size</th>
                                             <th className="p-3 text-right">Dispatched Qty</th>
                                             <th className="p-3 text-right">Received Qty</th>
                                             <th className="p-3 text-right">Variance</th>
@@ -623,6 +626,15 @@ export function StockTransferHistoryList({
                                                     <td className="p-3">
                                                         <div className="font-bold text-sm">{item.item?.description || item.item?.name || "Item"}</div>
                                                         <div className="font-mono text-muted-foreground text-[11px]">SKU: {item.item?.sku || "N/A"}</div>
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <div className="font-mono text-xs">{item.item?.barCode || "—"}</div>
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <div className="text-xs">{item.item?.color?.name || "—"}</div>
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <div className="text-xs">{item.item?.size?.name || "—"}</div>
                                                     </td>
                                                     <td className="p-3 text-right font-bold text-sm">
                                                         {dispatched}

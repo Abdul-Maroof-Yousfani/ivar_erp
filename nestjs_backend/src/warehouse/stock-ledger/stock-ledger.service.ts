@@ -125,7 +125,7 @@ export class StockLedgerService {
           referenceId: true,
           locationId: true,
           createdAt: true,
-          item: { select: { itemId: true, sku: true, description: true } },
+          item: { select: { itemId: true, sku: true, description: true, barCode: true, size: { select: { name: true } }, color: { select: { name: true } } } },
           warehouse: { select: { name: true } },
         },
       }),

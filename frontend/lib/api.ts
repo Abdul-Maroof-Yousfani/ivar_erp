@@ -851,7 +851,7 @@ export interface StockLedgerEntry {
   locationId?: string;
   createdAt: string;
   // Optional expanded relations if backend includes them
-  item?: { itemId: string; sku: string; description: string | null; name?: string };
+  item?: { itemId: string; sku: string; description: string | null; name?: string; barCode?: string | null; size?: { name: string } | null; color?: { name: string } | null };
   warehouse?: { name: string };
   location?: { name: string; code: string } | null;
 }

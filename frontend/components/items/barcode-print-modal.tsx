@@ -43,9 +43,9 @@ interface LabelConfig {
 }
 
 const LABEL_CONFIGS: Record<LabelSize, LabelConfig> = {
-    small:  { width: 38,  height: 25,  fontSize: 6,  barcodeHeight: 28, cols: 4 },
-    medium: { width: 58,  height: 40,  fontSize: 7,  barcodeHeight: 44, cols: 3 },
-    large:  { width: 100, height: 60,  fontSize: 8,  barcodeHeight: 60, cols: 2 },
+    small: { width: 38, height: 25, fontSize: 6, barcodeHeight: 28, cols: 4 },
+    medium: { width: 58, height: 40, fontSize: 7, barcodeHeight: 44, cols: 3 },
+    large: { width: 100, height: 60, fontSize: 8, barcodeHeight: 60, cols: 2 },
 };
 
 // ─── SVG Barcode renderer ─────────────────────────────────────────────────────

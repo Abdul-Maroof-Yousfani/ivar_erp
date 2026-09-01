@@ -42,6 +42,11 @@ export class StockUploadCsvParserService {
         return ['barcode', 'barcodes', 'sku', 'skus', 'itemcode', 'itemid', 'code', 'productcode'].includes(norm);
     }
 
+    private isIgnoredColumn(header: string): boolean {
+        const norm = header.toLowerCase().replace(/[\s_\-\.]/g, '');
+        return ['size', 'color', 'colour', 'description', 'name'].includes(norm);
+    }
+
     /**
      * Given a raw row object (header → value) and the list of location-code
      * column headers, emit one StockUploadParsedRecord per non-zero location.
@@ -93,7 +98,7 @@ export class StockUploadCsvParserService {
                     // Resolve location headers from the first chunk's meta
                     if (!headersResolved && results.meta?.fields) {
                         locationHeaders = results.meta.fields.filter(
-                            (f) => !this.isBarcodeColumn(f),
+                            (f) => !this.isBarcodeColumn(f) && !this.isIgnoredColumn(f),
                         );
                         headersResolved = true;
                     }
@@ -143,7 +148,7 @@ export class StockUploadCsvParserService {
             }
 
             const locationHeaders = headers.filter(
-                (h) => !this.isBarcodeColumn(h),
+                (h) => !this.isBarcodeColumn(h) && !this.isIgnoredColumn(h),
             );
 
             let recordCount = 0;

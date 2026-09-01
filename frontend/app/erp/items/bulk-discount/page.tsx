@@ -1698,7 +1698,7 @@ export default function BulkDiscountPage() {
                                 placeholder="e.g. 89611234567, 100234&#10;SKU-9921"
                                 value={quickSelectText}
                                 onChange={e => setQuickSelectText(e.target.value)}
-                                className="min-h-[150px] font-mono text-sm"
+                                className="min-h-37.5 font-mono text-sm"
                             />
                             
                             <div className="flex items-center justify-between">

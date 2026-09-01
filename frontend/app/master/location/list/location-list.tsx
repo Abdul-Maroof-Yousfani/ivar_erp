@@ -134,7 +134,7 @@ export function LocationList({
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-muted-foreground">Outlet Status:</span>
         <Select value={onlineFilter} onValueChange={(v) => setOnlineFilter(v as any)}>
-          <SelectTrigger className="h-8 w-[130px] text-xs">
+          <SelectTrigger className="h-8 w-32.5 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -181,7 +181,7 @@ export function LocationList({
               Update {editRows.length} location(s)
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 max-h-[400px] overflow-y-auto py-4">
+          <div className="space-y-3 max-h-100 overflow-y-auto py-4">
             {editRows.map((row, index) => (
               <div key={row.id} className="flex gap-2">
                 <Input

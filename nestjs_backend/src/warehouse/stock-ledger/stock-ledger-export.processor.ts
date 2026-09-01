@@ -48,7 +48,10 @@ const COLUMNS: {
 }[] = [
   // Item Info
   { header: 'SKU',             key: 'sku',             width: 16, group: 'Item',      align: 'center' },
+  { header: 'Barcode',         key: 'barcode',         width: 16, group: 'Item',      align: 'center' },
   { header: 'Description',     key: 'description',     width: 30, group: 'Item' },
+  { header: 'Size',            key: 'size',            width: 10, group: 'Item',      align: 'center' },
+  { header: 'Color',           key: 'color',           width: 10, group: 'Item',      align: 'center' },
   // Location Info
   { header: 'Warehouse',       key: 'warehouse',       width: 20, group: 'Location' },
   { header: 'Location',        key: 'location',        width: 20, group: 'Location' },
@@ -244,7 +247,7 @@ export class StockLedgerExportProcessor {
             referenceId: true,
             locationId: true,
             createdAt: true,
-            item: { select: { itemId: true, sku: true, description: true, unitPrice: true } },
+            item: { select: { itemId: true, sku: true, description: true, unitPrice: true, barCode: true, size: { select: { name: true } }, color: { select: { name: true } } } },
             warehouse: { select: { name: true } },
           },
         });
@@ -274,7 +277,10 @@ export class StockLedgerExportProcessor {
 
           const rowData: Record<string, any> = {
             sku: entry.item?.sku || entry.itemId,
+            barcode: entry.item?.barCode || '-',
             description: entry.item?.description || '',
+            size: entry.item?.size?.name || '-',
+            color: entry.item?.color?.name || '-',
             warehouse: entry.warehouse?.name || entry.warehouseId,
             location: locationName,
             movementType: entry.movementType,

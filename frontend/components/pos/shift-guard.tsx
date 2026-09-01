@@ -132,7 +132,7 @@ export function ShiftGuard({ children }: { children: React.ReactNode }) {
                 toast.success("Shift successfully opened! POS unlocked.");
                 setFloatAmount("");
                 setFloatNote("");
-                
+
                 // Refetch session locally
                 await fetchSession();
 
@@ -149,7 +149,7 @@ export function ShiftGuard({ children }: { children: React.ReactNode }) {
     };
 
     // ─── BYPASS RULES ───
-    
+
     // 1. If loading active session, show premium loading screen to prevent any layout flash
     if (loading) {
         return (
