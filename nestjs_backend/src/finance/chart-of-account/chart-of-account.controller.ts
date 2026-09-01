@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Put,
+  Patch,
   Param,
   Delete,
   UseGuards,
@@ -31,7 +32,19 @@ export class ChartOfAccountController {
   @ApiOperation({ summary: 'Create a new chart of account' })
   create(@Body() createDto: CreateChartOfAccountDto, @Req() req: any) {
     return this.chartOfAccountService.create(createDto, {
-      userId: req.user?.id,
+      userId: req.user?.id || req.user?.userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+  }
+
+  @Post('bulk-subaccounts')
+  @ApiBearerAuth()
+  @Permissions('erp.finance.chart-of-account.create')
+  @ApiOperation({ summary: 'Bulk create sub-accounts under a parent account' })
+  createBulkSubAccounts(@Body() body: any, @Req() req: any) {
+    return this.chartOfAccountService.createBulkSubAccounts(body, {
+      userId: req.user?.id || req.user?.userId,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
@@ -45,6 +58,22 @@ export class ChartOfAccountController {
     return this.chartOfAccountService.findAll();
   }
 
+  @Get('tree')
+  @ApiBearerAuth()
+  @Permissions('erp.finance.chart-of-account.read')
+  @ApiOperation({ summary: 'Get all chart of accounts as a nested tree' })
+  findTree() {
+    return this.chartOfAccountService.findTree();
+  }
+
+  @Get(':id/children')
+  @ApiBearerAuth()
+  @Permissions('erp.finance.chart-of-account.read')
+  @ApiOperation({ summary: 'Get direct child accounts (for tag-account selection)' })
+  findChildAccounts(@Param('id') id: string) {
+    return this.chartOfAccountService.findChildAccounts(id);
+  }
+
   @Get(':id')
   @ApiBearerAuth()
   @Permissions('erp.finance.chart-of-account.read')
@@ -56,7 +85,23 @@ export class ChartOfAccountController {
   @Put(':id')
   @ApiBearerAuth()
   @Permissions('erp.finance.chart-of-account.update')
-  @ApiOperation({ summary: 'Update a chart of account' })
+  @ApiOperation({ summary: 'Update a chart of account (PUT)' })
+  updatePut(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateChartOfAccountDto,
+    @Req() req: any,
+  ) {
+    return this.chartOfAccountService.update(id, updateDto, {
+      userId: req.user?.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+  }
+
+  @Patch(':id')
+  @ApiBearerAuth()
+  @Permissions('erp.finance.chart-of-account.update')
+  @ApiOperation({ summary: 'Update a chart of account (PATCH)' })
   update(
     @Param('id') id: string,
     @Body() updateDto: UpdateChartOfAccountDto,

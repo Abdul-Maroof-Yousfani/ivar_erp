@@ -7,14 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
-import type { EmployeeDropdownOption } from "@/lib/actions/employee";
+import { EmployeeSelect } from "@/components/employees/employee-select";
 import type { Department, SubDepartment } from "@/lib/actions/department";
 import type { DeductionHead } from "@/lib/actions/deduction";
 
 interface DeductionFiltersProps {
   departments: Department[];
   subDepartments: SubDepartment[];
-  employees: EmployeeDropdownOption[];
   deductionHeads: DeductionHead[];
   loading?: boolean;
   loadingSubDepartments?: boolean;
@@ -42,7 +41,6 @@ interface DeductionFiltersProps {
 export function DeductionFilters({
   departments,
   subDepartments,
-  employees,
   deductionHeads,
   loading = false,
   loadingSubDepartments = false,
@@ -196,27 +194,19 @@ export function DeductionFilters({
               {/* Employee Filter */}
               <div className="space-y-2">
                 <Label htmlFor="employee-filter">Employee</Label>
-                {loading ? (
-                  <div className="h-10 bg-muted rounded-md animate-pulse" />
-                ) : (
-                  <Autocomplete
-                    id="employee-filter"
-                    options={[
-                      { value: "all", label: "All Employees" },
-                      ...employees.map((emp) => ({
-                        value: emp.id,
-                        label: `${emp.employeeName} (${emp.employeeId})`,
-                      })),
-                    ]}
-                    value={filters.employeeId}
-                    onValueChange={(value) =>
-                      handleFilterChange("employeeId", value || "all")
-                    }
-                    placeholder="Select Employee"
-                    searchPlaceholder="Search employee..."
-                    emptyMessage="No employees found"
-                  />
-                )}
+                <EmployeeSelect
+                  value={filters.employeeId}
+                  onValueChange={(value) =>
+                    handleFilterChange("employeeId", value || "all")
+                  }
+                  departmentId={filters.departmentId}
+                  subDepartmentId={filters.subDepartmentId}
+                  includeAllOption
+                  placeholder="Select Employee"
+                  searchPlaceholder="Search employee..."
+                  emptyMessage="No employees found"
+                  disabled={loading}
+                />
               </div>
 
               {/* Deduction Type Filter */}

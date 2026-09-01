@@ -1221,6 +1221,38 @@ export const PERMISSIONS = [
     description: 'Approve Receipt Voucher',
   },
 
+  // Finance Reports
+  {
+    name: 'erp.finance.general-ledger.read',
+    module: 'erp.finance.general-ledger',
+    action: 'read',
+    description: 'Read General Ledger',
+  },
+  {
+    name: 'erp.finance.general-ledger-summary.read',
+    module: 'erp.finance.general-ledger-summary',
+    action: 'read',
+    description: 'Read General Ledger Summary',
+  },
+  {
+    name: 'erp.finance.trial-balance.read',
+    module: 'erp.finance.trial-balance',
+    action: 'read',
+    description: 'Read Trial Balance',
+  },
+  {
+    name: 'erp.finance.balance-sheet.read',
+    module: 'erp.finance.balance-sheet',
+    action: 'read',
+    description: 'Read Balance Sheet',
+  },
+  {
+    name: 'erp.finance.profit-loss.read',
+    module: 'erp.finance.profit-loss',
+    action: 'read',
+    description: 'Read Profit & Loss',
+  },
+
   // Brand
   {
     name: 'master.brand.create',
@@ -1735,6 +1767,31 @@ export const PERMISSIONS = [
     action: 'delete',
     description: 'Delete Alliance',
   },
+  // POS Master - Merchants
+  {
+    name: 'master.merchant.create',
+    module: 'master.merchant',
+    action: 'create',
+    description: 'Create Merchant',
+  },
+  {
+    name: 'master.merchant.read',
+    module: 'master.merchant',
+    action: 'read',
+    description: 'Read Merchant',
+  },
+  {
+    name: 'master.merchant.update',
+    module: 'master.merchant',
+    action: 'update',
+    description: 'Update Merchant',
+  },
+  {
+    name: 'master.merchant.delete',
+    module: 'master.merchant',
+    action: 'delete',
+    description: 'Delete Merchant',
+  },
   // KPI
   {
     name: 'hr.kpi.read',
@@ -1807,17 +1864,24 @@ export const PERMISSIONS = [
   { name: 'erp.inventory.stock-transfer.read', description: 'View Stock Transfer History' },
   { name: 'erp.inventory.delivery-note.read', description: 'View Delivery Notes' },
   { name: 'erp.inventory.delivery-note.create', description: 'Create Delivery Note' },
-  { name: 'erp.inventory.stock-received.read', description: 'View Stock Received' },
-  { name: 'erp.inventory.stock-received.update', description: 'Update Stock Received Status' },
+  { name: 'erp.inventory.stock-ledger.read', description: 'View Stock Ledger' },
+  { name: 'erp.inventory.stock-ledger.update', description: 'Update Stock Ledger Status' },
   { name: 'erp.inventory.return-transfer.read', description: 'View Return Transfers' },
   { name: 'erp.inventory.return-transfer.create', description: 'Create Return Transfer' },
-
+  { name: 'erp.inventory.transfer.check',   description: "Check Store transfer"},
+  { name: 'erp.inventory.transfer.authorize',   description: "Authorize Store transfer"},
+  { name: 'pos.inventory.transfer.check',   description: "Check Store transfer from pos"},
+  { name: 'pos.inventory.transfer.authorize',   description: "Authorize Store transfer from pos"},
+  
   // ── ERP Inventory — Warehouse ───────────────────────────────────────────────
   { name: 'erp.inventory.warehouse.view', description: 'View Warehouse List & Dashboard' },
   { name: 'erp.inventory.warehouse.create', description: 'Create Warehouse' },
   { name: 'erp.inventory.warehouse.update', description: 'Update Warehouse' },
   { name: 'erp.inventory.warehouse.delete', description: 'Delete Warehouse' },
   { name: 'erp.inventory.warehouse.inventory.view', description: 'View Warehouse Inventory Levels' },
+
+  { name: 'erp.inventory.claims.acknowledge', description: 'Acknowledge Inventory Claim' },
+  { name: 'erp.inventory.claims.reject', description: 'Reject Inventory Claim' },
 
   // ── ERP Items ───────────────────────────────────────────────────────────────
   { name: 'erp.item.read', description: 'View Items Catalog' },
@@ -1856,11 +1920,15 @@ export const PERMISSIONS = [
   { name: 'erp.procurement.po.read', description: 'View Purchase Orders' },
   { name: 'erp.procurement.po.create', description: 'Create Purchase Order' },
   { name: 'erp.procurement.po.update', description: 'Update Purchase Order Status' },
+  { name: 'erp.procurement.po.check', description: 'Check / Verify Purchase Order' },
+  { name: 'erp.procurement.po.authorize', description: 'Authorize / Final Approve Purchase Order' },
 
   // ── ERP Procurement — GRN (stub for cross-reference) ───────────────────────
   { name: 'erp.procurement.grn.create', description: 'Create Goods Receipt Note' },
   { name: 'erp.procurement.grn.read', description: 'View Goods Receipt Notes' },
   { name: 'erp.procurement.grn.update', description: 'Update GRN Status' },
+  { name: 'erp.procurement.grn.check', description: 'Check / Verify Goods Receipt Note' },
+  { name: 'erp.procurement.grn.authorize', description: 'Authorize / Final Approve Goods Receipt Note' },
 
   // ── ERP Procurement — Landed Cost ───────────────────────────────────────────
   { name: 'erp.procurement.landed-cost.read', description: 'View Landed Costs' },
@@ -1944,7 +2012,6 @@ export const PERMISSIONS = [
   // ── POS — New Sale ──────────────────────────────────────────────────────────
   { name: 'pos.sale.create', description: 'Create a New POS Sale' },
   { name: 'pos.sale.item-discount', description: 'Apply Per-Item Discount Override on Cart' },
-  { name: 'pos.sale.transit-override', description: 'Mark Items as Stock-in-Transit (sell without stock)' },
 
   // ── POS — Checkout / Discounts ──────────────────────────────────────────────
   { name: 'pos.checkout.promo', description: 'Apply Promo Campaign Discount at Checkout' },
@@ -1995,6 +2062,12 @@ export const PERMISSIONS = [
 
   // ── POS — Dashboard ─────────────────────────────────────────────────────────
   { name: 'pos.dashboard.view', description: 'View POS Dashboard & Stats' },
+  { name: 'pos.report.view', description: 'View POS Reports' },
+
+
+
+  // ── Profile Management ──────────────────────────────────────────────────────
+  { name: 'profile.update', description: 'Update Own Profile Information' },
 
 ];
 

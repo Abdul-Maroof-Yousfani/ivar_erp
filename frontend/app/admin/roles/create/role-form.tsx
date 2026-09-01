@@ -22,7 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { toast } from "sonner";
 import { createRole, updateRole, Role } from "@/lib/actions/roles";
 import { Permission } from "@/lib/actions/permissions";
-import { Loader2, Check, Shield } from "lucide-react";
+import { Loader2, Check, Shield, Search, FolderOpen } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -44,6 +44,7 @@ interface RoleFormProps {
 export function RoleForm({ initialData, permissions }: RoleFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [searchTerm, setSearchTerm] = useState("");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -109,6 +110,36 @@ export function RoleForm({ initialData, permissions }: RoleFormProps) {
 
   const selectedPermissionIds = form.watch("permissionIds");
 
+  // Filtered permissions based on SearchTerm
+  const filteredGroupedPermissions = (Object.entries(groupedPermissions) as [string, Permission[]][]).reduce((acc, [module, perms]) => {
+    const search = searchTerm.toLowerCase().trim();
+    if (!search) {
+      acc[module] = perms;
+      return acc;
+    }
+
+    const matchedPerms = perms.filter(p => 
+      p.name.toLowerCase().includes(search) ||
+      (p.description || "").toLowerCase().includes(search) ||
+      p.action.toLowerCase().includes(search) ||
+      module.toLowerCase().includes(search)
+    );
+
+    if (matchedPerms.length > 0) {
+      acc[module] = matchedPerms;
+    }
+    return acc;
+  }, {} as Record<string, Permission[]>);
+
+  const filteredModules = Object.keys(filteredGroupedPermissions).sort();
+
+  const filteredModulesByCategory = {
+    HR:     filteredModules.filter(m => getCategory(m) === "HR"),
+    Master: filteredModules.filter(m => getCategory(m) === "Master"),
+    ERP:    filteredModules.filter(m => getCategory(m) === "ERP"),
+    POS:    filteredModules.filter(m => getCategory(m) === "POS"),
+  };
+
   // Helper to get selected count per category
   const getSelectedCount = (category: "HR" | "Master" | "ERP" | "POS") => {
     return modulesByCategory[category].reduce((count, module) => {
@@ -149,7 +180,7 @@ export function RoleForm({ initialData, permissions }: RoleFormProps) {
   }
 
   const handleModuleSelect = (module: string, checked: boolean) => {
-    const modulePermissions = groupedPermissions[module].map(p => p.id);
+    const modulePermissions = (filteredGroupedPermissions[module] || []).map(p => p.id);
     const currentPermissions = form.getValues("permissionIds");
     
     let newPermissions: string[];
@@ -189,24 +220,27 @@ export function RoleForm({ initialData, permissions }: RoleFormProps) {
   const renderModuleList = (categoryModules: string[]) => (
       <div className="space-y-6">
           {categoryModules.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
+              <div className="text-center py-8 text-muted-foreground flex flex-col items-center gap-2">
+                  <Shield className="h-8 w-8 text-muted-foreground/35" />
                   No modules found in this category.
               </div>
           )}
           {categoryModules.map((module) => {
-              const perms = groupedPermissions[module];
+              const perms = filteredGroupedPermissions[module] || [];
               const allSelected = perms.every(p => selectedPermissionIds.includes(p.id));
               const someSelected = perms.some(p => selectedPermissionIds.includes(p.id));
 
               return (
-                  <div key={module} className="space-y-2 border rounded-lg p-4 bg-card/50">
-                      <div className="flex items-center space-x-2 mb-2">
+                  <div key={module} className="space-y-3 border rounded-xl p-4 bg-muted/5 shadow-sm hover:shadow-md transition-all duration-200">
+                      <div className="flex items-center space-x-2 border-b border-border/40 pb-2 mb-2">
                           <Checkbox 
                               id={`module-${module}`}
                               checked={allSelected ? true : someSelected ? "indeterminate" : false}
                               onCheckedChange={(checked) => handleModuleSelect(module, !!checked)}
+                              className="h-4 w-4 rounded-md border-muted-foreground/30 focus-visible:ring-violet-500/50"
                           />
-                          <label htmlFor={`module-${module}`} className="text-sm font-semibold leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 capitalize">
+                          <label htmlFor={`module-${module}`} className="text-xs font-bold leading-none uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1.5 cursor-pointer select-none">
+                              <FolderOpen className="h-3.5 w-3.5 text-violet-500/80" />
                               {module
                                 .replace(/^hr\./, '')
                                 .replace(/^master\./, '')
@@ -218,38 +252,46 @@ export function RoleForm({ initialData, permissions }: RoleFormProps) {
                                 .replace(/-/g, ' ')}
                           </label>
                       </div>
-                      <div className="ml-7 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {perms.map((permission) => (
-                              <FormField
-                                  key={permission.id}
-                                  control={form.control}
-                                  name="permissionIds"
-                                  render={({ field }) => (
-                                      <FormItem
-                                          key={permission.id}
-                                          className="flex flex-row items-start space-x-3 space-y-0"
-                                      >
-                                          <FormControl>
-                                              <Checkbox
-                                                  checked={field.value?.includes(permission.id)}
-                                                  onCheckedChange={(checked) => {
-                                                      return checked
-                                                          ? field.onChange([...field.value, permission.id])
-                                                          : field.onChange(
-                                                              field.value?.filter(
-                                                                  (value) => value !== permission.id
-                                                              )
-                                                          )
-                                                  }}
-                                              />
-                                          </FormControl>
-                                          <FormLabel className="font-normal text-xs cursor-pointer">
-                                              {permission.action}
-                                          </FormLabel>
-                                      </FormItem>
-                                  )}
-                              />
-                          ))}
+                      <div className="ml-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {perms.map((permission) => {
+                              const isChecked = selectedPermissionIds.includes(permission.id);
+                              return (
+                                <FormField
+                                    key={permission.id}
+                                    control={form.control}
+                                    name="permissionIds"
+                                    render={({ field }) => (
+                                        <FormItem
+                                            key={permission.id}
+                                            className={`flex flex-row items-center space-x-2.5 space-y-0 p-2 rounded-lg border transition-all duration-150 ${
+                                                isChecked
+                                                    ? "bg-violet-500/5 border-violet-500/25 hover:bg-violet-500/10 shadow-inner"
+                                                    : "bg-background border-border/60 hover:bg-muted/30"
+                                            }`}
+                                        >
+                                            <FormControl>
+                                                <Checkbox
+                                                    checked={isChecked}
+                                                    onCheckedChange={(checked) => {
+                                                        return checked
+                                                            ? field.onChange([...field.value, permission.id])
+                                                            : field.onChange(
+                                                                field.value?.filter(
+                                                                    (value) => value !== permission.id
+                                                                )
+                                                            )
+                                                    }}
+                                                    className="h-3.5 w-3.5 rounded border-muted-foreground/30 focus-visible:ring-violet-500/50"
+                                                />
+                                            </FormControl>
+                                            <FormLabel className="font-medium text-xs cursor-pointer select-none flex-1 truncate py-0.5">
+                                                {permission.action}
+                                            </FormLabel>
+                                        </FormItem>
+                                    )}
+                                />
+                              );
+                          })}
                       </div>
                   </div>
               );
@@ -273,9 +315,10 @@ export function RoleForm({ initialData, permissions }: RoleFormProps) {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Left Column: Role Details & Summary */}
             <div className="lg:col-span-4 space-y-6">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Role Details</CardTitle>
+                <Card className="border-t-4 border-t-violet-600 bg-background/95 backdrop-blur-md shadow-sm">
+                    <CardHeader className="pb-4">
+                        <CardTitle className="text-lg font-bold">Role Details</CardTitle>
+                        <CardDescription className="text-xs">Provide a name and descriptor for the role definition.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-5">
                         <FormField
@@ -283,9 +326,9 @@ export function RoleForm({ initialData, permissions }: RoleFormProps) {
                         name="name"
                         render={({ field }) => (
                             <FormItem>
-                            <FormLabel>Role Name</FormLabel>
+                            <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Role Name</FormLabel>
                             <FormControl>
-                                <Input placeholder="e.g. HR Manager" {...field} />
+                                <Input placeholder="e.g. Product Information" {...field} className="h-9 focus-visible:ring-violet-500/50" />
                             </FormControl>
                             <FormMessage />
                             </FormItem>
@@ -296,9 +339,9 @@ export function RoleForm({ initialData, permissions }: RoleFormProps) {
                         name="description"
                         render={({ field }) => (
                             <FormItem>
-                            <FormLabel>Description</FormLabel>
+                            <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Description</FormLabel>
                             <FormControl>
-                                <Textarea placeholder="Describe the role's responsibilities" {...field} />
+                                <Textarea placeholder="Describe the role's access permissions" {...field} className="min-h-[100px] focus-visible:ring-violet-500/50" />
                             </FormControl>
                             <FormMessage />
                             </FormItem>
@@ -308,27 +351,27 @@ export function RoleForm({ initialData, permissions }: RoleFormProps) {
                 </Card>
 
                 {/* Permissions Summary Card */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="text-lg flex items-center gap-2">
-                            <Shield className="h-5 w-5" />
+                <Card className="border-t-4 border-t-fuchsia-600 bg-background/95 backdrop-blur-md shadow-sm">
+                    <CardHeader className="pb-4">
+                        <CardTitle className="text-lg flex items-center gap-2 font-bold bg-gradient-to-r from-violet-600 to-fuchsia-600 bg-clip-text text-transparent">
+                            <Shield className="h-5 w-5 text-violet-600" />
                             Permissions Summary
                         </CardTitle>
-                        <CardDescription>Overview of assigned permissions</CardDescription>
+                        <CardDescription className="text-xs">Overview of assigned permissions</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-8">
+                    <CardContent className="space-y-6">
                         {(["HR", "Master", "ERP", "POS"] as const).map((cat) => {
                             const count = getSelectedCount(cat);
                             const total = getTotalCount(cat);
                             return (
-                                <div key={cat} className="space-y-3">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="font-medium">{cat}</span>
-                                        <span className="text-muted-foreground">{count} / {total}</span>
+                                <div key={cat} className="space-y-2">
+                                    <div className="flex justify-between text-xs font-semibold">
+                                        <span className="text-muted-foreground">{cat}</span>
+                                        <span className="text-foreground">{count} / {total}</span>
                                     </div>
                                     <div className="h-2 bg-secondary rounded-full overflow-hidden">
                                         <div 
-                                            className="h-full bg-primary transition-all duration-300" 
+                                            className="h-full bg-gradient-to-r from-violet-600 to-fuchsia-600 transition-all duration-300 rounded-full" 
                                             style={{ width: `${total > 0 ? (count / total) * 100 : 0}%` }}
                                         />
                                     </div>
@@ -341,55 +384,80 @@ export function RoleForm({ initialData, permissions }: RoleFormProps) {
 
             {/* Right Column: Permission Tabs content */}
             <div className="lg:col-span-8">
-                <Tabs value={activeTab} onValueChange={(val) => setActiveTab(val as any)} className="w-full">
-                    <Card>
-                        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-2 sm:space-y-0 pb-2">
-                            <TabsList className="grid w-[400px] grid-cols-4">
-                                <TabsTrigger value="HR">HR</TabsTrigger>
-                                <TabsTrigger value="Master">Master</TabsTrigger>
-                                <TabsTrigger value="ERP">ERP</TabsTrigger>
-                                <TabsTrigger value="POS">POS</TabsTrigger>
-                            </TabsList>
-                            <div className="flex gap-2">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleSelectAllInCategory(activeTab, true)}
-                                >
-                                    Select All
-                                </Button>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleSelectAllInCategory(activeTab, false)}
-                                >
-                                    Deselect All
-                                </Button>
+                <Tabs value={activeTab} onValueChange={(val) => {
+                    setActiveTab(val as any);
+                    setSearchTerm("");
+                }} className="w-full">
+                    <Card className="shadow-sm">
+                        <CardHeader className="flex flex-col gap-4 pb-4 border-b border-border/60">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <TabsList className="grid w-full sm:w-[400px] grid-cols-4 bg-muted/40">
+                                    <TabsTrigger value="HR">HR</TabsTrigger>
+                                    <TabsTrigger value="Master">Master</TabsTrigger>
+                                    <TabsTrigger value="ERP">ERP</TabsTrigger>
+                                    <TabsTrigger value="POS">POS</TabsTrigger>
+                                </TabsList>
+                                
+                                <div className="relative w-full sm:w-64 shrink-0">
+                                    <Search className="absolute left-2.5 top-2 text-muted-foreground h-4 w-4" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search permissions..."
+                                        className="flex h-8 w-full rounded-lg border border-input/60 bg-background pl-8 pr-3 py-1 text-xs shadow-sm transition-all placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/50"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/20 px-3 py-2 rounded-lg border border-border/50">
+                                <span>Configure the permission matrix for this role.</span>
+                                <div className="flex gap-2 shrink-0">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 text-[10px] px-2.5 rounded-md hover:bg-background shadow-sm transition-all"
+                                        onClick={() => handleSelectAllInCategory(activeTab, true)}
+                                    >
+                                        Select All
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 text-[10px] px-2.5 rounded-md hover:bg-background shadow-sm transition-all"
+                                        onClick={() => handleSelectAllInCategory(activeTab, false)}
+                                    >
+                                        Deselect All
+                                    </Button>
+                                </div>
                             </div>
                         </CardHeader>
-                        <CardContent className="pt-0">
+                        <CardContent className="pt-4">
                             <ScrollArea className="h-[490px] pr-4">
                                 <TabsContent value="HR" className="mt-0 space-y-4">
-                                    {renderModuleList(modulesByCategory["HR"])}
+                                    {renderModuleList(filteredModulesByCategory["HR"])}
                                 </TabsContent>
                                  <TabsContent value="Master" className="mt-0 space-y-0">
                                     <Tabs 
                                         value={masterFilter} 
-                                        onValueChange={(val) => setMasterFilter(val as any)}
+                                        onValueChange={(val) => {
+                                            setMasterFilter(val as any);
+                                            setSearchTerm("");
+                                        }}
                                         className="w-full"
                                     >
-                                        <TabsList className="bg-muted/20 w-full grid grid-cols-4 mb-2">
-                                            <TabsTrigger value="All" className="text-xs">All Master</TabsTrigger>
-                                            <TabsTrigger value="HR" className="text-xs">HR Master</TabsTrigger>
-                                            <TabsTrigger value="ERP" className="text-xs">ERP Master</TabsTrigger>
-                                            <TabsTrigger value="POS" className="text-xs">POS Master</TabsTrigger>
+                                        <TabsList className="bg-muted/20 w-full grid grid-cols-4 mb-3 h-8 p-0.5">
+                                            <TabsTrigger value="All" className="text-[11px] py-1">All Master</TabsTrigger>
+                                            <TabsTrigger value="HR" className="text-[11px] py-1">HR Master</TabsTrigger>
+                                            <TabsTrigger value="ERP" className="text-[11px] py-1">ERP Master</TabsTrigger>
+                                            <TabsTrigger value="POS" className="text-[11px] py-1">POS Master</TabsTrigger>
                                         </TabsList>
 
                                         <TabsContent value={masterFilter} className="mt-0 space-y-4">
                                             {renderModuleList(
-                                                modulesByCategory["Master"].filter(m => 
+                                                filteredModulesByCategory["Master"].filter(m => 
                                                     masterFilter === "All" || getMasterSubCategory(m) === masterFilter
                                                 )
                                             )}
@@ -397,10 +465,10 @@ export function RoleForm({ initialData, permissions }: RoleFormProps) {
                                     </Tabs>
                                 </TabsContent>
                                 <TabsContent value="ERP" className="mt-0 space-y-4">
-                                    {renderModuleList(modulesByCategory["ERP"])}
+                                    {renderModuleList(filteredModulesByCategory["ERP"])}
                                 </TabsContent>
                                 <TabsContent value="POS" className="mt-0 space-y-4">
-                                    {renderModuleList(modulesByCategory["POS"])}
+                                    {renderModuleList(filteredModulesByCategory["POS"])}
                                 </TabsContent>
                             </ScrollArea>
                         </CardContent>

@@ -14,7 +14,6 @@ export type ParseCallback = (record: ParsedRecord) => Promise<void>;
 @Injectable()
 export class CsvParserService {
     private readonly logger = new Logger(CsvParserService.name);
-    private static readonly HARDCODED_BRAND = 'IVAR';
 
     /**
      * Normalize N/A values to null
@@ -26,7 +25,7 @@ export class CsvParserService {
         const strValue = String(value).trim();
 
         // Check for various N/A patterns
-        const naPatterns = ['n/a', 'n / a', 'null', 'none', '-', "NA"];
+        const naPatterns = ['n/a', 'n / a', 'null', 'none', '-', 'na', "NA"];
         if (naPatterns.includes(strValue.toLowerCase()) || strValue === '') {
             return null;
         }
@@ -130,47 +129,121 @@ export class CsvParserService {
     }
 
     /**
-     * Map Excel column names to schema field names and preserve original fields
+     * Map Excel column names to schema field names and preserve original fields.
+     * Supports both legacy column names and the new uploader header format.
      */
     private mapColumns(row: any): ParsedRecord['data'] {
         return {
             ...row, // Keep all original row properties available for generic processors
-            // Brand is hardcoded now (Concept removed from create flow)
-            concept: CsvParserService.HARDCODED_BRAND,
+
+            // Brand / Concept — new header: "Brand", legacy: "Concept"
+            concept: this.normalizeValue(
+                this.getValue(row, 'Brand') || this.getValue(row, 'Concept'),
+            ),
+
             description: this.normalizeValue(this.getValue(row, 'Description')),
-            imageUrl: this.normalizeValue(this.getValue(row, 'ImageUrl') || this.getValue(row, 'Image URL') || this.getValue(row, 'Image')),
+
             fob: this.parseNumber(this.getValue(row, 'FOB')) as number,
-            unitCost: this.parseNumber(this.getValue(row, 'UnitCost')) as number,
-            unitPrice: this.parseNumber(this.getValue(row, 'UnitPrice')) as number,
-            taxRate1: this.parseNumber(this.getValue(row, 'TaxRate1')) as number,
-            taxRate2: this.parseNumber(this.getValue(row, 'TaxRate2')) as number,
-            discountStartDate: this.parseDate(this.getValue(row, 'DiscountStartDate')),
-            discountEndDate: this.parseDate(this.getValue(row, 'DiscountEndDate')),
-            discountRate: this.parseNumber(this.getValue(row, 'DiscountRate')) as number,
+            unitCost: this.parseNumber(this.getValue(row, 'Unit Cost') ?? this.getValue(row, 'UnitCost')) as number,
+            unitPrice: this.parseNumber(this.getValue(row, 'Unit Price') ?? this.getValue(row, 'UnitPrice')) as number,
+
+            // Tax rates — new headers: "Sale Tax Rate" / "Additional Sales Tax", legacy: "TaxRate1" / "TaxRate2"
+            taxRate1: this.parseNumber(
+                this.getValue(row, 'Sale Tax Rate') ?? this.getValue(row, 'TaxRate1'),
+            ) as number,
+            taxRate2: this.parseNumber(
+                this.getValue(row, 'Additional Sales Tax') ?? this.getValue(row, 'TaxRate2'),
+            ) as number,
+
+            // Discount fields — new headers use spaces; legacy used PascalCase
+            discountStartDate: this.parseDate(
+                this.getValue(row, 'Discount Start Date') ?? this.getValue(row, 'DiscountStartDate'),
+            ),
+            discountEndDate: this.parseDate(
+                this.getValue(row, 'Discount End Date') ?? this.getValue(row, 'DiscountEndDate'),
+            ),
+            discountRate: this.parseNumber(
+                this.getValue(row, 'Discount %') ?? this.getValue(row, 'DiscountRate'),
+            ) as number,
             discountAmount: this.parseNumber(this.getValue(row, 'DiscountAmount')) as number,
+
             isActive: this.parseBoolean(this.getValue(row, 'IsActive')) as boolean,
+
             sku: this.normalizeValue(this.getValue(row, 'SKU')),
-            hsCode: this.normalizeValue(this.getValue(row, 'HSCode')),
-            barCode: this.normalizeValue(this.getValue(row, 'BarCode')),
-
-            // Classification (as per create page)
-            category: this.normalizeValue(this.getValue(row, 'Category')),
-            subCategory: this.normalizeValue(this.getValue(row, 'SubCategory') || this.getValue(row, 'Sub Category')),
-            channelClass: this.normalizeValue(this.getValue(row, 'ChannelClass') || this.getValue(row, 'Channel Class')),
-            gender: this.normalizeValue(this.getValue(row, 'Gender')),
-            season: this.normalizeValue(this.getValue(row, 'Season')),
-
-            // Attributes (as per create page)
             size: this.normalizeValue(this.getValue(row, 'Size')),
             color: this.normalizeValue(this.getValue(row, 'Color')),
-            silhouette: this.normalizeValue(this.getValue(row, 'Silhouette')),
+            division: this.normalizeValue(this.getValue(row, 'Division')),
+            department: this.normalizeValue(this.getValue(row, 'Department')),
 
-            // NOTE: ItemID is auto-generated now; we still accept it (optional) for
-            // cases where the file intends to update existing items.
-            itemId: this.normalizeValue(this.getValue(row, 'ItemID')),
+            // Product Category — new header: "Product Category/Series", legacy: "ProductCategory"
+            productCategory: this.normalizeValue(
+                this.getValue(row, 'Product Category/Series') || this.getValue(row, 'ProductCategory'),
+            ),
 
-            // Note: Legacy fields like division/class/subclass/segment can still exist
-            // in old files, but are intentionally ignored by the current uploader.
+            // Silhouette — new header: "Silhouette/Prodcut Type" (note typo in spec), legacy: "Silhouette"
+            silhouette: this.normalizeValue(
+                this.getValue(row, 'Silhouette/Prodcut Type') ||
+                this.getValue(row, 'Silhouette/Product Type') ||
+                this.getValue(row, 'Silhouette'),
+            ),
+
+            class: this.normalizeValue(this.getValue(row, 'Class')),
+
+            // Sub Class — new header uses a space: "Sub Class", legacy: "Subclass"
+            subclass: this.normalizeValue(
+                this.getValue(row, 'Sub Class') || this.getValue(row, 'Subclass'),
+            ),
+
+            channelClass: this.normalizeValue(
+                this.getValue(row, 'Channel Class') || this.getValue(row, 'ChannelClass'),
+            ),
+
+            season: this.normalizeValue(this.getValue(row, 'Season')),
+
+            // Old Season — new header: "Old Season", legacy: "OldSeason"
+            oldSeason: this.normalizeValue(
+                this.getValue(row, 'Old Season') || this.getValue(row, 'OldSeason'),
+            ),
+
+            gender: this.normalizeValue(this.getValue(row, 'Gender')),
+
+            // Case Material — new header: "Case Material", legacy: "Case"
+            case: this.normalizeValue(
+                this.getValue(row, 'Case Material') || this.getValue(row, 'Case'),
+            ),
+
+            band: this.normalizeValue(this.getValue(row, 'Band')),
+
+            // Movement Type — new header: "Movement Type" (with space), legacy: "MovementType"
+            movementType: this.normalizeValue(
+                this.getValue(row, 'Movement Type') || this.getValue(row, 'MovementType'),
+            ),
+
+            // Movement Name — new field
+            movementName: this.normalizeValue(this.getValue(row, 'Movement Name')),
+
+            // Heel Height — new header: "Heel Height" (with space), legacy: "HeelHeight"
+            heelHeight: this.normalizeValue(
+                this.getValue(row, 'Heel Height') || this.getValue(row, 'HeelHeight'),
+            ),
+
+            width: this.normalizeValue(this.getValue(row, 'Width')),
+
+            // HS Code — new header: "HS Code" (with space), legacy: "HSCode"
+            hsCode: this.normalizeValue(
+                this.getValue(row, 'HS Code') || this.getValue(row, 'HSCode'),
+            ),
+
+            // Item ID — Ignored from the sheet completely (auto-assigned for new items, matched by barcode/SKU for existing)
+            itemId: null,
+
+            barCode: this.normalizeValue(this.getValue(row, 'BarCode')),
+            segment: this.normalizeValue(this.getValue(row, 'Segment')),
+
+            // New fields
+            uom: this.normalizeValue(this.getValue(row, 'UOM')),
+            currency: this.normalizeValue(this.getValue(row, 'Currency')),
+            launchDate: this.parseDate(this.getValue(row, 'Launch Date') ?? this.getValue(row, 'LaunchDate')),
         };
     }
 
@@ -216,14 +289,39 @@ export class CsvParserService {
             if (!worksheet) return;
 
             const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+            
+            // Detect if this is a two-header sheet (group headers on row 1, field names on row 2)
+            let headerRowIndex = range.s.r;
+            if (range.e.r - range.s.r >= 1) {
+                const firstRowCells: string[] = [];
+                const secondRowCells: string[] = [];
+                for (let C = range.s.c; C <= range.e.c; ++C) {
+                    const cell1 = worksheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
+                    const cell2 = worksheet[XLSX.utils.encode_cell({ r: range.s.r + 1, c: C })];
+                    firstRowCells.push(cell1 && cell1.v !== undefined && cell1.v !== null ? String(cell1.v).trim().toLowerCase() : '');
+                    secondRowCells.push(cell2 && cell2.v !== undefined && cell2.v !== null ? String(cell2.v).trim().toLowerCase() : '');
+                }
+                
+                const hasEmployeeIdInSecondRow = secondRowCells.some(v => 
+                    v === 'employee id' || v === 'employee_id' || v === 'employee name' || v === 'employee_name'
+                );
+                const hasGroupHeadersInFirstRow = firstRowCells.some(v =>
+                    ['identity', 'employment', 'personal', 'contact', 'financial', 'audit'].includes(v)
+                );
+                
+                if (hasEmployeeIdInSecondRow || hasGroupHeadersInFirstRow) {
+                    headerRowIndex = range.s.r + 1;
+                }
+            }
+
             const headers: string[] = [];
             for (let C = range.s.c; C <= range.e.c; ++C) {
-                const cell = worksheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
-                headers.push(cell ? String(cell.v) : `UNKNOWN_${C}`);
+                const cell = worksheet[XLSX.utils.encode_cell({ r: headerRowIndex, c: C })];
+                headers.push(cell && cell.v !== undefined && cell.v !== null ? String(cell.v).trim() : `UNKNOWN_${C}`);
             }
 
             let rowCount = 0;
-            for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+            for (let R = headerRowIndex + 1; R <= range.e.r; ++R) {
                 const rowObj: any = {};
                 let hasData = false;
                 for (let C = range.s.c; C <= range.e.c; ++C) {
@@ -328,14 +426,39 @@ export class CsvParserService {
 
             // Use sheet_to_json row by row to save memory compared to full array conversion
             const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+            
+            // Detect if this is a two-header sheet (group headers on row 1, field names on row 2)
+            let headerRowIndex = range.s.r;
+            if (range.e.r - range.s.r >= 1) {
+                const firstRowCells: string[] = [];
+                const secondRowCells: string[] = [];
+                for (let C = range.s.c; C <= range.e.c; ++C) {
+                    const cell1 = worksheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
+                    const cell2 = worksheet[XLSX.utils.encode_cell({ r: range.s.r + 1, c: C })];
+                    firstRowCells.push(cell1 && cell1.v !== undefined && cell1.v !== null ? String(cell1.v).trim().toLowerCase() : '');
+                    secondRowCells.push(cell2 && cell2.v !== undefined && cell2.v !== null ? String(cell2.v).trim().toLowerCase() : '');
+                }
+                
+                const hasEmployeeIdInSecondRow = secondRowCells.some(v => 
+                    v === 'employee id' || v === 'employee_id' || v === 'employee name' || v === 'employee_name'
+                );
+                const hasGroupHeadersInFirstRow = firstRowCells.some(v =>
+                    ['identity', 'employment', 'personal', 'contact', 'financial', 'audit'].includes(v)
+                );
+                
+                if (hasEmployeeIdInSecondRow || hasGroupHeadersInFirstRow) {
+                    headerRowIndex = range.s.r + 1;
+                }
+            }
+
             const headers: string[] = [];
             for (let C = range.s.c; C <= range.e.c; ++C) {
-                const cell = worksheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
-                headers.push(cell ? cell.v : `UNKNOWN_${C}`);
+                const cell = worksheet[XLSX.utils.encode_cell({ r: headerRowIndex, c: C })];
+                headers.push(cell && cell.v !== null ? String(cell.v).trim() : `UNKNOWN_${C}`);
             }
 
             let rowCount = 0;
-            for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+            for (let R = headerRowIndex + 1; R <= range.e.r; ++R) {
                 const rowObj: any = {};
                 let hasData = false;
                 for (let C = range.s.c; C <= range.e.c; ++C) {

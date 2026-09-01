@@ -23,7 +23,7 @@ import {
   Loader2, AlertCircle, Eye, EyeOff, Monitor, ShieldCheck,
   Wifi, WifiOff, Building2, ArrowLeft, Store, CheckCircle2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, COMPANY_NAME } from "@/lib/utils";
 import { buildSubdomainUrl } from "@/lib/navigation";
 import { posLoginClient, getGlobalPosContext, adminFetchLocationsClient } from "@/lib/client-auth";
 import { setPosTerminalAction } from "@/lib/actions/pos";
@@ -300,7 +300,7 @@ export default function DesktopLoginPage() {
         </div>
       </div>
       <div className="text-center space-y-1">
-        <p className="font-semibold text-foreground">Ivar POS</p>
+        <p className="font-semibold text-foreground">{COMPANY_NAME} POS</p>
         <p className="text-sm text-muted-foreground">Verifying your session...</p>
       </div>
     </div>
@@ -351,9 +351,9 @@ export default function DesktopLoginPage() {
       )}
 
       <div className="space-y-2">
-        <Label htmlFor="email" className="text-sm font-semibold">Email Address</Label>
+        <Label htmlFor="email" className="text-sm font-semibold">Email Address or Employee ID</Label>
         <Input
-          id="email" type="email" placeholder="name@company.com" required autoFocus
+          id="email" type="text" placeholder="name@company.com or EMP-001" required autoFocus
           disabled={loginPending} value={email} onChange={(e) => setEmail(e.target.value)}
           className="h-11 border-primary/10 focus-visible:ring-primary/20"
         />
@@ -565,7 +565,7 @@ export default function DesktopLoginPage() {
 
   // ── Step titles ───────────────────────────────────────────────────────────
   const titles: Record<string, string> = {
-    checking: "Speed Limit POS",
+    checking: `${COMPANY_NAME} POS`,
     login: "Sign in to POS",
     registering: "Registering Device",
     "pos-setup:location-list": "Select Location",

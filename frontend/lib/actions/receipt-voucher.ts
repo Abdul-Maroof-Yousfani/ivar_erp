@@ -3,24 +3,44 @@
 import { authFetch } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
+export interface ReceiptVoucherDetail {
+    id: string;
+    accountId: string;
+    accountName?: string;
+    accountCode?: string;
+    tagAccountId?: string;
+    tagAccountName?: string;
+    tagAccountCode?: string;
+    debit: number;
+    credit: number;
+    narration?: string;
+    refBillNo?: string;
+    refBillNo2?: string;
+    taxType?: string;
+}
+
 export interface ReceiptVoucher {
     id: string;
     type: "bank" | "cash";
     rvNo: string;
     rvDate: string;
     refBillNo?: string;
+    refBillNo2?: string;
     billDate?: string;
     debitAccountId: string;
-    debitAccount?: any;
     debitAccountName?: string;
+    debitAccountCode?: string;
     debitAmount: number;
     customerId?: string;
     status: "pending" | "approved" | "rejected";
-    description: string;
+    description?: string;
+    taxType?: string;
+    isAdvance?: boolean;
     chequeNo?: string;
     chequeDate?: string;
-    details: { accountId: string; accountName?: string; credit: number }[];
+    details: ReceiptVoucherDetail[];
     invoices?: { salesInvoiceId: string; receivedAmount: number }[];
+    folio?: string | null;
     createdAt: string;
     createdBy: string;
 }
@@ -31,12 +51,28 @@ export async function getReceiptVouchers(type?: "bank" | "cash") {
         const response = await authFetch(`/finance/receipt-vouchers${q}`, { cache: 'no-store' });
         if (!response.ok) return { status: false, data: [] };
         const data = response.data;
+        const vouchersArray = data.data || data;
+        
+        if (!Array.isArray(vouchersArray)) {
+            return { status: false, data: [] };
+        }
+
         return {
             status: true,
-            data: data.map((rv: any) => ({
+            data: vouchersArray.map((rv: any) => ({
                 ...rv,
-                debitAccountName: rv.debitAccount?.name || "Unknown Account",
-                details: rv.details?.map((d: any) => ({ ...d, accountName: d.account?.name || "Unknown" })) || [],
+                debitAmount: rv.debitAmount !== undefined ? Number(rv.debitAmount) : 0,
+                debitAccountName: rv.debitAccount?.name || rv.debitAccountName || "Unknown Account",
+                debitAccountCode: rv.debitAccount?.code || "",
+                details: rv.details?.map((d: any) => ({
+                    ...d,
+                    accountName:     d.account?.name     || d.accountName     || "Unknown Account",
+                    accountCode:     d.account?.code     || d.accountCode     || "",
+                    tagAccountName:  d.tagAccount?.name  || d.tagAccountName  || "",
+                    tagAccountCode:  d.tagAccount?.code  || d.tagAccountCode  || "",
+                    debit:           Number(d.debit)  || 0,
+                    credit:          Number(d.credit) || 0,
+                })) || [],
             })),
         };
     } catch {
@@ -113,3 +149,125 @@ export async function getSalesInvoices(search?: string, status?: string) {
         return { status: false, data: [] };
     }
 }
+
+// Get a single receipt voucher by ID
+export async function getReceiptVoucher(id: string): Promise<{ status: boolean; data: ReceiptVoucher | null; message?: string }> {
+    try {
+        const response = await authFetch(`/finance/receipt-vouchers/${id}`, {
+            cache: 'no-store',
+            next: { revalidate: 0 },
+        });
+
+        if (!response.ok) {
+            return { status: false, data: null, message: `Failed to fetch voucher: ${response.status}` };
+        }
+
+        const raw = response.data?.data ?? response.data;
+        const voucher: ReceiptVoucher = {
+            ...raw,
+            debitAmount: raw.debitAmount !== undefined ? Number(raw.debitAmount) : 0,
+            debitAccountName: raw.debitAccount?.name || raw.debitAccountName || "Unknown Account",
+            debitAccountCode: raw.debitAccount?.code || raw.debitAccountCode || "",
+            details: (raw.details ?? []).map((d: any) => ({
+                ...d,
+                accountName:     d.account?.name     || d.accountName     || "Unknown Account",
+                accountCode:     d.account?.code     || d.accountCode     || "",
+                tagAccountName:  d.tagAccount?.name  || d.tagAccountName  || "",
+                tagAccountCode:  d.tagAccount?.code  || d.tagAccountCode  || "",
+                debit:           Number(d.debit)  || 0,
+                credit:          Number(d.credit) || 0,
+            })),
+        };
+
+        return { status: true, data: voucher };
+    } catch (error: any) {
+        console.error("Error fetching receipt voucher:", error);
+        return { status: false, data: null, message: error.message };
+    }
+}
+
+export async function updateReceiptVoucher(id: string, data: any) {
+    try {
+        const payload = {
+            ...data,
+            rvDate: new Date(data.rvDate).toISOString(),
+            billDate: data.billDate ? new Date(data.billDate).toISOString() : null,
+            chequeDate: data.chequeDate ? new Date(data.chequeDate).toISOString() : null,
+        };
+
+        // Remove null/undefined values
+        Object.keys(payload).forEach(key => {
+            if (payload[key] === null || payload[key] === undefined || payload[key] === '') {
+                delete payload[key];
+            }
+        });
+
+        const response = await authFetch(`/finance/receipt-vouchers/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const err = response.data || {};
+            return { status: false, message: err.message || `Failed to update Receipt Voucher: ${response.status}` };
+        }
+
+        revalidatePath("/erp/finance/receipt-voucher/list");
+        revalidatePath(`/erp/finance/receipt-voucher/${id}`);
+        return { status: true, message: "Receipt Voucher updated successfully" };
+    } catch (e: any) {
+        return { status: false, message: e.message || "An unexpected error occurred" };
+    }
+}
+
+export async function updateReceiptVoucherStatus(id: string, status: "approved" | "rejected" | "pending", remarks?: string) {
+    try {
+        const response = await authFetch(`/finance/receipt-vouchers/${id}/status`, {
+            method: "PATCH",
+            body: JSON.stringify({ status, remarks }),
+        });
+
+        if (!response.ok) {
+            const err = response.data || {};
+            return { status: false, message: err.message || `Failed to update status: ${response.status}` };
+        }
+
+        revalidatePath("/erp/finance/receipt-voucher/list");
+        revalidatePath(`/erp/finance/receipt-voucher/${id}`);
+        return { status: true, message: `Receipt Voucher ${status} successfully` };
+    } catch (e: any) {
+        return { status: false, message: e.message || "An unexpected error occurred" };
+    }
+}
+
+// ── Background export ─────────────────────────────────────────────────────────
+export async function queueReceiptVouchersExport(opts?: {
+    type?: string;
+    status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+}): Promise<{ status: boolean; jobId?: string; message?: string }> {
+    try {
+        const params = new URLSearchParams();
+        if (opts?.type   && opts.type   !== 'all') params.set('type',   opts.type);
+        if (opts?.status && opts.status !== 'all') params.set('status', opts.status);
+        if (opts?.dateFrom)                         params.set('dateFrom', opts.dateFrom);
+        if (opts?.dateTo)                           params.set('dateTo',   opts.dateTo);
+
+        const response = await authFetch(
+            `/finance/receipt-vouchers/export?${params.toString()}`,
+            { method: 'POST' },
+        );
+
+        if (!response.ok) {
+            const err = response.data || {};
+            return { status: false, message: err.message || 'Failed to queue export' };
+        }
+
+        const result = response.data;
+        return { status: true, jobId: result?.data?.jobId };
+    } catch (error: any) {
+        return { status: false, message: error.message || 'An unexpected error occurred' };
+    }
+}
+

@@ -20,11 +20,14 @@ export class ReportsController {
   @ApiOperation({ summary: 'Trial Balance' })
   @ApiQuery({ name: 'from', required: false, type: String, description: 'ISO date (period start)' })
   @ApiQuery({ name: 'to',   required: false, type: String, description: 'ISO date (period end)' })
+  @ApiQuery({ name: 'includeTagAccounts', required: false, type: Boolean })
   async trialBalance(
     @Query('from') from?: string,
     @Query('to')   to?: string,
+    @Query('includeTagAccounts') includeTagAccounts?: string,
   ) {
-    return { status: true, data: await this.reports.getTrialBalance(from, to) };
+    const includeTags = includeTagAccounts === 'true';
+    return { status: true, data: await this.reports.getTrialBalance(from, to, includeTags) };
   }
 
   /**
@@ -37,14 +40,16 @@ export class ReportsController {
   @ApiQuery({ name: 'to',    required: false, type: String })
   @ApiQuery({ name: 'page',  required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'sourceType', required: false, type: String })
   async generalLedger(
     @Param('accountId') accountId: string,
     @Query('from')  from?: string,
     @Query('to')    to?: string,
     @Query('page',  new DefaultValuePipe(1),  ParseIntPipe) page  = 1,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit = 50,
+    @Query('sourceType') sourceType?: string,
   ) {
-    return { status: true, data: await this.reports.getGeneralLedger(accountId, from, to, page, limit) };
+    return { status: true, data: await this.reports.getGeneralLedger(accountId, from, to, page, limit, sourceType) };
   }
 
   /**
@@ -72,6 +77,29 @@ export class ReportsController {
   @ApiQuery({ name: 'asOf', required: false, type: String, description: 'ISO date snapshot' })
   async balanceSheet(@Query('asOf') asOf?: string) {
     return { status: true, data: await this.reports.getBalanceSheet(asOf) };
+  }
+
+  /**
+   * GET /api/finance/reports/general-ledger-summary
+   * Sub-account summary for a parent account and selected child account IDs.
+   */
+  @Get('general-ledger-summary')
+  @ApiOperation({ summary: 'General Ledger Subaccount Summary Report' })
+  @ApiQuery({ name: 'parentAccountId', required: true, type: String })
+  @ApiQuery({ name: 'subAccountIds', required: false, type: String, description: 'Comma-separated sub-account IDs (optional)' })
+  @ApiQuery({ name: 'from', required: false, type: String })
+  @ApiQuery({ name: 'to', required: false, type: String })
+  async generalLedgerSummary(
+    @Query('parentAccountId') parentAccountId: string,
+    @Query('subAccountIds') subAccountIds?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const ids = subAccountIds && subAccountIds.trim() !== '' ? subAccountIds.split(',') : [];
+    return {
+      status: true,
+      data: await this.reports.getSubaccountSummary(parentAccountId, ids, from, to),
+    };
   }
 
   /**

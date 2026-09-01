@@ -2,6 +2,7 @@ model ReceiptVoucher {
   id             String                    @id @default(uuid())
   type           String
   rvNo           String                    @unique
+  folio          String?
   rvDate         DateTime
   refBillNo      String?
   billDate       DateTime?
@@ -10,12 +11,16 @@ model ReceiptVoucher {
   debitAccountId String
   debitAmount    Decimal                   @default(0.0) @db.Decimal(15, 2)
   customerId     String?
-  description    String
+  description    String?
   status         String                    @default("approved")
+  isAdvance       Boolean                   @default(false)
+  advanceApplied  Decimal                   @default(0.0) @db.Decimal(15, 2)
+  taxType        String                    @default("Taxable")
   createdAt      DateTime                  @default(now())
   updatedAt      DateTime                  @updatedAt
   createdBy      String?
   debitAccount   ChartOfAccount            @relation("DebitAccountRelation", fields: [debitAccountId], references: [id])
+  customer       Customer?                 @relation(fields: [customerId], references: [id])
   details        ReceiptVoucherDetail[]
   invoices       ReceiptVoucherToInvoice[]
 }
@@ -33,15 +38,23 @@ model ReceiptVoucherToInvoice {
 }
 
 model ReceiptVoucherDetail {
-  id               String         @id @default(uuid())
+  id               String          @id @default(uuid())
   receiptVoucherId String
   accountId        String
-  credit           Decimal        @default(0.0) @db.Decimal(15, 2)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  account          ChartOfAccount @relation(fields: [accountId], references: [id])
-  receiptVoucher   ReceiptVoucher @relation(fields: [receiptVoucherId], references: [id], onDelete: Cascade)
+  tagAccountId     String?         // Optional sub-ledger tag (child chart-of-account)
+  debit            Decimal         @default(0.0) @db.Decimal(15, 2)
+  credit           Decimal         @default(0.0) @db.Decimal(15, 2)
+  narration        String?
+  refBillNo        String?
+  refBillNo2       String?
+  taxType          String          @default("Taxable")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  account          ChartOfAccount  @relation("RVDetailAccount", fields: [accountId], references: [id])
+  tagAccount       ChartOfAccount? @relation("RVDetailTagAccount", fields: [tagAccountId], references: [id])
+  receiptVoucher   ReceiptVoucher  @relation(fields: [receiptVoucherId], references: [id], onDelete: Cascade)
 
   @@index([receiptVoucherId])
   @@index([accountId])
+  @@index([tagAccountId])
 }

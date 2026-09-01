@@ -6,6 +6,7 @@ import { UpdateReceiptVoucherDto } from './dto/update-receipt-voucher.dto';
 
 import { ActivityLogsService } from '../../activity-logs/activity-logs.service';
 import { runInBackground } from '../../common/utils/run-in-background.util';
+import { generateNextRvNumber, generateNextFolioNumber } from '../../common/utils/voucher-number.util';
 @Injectable()
 export class ReceiptVoucherService {
   constructor(
@@ -17,13 +18,14 @@ export class ReceiptVoucherService {
   async create(dto: CreateReceiptVoucherDto) {
     const { details, invoices, ...data } = dto;
 
-    const totalCredit = details.reduce((s, d) => s + Number(d.credit), 0);
-    const debitAmount = Number(data.debitAmount);
+    const totalDebit = details.reduce((sum, item) => sum + Number(item.debit || 0), 0);
+    const totalCredit = details.reduce((sum, item) => sum + Number(item.credit || 0), 0);
 
-    if (Math.abs(totalCredit - debitAmount) > 0.01) {
-      throw new BadRequestException('Total Credit must equal Debit Amount');
+    if (Math.abs(totalDebit - totalCredit) > 0.01) {
+      throw new BadRequestException('Total Debit must equal Total Credit');
     }
-    if (debitAmount === 0) {
+
+    if (totalDebit === 0) {
       throw new BadRequestException('Transaction amount must be greater than 0');
     }
 
@@ -43,93 +45,80 @@ export class ReceiptVoucherService {
         }
         totalInvoiceAmount += Number(inv.receivedAmount);
       }
-      if (totalInvoiceAmount > debitAmount + 0.01) {
+      if (totalInvoiceAmount > totalDebit + 0.01) {
         throw new BadRequestException(
-          `Invoice receipts total (${totalInvoiceAmount}) cannot exceed voucher debit amount (${debitAmount})`
+          `Invoice receipts total (${totalInvoiceAmount}) cannot exceed voucher debit amount (${totalDebit})`
         );
       }
     }
 
     return this.prisma.$transaction(async (prisma) => {
+      const finalRvNo = await generateNextRvNumber(prisma, data.type, data.rvDate);
+      const sequentialFolio = await generateNextFolioNumber(prisma, data.rvDate);
+
+      // Derive debitAccountId from the first debit detail line
+      const firstDebitDetail = details.find(d => Number(d.debit) > 0);
+      const resolvedDebitAccountId = firstDebitDetail?.accountId ?? data.debitAccountId;
+      const resolvedDebitAmount = data.debitAmount || totalDebit || 0;
+
+      const targetStatus = data.status || 'pending';
+
       // Create the receipt voucher
       const rv = await prisma.receiptVoucher.create({
         data: {
           type: data.type,
-          rvNo: data.rvNo,
+          rvNo: finalRvNo,
+          folio: sequentialFolio,
           rvDate: data.rvDate,
           refBillNo: data.refBillNo,
           billDate: data.billDate,
           chequeNo: data.chequeNo,
           chequeDate: data.chequeDate,
-          debitAccountId: data.debitAccountId,
-          debitAmount: data.debitAmount,
+          debitAccountId: resolvedDebitAccountId,
+          debitAmount: resolvedDebitAmount,
           customerId: data.customerId || undefined,
+          isAdvance: data.isAdvance ?? false,
+          taxType: data.taxType ?? 'Taxable',
           description: data.description,
-          status: data.status || 'approved',
+          status: targetStatus,
           details: { 
-            create: details.map(d => ({
-              accountId: d.accountId,
-              credit: Number(d.credit)
-            }))
+            create: details
+              .filter(d => Number(d.debit) > 0 || Number(d.credit) > 0)
+              .map(d => ({
+                accountId:       d.accountId,
+                tagAccountId:    d.tagAccountId?.trim() || null,
+                debit:           Number(d.debit) || 0,
+                credit:          Number(d.credit) || 0,
+                narration:       d.narration || data.description || null,
+                refBillNo:       d.refBillNo || data.refBillNo || null,
+                refBillNo2:      d.refBillNo2 || null,
+                taxType: d.taxType ?? data.taxType ?? 'Taxable',
+              }))
           },
         },
         include: {
-          details: { include: { account: true } },
+          details: { include: { account: true, tagAccount: true } },
           debitAccount: true,
+          customer: true,
         },
       });
 
-      // ── Update sales invoice payment statuses ────────────────────────────
+      // ── Create invoice links (always) ──
       if (invoices && invoices.length > 0) {
         for (const inv of invoices) {
-          const si = await prisma.eRPSalesInvoice.findUnique({ where: { id: inv.salesInvoiceId } });
-          if (si) {
-            const newPaid = Number(si.paidAmount) + Number(inv.receivedAmount);
-            const newBalance = Number(si.grandTotal) - newPaid;
-            let paymentStatus = 'UNPAID';
-            if (newBalance <= 0.01) paymentStatus = 'FULLY_PAID';
-            else if (newPaid > 0) paymentStatus = 'PARTIALLY_PAID';
-
-            const invoiceStatus = newBalance <= 0.01 ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
-
-            await prisma.eRPSalesInvoice.update({
-              where: { id: inv.salesInvoiceId },
-              data: {
-                paidAmount: newPaid,
-                balanceAmount: Math.max(0, newBalance),
-                paymentStatus,
-                status: invoiceStatus as any,
-              },
-            });
-
-            await prisma.receiptVoucherToInvoice.create({
-              data: {
-                receiptVoucherId: rv.id,
-                salesInvoiceId: inv.salesInvoiceId,
-                receivedAmount: inv.receivedAmount,
-              },
-            });
-          }
+          await prisma.receiptVoucherToInvoice.create({
+            data: {
+              receiptVoucherId: rv.id,
+              salesInvoiceId: inv.salesInvoiceId,
+              receivedAmount: inv.receivedAmount,
+            },
+          });
         }
       }
 
-      // ── Post journal lines ───────────────────────────────────────────────
-      // Debit: bank/cash account (money coming in)
-      // Credit: A/R or customer account (reduces receivable)
-      const creditLines = details.map(d => ({
-        accountId: d.accountId,
-        debit: 0,
-        credit: Number(d.credit),
-      }));
-      const debitLines = [{ accountId: data.debitAccountId, debit: debitAmount, credit: 0 }];
-
-      await this.accounting.postLines([...debitLines, ...creditLines], {
-        sourceType: 'RECEIPT_VOUCHER',
-        sourceId: rv.id,
-        sourceRef: rv.rvNo,
-        description: data.description || `Receipt Voucher: ${rv.rvNo}`,
-        transactionDate: new Date(data.rvDate),
-      }, prisma);
+      if (targetStatus === 'approved') {
+        await this.postReceiptVoucherToLedger(rv.id, prisma);
+      }
 
       return rv;
     });
@@ -140,8 +129,9 @@ export class ReceiptVoucherService {
     return this.prisma.receiptVoucher.findMany({
       where,
       include: {
-        details: { include: { account: true } },
+        details: { include: { account: true, tagAccount: true } },
         debitAccount: true,
+        customer: true,
         invoices: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -152,8 +142,9 @@ export class ReceiptVoucherService {
     const rv = await this.prisma.receiptVoucher.findUnique({
       where: { id },
       include: {
-        details: { include: { account: true } },
+        details: { include: { account: true, tagAccount: true } },
         debitAccount: true,
+        customer: true,
         invoices: true,
       },
     });
@@ -163,7 +154,11 @@ export class ReceiptVoucherService {
 
   async update(id: string, dto: UpdateReceiptVoucherDto) {
     const { details, invoices: _invoices, ...data } = dto as any;
-    await this.findOne(id);
+    const existing = await this.findOne(id);
+
+    if (existing.status !== 'pending') {
+      throw new BadRequestException('Receipt Voucher can only be edited when it is in pending status');
+    }
 
     // Only scalar fields that Prisma accepts on update
     const scalarData = {
@@ -179,6 +174,8 @@ export class ReceiptVoucherService {
       ...(data.customerId !== undefined && { customerId: data.customerId }),
       ...(data.description !== undefined && { description: data.description }),
       ...(data.status !== undefined && { status: data.status }),
+      ...(data.isAdvance !== undefined && { isAdvance: data.isAdvance }),
+      ...(data.taxType !== undefined && { taxType: data.taxType }),
     };
 
     if (details) {
@@ -186,8 +183,24 @@ export class ReceiptVoucherService {
         await prisma.receiptVoucherDetail.deleteMany({ where: { receiptVoucherId: id } });
         return prisma.receiptVoucher.update({
           where: { id },
-          data: { ...scalarData, details: { create: details } },
-          include: { details: { include: { account: true } }, debitAccount: true },
+          data: {
+            ...scalarData,
+            details: {
+              create: details
+                .filter(d => Number(d.debit) > 0 || Number(d.credit) > 0)
+                .map(d => ({
+                  accountId:       d.accountId,
+                  tagAccountId:    d.tagAccountId?.trim() || null,
+                  debit:           Number(d.debit) || 0,
+                  credit:          Number(d.credit) || 0,
+                  narration:       d.narration || data.description || null,
+                  refBillNo:       d.refBillNo || data.refBillNo || null,
+                  refBillNo2:      d.refBillNo2 || null,
+                  taxType: d.taxType ?? data.taxType ?? 'Taxable',
+                })),
+            },
+          },
+          include: { details: { include: { account: true, tagAccount: true } }, debitAccount: true, customer: true },
         });
       });
     }
@@ -195,13 +208,121 @@ export class ReceiptVoucherService {
     return this.prisma.receiptVoucher.update({
       where: { id },
       data: scalarData,
-      include: { details: { include: { account: true } }, debitAccount: true },
+      include: { details: { include: { account: true, tagAccount: true } }, debitAccount: true, customer: true },
     });
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
+    if (existing.status !== 'pending') {
+      throw new BadRequestException('Receipt Voucher can only be deleted when it is in pending status');
+    }
     return this.prisma.receiptVoucher.delete({ where: { id } });
+  }
+
+  async updateStatus(id: string, status: string, remarks?: string) {
+    const existing = await this.findOne(id);
+
+    const validStatuses = ['pending', 'approved', 'rejected'];
+    if (!validStatuses.includes(status)) {
+      throw new BadRequestException('Invalid status. Must be pending, approved, or rejected');
+    }
+
+    if (existing.status !== 'pending') {
+      throw new BadRequestException('Receipt Voucher status can only be changed when it is in pending status');
+    }
+
+    return this.prisma.$transaction(async (prisma) => {
+      const updated = await prisma.receiptVoucher.update({
+        where: { id },
+        data: {
+          status,
+          ...(remarks && { description: remarks }),
+        },
+        include: {
+          details: {
+            include: {
+              account: true,
+            },
+          },
+          debitAccount: true,
+          customer: true,
+        },
+      });
+
+      if (status === 'approved') {
+        await this.postReceiptVoucherToLedger(id, prisma);
+      }
+
+      return updated;
+    });
+  }
+
+  private async postReceiptVoucherToLedger(voucherId: string, prisma: any) {
+    const voucher = await prisma.receiptVoucher.findUnique({
+      where: { id: voucherId },
+      include: {
+        details: true,
+      },
+    });
+    if (!voucher) return;
+
+    const details = voucher.details;
+    const totalDebit = details.reduce((sum, item) => sum + Number(item.debit || 0), 0);
+
+    const invoices = await prisma.receiptVoucherToInvoice.findMany({
+      where: { receiptVoucherId: voucherId },
+    });
+
+    // ── Update sales invoice payment statuses ────────────────────────────
+    if (invoices && invoices.length > 0) {
+      for (const inv of invoices) {
+        const si = await prisma.eRPSalesInvoice.findUnique({ where: { id: inv.salesInvoiceId } });
+        if (si) {
+          const newPaid = Number(si.paidAmount) + Number(inv.receivedAmount);
+          const newBalance = Number(si.grandTotal) - newPaid;
+          let paymentStatus = 'UNPAID';
+          if (newBalance <= 0.01) paymentStatus = 'FULLY_PAID';
+          else if (newPaid > 0) paymentStatus = 'PARTIALLY_PAID';
+
+          const invoiceStatus = newBalance <= 0.01 ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
+
+          await prisma.eRPSalesInvoice.update({
+            where: { id: inv.salesInvoiceId },
+            data: {
+              paidAmount: newPaid,
+              balanceAmount: Math.max(0, newBalance),
+              paymentStatus,
+              status: invoiceStatus as any,
+            },
+          });
+        }
+      }
+    }
+
+    // ── Post journal lines ───────────────────────────────────────────────
+    if (totalDebit > 0) {
+      const allLines = details
+        .filter(d => Number(d.debit) > 0 || Number(d.credit) > 0)
+        .map(d => ({
+          accountId:       d.accountId,
+          tagAccountId:    d.tagAccountId?.trim() || undefined,
+          debit:           Number(d.debit) || 0,
+          credit:          Number(d.credit) || 0,
+          narration:       d.narration || voucher.description || undefined,
+          refBillNo:       d.refBillNo || voucher.refBillNo || undefined,
+          refBillNo2:      d.refBillNo2 || undefined,
+          taxType: d.taxType ?? 'Taxable',
+        }));
+
+      await this.accounting.postLines(allLines, {
+        sourceType: 'RECEIPT_VOUCHER',
+        sourceId: voucher.id,
+        sourceRef: voucher.rvNo,
+        description: voucher.description || `Receipt Voucher: ${voucher.rvNo}`,
+        transactionDate: new Date(voucher.rvDate),
+      }, prisma);
+    }
   }
 
   // ── Customer / Invoice helpers ─────────────────────────────────────────────

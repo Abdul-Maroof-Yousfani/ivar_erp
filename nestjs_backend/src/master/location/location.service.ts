@@ -3,17 +3,31 @@ import { ActivityLogsService } from '../../activity-logs/activity-logs.service';
 import { PrismaMasterService } from '../../database/prisma-master.service';
 import { PrismaService } from '../../database/prisma.service';
 import { runInBackground } from '../../common/utils/run-in-background.util';
+import { MasterDeleteGuardService } from '../../common/services/master-delete-guard.service';
+
+export function generateShortCode(name: string): string {
+  if (!name) return 'LOC';
+  return name
+    .split(/[\s\-_]+/)
+    .map((word) => word.replace(/[^a-zA-Z0-9]/g, ''))
+    .filter((word) => word.length > 0)
+    .map((word) => word[0].toUpperCase())
+    .join('');
+}
 
 @Injectable()
 export class LocationService {
   constructor(
+    private readonly masterDeleteGuard: MasterDeleteGuardService,
     private prisma: PrismaService,
     private activityLogs: ActivityLogsService,
   ) {}
 
   async listActive() {
     return this.prisma.location.findMany({
-      where: { status: 'active' },
+      where: { status: 'active',
+          isDeleted: false
+    },
       select: {
         id: true,
         name: true,
@@ -35,12 +49,15 @@ export class LocationService {
         }
       },
       orderBy: { createdAt: 'desc' },
+        where: { isDeleted: false }
     });
     if (items?.length > 0) {
       for (const item of items) {
         if (item?.cityId) {
-          const updatedItem = await this.prisma.city.findUnique({
-            where: { id: item.cityId },
+          const updatedItem = await this.prisma.city.findFirst({
+            where: { id: item.cityId,
+                isDeleted: false
+            },
           });
           item.city = updatedItem;
         }
@@ -50,12 +67,16 @@ export class LocationService {
   }
 
   async get(id: string) {
-    const item: any = await this.prisma.location.findUnique({
-      where: { id },
+    const item: any = await this.prisma.location.findFirst({
+      where: { id,
+          isDeleted: false
+    },
     });
     if (item?.cityId) {
-      const updatedItem = await this.prisma.city.findUnique({
-        where: { id: item.cityId },
+      const updatedItem = await this.prisma.city.findFirst({
+        where: { id: item.cityId,
+            isDeleted: false
+        },
       });
       item.city = updatedItem;
     }
@@ -64,18 +85,21 @@ export class LocationService {
   }
 
   async create(
-    body: { name: string; address?: string; cityId?: string; status?: string; companyId?: string },
+    body: { name: string; code?: string; address?: string; cityId?: string; status?: string; companyId?: string; cashGLCode?: string; shortCode?: string },
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
       const created = await this.prisma.location.create({
         data: {
           name: body.name,
+          code: body.code?.trim() || undefined,
           address: body.address || null,
           cityId: body.cityId?.trim() || null,
           companyId: body.companyId,
           status: body.status ?? 'active',
           createdById: ctx.userId,
+          cashGLCode: body.cashGLCode || null,
+          shortCode: body.shortCode?.trim() || generateShortCode(body.name),
         },
       });
       const response = { status: true, data: created };
@@ -117,17 +141,23 @@ export class LocationService {
 
   async update(
     id: string,
-    body: { name: string; address?: string; cityId?: string; status?: string; companyId?: string },
+    body: { name: string; code?: string; address?: string; cityId?: string; status?: string; companyId?: string; cashGLCode?: string; shortCode?: string },
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
-      const existing = await this.prisma.location.findUnique({
-        where: { id },
+      const existing = await this.prisma.location.findFirst({
+        where: { id,
+            isDeleted: false
+        },
       });
       const updated = await this.prisma.location.update({
         where: { id },
         data: {
           name: body.name ?? existing?.name,
+          code:
+            body.code !== undefined && body.code?.trim()
+              ? body.code.trim()
+              : existing?.code,
           address:
             body.address !== undefined ? body.address : existing?.address,
           cityId:
@@ -136,6 +166,11 @@ export class LocationService {
               : existing?.cityId,
           companyId: body.companyId ?? existing?.companyId,
           status: body.status ?? existing?.status ?? 'active',
+          cashGLCode: body.cashGLCode !== undefined ? body.cashGLCode : existing?.cashGLCode,
+          shortCode:
+            body.shortCode !== undefined
+              ? body.shortCode?.trim() || generateShortCode(body.name ?? existing?.name ?? '')
+              : existing?.shortCode,
         },
       });
       const response = { status: true, data: updated };
@@ -181,17 +216,109 @@ export class LocationService {
     }
   }
 
+  async updateOtherInfo(
+    id: string,
+    body: {
+      phone?: string;
+      latitude?: number;
+      longitude?: number;
+      geoFenceEnabled?: boolean;
+      geoFenceRadius?: number;
+      ipWhitelist?: string;
+      ipWhitelistEnabled?: boolean;
+      fbrBposId?: string;
+      fbrBearerToken?: string;
+      fbrNtn?: string;
+      fbrSellerName?: string;
+      fbrEnabled?: boolean;
+    },
+    ctx: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    try {
+      const existing = await this.prisma.location.findFirst({
+        where: { id, isDeleted: false },
+      });
+      if (!existing) {
+        return { status: false, message: 'Location not found' };
+      }
+      
+      const updated = await this.prisma.location.update({
+        where: { id },
+        data: {
+          phone: body.phone !== undefined ? body.phone : existing.phone,
+          latitude: body.latitude !== undefined ? body.latitude : existing.latitude,
+          longitude: body.longitude !== undefined ? body.longitude : existing.longitude,
+          geoFenceEnabled: body.geoFenceEnabled !== undefined ? body.geoFenceEnabled : existing.geoFenceEnabled,
+          geoFenceRadius: body.geoFenceRadius !== undefined ? body.geoFenceRadius : existing.geoFenceRadius,
+          ipWhitelist: body.ipWhitelist !== undefined ? body.ipWhitelist : existing.ipWhitelist,
+          ipWhitelistEnabled: body.ipWhitelistEnabled !== undefined ? body.ipWhitelistEnabled : existing.ipWhitelistEnabled,
+          fbrBposId: body.fbrBposId !== undefined ? body.fbrBposId : existing.fbrBposId,
+          fbrBearerToken: body.fbrBearerToken !== undefined ? body.fbrBearerToken : existing.fbrBearerToken,
+          fbrNtn: body.fbrNtn !== undefined ? body.fbrNtn : existing.fbrNtn,
+          fbrSellerName: body.fbrSellerName !== undefined ? body.fbrSellerName : existing.fbrSellerName,
+          fbrEnabled: body.fbrEnabled !== undefined ? body.fbrEnabled : existing.fbrEnabled,
+        },
+      });
+
+      const response = { status: true, data: updated };
+      runInBackground(
+        'Update Location Other Info',
+        this.activityLogs.log({
+          userId: ctx.userId,
+          action: 'update',
+          module: 'locations',
+          entity: 'Location',
+          entityId: id,
+          description: `Updated other info for location ${updated.name}`,
+          oldValues: JSON.stringify(existing),
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
+      );
+      return response;
+    } catch (error: any) {
+      runInBackground(
+        'Update Location Other Info (Failure Log)',
+        this.activityLogs.log({
+          userId: ctx.userId,
+          action: 'update',
+          module: 'locations',
+          entity: 'Location',
+          entityId: id,
+          description: 'Failed to update other info for location',
+          errorMessage: error?.message,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
+      );
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : 'Failed to update location other info',
+      };
+    }
+  }
+
   async remove(
     id: string,
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
-      const existing = await this.prisma.location.findUnique({
-        where: { id },
+      const deleteBlocked = await this.masterDeleteGuard.checkBlocked(this.prisma, 'location', id);
+      if (deleteBlocked) return { status: false, message: deleteBlocked };
+
+      const existing = await this.prisma.location.findFirst({
+        where: { id,
+            isDeleted: false
+        },
       });
-      const removed = await this.prisma.location.delete({
+      const removed = await this.prisma.location.update({
         where: { id },
-      });
+          data: { isDeleted: true, deletedAt: new Date() }
+    });
       const response = { status: true, data: removed };
       runInBackground(
         'Delete Location',
@@ -232,9 +359,12 @@ export class LocationService {
   async createBulk(
     items: {
       name: string;
+      code?: string;
       address?: string;
       cityId?: string;
       status?: string;
+      cashGLCode?: string;
+      shortCode?: string;
     }[],
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
@@ -244,10 +374,13 @@ export class LocationService {
       const result = await this.prisma.location.createMany({
         data: items.map((i) => ({
           name: i.name,
+          code: i.code?.trim() || undefined,
           address: i.address || null,
           cityId: i.cityId?.trim() || null,
           status: i.status ?? 'active',
           createdById: ctx.userId,
+          cashGLCode: i.cashGLCode || null,
+          shortCode: i.shortCode?.trim() || generateShortCode(i.name),
         })),
         skipDuplicates: true,
       });
@@ -291,9 +424,12 @@ export class LocationService {
     items: {
       id: string;
       name: string;
+      code?: string;
       address?: string;
       cityId?: string;
       status?: string;
+      cashGLCode?: string;
+      shortCode?: string;
     }[],
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
@@ -301,19 +437,30 @@ export class LocationService {
       return { status: false, message: 'No locations to update' };
     try {
       for (const i of items) {
-        const existing = await this.prisma.location.findUnique({
-          where: { id: i.id },
+        const existing = await this.prisma.location.findFirst({
+          where: { id: i.id,
+              isDeleted: false
+        },
         });
         await this.prisma.location.update({
           where: { id: i.id },
           data: {
             name: i.name ?? existing?.name,
+            code:
+              i.code !== undefined && i.code?.trim()
+                ? i.code.trim()
+                : existing?.code,
             address: i.address !== undefined ? i.address : existing?.address,
             cityId:
               i.cityId !== undefined
                 ? i.cityId?.trim() || null
                 : existing?.cityId,
             status: i.status ?? existing?.status ?? 'active',
+            cashGLCode: i.cashGLCode !== undefined ? i.cashGLCode : existing?.cashGLCode,
+            shortCode:
+              i.shortCode !== undefined
+                ? i.shortCode?.trim() || generateShortCode(i.name ?? existing?.name ?? '')
+                : existing?.shortCode,
           },
         });
       }
@@ -360,12 +507,20 @@ export class LocationService {
     if (!ids?.length)
       return { status: false, message: 'No locations to delete' };
     try {
+      for (const guardId of ids) {
+        const deleteBlocked = await this.masterDeleteGuard.checkBlocked(this.prisma, 'location', guardId);
+        if (deleteBlocked) return { status: false, message: deleteBlocked };
+      }
+
       const existing = await this.prisma.location.findMany({
-        where: { id: { in: ids } },
+        where: { id: { in: ids },
+            isDeleted: false
+        },
       });
-      const result = await this.prisma.location.deleteMany({
+      const result = await this.prisma.location.updateMany({
         where: { id: { in: ids } },
-      });
+          data: { isDeleted: true, deletedAt: new Date() }
+    });
       const response = { status: true, message: 'Locations deleted', data: result };
       runInBackground(
         'Bulk Delete Locations',
@@ -411,6 +566,7 @@ export class LocationService {
           status: 'active',
           latitude: { not: null },
           longitude: { not: null },
+            isDeleted: false
         },
         select: {
           id: true,
@@ -471,6 +627,52 @@ export class LocationService {
       return {
         status: false,
         message: error?.message || 'Failed to find nearest location',
+      };
+    }
+  }
+
+  /// Toggle the online/offline status for an outlet.
+  async updateOnlineStatus(
+    id: string,
+    isOnline: boolean,
+    ctx: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    try {
+      const existing = await this.prisma.location.findFirst({
+        where: { id, isDeleted: false },
+      });
+      if (!existing) return { status: false, message: 'Location not found' };
+
+      const updated = await this.prisma.location.update({
+        where: { id },
+        data: {
+          isOnline,
+          lastOnlineAt: isOnline ? new Date() : existing.lastOnlineAt,
+        },
+      });
+
+      const response = { status: true, data: updated };
+      runInBackground(
+        'Update Location Online Status',
+        this.activityLogs.log({
+          userId: ctx.userId,
+          action: 'update',
+          module: 'locations',
+          entity: 'Location',
+          entityId: id,
+          description: `Marked location ${existing.name} as ${isOnline ? 'online' : 'offline'}`,
+          oldValues: JSON.stringify({ isOnline: existing.isOnline }),
+          newValues: JSON.stringify({ isOnline }),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
+      );
+      return response;
+    } catch (error: any) {
+      return {
+        status: false,
+        message: error?.message || 'Failed to update online status',
       };
     }
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, startTransition, addTransitionType } from "react";
+import { useState, useEffect, startTransition, addTransitionType } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -22,7 +22,8 @@ import {
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { getEmployeesForDropdown, type EmployeeDropdownOption } from "@/lib/actions/employee";
+import { getEmployeeById } from "@/lib/actions/employee";
+import { useEmployeeDropdown } from "@/hooks/use-employee-dropdown";
 import { getDepartments, getSubDepartmentsByDepartment, type Department, type SubDepartment } from "@/lib/actions/department";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MonthYearPicker } from "@/components/ui/month-year-picker";
@@ -69,16 +70,15 @@ import { useAuth } from "@/components/providers/auth-provider";
 
 export default function CreateAdvanceSalaryPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
   const { user, isAdmin, hasPermission } = useAuth();
   
   // Check if user has permission to create advance salary for others
   const canCreateForOthers = isAdmin() || hasPermission("hr.advance-salary.create");
   
   const [loadingSubDepartments, setLoadingSubDepartments] = useState(false);
-  const [employees, setEmployees] = useState<EmployeeDropdownOption[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [subDepartments, setSubDepartments] = useState<SubDepartment[]>([]);
+  const [currentEmployeeLabel, setCurrentEmployeeLabel] = useState<string>("");
 
   const form = useForm<AdvanceSalaryFormData>({
     resolver: zodResolver(advanceSalaryFormSchema) as any,
@@ -94,38 +94,42 @@ export default function CreateAdvanceSalaryPage() {
     mode: "onBlur",
   });
 
+  const selectedDepartmentId = form.watch("departmentId");
+  const selectedSubDepartmentId = form.watch("subDepartmentId");
+  const selectedEmployeeIds = form.watch("employeeIds");
+
+  const { isInitialLoading, multiSelectProps } = useEmployeeDropdown({
+    departmentId: selectedDepartmentId,
+    subDepartmentId: selectedSubDepartmentId,
+    selectedIds: selectedEmployeeIds,
+  });
+
   const loginId = user?.employeeId || user?.employee?.id;
 
   // Pre-select current user if available
   useEffect(() => {
     if (loginId) {
-      // Set employee ID immediately (even before employees are loaded)
       const currentEmployeeIds = form.getValues("employeeIds");
       if (currentEmployeeIds.length === 0) {
         form.setValue("employeeIds", [loginId as string]);
       }
-
-      // If employees are loaded, also set department and sub-department
-      if (employees.length > 0) {
-        const currentUserEmployee = employees.find(emp => emp.id === loginId);
-        
-        if (currentUserEmployee) {
-          // Set department if not already set
-          if (!form.getValues("departmentId") && currentUserEmployee.departmentId) {
-            form.setValue("departmentId", currentUserEmployee.departmentId);
-          }
-          
-          // Set sub-department if not already set
-          if (!form.getValues("subDepartmentId") && currentUserEmployee.subDepartmentId) {
-            form.setValue("subDepartmentId", currentUserEmployee.subDepartmentId);
-          }
-        }
-      }
     }
-  }, [user, loginId, employees, form]);
+  }, [user, loginId, form]);
 
-  const selectedDepartmentId = form.watch("departmentId");
-  const selectedSubDepartmentId = form.watch("subDepartmentId");
+  useEffect(() => {
+    const loadCurrentEmployee = async () => {
+      if (!loginId) return;
+      if (user?.employee) {
+        setCurrentEmployeeLabel(`${user.firstName || ""} ${user.lastName || ""} (${user.employee.employeeId})`.trim());
+        return;
+      }
+      const result = await getEmployeeById(loginId as string);
+      if (result.status && result.data) {
+        setCurrentEmployeeLabel(`${result.data.employeeName} (${result.data.employeeId})`);
+      }
+    };
+    loadCurrentEmployee();
+  }, [loginId, user]);
 
   // Fetch departments on mount
   useEffect(() => {
@@ -144,36 +148,6 @@ export default function CreateAdvanceSalaryPage() {
       }
     };
     fetchDepartments();
-  }, [isAdmin]);
-
-  // Fetch employees on mount
-  useEffect(() => {
-    const fetchEmployees = async () => {
-      setLoading(true);
-      try {
-        const result = await getEmployeesForDropdown();
-        if (result.status && result.data) {
-          setEmployees(result.data);
-        } else {
-          // If fetch fails (likely permission), and user is NOT admin, 
-          // we don't necessarily want to toast every time
-          if (isAdmin()) {
-            toast.error(result.message || "Failed to load employees");
-          }
-          setEmployees([]);
-        }
-      } catch (error) {
-        console.error("Error:", error);
-        if (isAdmin()) {
-          toast.error("Failed to load employees");
-        }
-        setEmployees([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchEmployees();
   }, [isAdmin]);
 
   // Fetch sub-departments when department changes
@@ -202,57 +176,6 @@ export default function CreateAdvanceSalaryPage() {
 
     fetchSubDepartments();
   }, [selectedDepartmentId, form]);
-
-  // Find current employee object for display
-  const currentEmployee = useMemo(() => {
-    if (loginId && employees.length > 0) {
-      return employees.find(emp => emp.id === loginId);
-    }
-    return null;
-  }, [loginId, employees]);
-
-  // Filter employees based on department and sub-department
-  const filteredEmployees = useMemo(() => {
-    let filtered = [...employees];
-
-    if (selectedDepartmentId) {
-      filtered = filtered.filter((emp) => emp.departmentId === selectedDepartmentId);
-    }
-
-    if (selectedSubDepartmentId) {
-      filtered = filtered.filter((emp) => emp.subDepartmentId === selectedSubDepartmentId);
-    }
-
-    return filtered;
-  }, [employees, selectedDepartmentId, selectedSubDepartmentId]);
-
-  // Employee options for MultiSelect
-  const employeeOptions = useMemo(() => {
-    const options = filteredEmployees.map((emp) => ({
-      value: emp.id,
-      label: `${emp.employeeName} (${emp.employeeId})`,
-      description: emp.departmentName || undefined,
-    }));
-
-    if (loginId && !options.some(o => o.value === loginId)) {
-      const empInFullList = employees.find(e => e.id === loginId);
-      if (empInFullList) {
-        options.unshift({
-          value: empInFullList.id,
-          label: `${empInFullList.employeeName} (${empInFullList.employeeId})`,
-          description: empInFullList.departmentName || undefined,
-        });
-      } else if (user?.employee) {
-        options.unshift({
-          value: loginId as string,
-          label: `${user.firstName || ""} ${user.lastName || ""} (${user.employee.employeeId})`,
-          description: user.employee.department?.name || undefined,
-        });
-      }
-    }
-
-    return options;
-  }, [filteredEmployees, employees, user, loginId]);
 
   const onSubmit = async (data: AdvanceSalaryFormData) => {
     try {
@@ -400,19 +323,23 @@ export default function CreateAdvanceSalaryPage() {
                         Employees <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
-                        {loading ? (
+                        {isInitialLoading ? (
                           <div className="h-10 bg-muted rounded-md animate-pulse" />
                         ) : (
                           <MultiSelect
-                            options={employeeOptions}
+                            options={multiSelectProps.options}
                             value={field.value}
                             onValueChange={field.onChange}
+                            onSearch={multiSelectProps.onSearch}
+                            onLoadMore={multiSelectProps.onLoadMore}
+                            hasMore={multiSelectProps.hasMore}
+                            isLoading={multiSelectProps.isLoading}
                             placeholder="Select one or more employees"
-                            searchPlaceholder="Search employees..."
-                            emptyMessage="No employees found"
-                            disabled={form.formState.isSubmitting || loading || !canCreateForOthers}
+                            searchPlaceholder="Search by name or employee ID..."
+                            emptyMessage={multiSelectProps.isLoading ? "Loading employees..." : "No employees found"}
+                            disabled={form.formState.isSubmitting || !canCreateForOthers}
                             maxDisplayedItems={3}
-                            showSelectAll={canCreateForOthers}
+                            showSelectAll={false}
                           />
                         )}
                       </FormControl>
@@ -430,13 +357,8 @@ export default function CreateAdvanceSalaryPage() {
                     Employees <span className="text-destructive">*</span>
                   </Label>
                   <div className="flex w-full rounded-md bg-muted px-3 py-2 text-sm">
-                    {currentEmployee 
-                      ? `${currentEmployee.employeeName} (${currentEmployee.employeeId})` 
-                      : user?.employee 
-                        ? `${user.firstName || ""} ${user.lastName || ""} (${user.employee.employeeId})`
-                        : loginId
-                          ? `Employee ID: ${loginId}`
-                          : "Loading..."}
+                    {currentEmployeeLabel
+                      || (loginId ? `Employee ID: ${loginId}` : "Loading...")}
                   </div>
                   <FormDescription>
                     You can only create requests for yourself

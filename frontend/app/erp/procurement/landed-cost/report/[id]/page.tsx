@@ -116,7 +116,9 @@ export default function LandedCostReportPage() {
                         <p className="text-[9px] text-gray-400 uppercase font-black tracking-tighter">Reference</p>
                         <p><strong>GRN:</strong> {data.grn?.grnNumber}</p>
                         <p><strong>Supplier:</strong> {data.supplier?.name}</p>
-                        <p><strong>Currency:</strong> {data.currency} (@{Number(data.exchangeRate).toFixed(2)})</p>
+                        {data.currency?.toUpperCase() !== 'PKR' && Number(data.exchangeRate) !== 1 && data.grn?.purchaseOrder?.orderType !== 'LOCAL' && (
+                            <p><strong>Currency:</strong> {data.currency} (@{Number(data.exchangeRate).toFixed(2)})</p>
+                        )}
                     </div>
                     <div className="space-y-1 bg-blue-50 p-2 rounded border border-blue-100">
                         <p className="text-[9px] text-blue-400 uppercase font-black tracking-tighter">Summary</p>

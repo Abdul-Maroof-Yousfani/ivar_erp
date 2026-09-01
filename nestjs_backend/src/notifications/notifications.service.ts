@@ -294,6 +294,95 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     return { status: true };
   }
 
+  async sendPosLocationNotification(args: {
+    locationId: string;
+    title: string;
+    message: string;
+    category?: string;
+    priority?: NotificationPriority;
+    actionType?: string;
+    actionPayload?: any;
+    entityType?: string;
+    entityId?: string;
+  }) {
+    const category = (args.category || 'pos_location').toLowerCase();
+    const priority = args.priority || 'high';
+
+    this.logger.log(
+      `[sendPosLocationNotification] Dispatching notification for locationId: ${args.locationId}, title: "${args.title}"`,
+    );
+
+    // 1. Broadcast via WebSocket gateway to the location channel/listeners
+    this.gateway.emitToLocation(args.locationId, {
+      title: args.title,
+      message: args.message,
+      category,
+      priority,
+      entityType: args.entityType,
+      entityId: args.entityId,
+      actionType: args.actionType,
+      actionPayload: args.actionPayload,
+      locationId: args.locationId,
+      createdAt: new Date(),
+    });
+
+    // 2. Persist notification records strictly for active users assigned to args.locationId via Employee
+    try {
+      const employeesAtLocation = await this.prisma.employee.findMany({
+        where: { locationId: args.locationId },
+        select: { userId: true, employeeId: true },
+      });
+
+      const userIds = employeesAtLocation
+        .map((e) => e.userId)
+        .filter((id): id is string => !!id);
+      const empCodes = employeesAtLocation
+        .map((e) => e.employeeId)
+        .filter((code): code is string => !!code);
+
+      if (userIds.length > 0 || empCodes.length > 0) {
+        const targetUsers = await this.prismaMaster.user.findMany({
+          where: {
+            OR: [
+              ...(userIds.length > 0 ? [{ id: { in: userIds } }] : []),
+              ...(empCodes.length > 0 ? [{ employeeId: { in: empCodes } }] : []),
+            ],
+            status: 'active',
+          },
+          select: { id: true },
+        });
+
+        this.logger.log(
+          `[sendPosLocationNotification] Found ${employeesAtLocation.length} employee(s) mapped to location ${args.locationId}. Persisting notification for ${targetUsers.length} user(s).`,
+        );
+
+        if (targetUsers.length > 0) {
+          await this.createForUsers(
+            targetUsers.map((u) => ({
+              userId: u.id,
+              title: args.title,
+              message: args.message,
+              category,
+              priority,
+              actionType: args.actionType,
+              actionPayload: args.actionPayload,
+              entityType: args.entityType,
+              entityId: args.entityId,
+            })),
+          );
+        }
+      } else {
+        this.logger.log(
+          `[sendPosLocationNotification] No employees mapped to locationId: ${args.locationId}.`,
+        );
+      }
+    } catch (err: any) {
+      this.logger.error(
+        `Failed to store location notification for location ${args.locationId}: ${err.message}`,
+      );
+    }
+  }
+
   getHealthSnapshot() {
     return {
       workerEnabled: !!this.deliveryTimer,
@@ -318,12 +407,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (user) {
-        recipientEmail = user.email;
+        recipientEmail = user.email || undefined;
 
         // Note: If you need to fallback to Employee email (Tenant DB), use:
         if (!recipientEmail && user.employeeId) {
           const emp = await this.prisma.employee.findUnique({
-            where: { id: user.employeeId },
+            where: { employeeId: user.employeeId },
           });
           if (emp)
             recipientEmail =

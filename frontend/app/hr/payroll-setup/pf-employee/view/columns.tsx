@@ -4,6 +4,14 @@ import { ColumnDef } from "@tanstack/react-table";
 import { PFEmployee } from "@/lib/actions/pf-employee";
 import { Badge } from "@/components/ui/badge";
 
+const formatPKR = (amount: number) =>
+    new Intl.NumberFormat("en-PK", {
+        style: "currency",
+        currency: "PKR",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(amount);
+
 export const columns: ColumnDef<PFEmployee>[] = [
     {
         id: "serialNumber",
@@ -32,46 +40,33 @@ export const columns: ColumnDef<PFEmployee>[] = [
         header: "Designation",
     },
     {
-        accessorKey: "employeeContribution",
-        header: "Employee Contribution",
-        cell: ({ row }) => {
-            const amount = parseFloat(row.getValue("employeeContribution"));
-            const formatted = new Intl.NumberFormat("en-PK", {
-                style: "currency",
-                currency: "PKR",
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-            }).format(amount);
-            return <div className="font-medium">{formatted}</div>;
-        },
-    },
-    {
-        accessorKey: "employerContribution",
-        header: "Employer Contribution",
-        cell: ({ row }) => {
-            const amount = parseFloat(row.getValue("employerContribution"));
-            const formatted = new Intl.NumberFormat("en-PK", {
-                style: "currency",
-                currency: "PKR",
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-            }).format(amount);
-            return <div className="font-medium">{formatted}</div>;
-        },
-    },
-    {
         accessorKey: "totalPFBalance",
         header: "Total PF Balance",
+        cell: ({ row }) => (
+            <div className="font-medium">{formatPKR(row.original.totalPFBalance)}</div>
+        ),
+    },
+    {
+        accessorKey: "totalWithdrawn",
+        header: "Total Withdrawn",
         cell: ({ row }) => {
-            const amount = parseFloat(row.getValue("totalPFBalance"));
-            const formatted = new Intl.NumberFormat("en-PK", {
-                style: "currency",
-                currency: "PKR",
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-            }).format(amount);
+            const amount = row.original.totalWithdrawn;
             return (
-                <div className="font-bold text-green-600">{formatted}</div>
+                <div className={`font-medium ${amount > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                    {amount > 0 ? `-${formatPKR(amount)}` : formatPKR(0)}
+                </div>
+            );
+        },
+    },
+    {
+        accessorKey: "availableBalance",
+        header: "Available Balance",
+        cell: ({ row }) => {
+            const amount = row.original.availableBalance;
+            return (
+                <div className={`font-bold ${amount <= 0 ? "text-red-600" : "text-green-600"}`}>
+                    {formatPKR(amount)}
+                </div>
             );
         },
     },

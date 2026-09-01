@@ -1,4 +1,3 @@
-import { getEmployees } from "@/lib/actions/employee";
 import { getDepartments } from "@/lib/actions/department";
 import { getAttendanceProgressSummary, type AttendanceProgress } from "@/lib/actions/attendance";
 import { AttendanceProgressSummary } from "./attendance-progress-summary";
@@ -27,8 +26,7 @@ export default async function AttendanceProgressSummaryPage({
     const defaultDateFrom = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const defaultDateTo = new Date();
     
-    const [employeesResult, departmentsResult, progressResult] = await Promise.all([
-      getEmployees().catch(err => ({ status: false, message: err.message, data: [] })),
+    const [departmentsResult, progressResult] = await Promise.all([
       getDepartments().catch(err => ({ status: false, message: err.message, data: [] })),
       getAttendanceProgressSummary({
         employeeId,
@@ -39,7 +37,6 @@ export default async function AttendanceProgressSummaryPage({
       }),
     ]);
 
-    const employees = employeesResult.status ? employeesResult.data || [] : [];
     const departments = departmentsResult.status ? departmentsResult.data || [] : [];
 
     if (!progressResult.status) {
@@ -56,7 +53,6 @@ export default async function AttendanceProgressSummaryPage({
     return (
       <AttendanceProgressSummary
         initialData={progressData}
-        employees={employees}
         departments={departments}
         newItemId={newItemId}
       />

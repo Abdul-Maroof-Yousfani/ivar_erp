@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { CreateItemDto, UpdateItemDto, BulkDiscountDto, RollbackCampaignDto, BulkSalePriceDto } from './dto/item.dto';
+import {
+  CreateItemDto,
+  UpdateItemDto,
+  BulkDiscountDto,
+  RollbackCampaignDto,
+  BulkSalePriceDto,
+} from './dto/item.dto';
 
 import { ActivityLogsService } from '../../activity-logs/activity-logs.service';
 import { runInBackground } from '../../common/utils/run-in-background.util';
@@ -18,6 +23,8 @@ const includeMasterData = {
   color: true,
   itemClass: true,
   itemSubclass: true,
+  hsCode: true,
+  segment: true,
 };
 
 @Injectable()
@@ -25,66 +32,36 @@ export class ItemService {
   constructor(
     private prisma: PrismaService,
     private activityLogs: ActivityLogsService,
-  ) { }
+  ) {}
 
   async create(createItemDto: CreateItemDto) {
-    const MAX_CREATE_ATTEMPTS = 5;
     try {
-      for (let attempt = 1; attempt <= MAX_CREATE_ATTEMPTS; attempt++) {
-        try {
-          const data = await this.prisma.$transaction(async (tx) => {
-            // Serialize itemId generation per tenant DB transaction.
-            await tx.$executeRaw`SELECT pg_advisory_xact_lock(920001)`;
-            const nextId = await this.generateNextItemIdTx(tx);
-            return tx.item.create({
-              data: {
-                ...createItemDto,
-                itemId: nextId,
-              },
-            });
-        });
-          return { status: true, data, message: 'Item created successfully' };
-        } catch (error: any) {
-          const isItemIdUniqueViolation =
-            error instanceof Prisma.PrismaClientKnownRequestError &&
-            error.code === 'P2002' &&
-            Array.isArray((error.meta as any)?.target) &&
-            (error.meta as any).target.includes('itemId');
-
-          if (!isItemIdUniqueViolation || attempt === MAX_CREATE_ATTEMPTS) {
-            throw error;
-          }
-        }
-      }
-
-      return { status: false, message: 'Could not generate a unique item ID. Please try again.' };
+      const nextId = await this.generateNextItemId();
+      const data = await this.prisma.item.create({
+        data: {
+          ...createItemDto,
+          itemId: nextId,
+        },
+      });
+      return { status: true, data, message: 'Item created successfully' };
     } catch (error: any) {
       return { status: false, message: error.message };
     }
   }
 
-  private async generateNextItemIdTx(tx: Prisma.TransactionClient): Promise<string> {
-    const rows = await tx.$queryRaw<Array<{ max_num: number | string | bigint | null }>>`
-      SELECT COALESCE(MAX(CAST("itemId" AS INTEGER)), 0) AS max_num
-      FROM "Item"
-      WHERE "itemId" ~ '^[0-9]{6}$'
+  private async generateNextItemId(): Promise<string> {
+    const last = await this.prisma.$queryRaw<{ itemId: string }[]>`
+      SELECT "itemId" FROM "Item"
+      WHERE "itemId" ~ '^[0-9]+$'
+      ORDER BY CAST("itemId" AS INTEGER) DESC
+      LIMIT 1
     `;
-
-    const maxRaw = rows?.[0]?.max_num ?? 0;
-    const maxNum = Number(maxRaw);
-    const next = maxNum + 1;
-
-    if (next > 999999) {
-      throw new Error('Item ID sequence exceeded maximum 999999');
+    const lastNum = last && last[0] ? parseInt(last[0].itemId, 10) : 0;
+    const next = lastNum + 1;
+    if (next > 99999999) {
+      throw new Error('Item ID sequence exceeded maximum 99999999');
     }
     return String(next).padStart(6, '0');
-  }
-
-  private async generateNextItemId(): Promise<string> {
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(920001)`;
-      return this.generateNextItemIdTx(tx);
-    });
   }
 
   async nextItemId() {
@@ -133,14 +110,22 @@ export class ItemService {
       categoryIds?: string[];
       silhouetteIds?: string[];
       genderIds?: string[];
+      itemType?: string;
     },
   ) {
     const skip = (page - 1) * limit;
 
     // ── Allowed sortable columns (direct item fields) ──────────────────
     const directSortFields = new Set([
-      'itemId', 'sku', 'unitPrice', 'isActive', 'createdAt',
-      'updatedAt', 'description', 'barCode', 'hsCode',
+      'itemId',
+      'sku',
+      'unitPrice',
+      'isActive',
+      'createdAt',
+      'updatedAt',
+      'description',
+      'barCode',
+      'hsCode',
     ]);
 
     const relationalSortFields: Record<string, string> = {
@@ -181,6 +166,9 @@ export class ItemService {
     if (filters?.genderIds?.length) {
       andClauses.push({ genderId: { in: filters.genderIds } });
     }
+    if (filters?.itemType) {
+      andClauses.push({ itemType: filters.itemType });
+    }
 
     const where: any = andClauses.length > 0 ? { AND: andClauses } : {};
 
@@ -198,7 +186,13 @@ export class ItemService {
 
     // ── Query ──────────────────────────────────────────────────────────
     const [items, total] = await Promise.all([
-      this.prisma.item.findMany({ where, skip, take: limit, orderBy, include: includeMasterData }),
+      this.prisma.item.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy,
+        include: includeMasterData,
+      }),
       this.prisma.item.count({ where }),
     ]);
 
@@ -225,20 +219,21 @@ export class ItemService {
     }
   }
 
-  async remove(id: string) {
-    try {
-      const findResult = await this.prisma.item.findUnique({ where: { id } });
-      if (!findResult)
-        return { status: false, message: `Item with ID ${id} not found` };
+  // DISABLED: Items cannot be deleted to maintain data integrity
+  // async remove(id: string) {
+  //   try {
+  //     const findResult = await this.prisma.item.findUnique({ where: { id } });
+  //     if (!findResult)
+  //       return { status: false, message: `Item with ID ${id} not found` };
 
-      await this.prisma.item.delete({
-        where: { id },
-      });
-      return { status: true, message: 'Item deleted successfully' };
-    } catch (error: any) {
-      return { status: false, message: error.message };
-    }
-  }
+  //     await this.prisma.item.delete({
+  //       where: { id },
+  //     });
+  //     return { status: true, message: 'Item deleted successfully' };
+  //   } catch (error: any) {
+  //     return { status: false, message: error.message };
+  //   }
+  // }
 
   async getUniqueHsCodes() {
     try {
@@ -286,19 +281,38 @@ export class ItemService {
             discountEndDate: null,
           }
         : {
-            ...(dto.discountRate !== undefined && { discountRate: dto.discountRate }),
-            ...(dto.discountAmount !== undefined && { discountAmount: dto.discountAmount }),
-            ...(dto.discountStartDate !== undefined && { discountStartDate: dto.discountStartDate }),
-            ...(dto.discountEndDate !== undefined && { discountEndDate: dto.discountEndDate }),
+            ...(dto.discountRate !== undefined && {
+              discountRate: dto.discountRate,
+              discountAmount: 0,
+            }),
+            ...(dto.discountAmount !== undefined && {
+              discountAmount: dto.discountAmount,
+              discountRate: 0,
+            }),
+            ...(dto.discountStartDate !== undefined && {
+              discountStartDate: dto.discountStartDate,
+            }),
+            ...(dto.discountEndDate !== undefined && {
+              discountEndDate: dto.discountEndDate,
+            }),
           };
 
       // ── 3. Build per-item override map ─────────────────────────────────
-      const overrideMap = new Map<string, { discountRate?: number; discountAmount?: number }>();
+      const overrideMap = new Map<
+        string,
+        { discountRate?: number; discountAmount?: number }
+      >();
       if (!dto.clearDiscount && dto.overrides?.length) {
         for (const ov of dto.overrides) {
           overrideMap.set(ov.id, {
-            ...(ov.discountRate !== undefined && { discountRate: ov.discountRate }),
-            ...(ov.discountAmount !== undefined && { discountAmount: ov.discountAmount }),
+            ...(ov.discountRate !== undefined && {
+              discountRate: ov.discountRate,
+              discountAmount: 0,
+            }),
+            ...(ov.discountAmount !== undefined && {
+              discountAmount: ov.discountAmount,
+              discountRate: 0,
+            }),
           });
         }
       }
@@ -306,69 +320,78 @@ export class ItemService {
       // ── 4. Apply item updates + persist campaign atomically ───────────
       const overriddenIds = new Set(overrideMap.keys());
       const bulkIds = dto.itemIds.filter((id) => !overriddenIds.has(id));
-      const overriddenItemIds = dto.itemIds.filter((id) => overriddenIds.has(id));
-      const discountType = dto.clearDiscount ? 'clear' : dto.discountRate !== undefined ? 'percent' : 'fixed';
+      const overriddenItemIds = dto.itemIds.filter((id) =>
+        overriddenIds.has(id),
+      );
+      const discountType = dto.clearDiscount
+        ? 'clear'
+        : dto.discountRate !== undefined
+          ? 'percent'
+          : 'fixed';
 
-      const campaign = await this.prisma.$transaction(async (tx) => {
-        // Fast path: single updateMany for items with no override
-        if (bulkIds.length > 0) {
-          await tx.item.updateMany({
-            where: { id: { in: bulkIds } },
-            data: sharedData,
-          });
-        }
+      const campaign = await this.prisma.$transaction(
+        async (tx) => {
+          // Fast path: single updateMany for items with no override
+          if (bulkIds.length > 0) {
+            await tx.item.updateMany({
+              where: { id: { in: bulkIds } },
+              data: sharedData,
+            });
+          }
 
-        // Individual updates only for items with overrides
-        for (const id of overriddenItemIds) {
-          const override = overrideMap.get(id)!;
-          await tx.item.update({
-            where: { id },
-            data: { ...sharedData, ...override },
-          });
-        }
+          // Individual updates only for items with overrides
+          for (const id of overriddenItemIds) {
+            const override = overrideMap.get(id)!;
+            await tx.item.update({
+              where: { id },
+              data: { ...sharedData, ...override },
+            });
+          }
 
-        // Persist campaign record with items + locations
-        return tx.discountCampaign.create({
-          data: {
-            name: dto.campaignName,
-            discountType,
-            discountRate: dto.discountRate ?? 0,
-            discountAmount: dto.discountAmount ?? 0,
-            startDate: dto.discountStartDate ?? null,
-            endDate: dto.discountEndDate ?? null,
-            notes: dto.notes ?? null,
-            clearMode: dto.clearDiscount ?? false,
-            itemCount: dto.itemIds.length,
-            appliedById: dto.appliedById ?? null,
-            items: {
-              create: dto.itemIds.map((itemId) => {
-                const snap = snapshotMap.get(itemId);
-                const ov = overrideMap.get(itemId);
-                return {
-                  itemId,
-                  overrideRate: ov?.discountRate ?? null,
-                  overrideAmount: ov?.discountAmount ?? null,
-                  prevDiscountRate: snap?.discountRate ?? null,
-                  prevDiscountAmount: snap?.discountAmount ?? null,
-                  prevStartDate: snap?.discountStartDate ?? null,
-                  prevEndDate: snap?.discountEndDate ?? null,
-                };
-              }),
+          // Persist campaign record with items + locations
+          return tx.discountCampaign.create({
+            data: {
+              name: dto.campaignName,
+              discountType,
+              discountRate: dto.discountRate ?? 0,
+              discountAmount: dto.discountAmount ?? 0,
+              startDate: dto.discountStartDate ?? null,
+              endDate: dto.discountEndDate ?? null,
+              notes: dto.notes ?? null,
+              clearMode: dto.clearDiscount ?? false,
+              itemCount: dto.itemIds.length,
+              appliedById: dto.appliedById ?? null,
+              items: {
+                create: dto.itemIds.map((itemId) => {
+                  const snap = snapshotMap.get(itemId);
+                  const ov = overrideMap.get(itemId);
+                  return {
+                    itemId,
+                    overrideRate: ov?.discountRate ?? null,
+                    overrideAmount: ov?.discountAmount ?? null,
+                    prevDiscountRate: snap?.discountRate ?? null,
+                    prevDiscountAmount: snap?.discountAmount ?? null,
+                    prevStartDate: snap?.discountStartDate ?? null,
+                    prevEndDate: snap?.discountEndDate ?? null,
+                  };
+                }),
+              },
+              ...(dto.locationIds?.length
+                ? {
+                    locations: {
+                      create: dto.locationIds.map((locationId, idx) => ({
+                        locationId,
+                        locationName: dto.locationNames?.[idx] ?? null,
+                      })),
+                    },
+                  }
+                : {}),
             },
-            ...(dto.locationIds?.length
-              ? {
-                  locations: {
-                    create: dto.locationIds.map((locationId, idx) => ({
-                      locationId,
-                      locationName: dto.locationNames?.[idx] ?? null,
-                    })),
-                  },
-                }
-              : {}),
-          },
-          include: { locations: true },
-        });
-      });
+            include: { locations: true },
+          });
+        },
+        { maxWait: 10000, timeout: 60000 },
+      );
 
       return {
         status: true,
@@ -392,30 +415,50 @@ export class ItemService {
       });
 
       if (!campaign) {
-        return { status: false, message: `Campaign ${dto.campaignId} not found` };
+        return {
+          status: false,
+          message: `Campaign ${dto.campaignId} not found`,
+        };
       }
 
       if (!campaign.items.length) {
-        return { status: false, message: 'No snapshot data available for rollback' };
+        return {
+          status: false,
+          message: 'No snapshot data available for rollback',
+        };
       }
 
       // Restore each item to its pre-campaign discount state, then delete campaign — atomically
-      await this.prisma.$transaction(async (tx) => {
-        await Promise.all(
-          campaign.items.map((ci) =>
-            tx.item.update({
-              where: { id: ci.itemId },
-              data: {
-                discountRate: ci.prevDiscountRate ?? 0,
-                discountAmount: ci.prevDiscountAmount ?? 0,
-                discountStartDate: ci.prevStartDate ?? null,
-                discountEndDate: ci.prevEndDate ?? null,
-              },
-            }),
-          ),
-        );
-        await tx.discountCampaign.delete({ where: { id: dto.campaignId } });
-      });
+      await this.prisma.$transaction(
+        async (tx) => {
+          // Group items with identical pre-discount settings for batch updateMany
+          const groups = new Map<string, { data: any; itemIds: string[] }>();
+
+          for (const ci of campaign.items) {
+            const data = {
+              discountRate: ci.prevDiscountRate ?? 0,
+              discountAmount: ci.prevDiscountAmount ?? 0,
+              discountStartDate: ci.prevStartDate ?? null,
+              discountEndDate: ci.prevEndDate ?? null,
+            };
+            const key = JSON.stringify(data);
+            if (!groups.has(key)) {
+              groups.set(key, { data, itemIds: [] });
+            }
+            groups.get(key)!.itemIds.push(ci.itemId);
+          }
+
+          for (const group of groups.values()) {
+            await tx.item.updateMany({
+              where: { id: { in: group.itemIds } },
+              data: group.data,
+            });
+          }
+
+          await tx.discountCampaign.delete({ where: { id: dto.campaignId } });
+        },
+        { maxWait: 10000, timeout: 60000 },
+      );
 
       return {
         status: true,
@@ -434,8 +477,14 @@ export class ItemService {
       if (!dto.itemIds || dto.itemIds.length === 0) {
         return { status: false, message: 'No item IDs provided' };
       }
-      if (dto.unitPrice === undefined && (!dto.overrides || dto.overrides.length === 0)) {
-        return { status: false, message: 'Provide a unitPrice or per-item overrides' };
+      if (
+        dto.unitPrice === undefined &&
+        (!dto.overrides || dto.overrides.length === 0)
+      ) {
+        return {
+          status: false,
+          message: 'Provide a unitPrice or per-item overrides',
+        };
       }
 
       // Build override map for O(1) lookup
@@ -446,25 +495,30 @@ export class ItemService {
 
       const overriddenIds = new Set(overrideMap.keys());
       const bulkIds = dto.itemIds.filter((id) => !overriddenIds.has(id));
-      const overriddenItemIds = dto.itemIds.filter((id) => overriddenIds.has(id));
+      const overriddenItemIds = dto.itemIds.filter((id) =>
+        overriddenIds.has(id),
+      );
 
-      await this.prisma.$transaction(async (tx) => {
-        // Single updateMany for items with no override
-        if (bulkIds.length > 0 && dto.unitPrice !== undefined) {
-          await tx.item.updateMany({
-            where: { id: { in: bulkIds } },
-            data: { unitPrice: dto.unitPrice },
-          });
-        }
+      await this.prisma.$transaction(
+        async (tx) => {
+          // Single updateMany for items with no override
+          if (bulkIds.length > 0 && dto.unitPrice !== undefined) {
+            await tx.item.updateMany({
+              where: { id: { in: bulkIds } },
+              data: { unitPrice: dto.unitPrice },
+            });
+          }
 
-        // Individual updates only for items with overrides
-        for (const id of overriddenItemIds) {
-          await tx.item.update({
-            where: { id },
-            data: { unitPrice: overrideMap.get(id)! },
-          });
-        }
-      });
+          // Individual updates only for items with overrides
+          for (const id of overriddenItemIds) {
+            await tx.item.update({
+              where: { id },
+              data: { unitPrice: overrideMap.get(id)! },
+            });
+          }
+        },
+        { maxWait: 10000, timeout: 60000 },
+      );
 
       return {
         status: true,
@@ -532,6 +586,28 @@ export class ItemService {
       return { status: false, message: error.message };
     }
   }
+
+  async bulkSearchByBarcodes(barcodes: string[]) {
+    try {
+      if (!barcodes || barcodes.length === 0) {
+        return { status: true, data: [] };
+      }
+      const items = await this.prisma.item.findMany({
+        where: {
+          OR: [
+            { barCode: { in: barcodes } },
+            { sku: { in: barcodes } },
+            { itemId: { in: barcodes } },
+          ],
+        },
+        include: includeMasterData,
+      });
+      return { status: true, data: items };
+    } catch (error: any) {
+      return { status: false, message: error.message };
+    }
+  }
+
   private async enrichItems(items: any[]) {
     if (!items.length) return [];
 
@@ -569,7 +645,6 @@ export class ItemService {
       ...new Set(items.map((i) => i.hsCodeId).filter(Boolean)),
     ];
 
-
     const [
       brands,
       divisions,
@@ -585,87 +660,86 @@ export class ItemService {
       itemSubclasses,
       hsCodes,
     ]: [
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-        any[],
-      ] = await Promise.all([
-        brandIds.length
-          ? this.prisma.brand.findMany({
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+      any[],
+    ] = await Promise.all([
+      brandIds.length
+        ? this.prisma.brand.findMany({
             where: { id: { in: brandIds as string[] } },
           })
-          : [],
-        divisionIds.length
-          ? this.prisma.division.findMany({
+        : [],
+      divisionIds.length
+        ? this.prisma.division.findMany({
             where: { id: { in: divisionIds as string[] } },
           })
-          : [],
-        categoryIds.length
-          ? this.prisma.category.findMany({
+        : [],
+      categoryIds.length
+        ? this.prisma.category.findMany({
             where: { id: { in: categoryIds as string[] } },
           })
-          : [],
-        subCategoryIds.length
-          ? this.prisma.category.findMany({
+        : [],
+      subCategoryIds.length
+        ? this.prisma.category.findMany({
             where: { id: { in: subCategoryIds as string[] } },
           })
-          : [],
-        seasonIds.length
-          ? this.prisma.season.findMany({
+        : [],
+      seasonIds.length
+        ? this.prisma.season.findMany({
             where: { id: { in: seasonIds as string[] } },
           })
-          : [],
-        genderIds.length
-          ? this.prisma.gender.findMany({
+        : [],
+      genderIds.length
+        ? this.prisma.gender.findMany({
             where: { id: { in: genderIds as string[] } },
           })
-          : [],
-        sizeIds.length
-          ? this.prisma.size.findMany({
+        : [],
+      sizeIds.length
+        ? this.prisma.size.findMany({
             where: { id: { in: sizeIds as string[] } },
           })
-          : [],
-        silhouetteIds.length
-          ? this.prisma.silhouette.findMany({
+        : [],
+      silhouetteIds.length
+        ? this.prisma.silhouette.findMany({
             where: { id: { in: silhouetteIds as string[] } },
           })
-          : [],
-        channelClassIds.length
-          ? this.prisma.channelClass.findMany({
+        : [],
+      channelClassIds.length
+        ? this.prisma.channelClass.findMany({
             where: { id: { in: channelClassIds as string[] } },
           })
-          : [],
-        colorIds.length
-          ? this.prisma.color.findMany({
+        : [],
+      colorIds.length
+        ? this.prisma.color.findMany({
             where: { id: { in: colorIds as string[] } },
           })
-          : [],
-        itemClassIds.length
-          ? this.prisma.itemClass.findMany({
+        : [],
+      itemClassIds.length
+        ? this.prisma.itemClass.findMany({
             where: { id: { in: itemClassIds as string[] } },
           })
-          : [],
-        itemSubclassIds.length
-          ? this.prisma.itemSubclass.findMany({
+        : [],
+      itemSubclassIds.length
+        ? this.prisma.itemSubclass.findMany({
             where: { id: { in: itemSubclassIds as string[] } },
           })
-          : [],
-        hsCodeIds.length
-          ? this.prisma.hsCode.findMany({
+        : [],
+      hsCodeIds.length
+        ? this.prisma.hsCode.findMany({
             where: { id: { in: hsCodeIds as string[] } },
           })
-          : [],
-
-      ]);
+        : [],
+    ]);
 
     return items.map((item) => ({
       ...item,
@@ -685,7 +759,6 @@ export class ItemService {
       itemSubclass:
         itemSubclasses.find((x) => x.id === item.itemSubclassId) || null,
       hsCode: hsCodes.find((x) => x.id === item.hsCodeId) || null,
-
     }));
   }
 }

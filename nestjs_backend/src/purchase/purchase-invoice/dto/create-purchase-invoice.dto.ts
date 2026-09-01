@@ -36,6 +36,11 @@ export class CreatePurchaseInvoiceItemDto {
   @IsNumber()
   @Transform(({ value }) => parseFloat(value))
   discountRate?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Transform(({ value }) => value === '' || value === undefined ? undefined : parseFloat(value))
+  rollSize?: number;
 }
 
 export class CreatePurchaseInvoiceDto {

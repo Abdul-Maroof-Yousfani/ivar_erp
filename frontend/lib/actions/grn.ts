@@ -42,3 +42,18 @@ export async function createGrn(data: {
         throw error;
     }
 }
+
+export async function updateGrnStatus(id: string, status: string) {
+    try {
+        const response = await authFetch(`/grn/${id}/status`, {
+            method: "PATCH",
+            body: JSON.stringify({ status }),
+        });
+        revalidatePath("/erp/procurement/grn");
+        revalidatePath(`/erp/procurement/grn/${id}`);
+        return response.data;
+    } catch (error) {
+        console.error("Update GRN status error:", error);
+        throw error;
+    }
+}

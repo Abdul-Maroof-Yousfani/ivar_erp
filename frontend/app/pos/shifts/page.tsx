@@ -18,15 +18,12 @@ import {
 import {
     ArrowLeft, Clock, Wallet, TrendingUp, Banknote, CreditCard,
     CheckCircle2, ChevronLeft, ChevronRight, ShoppingCart, AlertTriangle,
+    Printer,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
 import { useAuth } from "@/components/providers/auth-provider";
-
-function fmt(val: number) {
-    return val.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
-import { formatCurrency } from "@/lib/utils";
+import { PrintReconciliation } from "@/components/pos/print-reconciliation";
 
 function fmtTime(dateStr: string) {
     return new Date(dateStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -47,11 +44,11 @@ function duration(openedAt: string, closedAt?: string | null) {
 }
 
 // ─── Shift Detail Modal ───────────────────────────────────────────────────────
-function ShiftDetailModal({ shift, open, onOpenChange }: {
-    shift: any; open: boolean; onOpenChange: (v: boolean) => void;
+function ShiftDetailModal({ shift, open, onOpenChange, onPrint }: {
+    shift: any; open: boolean; onOpenChange: (v: boolean) => void; onPrint: (id: string) => void;
 }) {
     if (!shift) return null;
-    const variance = shift.difference;
+    const variance = shift.difference ?? shift.variance;
     const isOpen = shift.status === "open";
 
     return (
@@ -74,17 +71,17 @@ function ShiftDetailModal({ shift, open, onOpenChange }: {
                         <div className="bg-muted/50 rounded-2xl p-4 border border-border text-center">
                             <ShoppingCart className="w-4 h-4 text-muted-foreground mx-auto mb-1" />
                             <p className="text-xs text-muted-foreground">Orders</p>
-                            <p className="text-xl font-bold">{shift.metrics.orderCount}</p>
+                            <p className="text-xl font-bold">{shift.metrics?.orderCount ?? 0}</p>
                         </div>
                         <div className="bg-muted/50 rounded-2xl p-4 border border-border text-center">
                             <Banknote className="w-4 h-4 text-muted-foreground mx-auto mb-1" />
                             <p className="text-xs text-muted-foreground">Cash</p>
-                            <p className="text-xl font-bold">{formatCurrency(shift.metrics.cashSales)}</p>
+                            <p className="text-xl font-bold">{formatCurrency(shift.metrics?.cashSales ?? 0)}</p>
                         </div>
                         <div className="bg-muted/50 rounded-2xl p-4 border border-border text-center">
                             <CreditCard className="w-4 h-4 text-muted-foreground mx-auto mb-1" />
                             <p className="text-xs text-muted-foreground">Card</p>
-                            <p className="text-xl font-bold">{formatCurrency(shift.metrics.cardSales)}</p>
+                            <p className="text-xl font-bold">{formatCurrency(shift.metrics?.cardSales ?? 0)}</p>
                         </div>
                     </div>
 
@@ -92,17 +89,17 @@ function ShiftDetailModal({ shift, open, onOpenChange }: {
                     <div className="bg-muted/30 rounded-2xl p-4 border border-border space-y-2 text-sm">
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">Opening Float</span>
-                            <span className="font-medium">{formatCurrency(shift.openingFloat)}</span>
+                            <span className="font-medium">{formatCurrency(shift.openingFloat ?? 0)}</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">Cash Sales</span>
-                            <span className="font-medium">{formatCurrency(shift.metrics.cashSales)}</span>
+                            <span className="font-medium">{formatCurrency(shift.metrics?.cashSales ?? 0)}</span>
                         </div>
                         <div className="flex justify-between border-t border-border pt-2">
                             <span className="font-semibold">Expected Cash</span>
-                            <span className="font-bold">{formatCurrency(shift.expectedCash)}</span>
+                            <span className="font-bold">{formatCurrency(shift.expectedCash ?? 0)}</span>
                         </div>
-                        {!isOpen && shift.actualCash !== null && (
+                        {!isOpen && shift.actualCash !== null && shift.actualCash !== undefined && (
                             <>
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">Actual Cash</span>
@@ -110,8 +107,8 @@ function ShiftDetailModal({ shift, open, onOpenChange }: {
                                 </div>
                                 <div className="flex justify-between border-t border-border pt-2">
                                     <span className="font-semibold">Variance</span>
-                                    <span className={cn("font-bold", variance < 0 ? "text-destructive" : variance > 0 ? "text-emerald-600" : "text-muted-foreground")}>
-                                        {variance > 0 ? "+" : ""}{formatCurrency(variance ?? 0)}
+                                    <span className={cn("font-bold", (variance ?? 0) < 0 ? "text-destructive" : (variance ?? 0) > 0 ? "text-emerald-600" : "text-muted-foreground")}>
+                                        {(variance ?? 0) > 0 ? "+" : ""}{formatCurrency(variance ?? 0)}
                                     </span>
                                 </div>
                             </>
@@ -135,9 +132,20 @@ function ShiftDetailModal({ shift, open, onOpenChange }: {
                     )}
                 </div>
 
-                <DialogFooter>
+                <DialogFooter className="flex items-center justify-between gap-2 border-t border-border pt-4 mt-2">
                     <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-full">
                         Close
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={() => {
+                            onOpenChange(false);
+                            onPrint(shift.id);
+                        }}
+                        className="rounded-full gap-1.5 px-5"
+                    >
+                        <Printer className="w-4 h-4" />
+                        Print Reconciliation
                     </Button>
                 </DialogFooter>
             </DialogContent>
@@ -148,7 +156,8 @@ function ShiftDetailModal({ shift, open, onOpenChange }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ShiftsPage() {
     const router = useRouter();
-    const { hasPermission } = useAuth();
+    const { user, hasPermission } = useAuth();
+    const isParentTerminal = user?.terminal ? user.terminal.isParent : true;
     const canOpen = hasPermission('pos.shift.open');
     const canClose = hasPermission('pos.shift.close');
 
@@ -169,6 +178,8 @@ export default function ShiftsPage() {
     const [showSummaryModal, setShowSummaryModal] = useState(false);
     const [selectedShift, setSelectedShift] = useState<any>(null);
     const [showDetailModal, setShowDetailModal] = useState(false);
+    const [printSessionId, setPrintSessionId] = useState<string | null>(null);
+    const [showPrintModal, setShowPrintModal] = useState(false);
 
     // Form state
     const [floatAmount, setFloatAmount] = useState<number | "">("");
@@ -209,6 +220,15 @@ export default function ShiftsPage() {
     useEffect(() => { fetchSession(); }, [fetchSession]);
     useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
+    useEffect(() => {
+        const handleSync = () => {
+            fetchSession();
+            fetchHistory();
+        };
+        window.addEventListener("shift-session-updated", handleSync);
+        return () => window.removeEventListener("shift-session-updated", handleSync);
+    }, [fetchSession, fetchHistory]);
+
     const handleOpenShift = async () => {
         if (floatAmount === "" || Number(floatAmount) < 0) {
             toast.error("Enter a valid opening float amount");
@@ -225,6 +245,7 @@ export default function ShiftsPage() {
                 setShowOpenModal(false);
                 setFloatAmount(""); setFloatNote("");
                 fetchSession(); fetchHistory();
+                window.dispatchEvent(new Event("shift-session-updated"));
             } else {
                 toast.error(res.data?.message || "Failed to open shift");
             }
@@ -244,7 +265,18 @@ export default function ShiftsPage() {
                 body: { actualCash: Number(actualCash), note: closeNote },
             });
             if (res.ok) {
-                setCloseSummary({
+                const closedSessId = res.data?.session?.id || sessionData?.session?.id || sessionData?.id;
+                let summaryData = null;
+                if (closedSessId) {
+                    try {
+                        const sumRes = await authFetch(`/pos-session/${closedSessId}/close-summary`);
+                        if (sumRes.ok) summaryData = sumRes.data;
+                    } catch (e) {
+                        console.error(e);
+                    }
+                }
+                setCloseSummary(summaryData || {
+                    id: closedSessId,
                     expected: sessionData?.metrics?.expectedCash ?? 0,
                     actual: Number(actualCash),
                     variance: res.data?.variance ?? 0,
@@ -252,6 +284,7 @@ export default function ShiftsPage() {
                 setShowCloseModal(false);
                 setShowSummaryModal(true);
                 fetchSession(); fetchHistory();
+                window.dispatchEvent(new Event("shift-session-updated"));
             } else {
                 toast.error(res.data?.message || "Failed to close shift");
             }
@@ -310,12 +343,25 @@ export default function ShiftsPage() {
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="font-semibold text-lg">Shift not started</p>
-                                <p className="text-sm text-muted-foreground">Open the shift to start accepting cash sales</p>
+                                <p className="text-sm text-muted-foreground">
+                                    {!isParentTerminal 
+                                        ? "This is a Child Terminal. Shifts must be opened on the Parent Terminal." 
+                                        : "Open the shift to start accepting cash sales"
+                                    }
+                                </p>
                             </div>
-                            <Button onClick={() => { setFloatAmount(""); setFloatNote(""); setShowOpenModal(true); }}
-                                className="rounded-full px-8" disabled={!canOpen}>
-                                Open Shift
-                            </Button>
+                            {isParentTerminal && (
+                                <Button onClick={() => {
+                                    if (!canOpen) {
+                                        toast.error("You do not have permission to open a shift. Please contact your manager.");
+                                        return;
+                                    }
+                                    setFloatAmount(""); setFloatNote(""); setShowOpenModal(true);
+                                }}
+                                    className="rounded-full px-8">
+                                    Open Shift
+                                </Button>
+                            )}
                         </div>
                     ) : (
                         <div>
@@ -334,13 +380,36 @@ export default function ShiftsPage() {
                                 </div>
                             </div>
                             <div className="flex justify-end gap-3 pt-4 border-t border-border">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        setPrintSessionId(sessionData?.session?.id || sessionData?.id);
+                                        setShowPrintModal(true);
+                                    }}
+                                    className="rounded-full px-6 gap-1.5"
+                                >
+                                    <Printer className="w-4 h-4" />
+                                    Reconciliation Report
+                                </Button>
                                 <Button variant="outline" onClick={() => router.push("/pos/new-sale")} className="rounded-full px-6">
                                     Continue Selling
                                 </Button>
-                                <Button onClick={() => { setActualCash(""); setCloseNote(""); setShowCloseModal(true); }}
-                                    className="rounded-full px-8 bg-slate-800 hover:bg-slate-900 text-white" disabled={!canClose}>
-                                    Close Shift
-                                </Button>
+                                {!isParentTerminal ? (
+                                    <Badge variant="outline" className="bg-blue-500/10 text-blue-700 border-blue-200 py-1.5 px-4 rounded-full text-xs font-semibold shrink-0">
+                                        Shift managed by Parent Terminal
+                                    </Badge>
+                                ) : (
+                                    <Button onClick={() => {
+                                        if (!canClose) {
+                                            toast.error("You do not have permission to close a shift. Please contact your manager.");
+                                            return;
+                                        }
+                                        setActualCash(""); setCloseNote(""); setShowCloseModal(true);
+                                    }}
+                                        className="rounded-full px-8 bg-slate-800 hover:bg-slate-900 text-white shrink-0">
+                                        Close Shift
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     )}
@@ -365,61 +434,41 @@ export default function ShiftsPage() {
                                 <Table>
                                     <TableHeader>
                                         <TableRow className="bg-muted/30">
-                                            <TableHead>Date</TableHead>
-                                            <TableHead>Opened</TableHead>
-                                            <TableHead>Closed</TableHead>
-                                            <TableHead>Duration</TableHead>
-                                            <TableHead className="text-right">Orders</TableHead>
-                                            <TableHead className="text-right">Total Sales</TableHead>
+                                            <TableHead>Date / Duration</TableHead>
+                                            <TableHead className="text-right">Float</TableHead>
+                                            <TableHead className="text-right">Cash Sales</TableHead>
+                                            <TableHead className="text-right">Expected</TableHead>
+                                            <TableHead className="text-right">Actual</TableHead>
                                             <TableHead className="text-right">Variance</TableHead>
-                                            <TableHead>Status</TableHead>
+                                            <TableHead className="text-center">Action</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {shifts.map((shift) => {
-                                            const variance = shift.difference;
-                                            const isOpen = shift.status === "open";
+                                        {shifts.map((s) => {
+                                            const v = s.difference ?? s.variance;
                                             return (
-                                                <TableRow
-                                                    key={shift.id}
-                                                    className="cursor-pointer hover:bg-muted/30 transition-colors"
-                                                    onClick={() => { setSelectedShift(shift); setShowDetailModal(true); }}
-                                                >
-                                                    <TableCell className="font-medium">{fmtDate(shift.openedAt)}</TableCell>
-                                                    <TableCell className="text-muted-foreground">{fmtTime(shift.openedAt)}</TableCell>
-                                                    <TableCell className="text-muted-foreground">
-                                                        {shift.closedAt ? fmtTime(shift.closedAt) : "—"}
-                                                    </TableCell>
-                                                    <TableCell className="text-muted-foreground text-sm">
-                                                        {duration(shift.openedAt, shift.closedAt)}
-                                                    </TableCell>
-                                                    <TableCell className="text-right">{shift.metrics.orderCount}</TableCell>
-                                                    <TableCell className="text-right font-semibold">
-                                                        {formatCurrency(shift.metrics.totalSales)}
-                                                    </TableCell>
-                                                    <TableCell className="text-right">
-                                                        {isOpen ? (
-                                                            <span className="text-muted-foreground text-xs">—</span>
-                                                        ) : variance === null ? (
-                                                            <span className="text-muted-foreground text-xs">—</span>
-                                                        ) : (
-                                                            <span className={cn("font-semibold text-sm flex items-center justify-end gap-1",
-                                                                variance < 0 ? "text-destructive" : variance > 0 ? "text-emerald-600" : "text-muted-foreground"
-                                                            )}>
-                                                                {variance !== 0 && <AlertTriangle className="w-3 h-3" />}
-                                                                {variance > 0 ? "+" : ""}{formatCurrency(variance)}
-                                                            </span>
-                                                        )}
-                                                    </TableCell>
+                                                <TableRow key={s.id} className="hover:bg-muted/30">
                                                     <TableCell>
-                                                        <Badge variant="outline" className={cn(
-                                                            "text-[10px] px-2 py-0 h-5 capitalize",
-                                                            isOpen
-                                                                ? "bg-emerald-500/10 text-emerald-700 border-emerald-300"
-                                                                : "bg-muted text-muted-foreground border-border"
-                                                        )}>
-                                                            {shift.status}
-                                                        </Badge>
+                                                        <div className="font-medium text-sm">{fmtDate(s.openedAt)}</div>
+                                                        <div className="text-xs text-muted-foreground">
+                                                            {fmtTime(s.openedAt)} {s.closedAt ? `→ ${fmtTime(s.closedAt)}` : "(ongoing)"} ({duration(s.openedAt, s.closedAt)})
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell className="text-right font-medium">{formatCurrency(s.openingFloat)}</TableCell>
+                                                    <TableCell className="text-right font-medium">{formatCurrency(s.metrics?.cashSales ?? 0)}</TableCell>
+                                                    <TableCell className="text-right font-bold">{formatCurrency(s.expectedCash ?? 0)}</TableCell>
+                                                    <TableCell className="text-right font-medium">{s.actualCash !== null && s.actualCash !== undefined ? formatCurrency(s.actualCash) : "-"}</TableCell>
+                                                    <TableCell className="text-right">
+                                                        {v !== null && v !== undefined ? (
+                                                            <span className={cn("font-bold text-sm", v < 0 ? "text-destructive" : v > 0 ? "text-emerald-600" : "text-muted-foreground")}>
+                                                                {v > 0 ? "+" : ""}{formatCurrency(v)}
+                                                            </span>
+                                                        ) : "-"}
+                                                    </TableCell>
+                                                    <TableCell className="text-center">
+                                                        <Button variant="ghost" size="sm" onClick={() => { setSelectedShift(s); setShowDetailModal(true); }} className="rounded-full h-8 px-3">
+                                                            Details
+                                                        </Button>
                                                     </TableCell>
                                                 </TableRow>
                                             );
@@ -451,30 +500,28 @@ export default function ShiftsPage() {
 
             {/* OPEN SHIFT MODAL */}
             <Dialog open={showOpenModal} onOpenChange={setShowOpenModal}>
-                <DialogContent className="sm:max-w-[420px] rounded-3xl">
+                <DialogContent className="sm:max-w-[400px] rounded-3xl">
                     <DialogHeader>
-                        <DialogTitle className="text-xl">Open Shift</DialogTitle>
-                        <DialogDescription>Enter the starting float amount in the cash drawer.</DialogDescription>
+                        <DialogTitle className="text-xl">Start Shift</DialogTitle>
+                        <DialogDescription>Enter starting cash float in register drawer.</DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
                         <div className="space-y-2">
                             <Label>Opening Float (Rs.)</Label>
                             <Input type="number" min="0" value={floatAmount}
                                 onChange={(e) => setFloatAmount(e.target.value ? Number(e.target.value) : "")}
-                                className="rounded-xl h-12 text-lg px-4 bg-muted/30 border-transparent focus-visible:ring-primary"
-                                placeholder="0" />
+                                className="rounded-xl h-12 text-lg px-4" placeholder="Enter float amount..." />
                         </div>
                         <div className="space-y-2">
-                            <Label>Note (Optional)</Label>
+                            <Label>Opening Note (Optional)</Label>
                             <Textarea value={floatNote} onChange={(e) => setFloatNote(e.target.value)}
-                                className="rounded-xl bg-muted/30 border-transparent focus-visible:ring-primary resize-none"
-                                placeholder="E.g. Morning shift" rows={2} />
+                                className="rounded-xl resize-none" placeholder="Note about drawer condition..." rows={2} />
                         </div>
                     </div>
                     <DialogFooter>
                         <Button variant="ghost" onClick={() => setShowOpenModal(false)} className="rounded-full">Cancel</Button>
-                        <Button onClick={handleOpenShift} disabled={isSubmitting} className="rounded-full px-8">
-                            Open Shift
+                        <Button onClick={handleOpenShift} disabled={isSubmitting} className="rounded-full px-6 bg-emerald-600 hover:bg-emerald-700 text-white">
+                            Start Shift
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -482,7 +529,7 @@ export default function ShiftsPage() {
 
             {/* CLOSE SHIFT MODAL */}
             <Dialog open={showCloseModal} onOpenChange={setShowCloseModal}>
-                <DialogContent className="sm:max-w-[420px] rounded-3xl">
+                <DialogContent className="sm:max-w-[400px] rounded-3xl">
                     <DialogHeader>
                         <DialogTitle className="text-xl">Close Shift</DialogTitle>
                         <DialogDescription>Count the cash and enter the actual amount in the drawer.</DialogDescription>
@@ -496,20 +543,18 @@ export default function ShiftsPage() {
                             <Label>Actual Counted Cash (Rs.)</Label>
                             <Input type="number" min="0" value={actualCash}
                                 onChange={(e) => setActualCash(e.target.value ? Number(e.target.value) : "")}
-                                className="rounded-xl h-12 text-lg px-4 bg-destructive/5 border-destructive/20 focus-visible:ring-destructive"
-                                placeholder="Enter counted amount..." />
+                                className="rounded-xl h-12 text-lg px-4" placeholder="Enter counted amount..." />
                         </div>
                         <div className="space-y-2">
                             <Label>Closing Note (Optional)</Label>
                             <Textarea value={closeNote} onChange={(e) => setCloseNote(e.target.value)}
-                                className="rounded-xl bg-muted/30 border-transparent focus-visible:ring-primary resize-none"
-                                placeholder="Reason for variance or general note" rows={2} />
+                                className="rounded-xl resize-none" placeholder="Reason for variance or general note" rows={2} />
                         </div>
                     </div>
                     <DialogFooter>
                         <Button variant="ghost" onClick={() => setShowCloseModal(false)} className="rounded-full">Cancel</Button>
                         <Button onClick={handleCloseShift} disabled={isSubmitting}
-                            className="rounded-full px-8 bg-slate-800 hover:bg-slate-900 text-white">
+                            className="rounded-full px-6 bg-slate-800 hover:bg-slate-900 text-white">
                             Confirm & Close
                         </Button>
                     </DialogFooter>
@@ -518,32 +563,69 @@ export default function ShiftsPage() {
 
             {/* POST-CLOSE SUMMARY MODAL */}
             <Dialog open={showSummaryModal} onOpenChange={setShowSummaryModal}>
-                <DialogContent className="sm:max-w-[380px] rounded-3xl" showCloseButton={false}>
+                <DialogContent className="sm:max-w-[420px] rounded-3xl" showCloseButton={false}>
                     <div className="pt-6 pb-2 text-center">
                         <CheckCircle2 className="w-14 h-14 text-emerald-500 mx-auto mb-3" />
                         <h2 className="text-2xl font-bold mb-1">Shift Closed</h2>
-                        <p className="text-muted-foreground mb-5">Your shift has been recorded.</p>
-                        <div className="bg-muted/50 rounded-2xl p-4 text-left space-y-3 mb-5 border border-border">
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Expected Cash</span>
-                                <span className="font-medium">{formatCurrency(closeSummary?.expected || 0)}</span>
+                        <p className="text-xs text-muted-foreground mb-4">Session close report generated.</p>
+                        
+                        <div className="bg-muted/40 rounded-2xl p-4 text-left space-y-2.5 mb-5 border border-border text-sm">
+                            <div className="flex justify-between text-xs text-muted-foreground border-b border-border pb-2">
+                                <span>Location</span>
+                                <span className="font-semibold text-foreground">{closeSummary?.session?.locationName || 'Outlet'}</span>
                             </div>
-                            <div className="flex justify-between text-sm">
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">Orders Count</span>
+                                <span className="font-medium">{closeSummary?.metrics?.orderCount ?? 0}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">Opening Float</span>
+                                <span className="font-medium">{formatCurrency(closeSummary?.session?.openingFloat ?? closeSummary?.openingFloat ?? 0)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">Cash Sales</span>
+                                <span className="font-medium">{formatCurrency(closeSummary?.metrics?.cashSales ?? 0)}</span>
+                            </div>
+                            <div className="flex justify-between border-t border-border pt-2">
+                                <span className="font-semibold">Expected Cash</span>
+                                <span className="font-bold">{formatCurrency(closeSummary?.session?.expectedCash ?? closeSummary?.expected ?? 0)}</span>
+                            </div>
+                            <div className="flex justify-between">
                                 <span className="text-muted-foreground">Actual Cash</span>
-                                <span className="font-medium">{formatCurrency(closeSummary?.actual || 0)}</span>
+                                <span className="font-medium">{formatCurrency(closeSummary?.session?.actualCash ?? closeSummary?.actual ?? 0)}</span>
                             </div>
-                            <div className="flex justify-between border-t border-border pt-3">
+                            <div className="flex justify-between border-t border-border pt-2">
                                 <span className="font-semibold">Variance</span>
                                 <span className={cn("font-bold",
-                                    (closeSummary?.variance ?? 0) < 0 ? "text-destructive" :
-                                        (closeSummary?.variance ?? 0) > 0 ? "text-emerald-600" : "text-muted-foreground"
+                                    (closeSummary?.session?.variance ?? closeSummary?.variance ?? 0) < 0 ? "text-destructive" :
+                                        (closeSummary?.session?.variance ?? closeSummary?.variance ?? 0) > 0 ? "text-emerald-600" : "text-muted-foreground"
                                 )}>
-                                    {(closeSummary?.variance ?? 0) > 0 ? "+" : ""}{formatCurrency(closeSummary?.variance || 0)}
+                                    {(closeSummary?.session?.variance ?? closeSummary?.variance ?? 0) > 0 ? "+" : ""}
+                                    {formatCurrency(closeSummary?.session?.variance ?? closeSummary?.variance ?? 0)}
                                 </span>
                             </div>
+                            {closeSummary?.session?.closingNote && (
+                                <div className="border-t border-border pt-2 text-xs">
+                                    <span className="font-semibold text-muted-foreground">Closing Note: </span>
+                                    <span>{closeSummary.session.closingNote}</span>
+                                </div>
+                            )}
                         </div>
+
                         <Button onClick={() => setShowSummaryModal(false)} className="w-full rounded-full h-11">
                             Done
+                        </Button>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowSummaryModal(false);
+                                setPrintSessionId(closeSummary?.session?.id || closeSummary?.id);
+                                setShowPrintModal(true);
+                            }}
+                            className="w-full rounded-full h-11 mt-2 gap-1.5"
+                        >
+                            <Printer className="w-4 h-4" />
+                            Print Z-Report
                         </Button>
                         <Button
                             variant="ghost"
@@ -561,6 +643,17 @@ export default function ShiftsPage() {
                 shift={selectedShift}
                 open={showDetailModal}
                 onOpenChange={setShowDetailModal}
+                onPrint={(id) => {
+                    setPrintSessionId(id);
+                    setShowPrintModal(true);
+                }}
+            />
+
+            {/* PRINT RECONCILIATION MODAL */}
+            <PrintReconciliation
+                sessionId={printSessionId}
+                open={showPrintModal}
+                onOpenChange={setShowPrintModal}
             />
         </div>
     );

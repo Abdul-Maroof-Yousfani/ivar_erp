@@ -5,6 +5,7 @@ import { authFetch } from "@/lib/auth";
 
 export interface PosSettings {
     receiptStoreName: string;
+    receiptCompanyName: string;
     receiptAddress: string;
     receiptPhone: string;
     receiptNTN: string;
@@ -13,6 +14,7 @@ export interface PosSettings {
     receiptShowTax: boolean;
     receiptAutoPrint: boolean;
     receiptShowCashier: boolean;
+    receiptPrinterName: string;
     defaultPaymentMethod: string;
     requireCustomer: boolean;
     defaultTaxPercent: string;
@@ -21,6 +23,7 @@ export interface PosSettings {
 
 export const POS_SETTINGS_DEFAULTS: PosSettings = {
     receiptStoreName: "",
+    receiptCompanyName: "",
     receiptAddress: "",
     receiptPhone: "",
     receiptNTN: "",
@@ -29,6 +32,7 @@ export const POS_SETTINGS_DEFAULTS: PosSettings = {
     receiptShowTax: true,
     receiptAutoPrint: false,
     receiptShowCashier: true,
+    receiptPrinterName: "",
     defaultPaymentMethod: "cash",
     requireCustomer: false,
     defaultTaxPercent: "0",

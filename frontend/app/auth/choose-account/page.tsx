@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, UserPlus, LogOut, ChevronRight, Mail } from "lucide-react";
 import { getAvailableProfilesClient, User } from "@/lib/client-auth";
-import { cn } from "@/lib/utils";
+import { cn, COMPANY_NAME } from "@/lib/utils";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -87,7 +87,7 @@ export default function ChooseAccountPage() {
 
             <CardHeader className="text-center space-y-2 pb-6">
                 <CardTitle className="text-2xl font-bold tracking-tight">Choose an account</CardTitle>
-                <CardDescription>Select an account to continue to Speed Limit</CardDescription>
+                <CardDescription>Select an account to continue to {COMPANY_NAME}</CardDescription>
             </CardHeader>
             <CardContent className="p-0 border-y max-h-[400px] overflow-y-auto custom-scrollbar">
                 {profiles.length > 0 ? (

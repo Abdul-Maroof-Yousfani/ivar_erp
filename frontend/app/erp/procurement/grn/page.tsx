@@ -36,8 +36,7 @@ export default function GrnListPage() {
                 getPurchaseOrders()
             ]);
             setGrns(grnData);
-            setGrns(grnData);
-            setOrders(poData.filter(po => po.status !== 'CLOSED'));
+            setOrders(poData.filter(po => po.status === 'OPEN' || po.status === 'PARTIALLY_RECEIVED'));
         } catch (error) {
             console.error('Failed to load data:', error);
         } finally {
@@ -159,9 +158,7 @@ export default function GrnListPage() {
                                                 </TableCell>
                                                 <TableCell>{new Date(grn.receivedDate).toLocaleDateString()}</TableCell>
                                                 <TableCell>
-                                                    <Badge variant={grn.status === 'SUBMITTED' ? 'default' : 'secondary'}>
-                                                        {grn.status}
-                                                    </Badge>
+                                                    {getStatusBadge(grn.status)}
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     <Button variant="ghost" size="sm" asChild>
@@ -183,3 +180,44 @@ export default function GrnListPage() {
         </PermissionGuard>
     );
 }
+
+const getStatusBadge = (status: string) => {
+    switch (status) {
+        case 'PENDING_CHECKER':
+            return (
+                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 font-medium dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900">
+                    Pending Checker
+                </Badge>
+            );
+        case 'PENDING_AUTHORIZER':
+            return (
+                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-medium dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-900">
+                    Pending Authorizer
+                </Badge>
+            );
+        case 'VALUED':
+            return (
+                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-medium dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900">
+                    Valued
+                </Badge>
+            );
+        case 'RECEIVED_UNVALUED':
+            return (
+                <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-medium dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900">
+                    Received Unvalued
+                </Badge>
+            );
+        case 'REJECTED':
+            return (
+                <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 font-medium dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900">
+                    Rejected
+                </Badge>
+            );
+        default:
+            return (
+                <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 font-medium dark:bg-slate-950/30 dark:text-slate-400 dark:border-slate-900">
+                    {status}
+                </Badge>
+            );
+    }
+};

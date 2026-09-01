@@ -108,11 +108,6 @@ export class CreateWorkingHoursPolicyDto {
   @Type(() => Number)
   overtimeRate?: number;
 
-  @ApiPropertyOptional({ example: '19:00' })
-  @IsOptional()
-  @IsString()
-  overtimeStartsAt?: string;
-
   @ApiPropertyOptional({ example: 2.0 })
   @IsOptional()
   @IsNumber()
@@ -237,11 +232,6 @@ export class UpdateWorkingHoursPolicyDto {
   @IsNumber()
   @Type(() => Number)
   overtimeRate?: number;
-
-  @ApiPropertyOptional({ example: '19:00' })
-  @IsOptional()
-  @IsString()
-  overtimeStartsAt?: string;
 
   @ApiPropertyOptional({ example: 2.0 })
   @IsOptional()

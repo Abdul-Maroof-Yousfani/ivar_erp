@@ -7,6 +7,7 @@ model Item {
   imageUrl             String?
   status               String                @default("active")
   isActive             Boolean               @default(true)
+  itemType             String                @default("FINISHED") @map("item_type")
   unitPrice            Float                 @default(0)
   taxRate1             Float?                @default(0)
   taxRate2             Float?                @default(0)
@@ -17,8 +18,14 @@ model Item {
   case                 String?
   band                 String?
   movementType         String?
+  movementName         String?               @map("movement_name")
   heelHeight           String?
   width                String?
+  uom                  String?               @map("uom")
+  rollSize             Float?                @map("roll_size")
+  currency             String?               @map("currency")
+  launchDate           DateTime?             @map("launch_date")
+  oldSeason            String?               @map("old_season")
   brandId              String?
   divisionId           String?
   genderId             String?
@@ -55,6 +62,7 @@ model Item {
   salesOrderItems      SalesOrderItem[]
   stockLedgerEntries   StockLedger[]
   transferRequestItems TransferRequestItem[]
+  stockAdjustmentItems StockAdjustmentItem[]
 
   purchaseRequisitionItems PurchaseRequisitionItem[]
   purchaseOrderItems       PurchaseOrderItem[]
@@ -72,6 +80,7 @@ model Item {
 
   // Discount Campaigns
   discountCampaignItems DiscountCampaignItem[]
+  fabricTrackers        FabricVendorTracker[]
 }
 
 // ─── Discount Campaign ────────────────────────────────────────────────────────

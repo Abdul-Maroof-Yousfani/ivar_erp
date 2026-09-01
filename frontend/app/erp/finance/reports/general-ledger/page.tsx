@@ -1,4 +1,4 @@
-import { getChartOfAccounts } from "@/lib/actions/chart-of-account";
+import { getChartOfAccountsTree } from "@/lib/actions/chart-of-account";
 import { GeneralLedgerClient } from "./general-ledger-client";
 import {
   Breadcrumb, BreadcrumbItem, BreadcrumbLink,
@@ -8,8 +8,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function GeneralLedgerPage() {
-  const { data: accounts } = await getChartOfAccounts();
-  const leafAccounts = (accounts ?? []).filter(a => !a.isGroup);
+  const { data: accounts } = await getChartOfAccountsTree();
 
   return (
     <>
@@ -33,7 +32,7 @@ export default async function GeneralLedgerPage() {
         </div>
       </header>
       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-        <GeneralLedgerClient accounts={leafAccounts} />
+        <GeneralLedgerClient accounts={accounts ?? []} />
       </div>
     </>
   );

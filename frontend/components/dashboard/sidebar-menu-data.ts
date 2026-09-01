@@ -30,13 +30,17 @@ export type MenuItem = {
   children?: MenuItem[];
   permissions?: string[];
   requireAllPermissions?: boolean;
-  environment?: "HR" | "ERP" | "BOTH" | "ADMIN" | "POS";
+  environment?: "HR" | "ERP" | "BOTH" | "ADMIN" | "POS" | "MASTER";
+  /** Which product module this master item belongs to — used for the badge in MASTER view */
+  module?: "HR" | "ERP" | "POS";
 };
 
 export const masterMenuData: MenuItem[] = [
+  // ── ERP ──────────────────────────────────────────────────────────────────────
   {
     title: "Brand",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.brand.read", "master.brand.create"],
     children: [
       { title: "Add", href: "/master/brand/add" },
@@ -45,7 +49,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Division",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.division.read", "master.division.create"],
     children: [
       { title: "Add", href: "/master/division/add" },
@@ -54,7 +59,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Gender",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.gender.read", "master.gender.create"],
     children: [
       { title: "Add", href: "/master/gender/add" },
@@ -63,7 +69,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Size",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.size.read", "master.size.create"],
     children: [
       { title: "Add", href: "/master/size/add" },
@@ -72,7 +79,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Silhouette",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.silhouette.read", "master.silhouette.create"],
     children: [
       { title: "Add", href: "/master/silhouette/add" },
@@ -81,7 +89,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Segment",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.segment.read", "master.segment.create"],
     children: [
       { title: "Add", href: "/master/segment/add" },
@@ -90,7 +99,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Item Class",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.item-class.read", "master.item-class.create"],
     children: [
       { title: "Add", href: "/master/class/add" },
@@ -99,7 +109,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Item Subclass",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.item-subclass.read", "master.item-subclass.create"],
     children: [
       { title: "Add", href: "/master/subclass/add" },
@@ -108,18 +119,18 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "HS Code",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.hs-code.read", "master.hs-code.create"],
-
     children: [
       { title: "Add", href: "/master/hs-code/add" },
       { title: "View", href: "/master/hs-code/list" },
     ],
   },
   {
-
     title: "Season",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.season.read", "master.season.create"],
     children: [
       { title: "Add", href: "/master/season/add" },
@@ -127,9 +138,9 @@ export const masterMenuData: MenuItem[] = [
     ],
   },
   {
-
     title: "Old Season",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.old-season.read", "master.old-season.create"],
     children: [
       { title: "Add", href: "/master/old-season/add" },
@@ -137,9 +148,9 @@ export const masterMenuData: MenuItem[] = [
     ],
   },
   {
-
     title: "Channel Class",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.channel-class.read", "master.channel-class.create"],
     children: [
       { title: "Add", href: "/master/channel-class/add" },
@@ -148,7 +159,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Color",
-    environment: "ERP",
+    environment: "MASTER",
+    module: "ERP",
     permissions: ["master.color.read", "master.color.create"],
     children: [
       { title: "Add", href: "/master/color/add" },
@@ -156,8 +168,117 @@ export const masterMenuData: MenuItem[] = [
     ],
   },
   {
+    title: "Category",
+    environment: "MASTER",
+    module: "ERP",
+    permissions: ["master.category.read", "master.category.create"],
+    children: [
+      { title: "Add", href: "/master/category/add" },
+      { title: "View", href: "/master/category/list" },
+    ],
+  },
+  {
+    title: "Sub Category",
+    environment: "MASTER",
+    module: "ERP",
+    permissions: ["master.sub-category.read", "master.sub-category.create"],
+    children: [
+      { title: "Add", href: "/master/sub-category/add" },
+      { title: "View", href: "/master/sub-category/list" },
+    ],
+  },
+  {
+    title: "Unit Of Measurement",
+    environment: "MASTER",
+    module: "ERP",
+    permissions: [
+      "master.unit-of-measurement.read",
+      "master.unit-of-measurement.create",
+    ],
+    children: [
+      { title: "Add", href: "/master/unit-of-measurement/add" },
+      { title: "View", href: "/master/unit-of-measurement/list" },
+    ],
+  },
+  {
+    title: "Demand Type",
+    environment: "MASTER",
+    module: "ERP",
+    permissions: ["master.demand-type.read", "master.demand-type.create"],
+    children: [
+      { title: "Add", href: "/master/demand-type/add" },
+      { title: "View", href: "/master/demand-type/list" },
+    ],
+  },
+  {
+    title: "Warehouse",
+    environment: "MASTER",
+    module: "ERP",
+    permissions: ["master.warehouse.read", "master.warehouse.create"],
+    children: [
+      { title: "Add", href: "/master/warehouse/add" },
+      { title: "View", href: "/master/warehouse/list" },
+    ],
+  },
+  {
+    title: "Salesman",
+    environment: "MASTER",
+    module: "ERP",
+    permissions: ["master.salesman.read", "master.salesman.create"],
+    children: [
+      { title: "Add", href: "/master/salesman/add" },
+      { title: "View", href: "/master/salesman/list" },
+    ],
+  },
+  {
+    title: "Cluster",
+    environment: "MASTER",
+    module: "ERP",
+    permissions: ["master.cluster.read", "master.cluster.create"],
+    children: [
+      { title: "Add", href: "/master/cluster/add" },
+      { title: "View", href: "/master/cluster/list" },
+    ],
+  },
+  {
+    title: "Opening Inventory",
+    environment: "MASTER",
+    module: "ERP",
+    permissions: [
+      "master.opening-inventory.read",
+      "master.opening-inventory.create",
+    ],
+    children: [
+      { title: "Add", href: "/master/opening-inventory/add" },
+      { title: "View", href: "/master/opening-inventory/list" },
+    ],
+  },
+  {
+    title: "Vendor Opening",
+    environment: "MASTER",
+    module: "ERP",
+    permissions: ["master.vendor-opening.read", "master.vendor-opening.create"],
+    children: [
+      { title: "Add", href: "/master/vendor-opening/add" },
+      { title: "View", href: "/master/vendor-opening/list" },
+    ],
+  },
+  {
+    title: "Tax Rate",
+    environment: "MASTER",
+    module: "ERP",
+    permissions: ["master.tax-rate.read", "master.tax-rate.create"],
+    children: [
+      { title: "Add", href: "/master/tax-rate/add" },
+      { title: "View", href: "/master/tax-rate/list" },
+    ],
+  },
+
+  // ── HR ───────────────────────────────────────────────────────────────────────
+  {
     title: "Department",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.department.read", "master.department.create"],
     children: [
       { title: "Add", href: "/master/department/add" },
@@ -166,7 +287,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Sub Department",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.sub-department.read", "master.sub-department.create"],
     children: [
       { title: "Add", href: "/master/sub-department/add" },
@@ -175,7 +297,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Institute",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.institute.read", "master.institute.create"],
     children: [
       { title: "Add", href: "/master/institute/add" },
@@ -184,7 +307,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Designation",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.designation.read", "master.designation.create"],
     children: [
       { title: "Add", href: "/master/designation/add" },
@@ -193,7 +317,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Job Type",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.job-type.read", "master.job-type.create"],
     children: [
       { title: "Add", href: "/master/job-type/add" },
@@ -202,7 +327,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Marital Status",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.marital-status.read", "master.marital-status.create"],
     children: [
       { title: "Add", href: "/master/marital-status/add" },
@@ -211,7 +337,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Employee Grade",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.employee-grade.read", "master.employee-grade.create"],
     children: [
       { title: "Add", href: "/master/employee-grade/add" },
@@ -219,8 +346,9 @@ export const masterMenuData: MenuItem[] = [
     ],
   },
   {
-    title: "Employement Status",
-    environment: "HR",
+    title: "Employment Status",
+    environment: "MASTER",
+    module: "HR",
     permissions: [
       "master.employee-status.read",
       "master.employee-status.create",
@@ -232,7 +360,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Qualification",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.qualification.read", "master.qualification.create"],
     children: [
       { title: "Add", href: "/master/qualification/add" },
@@ -241,7 +370,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "City",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.city.read", "master.city.create"],
     children: [
       { title: "Add", href: "/master/city/add" },
@@ -250,42 +380,18 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Location",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.location.read", "master.location.create"],
     children: [
       { title: "Add", href: "/master/location/add" },
       { title: "View", href: "/master/location/list" },
     ],
   },
-  // {
-  //   title: "POS Config",
-  //   environment: "HR",
-  //   permissions: ["master.location.read"],
-  //   children: [
-  //     { title: "Manage", href: "/master/pos-config" },
-  //   ],
-  // },
-  {
-    title: "Region",
-    environment: "HR",
-    permissions: ["master.region.read", "master.region.create"],
-    children: [
-      { title: "Add", href: "/master/region/add" },
-      { title: "View", href: "/master/region/list" },
-    ],
-  },
-  {
-    title: "Contact",
-    environment: "HR",
-    permissions: ["master.contact.read", "master.contact.create"],
-    children: [
-      { title: "Add", href: "/master/contact/add" },
-      { title: "View", href: "/master/contact/list" },
-    ],
-  },
   {
     title: "Allocation",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.allocation.read", "master.allocation.create"],
     children: [
       { title: "Add", href: "/master/allocation/add" },
@@ -294,7 +400,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Loan Types",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.loan-type.read", "master.loan-type.create"],
     children: [
       { title: "Add", href: "/master/loan-types/add" },
@@ -303,7 +410,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Leave Types",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.leave-type.read", "master.leave-type.create"],
     children: [
       { title: "Add", href: "/master/leave-types/add" },
@@ -312,7 +420,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Leaves Policy",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.leaves-policy.read", "master.leaves-policy.create"],
     children: [
       { title: "Add", href: "/master/leaves-policy/add" },
@@ -325,7 +434,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Equipment",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.equipment.read", "master.equipment.create"],
     children: [
       { title: "Add", href: "/master/equipment/add" },
@@ -334,7 +444,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Salary Breakup",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.salary-breakup.read", "master.salary-breakup.create"],
     children: [
       { title: "Add", href: "/master/salary-breakup/add" },
@@ -343,7 +454,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "EOBI",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.eobi.read", "master.eobi.create"],
     children: [
       { title: "Add", href: "/master/eobi/add" },
@@ -352,7 +464,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Social Security",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: [
       "master.social-security.read",
       "master.social-security.create",
@@ -364,7 +477,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Tax Slabs",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.tax-slab.read", "master.tax-slab.create"],
     children: [
       { title: "Add", href: "/master/tax-slabs/add" },
@@ -373,7 +487,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Provident Fund",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.provident-fund.read", "master.provident-fund.create"],
     children: [
       { title: "Add", href: "/master/provident-fund/add" },
@@ -382,7 +497,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Bonus Types",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.bonus-type.read", "master.bonus-type.create"],
     children: [
       { title: "Add", href: "/master/bonus-types/add" },
@@ -391,7 +507,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Allowance",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.allowance-head.read", "master.allowance-head.create"],
     children: [
       { title: "Add", href: "/master/allowance-head/add" },
@@ -400,7 +517,8 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Deduction",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.deduction-head.read", "master.deduction-head.create"],
     children: [
       { title: "Add", href: "/master/deduction-head/add" },
@@ -409,192 +527,101 @@ export const masterMenuData: MenuItem[] = [
   },
   {
     title: "Bank",
-    environment: "HR",
+    environment: "MASTER",
+    module: "HR",
     permissions: ["master.bank.read", "master.bank.create"],
     children: [
       { title: "Add", href: "/master/banks/add" },
       { title: "View", href: "/master/banks/list" },
     ],
   },
-  // {
-  //   title: "Purchase Pool",
-  //   environment: "ERP",
-  //   permissions: ["master.purchase-pool.read", "master.purchase-pool.create"],
-  //   children: [
-  //     { title: "Add", href: "/master/purchase-pool/add" },
-  //     { title: "View", href: "/master/purchase-pool/list" },
-  //   ],
-  // },
-  // {
-  //   title: "Supplier",
-  //   environment: "ERP",
-  //   permissions: ["master.supplier.read", "master.supplier.create"],
-  //   children: [
-  //     { title: "Add", href: "/master/supplier/add" },
-  //     { title: "View", href: "/master/supplier/list" },
-  //   ],
-  // },
-  {
-    title: "Category",
-    environment: "ERP",
-    permissions: ["master.category.read", "master.category.create"],
-    children: [
-      { title: "Add", href: "/master/category/add" },
-      { title: "View", href: "/master/category/list" },
-    ],
-  },
-  {
-    title: "Sub Category",
-    environment: "ERP",
-    permissions: ["master.sub-category.read", "master.sub-category.create"],
-    children: [
-      { title: "Add", href: "/master/sub-category/add" },
-      { title: "View", href: "/master/sub-category/list" },
-    ],
-  },
-  // {
-  //   title: "Sub Item",
-  //   environment: "ERP",
-  //   permissions: ["master.sub-item.read", "master.sub-item.create"],
-  //   children: [
-  //     { title: "Add", href: "/master/sub-item/add" },
-  //     { title: "View", href: "/master/sub-item/list" },
-  //   ],
-  // },
-  {
 
-    title: "Unit Of Measurment",
-    environment: "ERP",
-    permissions: [
-      "master.unit-of-measurement.read",
-      "master.unit-of-measurement.create",
-    ],
-    children: [
-      { title: "Add", href: "/master/unit-of-measurement/add" },
-      { title: "View", href: "/master/unit-of-measurement/list" },
-    ],
-  },
-
-  {
-    title: "Demand Type",
-    environment: "ERP",
-    permissions: ["master.demand-type.read", "master.demand-type.create"],
-    children: [
-      { title: "Add", href: "/master/demand-type/add" },
-      { title: "View", href: "/master/demand-type/list" },
-    ],
-  },
-  {
-    title: "Warehouse",
-    environment: "ERP",
-    permissions: ["master.warehouse.read", "master.warehouse.create"],
-    children: [
-      { title: "Add", href: "/master/warehouse/add" },
-      { title: "View", href: "/master/warehouse/list" },
-    ],
-  },
-  {
-    title: "Salesman",
-    environment: "ERP",
-    permissions: ["master.salesman.read", "master.salesman.create"],
-    children: [
-      { title: "Add", href: "/master/salesman/add" },
-      { title: "View", href: "/master/salesman/list" },
-    ],
-  },
-  {
-    title: "Cluster",
-    environment: "ERP",
-    permissions: ["master.cluster.read", "master.cluster.create"],
-    children: [
-      { title: "Add", href: "/master/cluster/add" },
-      { title: "View", href: "/master/cluster/list" },
-    ],
-  },
-  {
-    title: "Opening Inventory",
-    environment: "ERP",
-    permissions: [
-      "master.opening-inventory.read",
-      "master.opening-inventory.create",
-    ],
-    children: [
-      { title: "Add", href: "/master/opening-inventory/add" },
-      { title: "View", href: "/master/opening-inventory/list" },
-    ],
-  },
-  {
-    title: "Vendor Opening",
-    environment: "ERP",
-    permissions: ["master.vendor-opening.read", "master.vendor-opening.create"],
-    children: [
-      { title: "Add", href: "/master/vendor-opening/add" },
-      { title: "View", href: "/master/vendor-opening/list" },
-    ],
-  },
-  {
-    title: "Tax Rate 1",
-    environment: "ERP",
-    permissions: ["master.tax-rate.read", "master.tax-rate.create"],
-    children: [
-      { title: "Add", href: "/master/tax-rate/add" },
-      { title: "View", href: "/master/tax-rate/list" },
-    ],
-  },
-  // {
-  //   title: "Warehouse",
-  //   environment: "ERP",
-  //   permissions: ["master.warehouse.read", "master.warehouse.create"],
-  //   children: [
-  //     { title: "Add", href: "/master/warehouse/add" },
-  //     { title: "View", href: "/master/warehouse/list" },
-  //   ],
-  // },
-
-
-  {
-    title: "Manage Outlets",
-    href: "/master/location/list",
-    permissions: ["master.location.read"],
-    environment: "POS",
-  },
+  // ── POS ──────────────────────────────────────────────────────────────────────
   {
     title: "Promo Campaigns",
-    environment: "POS",
+    environment: "MASTER",
+    module: "POS",
     permissions: ["master.promo.read", "master.promo.create"],
     children: [
-      { title: "Create", href: "/master/pos-config/promos/new", permissions: ["master.promo.create"] },
-      { title: "List", href: "/master/pos-config/promos", permissions: ["master.promo.read"] },
+      {
+        title: "Create",
+        href: "/master/pos-config/promos/new",
+        permissions: ["master.promo.create"],
+      },
+      {
+        title: "List",
+        href: "/master/pos-config/promos",
+        permissions: ["master.promo.read"],
+      },
     ],
   },
   {
     title: "Coupon Codes",
-    environment: "POS",
+    environment: "MASTER",
+    module: "POS",
     permissions: ["master.coupon.read", "master.coupon.create"],
     children: [
-      { title: "Create", href: "/master/pos-config/coupons/new", permissions: ["master.coupon.create"] },
-      { title: "List", href: "/master/pos-config/coupons", permissions: ["master.coupon.read"] },
+      {
+        title: "Create",
+        href: "/master/pos-config/coupons/new",
+        permissions: ["master.coupon.create"],
+      },
+      {
+        title: "List",
+        href: "/master/pos-config/coupons",
+        permissions: ["master.coupon.read"],
+      },
     ],
   },
   {
     title: "Alliance Discounts",
-    environment: "POS",
+    environment: "MASTER",
+    module: "POS",
     permissions: ["master.alliance.read", "master.alliance.create"],
     children: [
-      { title: "Create", href: "/master/pos-config/alliances/new", permissions: ["master.alliance.create"] },
-      { title: "List", href: "/master/pos-config/alliances", permissions: ["master.alliance.read"] },
+      {
+        title: "Create",
+        href: "/master/pos-config/alliances/new",
+        permissions: ["master.alliance.create"],
+      },
+      {
+        title: "List",
+        href: "/master/pos-config/alliances",
+        permissions: ["master.alliance.read"],
+      },
     ],
   },
   {
     title: "Vouchers",
-    environment: "POS",
+    environment: "MASTER",
+    module: "POS",
     permissions: ["pos.voucher.view", "pos.voucher.create"],
     children: [
-      { title: "Issue", href: "/master/pos-config/vouchers/new", permissions: ["pos.voucher.create"] },
-      { title: "List", href: "/master/pos-config/vouchers", permissions: ["pos.voucher.view"] },
+      {
+        title: "Issue",
+        href: "/master/pos-config/vouchers/new",
+        permissions: ["pos.voucher.create"],
+      },
+      {
+        title: "List",
+        href: "/master/pos-config/vouchers",
+        permissions: ["pos.voucher.view"],
+      },
     ],
   },
-
+  {
+    title: "Merchants",
+    environment: "MASTER",
+    module: "POS",
+    permissions: ["master.merchant.read", "master.merchant.create"],
+    children: [
+      {
+        title: "Configure",
+        href: "/master/pos-config/merchants",
+        permissions: ["master.merchant.read"],
+      },
+    ],
+  },
 ];
 
 export const menuData: MenuItem[] = [
@@ -610,7 +637,13 @@ export const menuData: MenuItem[] = [
     icon: LayoutDashboard,
     href: "/erp",
     environment: "ERP",
-    permissions: ["erp.item.read", "erp.finance.chart-of-account.read", "erp.finance.journal-voucher.read", "inventory.read", "procurement.read"],
+    permissions: [
+      "erp.item.read",
+      "erp.finance.chart-of-account.read",
+      "erp.finance.journal-voucher.read",
+      "inventory.read",
+      "procurement.read",
+    ],
   },
   {
     title: "POS Dashboard",
@@ -628,6 +661,7 @@ export const menuData: MenuItem[] = [
       "erp.finance.journal-voucher.read",
       "erp.finance.payment-voucher.read",
       "erp.finance.receipt-voucher.read",
+      "erp.finance.account-config.read",
     ],
     children: [
       {
@@ -650,6 +684,11 @@ export const menuData: MenuItem[] = [
         title: "Opening Balance",
         href: "/erp/finance/opening-balance",
         permissions: ["erp.finance.chart-of-account.update"],
+      },
+      {
+        title: "Account Configuration",
+        href: "/erp/finance/account-configuration",
+        permissions: ["erp.finance.account-config.update"],
       },
       {
         title: "Journal Voucher",
@@ -707,12 +746,12 @@ export const menuData: MenuItem[] = [
             href: "/erp/finance/reports/general-ledger",
           },
           {
-            title: "Trial Balance (6-Col)",
-            href: "/erp/finance/reports/trial-balance",
+            title: "General Ledger Summary",
+            href: "/erp/finance/reports/general-ledger-summary",
           },
           {
-            title: "Trial Balance (5-Col)",
-            href: "/erp/finance/reports/trial-balance-5col",
+            title: "Trial Balance",
+            href: "/erp/finance/reports/trial-balance",
           },
           {
             title: "Balance Sheet",
@@ -746,10 +785,31 @@ export const menuData: MenuItem[] = [
         title: "Item Setup",
         permissions: ["erp.item.read", "erp.item.create", "erp.item.update"],
         children: [
-          { title: "Create", href: "/erp/items/create", permissions: ["erp.item.create"] },
-          { title: "List", href: "/erp/items/list", permissions: ["erp.item.read"] },
-          { title: "Bulk Discount", href: "/erp/items/bulk-discount", permissions: ["erp.item.update"] },
-          { title: "Campaigns", href: "/erp/items/campaigns", permissions: ["erp.item.read"] },
+          {
+            title: "Create Finished Good",
+            href: "/erp/items/create",
+            permissions: ["erp.item.create"],
+          },
+          {
+            title: "Create Production Fabric",
+            href: "/erp/items/create-fabric",
+            permissions: ["erp.item.create"],
+          },
+          {
+            title: "List",
+            href: "/erp/items/list",
+            permissions: ["erp.item.read"],
+          },
+          {
+            title: "Bulk Discount",
+            href: "/erp/items/bulk-discount",
+            permissions: ["erp.item.update"],
+          },
+          {
+            title: "Campaigns",
+            href: "/erp/items/campaigns",
+            permissions: ["erp.item.read"],
+          },
           // { title: "Categories", href: "/erp/inventory/categories" },
         ],
       },
@@ -761,14 +821,48 @@ export const menuData: MenuItem[] = [
             href: "/erp/inventory/transactions/stock-received",
           },
           {
+            title: "Stock Adjustment",
+            href: "/erp/inventory/transactions/stock-adjustment",
+          },
+          {
             title: "Delivery Note",
             href: "/erp/inventory/transactions/delivery-note",
           },
           {
             title: "Stock Transfer",
             href: "/erp/inventory/transactions/stock-transfer",
+            permissions: [
+              "erp.inventory.claims.acknowledge",
+              "erp.inventory.warehouse.view",
+            ],
+          },
+          {
+            title: "PLM Claims",
+            href: "/erp/inventory/transactions/plm-claims",
+            permissions: [
+              "erp.inventory.claims.acknowledge",
+              "erp.inventory.warehouse.view",
+            ],
           },
         ],
+      },
+      {
+        title: "Reports",
+        children: [
+          {
+            title: "Available Stock Summary",
+            href: "/erp/reports/available-stock-summary",
+          },
+          {
+            title: "Out-of-Stock Report",
+            href: "/erp/reports/out-of-stock",
+          },
+        ],
+      },
+      {
+        title: "Production Fabric Form",
+        href: "/erp/inventory/fabric-vendor-tracker",
+        permissions: ["inventory.read"],
       },
     ],
   },
@@ -776,80 +870,137 @@ export const menuData: MenuItem[] = [
     title: "Procurement",
     icon: ShoppingCart,
     environment: "ERP",
-    permissions: ["procurement.read"],
+    permissions: [
+      "erp.procurement.vendor.read",
+      "erp.procurement.pr.read",
+      "erp.procurement.rfq.read",
+      "erp.procurement.vq.create",
+      "erp.procurement.po.create",
+      "erp.procurement.grn.read",
+      "erp.procurement.landed-cost.create",
+      "erp.procurement.pi.read",
+      "erp.procurement.pret.read",
+    ],
     children: [
-      { title: "Vendors", href: "/erp/procurement/vendors" },
+      {
+        title: "Vendors",
+        href: "/erp/procurement/vendors",
+        permissions: ["erp.procurement.vendor.read"],
+      },
       {
         title: "Requisition & Quotation",
         children: [
           {
             title: "Purchase Requisition",
             href: "/erp/procurement/purchase-requisition",
+            permissions: ["erp.procurement.pr.read"],
           },
-          { title: "RFQ", href: "/erp/procurement/rfq" },
+          {
+            title: "RFQ",
+            href: "/erp/procurement/rfq",
+            permissions: ["erp.procurement.rfq.read"],
+          },
           {
             title: "Create Vendor Quotation",
             href: "/erp/procurement/vendor-quotation/create",
+            permissions: ["erp.procurement.vq.create"],
           },
           {
             title: "Vendor Quotation List",
             href: "/erp/procurement/vendor-quotation/list",
+            permissions: ["erp.procurement.vq.create"],
           },
         ],
       },
       {
         title: "Orders & Receiving",
         children: [
-          { title: "Purchase Order", href: "/erp/procurement/purchase-order" },
-          { title: "Goods Receipt Note", href: "/erp/procurement/grn" },
+          {
+            title: "Purchase Order",
+            href: "/erp/procurement/purchase-order",
+            permissions: ["erp.procurement.po.create"],
+          },
+          {
+            title: "Goods Receipt Note",
+            href: "/erp/procurement/grn",
+            permissions: ["erp.procurement.grn.create"],
+          },
         ],
       },
       {
         title: "Landed Cost",
         children: [
-          { title: "Landed Cost", href: "/erp/procurement/landed-cost" },
-          { title: "Setup", href: "/erp/procurement/landed-cost/setup" },
-          { title: "Report", href: "/erp/procurement/landed-cost/report" },
+          {
+            title: "Landed Cost",
+            href: "/erp/procurement/landed-cost",
+            permissions: ["erp.procurement.landed-cost.create"],
+          },
+          {
+            title: "Setup",
+            href: "/erp/procurement/landed-cost/setup",
+            permissions: ["erp.procurement.landed-cost.create"],
+          },
+          {
+            title: "Report",
+            href: "/erp/procurement/landed-cost/report",
+            permissions: ["erp.procurement.landed-cost.create"],
+          },
         ],
       },
-      { title: "Purchase Invoice", href: "/erp/procurement/purchase-invoice" },
-      { title: "Purchase Returns", href: "/erp/procurement/purchase-returns" },
+      {
+        title: "Purchase Invoice",
+        href: "/erp/procurement/purchase-invoice",
+        permissions: ["erp.procurement.pi.read"],
+      },
+      {
+        title: "Purchase Returns",
+        href: "/erp/procurement/purchase-returns",
+        permissions: ["erp.procurement.pret.read"],
+      },
     ],
   },
   {
     title: "Sales",
     icon: TrendingUp,
     environment: "ERP",
-    permissions: ["sales.read"],
+    permissions: [
+      "erp.sales.customer.read",
+      "erp.sales.order.read",
+      "erp.sales.dc.read",
+      "erp.sales.invoice.read",
+      "erp.claims.read",
+    ],
     children: [
       {
         title: "Customers",
         href: "/erp/sales/customers",
-        permissions: ["sales.customer.read"],
+        permissions: ["erp.sales.customer.read"],
       },
       {
         title: "Sales Orders",
         href: "/erp/sales/orders",
-        permissions: ["sales.order.read"],
+        permissions: ["erp.sales.order.read"],
       },
       {
         title: "Warehouse Verification",
         href: "/erp/sales/orders/verification",
-        permissions: ["sales.order.read"],
+        permissions: ["erp.sales.order.read"],
       },
       {
         title: "Delivery Challans",
         href: "/erp/sales/delivery-challans",
-        permissions: ["sales.challan.read"],
+        permissions: ["erp.sales.dc.read"],
       },
       {
         title: "Sales Invoices",
         href: "/erp/sales/invoices",
-        permissions: ["sales.invoice.read"],
+        permissions: ["erp.sales.invoice.read"],
       },
       {
         title: "Reports",
         children: [
+          { title: "Out-of-Stock Report", href: "/erp/reports/out-of-stock" },
+          { title: "Sales & Stock Activity", href: "/erp/reports/sales-activity" },
           { title: "Sales Summary", href: "/erp/sales/reports/summary" },
           {
             title: "Customer Ledger",
@@ -864,7 +1015,7 @@ export const menuData: MenuItem[] = [
       {
         title: "Return Claims",
         href: "/erp/claims",
-        permissions: ["sales.returns.claims"],
+        permissions: ["erp.claims.read"],
       },
     ],
   },
@@ -1315,8 +1466,38 @@ export const menuData: MenuItem[] = [
             href: "/hr/payroll-setup/pf-employee/withdraw-view",
             permissions: ["hr.provident-fund.read"],
           },
-          { title: "View Report", href: "/hr/payroll-setup/pf-employee/report", permissions: ["hr.provident-fund.read"] },
+          {
+            title: "View Report",
+            href: "/hr/payroll-setup/pf-employee/report",
+            permissions: ["hr.provident-fund.read"],
+          },
           // { title: "View Ledger", href: "/hr/payroll-setup/pf-employee/ledger", permissions: ["hr.provident-fund.read"] },
+        ],
+      },
+      {
+        title: "EOBI for Employee",
+        permissions: ["hr.eobi.read", "hr.eobi.create"],
+        children: [
+          {
+            title: "View EOBI",
+            href: "/hr/payroll-setup/eobi-employee/view",
+            permissions: ["hr.eobi.read"],
+          },
+          {
+            title: "Create Withdraw",
+            href: "/hr/payroll-setup/eobi-employee/withdraw-create",
+            permissions: ["hr.eobi.create"],
+          },
+          {
+            title: "View Withdraw",
+            href: "/hr/payroll-setup/eobi-employee/withdraw-view",
+            permissions: ["hr.eobi.read"],
+          },
+          {
+            title: "View Report",
+            href: "/hr/payroll-setup/eobi-employee/report",
+            permissions: ["hr.eobi.read"],
+          },
         ],
       },
       {
@@ -1427,6 +1608,11 @@ export const menuData: MenuItem[] = [
         permissions: ["pos.sales.history.view"],
       },
       {
+        title: "Sales Activity",
+        href: "/pos/sales/activity",
+        permissions: ["pos.sales.history.view"],
+      },
+      {
         title: "Hold Orders",
         href: "/pos/holds",
         permissions: ["pos.hold.view"],
@@ -1441,7 +1627,7 @@ export const menuData: MenuItem[] = [
         href: "/pos/customers",
         permissions: ["pos.customer.view"],
       },
-    
+
       {
         title: "Cash Drawer",
         href: "/pos/shifts",
@@ -1500,6 +1686,16 @@ export const menuData: MenuItem[] = [
         href: "/pos/inventory/returns",
         permissions: ["pos.inventory.returns.view"],
       },
+      {
+        title: "Stock Ledger",
+        href: "/pos/inventory/ledger",
+        permissions: ["pos.inventory.view"],
+      },
+      {
+        title: "Stock Adjustments",
+        href: "/pos/inventory/adjustments",
+        permissions: ["pos.inventory.view"],
+      },
     ],
   },
 
@@ -1510,18 +1706,97 @@ export const menuData: MenuItem[] = [
     environment: "POS",
     permissions: ["pos.dashboard.view"],
     children: [
+      // {
+      //   title: "Sales Reports",
+      //   href: "/pos/reports",
+      //   permissions: ["pos.dashboard.view"],
+      // },
+      // {
+      //   title: "Session Summary",
+      //   href: "/pos/session",
+      //   permissions: ["pos.shift.view"],
+      // },
       {
-        title: "Sales Reports",
-        href: "/pos/reports",
-        permissions: ["pos.dashboard.view"],
+        title: "Stock Activity",
+        href: "/pos/reports/stock-activity",
+        permissions: ["pos.report.view"],
       },
       {
-        title: "Session Summary",
-        href: "/pos/session",
-        permissions: ["pos.shift.view"],
+        href: "/pos/reports/sales-register",
+        title: "Sales Register",
+        permissions: ["pos.report.view"],
+      },
+      {
+        title: "Net Sales Summary",
+        href: "/pos/reports/net-sales-summary",
+        permissions: ["pos.report.view"],
+      },
+      {
+        title: "Sales Reconciliation",
+        href: "/pos/reports/reconciliation",
+        permissions: ["pos.report.view"],
       },
     ],
   },
+  {
+    title: "POS Reports",
+    icon: TrendingUp,
+    environment: "ERP",
+    permissions: ["erp.report.view"],
+    children: [
+      // {
+      //   title: "Stock Activity",
+      //   href: "/erp/reports/pos/stock-activity",
+      //   permissions: ["erp.report.view"],
+      // },
+      {
+        title: "Available Stock Summary",
+        href: "/erp/reports/pos/available-stock-summary",
+        permissions: ["erp.report.view"],
+      },
+      // {
+      //   title: "Stock Transaction Details",
+      //   href: "/erp/reports/pos/stock-transaction-detail",
+      //   permissions: ["erp.report.view"],
+      // },
+      // {
+      //   title: "Net Sales Summary",
+      //   href: "/erp/reports/pos/net-sales-summary",
+      //   permissions: ["erp.report.view"],
+      // },
+      // {
+      //   title: "Sales List Report",
+      //   href: "/erp/reports/pos/sales-list",
+      //   permissions: ["erp.report.view"],
+      // },
+      // {
+      //   title: "Gross Sales Summary",
+      //   href: "/erp/reports/pos/gross-sales-summary",
+      //   permissions: ["erp.report.view"],
+      // },
+      // {
+      //   title: "Gross Sales Return",
+      //   href: "/erp/reports/pos/gross-sales-return",
+      //   permissions: ["erp.report.view"],
+      // },
+      {
+        title: "Sales Reconciliation",
+        href: "/erp/reports/pos/reconciliation",
+        permissions: ["erp.report.view"],
+      },
+      // {
+      //   href: "/erp/reports/pos/sales-register",
+      //   title: "Sales Register",
+      //   permissions: ["erp.report.view"],
+      // },
+      // {
+      //   href: "/erp/reports/pos/alliance-register",
+      //   title: "Alliance Register",
+      //   permissions: ["erp.report.view"],
+      // },
+    ],
+  },
+
 
   // ── POS: Terminal ────────────────────────────────────────────────────────────
   {

@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ProtectedSalaryCell } from "@/components/common/protected-salary-cell";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -332,7 +333,7 @@ export default async function ViewEmployeePage({ params }: PageProps) {
                   { label: "Country", value: getHistoricalCountryName() },
                   { label: "State / Province", value: getHistoricalStateName() },
                   { label: "City", value: getHistoricalCityName() },
-                  { label: "Employee Salary", value: historicalEmployee.employeeSalary ? `PKR ${Number(historicalEmployee.employeeSalary).toLocaleString()}` : "N/A" },
+                  { label: "Employee Salary", value: historicalEmployee.employeeSalary, isProtectedSalary: true },
                   { label: "Working Hours Policy", value: getHistoricalWorkingHoursPolicyName() },
                   { label: "Location", value: getHistoricalLocationName() },
                   { label: "Leaves Policy", value: getHistoricalLeavesPolicyName() },
@@ -342,6 +343,10 @@ export default async function ViewEmployeePage({ params }: PageProps) {
                     <p className="text-xs text-muted-foreground">{item.label}</p>
                     {item.isEmail ? (
                       <EmailField email={item.value} label={item.label} />
+                    ) : item.isProtectedSalary ? (
+                      <div className="mt-1">
+                        <ProtectedSalaryCell salary={Number(item.value) || 0} />
+                      </div>
                     ) : (
                       <p className="text-foreground font-semibold text-sm mt-1">{item.value}</p>
                     )}
@@ -604,7 +609,7 @@ export default async function ViewEmployeePage({ params }: PageProps) {
                 { label: "Country", value: getCountryName() },
                 { label: "State / Province", value: getStateName() },
                 { label: "City", value: getCityName() },
-                { label: "Employee Salary", value: `PKR ${Number(employee.employeeSalary).toLocaleString()}` },
+                { label: "Employee Salary", value: employee.employeeSalary, isProtectedSalary: true },
                 { label: "EOBI", value: employee.eobi ? "Yes" : "No" },
                 ...(employee.eobi ? [
                   { label: "EOBI ID", value: employee.eobiId || "N/A" },
@@ -640,9 +645,15 @@ export default async function ViewEmployeePage({ params }: PageProps) {
                   className="p-4 border rounded-lg bg-muted/10 hover:bg-muted/20 transition"
                 >
                   <p className="text-xs text-muted-foreground">{item.label}</p>
-                  <p className="text-foreground font-semibold text-1xl mt-1">
-                    {item.value}
-                  </p>
+                  {(item as any).isProtectedSalary ? (
+                    <div className="mt-1">
+                      <ProtectedSalaryCell salary={Number((item as any).value) || 0} />
+                    </div>
+                  ) : (
+                    <p className="text-foreground font-semibold text-1xl mt-1">
+                      {item.value}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

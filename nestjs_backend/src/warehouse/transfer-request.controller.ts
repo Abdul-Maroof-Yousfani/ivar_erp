@@ -1,9 +1,11 @@
 import { Controller, Post, Get, Patch, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { TransferRequestService } from './transfer-request.service';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { OptionalJwtAuth } from '../auth/auth.controller';
+import { CreateBypassedTransferRequestDto, BulkCreateBypassedTransferRequestDto } from './dto/create-bypassed-transfer.dto';
 
 @ApiTags('Transfer Request')
 @ApiBearerAuth()
@@ -11,6 +13,23 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 @Controller('api/transfer-request')
 export class TransferRequestController {
     constructor(private readonly transferRequestService: TransferRequestService,) { }
+
+    @Post('bypass')
+    @OptionalJwtAuth()
+    @ApiOperation({ summary: 'Create bypassed transfer requests in bulk (Direct correction endpoint)' })
+    @ApiBody({ type: BulkCreateBypassedTransferRequestDto })
+    async createBypassed(@Body() dto: BulkCreateBypassedTransferRequestDto, @Req() req: any) {
+        const results: any[] = [];
+        for (const transferDto of dto.transfers) {
+            const data = await this.transferRequestService.createBypassedRequest(transferDto, {
+                userId: req.user?.id,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+            });
+            results.push(data);
+        }
+        return { status: true, data: results, message: 'Bypassed transfer requests created in bulk successfully' };
+    }
 
     @Post()
     @Permissions('pos.inventory.transfer.create', 'erp.inventory.transfer.create')
@@ -35,10 +54,27 @@ export class TransferRequestController {
     @Get()
     @Permissions('pos.inventory.receiving.view', 'pos.inventory.returns.view', 'pos.inventory.inbound.view', 'pos.inventory.outbound.view', 'pos.inventory.receipt.view', 'erp.inventory.stock-transfer.read')
     @ApiOperation({ summary: 'Get transfer requests' })
-    async getRequests(@Query('warehouseId') warehouseId?: string, @Query('status') status?: string) {
-        const data = await this.transferRequestService.getRequests(warehouseId, status);
+    async getRequests(
+        @Query('warehouseId') warehouseId?: string,
+        @Query('status') status?: string,
+        @Query('id') id?: string,
+        @Query('transferType') transferType?: string,
+        @Query('search') search?: string,
+        @Query('dateFrom') dateFrom?: string,
+        @Query('dateTo') dateTo?: string,
+    ) {
+        const data = await this.transferRequestService.getRequests(
+            warehouseId,
+            status,
+            id,
+            transferType,
+            search,
+            dateFrom,
+            dateTo
+        );
         return { status: true, data };
     }
+
 
     @Get('incoming')
     @Permissions('pos.inventory.receiving.view')
@@ -73,13 +109,22 @@ export class TransferRequestController {
     }
 
     @Patch(':id/status')
-    @Permissions('pos.inventory.transfer.create', 'erp.inventory.transfer.create')
+    @Permissions(
+        'pos.inventory.transfer.create',
+        'erp.inventory.transfer.create',
+        'erp.inventory.transfer.check',
+        'erp.inventory.transfer.authorize',
+        'pos.inventory.transfer.check',
+        'pos.inventory.transfer.authorize'
+    )
     @ApiOperation({ summary: 'Update transfer request status' })
     async updateStatus(@Param('id') id: string, @Body() dto: { status: string; approvedById?: string }, @Req() req: any) {
         const data = await this.transferRequestService.updateStatus(id, dto.status, dto.approvedById, {
             userId: req.user?.id,
             ipAddress: req.ip,
             userAgent: req.headers['user-agent'],
+            userPermissions: req.user?.permissions,
+            roleName: req.user?.roleName,
         });
         return { status: true, data, message: `Request ${dto.status} successfully` };
     }
@@ -87,12 +132,21 @@ export class TransferRequestController {
     @Post(':id/accept')
     @Permissions('pos.inventory.receiving.accept', 'pos.inventory.inbound.accept', 'pos.inventory.returns.approve')
     @ApiOperation({ summary: 'Accept and execute transfer movement' })
-    async accept(@Param('id') id: string, @Body() dto: { userId?: string }, @Req() req: any) {
-        const data = await this.transferRequestService.acceptRequest(id, dto.userId, {
-            userId: req.user?.id,
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent'],
-        });
+    async accept(
+        @Param('id') id: string,
+        @Body() dto: { userId?: string; receivedItems?: { itemId: string; receivedQty: number }[]; notes?: string },
+        @Req() req: any
+    ) {
+        const data = await this.transferRequestService.acceptRequest(
+            id,
+            dto.userId,
+            { receivedItems: dto.receivedItems, notes: dto.notes },
+            {
+                userId: req.user?.id,
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent'],
+            }
+        );
         return { status: true, data, message: 'Transfer accepted and stock moved successfully' };
     }
 
@@ -106,5 +160,17 @@ export class TransferRequestController {
             userAgent: req.headers['user-agent'],
         });
         return { status: true, data, message: 'Source approval completed. Awaiting destination acceptance.' };
+    }
+
+    @Post(':id/acknowledge-claim')
+    @Permissions('erp.inventory.claims.acknowledge', 'erp.inventory.transfer.approve')
+    @ApiOperation({ summary: 'PLM acknowledges receipt of claim items and updates inventory' })
+    async acknowledgeClaim(@Param('id') id: string, @Body() dto: { userId?: string }, @Req() req: any) {
+        const data = await this.transferRequestService.acknowledgeClaim(id, dto.userId, {
+            userId: req.user?.id,
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+        });
+        return { status: true, data, message: 'Claim acknowledged successfully. PLM inventory updated.' };
     }
 }

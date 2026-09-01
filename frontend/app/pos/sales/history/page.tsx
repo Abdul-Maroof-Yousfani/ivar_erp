@@ -23,8 +23,7 @@ import {
     Printer, Eye, ShoppingCart, Wallet, Calendar as CalendarIcon,
     PauseCircle, RotateCcw, Clock, Pencil, Plus, Trash2, Loader2,
     Banknote, CreditCard, Building2, Ticket, BookOpen, FileText,
-    CheckCircle2,
-    XCircle,
+    CheckCircle2, XCircle, Upload,
 } from "lucide-react";
 
 import DataTable from "@/components/common/data-table";
@@ -32,6 +31,9 @@ import { DateRangePicker, DateRange } from "@/components/ui/date-range-picker";
 import { PrintReceipt } from "@/components/pos/print-receipt";
 import { PrintReturnReceipt } from "@/components/pos/print-return-receipt";
 import { PrintClaimReceipt } from "@/components/pos/print-claim-receipt";
+import { SalesHistoryBulkUploadModal } from "@/components/pos/sales-history-bulk-upload-modal";
+import { OnlineSalesBulkUploadModal } from "@/components/pos/online-sales-bulk-upload-modal";
+import { useUploadProgress } from "@/hooks/use-upload-progress";
 import { cn, getCookie } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -56,137 +58,201 @@ const TENDER_OPTIONS = [
 
 interface Tender { method: string; amount: number; cardLast4?: string; slipNo?: string; voucherId?: string; }
 
+function canEditOrderTender(order: any): { canEdit: boolean; reason?: string } {
+    if (!order) return { canEdit: false, reason: "Order not found" };
+    if (order.status === "voided") return { canEdit: false, reason: "Order is voided" };
+    if (order.status === "hold") return { canEdit: false, reason: "Order is on hold" };
+
+    const isToday = isSameDay(new Date(order.createdAt));
+    if (!isToday) return { canEdit: false, reason: "Tender can only be updated for today's orders" };
+
+    if (order.status === "exchanged" || (order.exchanges && order.exchanges.length > 0) || order.hasExchange) {
+        return { canEdit: false, reason: "Cannot edit tender: An exchange was processed for this order" };
+    }
+
+    if (order.claims && order.claims.length > 0) {
+        return { canEdit: false, reason: "Cannot edit tender: A claim was created for this order" };
+    }
+
+    if (
+        order.hasReturn || 
+        order.hasRefund || 
+        order.status === "returned" || 
+        order.status === "partially_returned" || 
+        order.status === "refunded"
+    ) {
+        return { canEdit: false, reason: "Cannot edit tender: A return or refund was processed for this order" };
+    }
+
+    const voucherAmount = Number(order.voucherAmount || 0);
+    const hasVoucherRedemptions = order.voucherRedemptions && order.voucherRedemptions.length > 0;
+    if (voucherAmount > 0 || hasVoucherRedemptions) {
+        return { canEdit: false, reason: "Cannot edit tender: A voucher was used on this order" };
+    }
+
+    if (order.hasIssuedVoucher || (order.issuedVouchers && order.issuedVouchers.length > 0) || order.issuedVouchersCount > 0) {
+        return { canEdit: false, reason: "Cannot edit tender: A voucher was issued from this order" };
+    }
+
+    if (order.paymentMethod === "credit_account" || order.tenderType === "credit_account") {
+        return { canEdit: false, reason: "Cannot edit tender: Credit account orders cannot be edited" };
+    }
+
+    const existingTenders = order.tenders ?? [];
+    if (existingTenders.length > 0) {
+        const hasDisallowedTender = existingTenders.some(
+            (t: any) => !["cash", "card", "bank_transfer"].includes(t.method)
+        );
+        if (hasDisallowedTender) {
+            return { canEdit: false, reason: "Cannot edit tender: Only Cash, Card, and Bank Transfer orders can be edited" };
+        }
+    } else if (
+        order.paymentMethod &&
+        !["cash", "card", "bank_transfer", "split"].includes(order.paymentMethod)
+    ) {
+        return { canEdit: false, reason: "Cannot edit tender: Only Cash, Card, and Bank Transfer orders can be edited" };
+    }
+
+    return { canEdit: true };
+}
+
 // ─── Update Tender Modal ──────────────────────────────────────────────────
 function UpdateTenderModal({ order, open, onOpenChange, onSuccess }: {
     order: any; open: boolean; onOpenChange: (v: boolean) => void; onSuccess: () => void;
 }) {
-    const [tenders, setTenders] = useState<Tender[]>([]);
-    const [method, setMethod] = useState("cash");
-    const [amount, setAmount] = useState<number>(0);
-    const [cardLast4, setCardLast4] = useState("");
-    const [slipNo, setSlipNo] = useState("");
+    const [cashAmount, setCashAmount] = useState<number>(0);
+    const [cardAmount, setCardAmount] = useState<number>(0);
+    const [bankTransferAmount, setBankTransferAmount] = useState<number>(0);
+    const [cardLast4, setCardLast4] = useState<string>("");
+    const [slipNo, setSlipNo] = useState<string>("");
+    const [selectedMerchantId, setSelectedMerchantId] = useState<string>("");
+    const [merchants, setMerchants] = useState<any[]>([]);
+    const [isLoadingMerchants, setIsLoadingMerchants] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
-    // ── Voucher state ──────────────────────────────────────────────────
-    const [voucherCode, setVoucherCode] = useState("");
-    const [voucherValidating, setVoucherValidating] = useState(false);
-    const [validatedVoucher, setValidatedVoucher] = useState<{
-        id: string; code: string; voucherType: string;
-        faceValue: number; description?: string;
-        customerId?: string; requireCustomerMatch: boolean;
-    } | null>(null);
-    const [voucherError, setVoucherError] = useState<string | null>(null);
-    const [appliedVouchers, setAppliedVouchers] = useState<{ voucherId: string; code: string; amount: number }[]>([]);
-    const voucherDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isAlliance = !!order?.allianceId;
+    const grandTotal = Number(order?.grandTotal ?? 0);
 
+    // Fetch merchants for order location
+    useEffect(() => {
+        if (open && order?.locationId) {
+            setIsLoadingMerchants(true);
+            authFetch(`/pos-config/merchants/for-location?locationId=${order.locationId}`)
+                .then(res => {
+                    if (res.ok && res.data?.status) {
+                        setMerchants(res.data.data || []);
+                    }
+                })
+                .catch(() => {})
+                .finally(() => setIsLoadingMerchants(false));
+        }
+    }, [open, order?.locationId]);
+
+    // Initialize values when modal opens
     useEffect(() => {
         if (open && order) {
-            setTenders(order.tenders ?? []);
-            // Reset voucher state on open
-            setVoucherCode("");
-            setValidatedVoucher(null);
-            setVoucherError(null);
-            setAppliedVouchers([]);
-            setMethod("cash");
-            setAmount(0);
-            setCardLast4("");
-            setSlipNo("");
+            const existingTenders = order.tenders ?? [];
+            const cash = existingTenders.find((t: any) => t.method === "cash");
+            const card = existingTenders.find((t: any) => t.method === "card");
+            const bank = existingTenders.find((t: any) => t.method === "bank_transfer");
+
+            let initCash = cash ? Number(cash.amount) : 0;
+            let initCard = card ? Number(card.amount) : 0;
+            let initBank = bank ? Number(bank.amount) : 0;
+
+            if (existingTenders.length === 0) {
+                if (order.paymentMethod === "cash") {
+                    initCash = Number(order.cashAmount ?? order.grandTotal ?? 0);
+                } else if (order.paymentMethod === "bank_transfer") {
+                    initBank = Number(order.cardAmount ?? order.grandTotal ?? 0);
+                } else if (order.paymentMethod === "card") {
+                    initCard = Number(order.cardAmount ?? order.grandTotal ?? 0);
+                } else {
+                    initCash = Number(order.cashAmount ?? 0);
+                    initCard = Number(order.cardAmount ?? 0);
+                }
+            }
+
+            setCashAmount(initCash);
+            setCardAmount(initCard);
+            setBankTransferAmount(initBank);
+
+            const nonCashTender = card || bank;
+            let parsedCardLast4 = nonCashTender?.cardLast4 || "";
+            let parsedSlipNo = nonCashTender?.slipNo || "";
+
+            if (!parsedCardLast4 && order.notes) {
+                const match = order.notes.match(/Card:\s*\*{0,4}(\d{4})/i);
+                if (match) parsedCardLast4 = match[1];
+            }
+            if (!parsedSlipNo && order.notes) {
+                const match = order.notes.match(/Slip:\s*([^|\n\r]+)/i);
+                if (match) parsedSlipNo = match[1].trim();
+            }
+
+            setCardLast4(parsedCardLast4);
+            setSlipNo(parsedSlipNo);
+            setSelectedMerchantId(order.merchantId || order.merchant?.id || "");
         }
     }, [open, order]);
 
-    const grandTotal = Number(order?.grandTotal ?? 0);
-    const totalPaid = tenders.reduce((s, t) => s + t.amount, 0);
-    const balanceDue = Math.max(0, grandTotal - totalPaid);
-    const changeAmount = Math.max(0, totalPaid - grandTotal);
-
-    // ── Voucher validation (debounced) ─────────────────────────────────
-    const validateVoucherCode = useCallback(async (code: string) => {
-        const trimmed = code.trim().toUpperCase();
-        const validFormat = /^[A-Z]{3}-[A-Z0-9]{6}$/.test(trimmed);
-        if (!validFormat) {
-            setValidatedVoucher(null);
-            setVoucherError(trimmed.length >= 4 ? "Invalid format — expected: ABC-123456" : null);
-            return;
-        }
-        setVoucherValidating(true);
-        setVoucherError(null);
-        try {
-            const locationId = getCookie("pos_location_id") || "";
-            const customerId = order?.customerId || undefined;
-            const res = await authFetch("/pos-config/vouchers/validate", {
-                method: "POST",
-                body: { code: trimmed, locationId, customerId },
-            });
-            if (res.ok && res.data?.status) {
-                setValidatedVoucher(res.data.data);
-                setVoucherError(null);
-                // Auto-fill amount = min(faceValue, balanceDue)
-                setAmount(Math.min(res.data.data.faceValue, balanceDue));
-            } else {
-                setValidatedVoucher(null);
-                setVoucherError(res.data?.message || "Invalid voucher");
-            }
-        } catch {
-            setVoucherError("Failed to validate voucher");
-        } finally {
-            setVoucherValidating(false);
-        }
-    }, [order, balanceDue]);
-
-    const handleVoucherCodeChange = (value: string) => {
-        const clean = value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-        let formatted = clean;
-        if (clean.length > 3) {
-            formatted = `${clean.slice(0, 3)}-${clean.slice(3, 9)}`;
-        }
-        setVoucherCode(formatted);
-        setValidatedVoucher(null);
-        setVoucherError(null);
-        if (voucherDebounceRef.current) clearTimeout(voucherDebounceRef.current);
-        if (formatted.length === 10) {
-            voucherDebounceRef.current = setTimeout(() => validateVoucherCode(formatted), 400);
-        }
-    };
-
-    const addVoucherTender = () => {
-        if (!validatedVoucher || !amount || amount <= 0) return;
-        if (appliedVouchers.some(v => v.voucherId === validatedVoucher.id)) {
-            toast.error("This voucher is already added");
-            return;
-        }
-        const voucherAmount = Math.min(amount, validatedVoucher.faceValue);
-        setAppliedVouchers(prev => [...prev, { voucherId: validatedVoucher.id, code: validatedVoucher.code, amount: voucherAmount }]);
-        setTenders(prev => [...prev, { method: "voucher", amount: voucherAmount, slipNo: validatedVoucher.code, voucherId: validatedVoucher.id }]);
-        setVoucherCode("");
-        setValidatedVoucher(null);
-        setAmount(0);
-    };
-
-    const addTender = () => {
-        if (method === "voucher") { addVoucherTender(); return; }
-        if (!amount || amount <= 0) return;
-        setTenders(prev => [...prev, { method, amount, cardLast4: cardLast4 || undefined, slipNo: slipNo || undefined }]);
-        setAmount(0); setCardLast4(""); setSlipNo("");
-    };
-
-    const removeTender = (i: number) => {
-        const removed = tenders[i];
-        // If it was a voucher, also remove from appliedVouchers
-        if (removed.method === "voucher" && removed.voucherId) {
-            setAppliedVouchers(prev => prev.filter(v => v.voucherId !== removed.voucherId));
-        }
-        setTenders(prev => prev.filter((_, j) => j !== i));
-    };
+    const totalPaid = Math.round((cashAmount + cardAmount + bankTransferAmount) * 100) / 100;
+    const isOverLimit = totalPaid > Math.round(grandTotal * 100) / 100 + 0.01;
+    const hasNonCash = cardAmount > 0 || bankTransferAmount > 0;
+    const requiresMerchant = hasNonCash && merchants.length > 0 && !selectedMerchantId;
 
     const handleSave = async () => {
-        if (tenders.length === 0) { toast.error("Add at least one tender"); return; }
+        if (isOverLimit) {
+            toast.error("Total tender amount cannot exceed order bill total");
+            return;
+        }
+        if (totalPaid <= 0) {
+            toast.error("Please enter a valid tender amount");
+            return;
+        }
+        if (requiresMerchant) {
+            toast.error("Please select a merchant terminal for card / bank transfer payment");
+            return;
+        }
+        if (isAlliance) {
+            if (cashAmount > 0) {
+                toast.error("Cash payment is not allowed for Alliance orders");
+                return;
+            }
+            if (!cardLast4 || cardLast4.trim().length !== 4) {
+                toast.error("Card number (last 4 digits) is required for Alliance orders");
+                return;
+            }
+        }
+
         setIsSaving(true);
         try {
+            const tendersPayload: Tender[] = [];
+            if (cashAmount > 0) {
+                tendersPayload.push({ method: "cash", amount: cashAmount });
+            }
+            if (cardAmount > 0) {
+                tendersPayload.push({
+                    method: "card",
+                    amount: cardAmount,
+                    cardLast4: cardLast4 || undefined,
+                    slipNo: slipNo || undefined,
+                });
+            }
+            if (bankTransferAmount > 0) {
+                tendersPayload.push({
+                    method: "bank_transfer",
+                    amount: bankTransferAmount,
+                    cardLast4: cardLast4 || undefined,
+                    slipNo: slipNo || undefined,
+                });
+            }
+
             const res = await authFetch(`/pos-sales/orders/${order.id}/update-tender`, {
                 method: "POST",
                 body: {
-                    tenders,
-                    voucherRedemptions: appliedVouchers.length > 0 ? appliedVouchers : undefined,
+                    tenders: tendersPayload,
+                    merchantId: selectedMerchantId || undefined,
                 },
             });
             if (res.ok && res.data?.status) {
@@ -196,8 +262,11 @@ function UpdateTenderModal({ order, open, onOpenChange, onSuccess }: {
             } else {
                 toast.error(res.data?.message || "Failed to update tender");
             }
-        } catch { toast.error("Failed to update tender"); }
-        finally { setIsSaving(false); }
+        } catch {
+            toast.error("Failed to update tender");
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     return (
@@ -205,177 +274,209 @@ function UpdateTenderModal({ order, open, onOpenChange, onSuccess }: {
             <DialogContent className="max-w-md">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
-                        <Pencil className="h-4 w-4" /> Update Tender
+                        <Pencil className="h-4 w-4 text-violet-600" /> Update Tender
                         <Badge variant="outline" className="font-mono text-xs">{order?.orderNumber}</Badge>
                     </DialogTitle>
                 </DialogHeader>
 
                 <div className="space-y-4 py-2">
-                    {/* Grand total reference */}
-                    <div className="flex justify-between text-sm bg-muted/40 rounded-lg px-3 py-2">
-                        <span className="text-muted-foreground">Order Total</span>
-                        <span className="font-bold">{formatCurrency(grandTotal)}</span>
-                    </div>
-
-                    {/* Existing tenders */}
-                    {tenders.length > 0 && (
-                        <div className="space-y-1.5">
-                            {tenders.map((t, i) => {
-                                const Icon = TENDER_OPTIONS.find(o => o.value === t.method)?.icon ?? Banknote;
-                                return (
-                                    <div key={i} className="flex items-center gap-2 rounded-lg bg-muted/30 px-3 py-2 text-sm">
-                                        <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                        <span className="capitalize flex-1">{t.method.replace("_", " ")}
-                                            {t.cardLast4 && <span className="font-mono text-xs text-muted-foreground ml-1">••{t.cardLast4}</span>}
-                                            {t.slipNo && <span className="font-mono text-xs text-muted-foreground ml-1">#{t.slipNo}</span>}
-                                        </span>
-                                        <span className="font-mono font-semibold">{formatCurrency(t.amount)}</span>
-                                        <button onClick={() => setTenders(prev => prev.filter((_, j) => j !== i))}
-                                            className="text-muted-foreground hover:text-destructive transition-colors ml-1">
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                        </button>
-                                    </div>
-                                );
-                            })}
+                    {/* Alliance banner */}
+                    {isAlliance && (
+                        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                            <BookOpen className="h-4 w-4 shrink-0 mt-0.5" />
+                            <span>
+                                <strong>Alliance Order:</strong> Payment amounts & methods are fixed. Only the merchant terminal and card details can be modified.
+                            </span>
                         </div>
                     )}
 
-                    {/* Add tender row */}
-                    <div className="space-y-2 border rounded-lg p-3">
-                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">Add Payment</Label>
-
-                        {/* Method selector + amount (hidden for voucher — amount auto-filled) */}
-                        <div className="flex gap-2">
-                            <Select value={method} onValueChange={(v) => {
-                                setMethod(v);
-                                setVoucherCode(""); setValidatedVoucher(null); setVoucherError(null);
-                                setAmount(0); setCardLast4(""); setSlipNo("");
-                            }}>
-                                <SelectTrigger className="flex-1">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {TENDER_OPTIONS.map(({ value, label }) => (
-                                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            {method !== "voucher" && (
-                                <Input
-                                    type="number" min={0} className="w-28 font-mono"
-                                    placeholder="Amount"
-                                    value={amount || ""}
-                                    onChange={e => setAmount(parseFloat(e.target.value) || 0)}
-                                    onKeyDown={e => e.key === "Enter" && addTender()}
-                                />
-                            )}
-                        </div>
-
-                        {/* Credit account warning */}
-                        {method === "credit_account" && !order?.customerId && (
-                            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-xs text-amber-700">
-                                <BookOpen className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                                <span>This order has no customer attached. Credit Account requires a customer.</span>
-                            </div>
-                        )}
-
-                        {/* Card / bank transfer fields */}
-                        {(method === "card" || method === "bank_transfer") && (
-                            <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                    <Label className="text-xs text-muted-foreground">Card # (last 4)</Label>
-                                    <Input className="mt-1 h-8 text-xs font-mono" maxLength={4} placeholder="••••"
-                                        value={cardLast4} onChange={e => setCardLast4(e.target.value.replace(/\D/, ""))} />
-                                </div>
-                                <div>
-                                    <Label className="text-xs text-muted-foreground">Slip / Ref #</Label>
-                                    <Input className="mt-1 h-8 text-xs" placeholder="Ref"
-                                        value={slipNo} onChange={e => setSlipNo(e.target.value)} />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Voucher — debounced code lookup */}
-                        {method === "voucher" && (
-                            <div className="space-y-2">
-                                <div>
-                                    <Label className="text-xs text-muted-foreground uppercase tracking-wide">Voucher Code</Label>
-                                    <div className="relative mt-1">
-                                        <Input
-                                            className={cn(
-                                                "font-mono uppercase pr-8 h-9 text-sm",
-                                                validatedVoucher && "border-emerald-400 focus-visible:ring-emerald-400",
-                                                voucherError && "border-destructive focus-visible:ring-destructive",
-                                            )}
-                                            placeholder="e.g. GFT-ABC123"
-                                            value={voucherCode}
-                                            onChange={e => handleVoucherCodeChange(e.target.value)}
-                                            onKeyDown={e => e.key === "Enter" && validateVoucherCode(voucherCode)}
-                                            maxLength={10}
-                                        />
-                                        <div className="absolute right-2 top-2">
-                                            {voucherValidating && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                                            {!voucherValidating && validatedVoucher && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
-                                            {!voucherValidating && voucherError && <XCircle className="h-4 w-4 text-destructive" />}
-                                        </div>
-                                    </div>
-                                    {voucherError && <p className="text-xs text-destructive mt-1">{voucherError}</p>}
-                                </div>
-                                {validatedVoucher && (
-                                    <div className="rounded-lg border border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20 px-3 py-2 space-y-1">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs font-semibold text-emerald-700">{validatedVoucher.code}</span>
-                                            <Badge variant="outline" className="text-[10px] border-emerald-400 text-emerald-700">
-                                                {validatedVoucher.voucherType.replace("_", " ")}
-                                            </Badge>
-                                        </div>
-                                        <div className="flex items-center justify-between text-xs text-emerald-700">
-                                            <span>{validatedVoucher.description || "Voucher"}</span>
-                                            <span className="font-mono font-bold">{formatCurrency(validatedVoucher.faceValue)}</span>
-                                        </div>
-                                        {validatedVoucher.requireCustomerMatch && (
-                                            <p className="text-[10px] text-amber-600">Customer-bound — verified ✓</p>
-                                        )}
-                                        {/* Editable amount for partial redemption */}
-                                        <div className="pt-1">
-                                            <Label className="text-xs text-muted-foreground">Amount to redeem</Label>
-                                            <Input
-                                                type="number" min={0} max={validatedVoucher.faceValue}
-                                                className="mt-1 h-8 text-xs font-mono"
-                                                value={amount || ""}
-                                                onChange={e => setAmount(Math.min(parseFloat(e.target.value) || 0, validatedVoucher.faceValue))}
-                                            />
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        <Button
-                            size="sm"
-                            className="w-full gap-1.5"
-                            onClick={addTender}
-                            disabled={
-                                method === "voucher"
-                                    ? !validatedVoucher || !amount || amount <= 0
-                                    : !amount || amount <= 0
-                            }
-                        >
-                            <Plus className="h-3.5 w-3.5" /> Add
-                        </Button>
+                    {/* Order bill reference */}
+                    <div className="flex justify-between text-sm bg-muted/40 rounded-lg px-3 py-2">
+                        <span className="text-muted-foreground">Order Bill Total</span>
+                        <span className="font-bold font-mono">{formatCurrency(grandTotal)}</span>
                     </div>
 
-                    {/* Balance summary */}
+                    {/* Quick Switch Buttons (non-Alliance) */}
+                    {!isAlliance && (
+                        <div className="grid grid-cols-3 gap-2">
+                            <Button
+                                type="button"
+                                variant={cashAmount === grandTotal && cardAmount === 0 && bankTransferAmount === 0 ? "default" : "outline"}
+                                size="sm"
+                                className="text-xs gap-1"
+                                onClick={() => {
+                                    setCashAmount(grandTotal);
+                                    setCardAmount(0);
+                                    setBankTransferAmount(0);
+                                }}
+                            >
+                                <Banknote className="h-3.5 w-3.5" /> 100% Cash
+                            </Button>
+                            <Button
+                                type="button"
+                                variant={cardAmount === grandTotal && cashAmount === 0 && bankTransferAmount === 0 ? "default" : "outline"}
+                                size="sm"
+                                className="text-xs gap-1"
+                                onClick={() => {
+                                    setCardAmount(grandTotal);
+                                    setCashAmount(0);
+                                    setBankTransferAmount(0);
+                                }}
+                            >
+                                <CreditCard className="h-3.5 w-3.5" /> 100% Card
+                            </Button>
+                            <Button
+                                type="button"
+                                variant={bankTransferAmount === grandTotal && cashAmount === 0 && cardAmount === 0 ? "default" : "outline"}
+                                size="sm"
+                                className="text-xs gap-1"
+                                onClick={() => {
+                                    setBankTransferAmount(grandTotal);
+                                    setCashAmount(0);
+                                    setCardAmount(0);
+                                }}
+                            >
+                                <Building2 className="h-3.5 w-3.5" /> 100% Bank
+                            </Button>
+                        </div>
+                    )}
+
+                    {/* Tenders Edit Form */}
+                    <div className="space-y-3 border rounded-lg p-3">
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">Payment Breakdown</Label>
+
+                        {/* Cash Amount */}
+                        <div className="space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                                <span className="flex items-center gap-1.5 font-medium">
+                                    <Banknote className="h-3.5 w-3.5 text-emerald-600" /> Cash Payment
+                                </span>
+                            </div>
+                            <Input
+                                type="number"
+                                min={0}
+                                max={grandTotal}
+                                disabled={isAlliance}
+                                className="font-mono text-sm h-9"
+                                placeholder="0.00"
+                                value={cashAmount || ""}
+                                onChange={(e) => {
+                                    const val = Math.max(0, parseFloat(e.target.value) || 0);
+                                    setCashAmount(val);
+                                }}
+                            />
+                        </div>
+
+                        {/* Card Amount */}
+                        <div className="space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                                <span className="flex items-center gap-1.5 font-medium">
+                                    <CreditCard className="h-3.5 w-3.5 text-blue-600" /> Card Payment
+                                </span>
+                            </div>
+                            <Input
+                                type="number"
+                                min={0}
+                                max={grandTotal}
+                                disabled={isAlliance}
+                                className="font-mono text-sm h-9"
+                                placeholder="0.00"
+                                value={cardAmount || ""}
+                                onChange={(e) => {
+                                    const val = Math.max(0, parseFloat(e.target.value) || 0);
+                                    setCardAmount(val);
+                                }}
+                            />
+                        </div>
+
+                        {/* Bank Transfer Amount */}
+                        <div className="space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                                <span className="flex items-center gap-1.5 font-medium">
+                                    <Building2 className="h-3.5 w-3.5 text-violet-600" /> Bank Transfer
+                                </span>
+                            </div>
+                            <Input
+                                type="number"
+                                min={0}
+                                max={grandTotal}
+                                disabled={isAlliance}
+                                className="font-mono text-sm h-9"
+                                placeholder="0.00"
+                                value={bankTransferAmount || ""}
+                                onChange={(e) => {
+                                    const val = Math.max(0, parseFloat(e.target.value) || 0);
+                                    setBankTransferAmount(val);
+                                }}
+                            />
+                        </div>
+
+                        {/* Merchant & Card / Bank Details */}
+                        {(hasNonCash || isAlliance) && (
+                            <div className="pt-2 border-t space-y-3">
+                                <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">
+                                        Merchant Bank Terminal {merchants.length > 0 && <span className="text-destructive">*</span>}
+                                    </Label>
+                                    <Select value={selectedMerchantId} onValueChange={setSelectedMerchantId}>
+                                        <SelectTrigger className="h-9 text-xs">
+                                            <SelectValue placeholder={isLoadingMerchants ? "Loading merchants..." : "Select Merchant Bank"} />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {merchants.map((m) => (
+                                                <SelectItem key={m.id} value={m.id}>
+                                                    {m.bankName} {m.description ? `(${m.description})` : ""}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <Label className="text-xs text-muted-foreground">
+                                            Card # (last 4){isAlliance && <span className="text-destructive font-bold ml-0.5">*</span>}
+                                        </Label>
+                                        <Input
+                                            className="mt-1 h-8 text-xs font-mono"
+                                            maxLength={4}
+                                            placeholder="••••"
+                                            value={cardLast4}
+                                            onChange={(e) => setCardLast4(e.target.value.replace(/\D/g, ""))}
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs text-muted-foreground">Auth ID / Slip # / Ref</Label>
+                                        <Input
+                                            className="mt-1 h-8 text-xs font-mono"
+                                            placeholder="e.g. 123456"
+                                            value={slipNo}
+                                            onChange={(e) => setSlipNo(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Over-limit warning */}
+                    {isOverLimit && (
+                        <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/20 px-3 py-2 text-xs text-red-700 dark:text-red-300 flex items-center gap-1.5">
+                            <XCircle className="h-4 w-4 shrink-0 text-red-600" />
+                            <span>Total payment ({formatCurrency(totalPaid)}) cannot exceed bill total ({formatCurrency(grandTotal)})</span>
+                        </div>
+                    )}
+
                     <div className={cn("flex justify-between rounded-lg px-3 py-2 text-sm font-semibold",
-                        balanceDue <= 0 ? "bg-emerald-500/10 text-emerald-600" : "bg-destructive/10 text-destructive")}>
-                        <span>{balanceDue <= 0 ? (changeAmount > 0 ? "Change" : "Fully Paid ✓") : "Balance Due"}</span>
-                        <span className="font-mono">{formatCurrency(balanceDue <= 0 && changeAmount > 0 ? changeAmount : balanceDue)}</span>
+                        totalPaid === grandTotal ? "bg-emerald-500/10 text-emerald-600" : (isOverLimit ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"))}>
+                        <span>Total Tendered</span>
+                        <span className="font-mono">{formatCurrency(totalPaid)}</span>
                     </div>
                 </div>
 
                 <DialogFooter className="gap-2">
                     <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSaving}>Cancel</Button>
-                    <Button onClick={handleSave} disabled={isSaving || tenders.length === 0}>
+                    <Button onClick={handleSave} disabled={isSaving || isOverLimit || requiresMerchant}>
                         {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Pencil className="h-4 w-4 mr-2" />}
                         Save Tender
                     </Button>
@@ -388,10 +489,18 @@ function UpdateTenderModal({ order, open, onOpenChange, onSuccess }: {
 export default function SalesHistoryPage() {
     const router = useRouter();
     const [isPending, startTransition] = useTransition();
-    const { hasPermission } = useAuth();
+    const { hasPermission, user } = useAuth();
     const canPrint = hasPermission('pos.sales.history.print');
     const canUpdateTender = hasPermission('pos.sales.history.update-tender');
     const canResumeHold = hasPermission('pos.hold.resume');
+    const canImport = hasPermission('pos.sales.history.import');
+
+    // ── Bulk-upload state ──────────────────────────────────────────────
+    const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
+    const [isOnlineSalesUploadOpen, setIsOnlineSalesUploadOpen] = useState(false);
+    const [activeUploadId,   setActiveUploadId]   = useState<string | null>(null);
+    const { data: uploadProgress } = useUploadProgress(activeUploadId, 'sales-history');
+
     const [orders, setOrders] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [rowCount, setRowCount] = useState(0);
@@ -410,6 +519,7 @@ export default function SalesHistoryPage() {
     const [showUpdateTender, setShowUpdateTender] = useState(false);
     // isLoadingReceipt: dialog opens immediately, receipt fetches in background
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
+    const [isRefundPrint, setIsRefundPrint] = useState(false);
     const [showClaimReceipt, setShowClaimReceipt] = useState(false);
     const [selectedClaim, setSelectedClaim] = useState<any>(null);
 
@@ -423,6 +533,7 @@ export default function SalesHistoryPage() {
                     search: search.trim() || undefined,
                     startDate: dateRange.from?.toISOString(),
                     endDate: dateRange.to?.toISOString(),
+                    locationId: user?.locationId || undefined,
                 }
             });
             if (res.ok && res.data?.status) {
@@ -437,6 +548,11 @@ export default function SalesHistoryPage() {
 
     useEffect(() => { setPagination(p => ({ ...p, pageIndex: 0 })); }, [search, dateRange]);
     useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+    // Refresh table when a bulk import finishes
+    useEffect(() => {
+        if (uploadProgress?.status === 'completed') fetchOrders();
+    }, [uploadProgress?.status]);
 
     // Debug: Log orders when they update
     useEffect(() => {
@@ -455,7 +571,7 @@ export default function SalesHistoryPage() {
     // Open print dialog immediately with skeleton, then fetch full order in background
     const openPrintDialog = useCallback(async (
         listOrder: any,
-        mode: "sales" | "gift" | "return",
+        mode: "sales" | "gift" | "return" | "refund",
     ) => {
         // Open dialog right away with loading state
         setIsLoadingReceipt(true);
@@ -465,8 +581,14 @@ export default function SalesHistoryPage() {
         } else if (mode === "gift") {
             setSelectedOrder({ ...listOrder, isGiftReceipt: true });
             setShowGiftPrint(true);
-        } else {
+        } else if (mode === "return") {
             setSelectedOrder(listOrder);
+            setIsRefundPrint(false);
+            setReturnDetails(null);
+            setShowReturnPrint(true);
+        } else if (mode === "refund") {
+            setSelectedOrder(listOrder);
+            setIsRefundPrint(true);
             setReturnDetails(null);
             setShowReturnPrint(true);
         }
@@ -477,9 +599,10 @@ export default function SalesHistoryPage() {
                 const full = res.data.data;
                 if (mode === "sales")  setSelectedOrder({ ...full, isGiftReceipt: false });
                 if (mode === "gift")   setSelectedOrder({ ...full, isGiftReceipt: true });
-                if (mode === "return") {
+                if (mode === "return" || mode === "refund") {
                     setSelectedOrder(full);
-                    const retRes = await authFetch(`/pos-sales/orders/${listOrder.id}/return-details`);
+                    const typeParam = mode === "refund" ? "refund" : "return";
+                    const retRes = await authFetch(`/pos-sales/orders/${listOrder.id}/return-details?type=${typeParam}`);
                     if (retRes.ok && retRes.data?.status) setReturnDetails(retRes.data.data);
                 }
             } else {
@@ -512,7 +635,6 @@ export default function SalesHistoryPage() {
                     taxAmount: Number(oi.taxAmount),
                     total: Number(oi.lineTotal),
                     inStock: true, stockQty: 999,
-                    isStockInTransit: oi.isStockInTransit || false,
                 }));
                 sessionStorage.setItem("pos_resume_cart", JSON.stringify(cartItems));
                 toast.success(`Resuming ${resumed.orderNumber}`);
@@ -639,8 +761,7 @@ export default function SalesHistoryPage() {
             cell: ({ row }) => {
                 const order = row.original;
                 const isHold = order.status === "hold";
-                const isToday = isSameDay(new Date(order.createdAt));
-                const canEditTender = isToday && order.status !== "voided" && order.status !== "hold";
+                const { canEdit: isTenderEditable, reason: editDisabledReason } = canEditOrderTender(order);
 
                 return (
                     <div className="flex items-center justify-end gap-1">
@@ -654,11 +775,22 @@ export default function SalesHistoryPage() {
                             </Button>
                         )}
                         {/* Update tender */}
-                        {canEditTender && canUpdateTender && (
+                        {canUpdateTender && (
                             <Button variant="ghost" size="icon"
-                                className="h-8 w-8 rounded-full text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950/30"
-                                title="Update tender / payment"
-                                onClick={() => { setSelectedOrder(order); setShowUpdateTender(true); }}>
+                                disabled={!isTenderEditable}
+                                className={cn(
+                                    "h-8 w-8 rounded-full transition-colors",
+                                    isTenderEditable
+                                        ? "text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950/30"
+                                        : "text-muted-foreground opacity-30 cursor-not-allowed hover:bg-transparent"
+                                )}
+                                title={isTenderEditable ? "Update tender / payment" : editDisabledReason}
+                                onClick={() => {
+                                    if (isTenderEditable) {
+                                        setSelectedOrder(order);
+                                        setShowUpdateTender(true);
+                                    }
+                                }}>
                                 <Pencil className="h-3.5 w-3.5" />
                             </Button>
                         )}
@@ -682,21 +814,27 @@ export default function SalesHistoryPage() {
                                 onClick={() => openPrintDialog(order, "sales")}>
                                 <Printer className="h-3.5 w-3.5" />
                             </Button>
-                            {/* Gift receipt button - only show if order was marked as gift receipt */}
-                            {order.isGiftReceipt && (
-                                <Button variant="ghost" size="icon"
-                                    className="h-8 w-8 rounded-full text-pink-600 hover:bg-pink-50 dark:hover:bg-pink-950/30"
-                                    title="Print gift receipt (no prices)"
-                                    onClick={() => openPrintDialog(order, "gift")}>
-                                    <Printer className="h-3.5 w-3.5" />
-                                </Button>
-                            )}
-                            {(order.status === 'returned' || order.status === 'partially_returned') && (
+                            {/* Gift receipt button - always show on sales history */}
+                            <Button variant="ghost" size="icon"
+                                className="h-8 w-8 rounded-full text-pink-600 hover:bg-pink-50 dark:hover:bg-pink-950/30"
+                                title="Print gift receipt (no prices)"
+                                onClick={() => openPrintDialog(order, "gift")}>
+                                <Printer className="h-3.5 w-3.5" />
+                            </Button>
+                            {(order.hasReturn || order.status === 'returned' || order.status === 'partially_returned') && (
                                 <Button variant="ghost" size="icon"
                                     className="h-8 w-8 rounded-full text-destructive hover:bg-destructive/5"
                                     title="Print return slip"
                                     onClick={() => openPrintDialog(order, "return")}>
                                     <RotateCcw className="h-3.5 w-3.5" />
+                                </Button>
+                            )}
+                            {(order.hasRefund || order.status === 'refunded' || (order.status === 'partially_returned' && !order.hasReturn && !order.hasRefund)) && (
+                                <Button variant="ghost" size="icon"
+                                    className="h-8 w-8 rounded-full text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/30"
+                                    title="Print refund slip"
+                                    onClick={() => openPrintDialog(order, "refund")}>
+                                    <RotateCcw className="h-3.5 w-3.5 text-purple-600" />
                                 </Button>
                             )}
                             {/* Claim receipt button - show if order has claims */}
@@ -733,6 +871,62 @@ export default function SalesHistoryPage() {
                             placeholder="Filter by date"
                         />
                     </div>
+                    {/* ── Floating import progress button ── */}
+                    {activeUploadId && !isBulkUploadOpen && (
+                        <Button
+                            variant={
+                                uploadProgress?.status === 'failed'    ? 'destructive' :
+                                uploadProgress?.status === 'completed' ? 'default'     : 'outline'
+                            }
+                            className={`border-primary text-primary relative overflow-hidden min-w-48 ${
+                                uploadProgress?.status === 'failed'    ? 'text-destructive-foreground! bg-destructive!' :
+                                uploadProgress?.status === 'completed' ? 'text-primary-foreground! bg-primary!'        : ''
+                            }`}
+                            onClick={() => setIsBulkUploadOpen(true)}
+                        >
+                            <div
+                                className="absolute inset-0 bg-primary/10 transition-all duration-500"
+                                style={{ width: `${uploadProgress?.progress ?? 0}%` }}
+                            />
+                            <div className="relative flex items-center gap-2">
+                                {(uploadProgress?.status === 'validating' ||
+                                  uploadProgress?.status === 'processing' ||
+                                  uploadProgress?.status === 'pending') && (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                )}
+                                <span className="font-bold">
+                                    {uploadProgress?.status === 'failed'    ? 'Import Failed'       :
+                                     uploadProgress?.status === 'completed' ? 'Import Complete'     :
+                                     uploadProgress?.status === 'validated' ? 'Validation Complete' :
+                                     uploadProgress?.status === 'validating'? 'Validating'          :
+                                                                              'Importing'}
+                                    {!['failed', 'completed', 'validated'].includes(uploadProgress?.status || '')
+                                        ? ` ${uploadProgress?.progress ?? 0}%` : ''}
+                                </span>
+                            </div>
+                        </Button>
+                    )}
+                    {/* ── Import History button ── */}
+                    {canImport && (
+                        <div className="flex gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => setIsOnlineSalesUploadOpen(true)}
+                                className="gap-2"
+                            >
+                                <ShoppingCart className="h-4 w-4" />
+                                Import Online Sales
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => setIsBulkUploadOpen(true)}
+                                className="gap-2"
+                            >
+                                <Upload className="h-4 w-4" />
+                                Import History
+                            </Button>
+                        </div>
+                    )}
                     <Button
                         variant="outline"
                         onClick={() => {
@@ -788,7 +982,7 @@ export default function SalesHistoryPage() {
                         const balanceDue = Math.max(0, (selectedOrder?.grandTotal || 0) - totalPaid);
                         const isHold = selectedOrder?.status === "hold";
                         const isToday = selectedOrder ? isSameDay(new Date(selectedOrder.createdAt)) : false;
-                        const canEditTender = isToday && selectedOrder?.status !== "voided" && !isHold;
+                        const canEditTender = canUpdateTender && canEditOrderTender(selectedOrder).canEdit;
 
                         return (
                             <>
@@ -1078,6 +1272,7 @@ export default function SalesHistoryPage() {
                 <PrintReceipt
                     order={{ ...selectedOrder, isGiftReceipt: false }}
                     tenders={selectedOrder.tenders || []}
+                    creditVouchers={selectedOrder.creditVouchers}
                     isLoading={isLoadingReceipt}
                     onClose={() => { setShowPrint(false); setIsLoadingReceipt(false); }}
                 />
@@ -1088,6 +1283,7 @@ export default function SalesHistoryPage() {
                 <PrintReceipt
                     order={{ ...selectedOrder, isGiftReceipt: true }}
                     tenders={selectedOrder.tenders || []}
+                    creditVouchers={selectedOrder.creditVouchers}
                     isLoading={isLoadingReceipt}
                     onClose={() => { setShowGiftPrint(false); setIsLoadingReceipt(false); }}
                 />
@@ -1104,13 +1300,20 @@ export default function SalesHistoryPage() {
             )}
 
             {/* Print Return Receipt */}
-            {showReturnPrint && selectedOrder && returnDetails && (
+            {showReturnPrint && selectedOrder && (
                 <PrintReturnReceipt
-                    returnRef={selectedOrder.orderNumber}
+                    returnRef={
+                        isRefundPrint
+                            ? (returnDetails?.refundNumber || selectedOrder.refundNumber || selectedOrder.orderNumber || "")
+                            : (returnDetails?.returnNumber || selectedOrder.returnNumber || selectedOrder.orderNumber || "")
+                    }
+                    isRefund={isRefundPrint}
+                    isAlliance={!!selectedOrder.alliance}
                     originalOrders={[{ orderNumber: selectedOrder.orderNumber, grandTotal: Number(selectedOrder.grandTotal) }]}
-                    returnedLines={returnDetails.items.map((item: any) => ({
+                    returnedLines={(returnDetails?.items ?? []).map((item: any) => ({
                         name: item.item?.description || "Unknown Item",
                         sku: item.item?.sku || "-",
+                        size: item.item?.size?.name ?? "",
                         brand: item.item?.brand?.name,
                         returnQty: item.returnableQty || item.quantity,
                         paidPerUnit: Number(item.originalPaidPerUnit || item.unitPrice),
@@ -1121,16 +1324,18 @@ export default function SalesHistoryPage() {
                         discountPercent: Number(item.discountPercent || 0),
                         taxAmount: Number(item.taxAmount || 0),
                         taxPercent: Number(item.taxPercent || 0),
-                        refundPerUnit: Number(item.refundPerUnit || item.unitPrice),
+                        refundPerUnit: item.refundPerUnit,
                         priceAdjusted: item.priceAdjusted || false,
                         originalPaidPerUnit: Number(item.originalPaidPerUnit || item.unitPrice),
                         couponDeduction: Number(item.couponDeduction || 0),
                     }))}
-                    refundTotal={returnDetails.items.reduce((sum: number, item: any) => sum + Number(item.refundAmount || 0), 0)}
-                    notes={returnDetails.reason}
-                    discountNotes={returnDetails.discountNotes}
-                    returnedAt={returnDetails.returnedAt}
+                    refundTotal={returnDetails?.items?.reduce((sum: number, item: any) => sum + Number(item.refundAmount || 0), 0) ?? 0}
+                    notes={returnDetails?.reason}
+                    discountNotes={returnDetails?.discountNotes}
+                    returnedAt={returnDetails?.returnedAt}
+                    exchangeVoucher={returnDetails?.exchangeVoucher ?? null}
                     paymentMethod={selectedOrder.paymentMethod}
+                    isLoading={isLoadingReceipt}
                     onClose={() => setShowReturnPrint(false)}
                 />
             )}
@@ -1145,6 +1350,22 @@ export default function SalesHistoryPage() {
                     }}
                 />
             )}
+
+            {/* ── Sales History Bulk Import Modal ── */}
+            <SalesHistoryBulkUploadModal
+                open={isBulkUploadOpen}
+                onOpenChange={setIsBulkUploadOpen}
+                uploadId={activeUploadId}
+                onUploadIdChange={setActiveUploadId}
+                onSuccess={fetchOrders}
+            />
+
+            {/* ── Online Sales Bulk upload modal ── */}
+            <OnlineSalesBulkUploadModal
+                open={isOnlineSalesUploadOpen}
+                onOpenChange={setIsOnlineSalesUploadOpen}
+                onSuccess={fetchOrders}
+            />
         </div>
     );
 }

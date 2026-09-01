@@ -6,7 +6,6 @@ import { columns, type DeductionRow } from "./columns";
 import { DeductionFilters } from "./deduction-filters";
 import { Button } from "@/components/ui/button";
 import { Printer, Download, Plus } from "lucide-react";
-import { getEmployeesForDropdown, type EmployeeDropdownOption } from "@/lib/actions/employee";
 import { getDepartments, getSubDepartmentsByDepartment, type Department, type SubDepartment } from "@/lib/actions/department";
 import { getDeductionHeads, type Deduction, type DeductionHead } from "@/lib/actions/deduction";
 import { toast } from "sonner";
@@ -28,7 +27,6 @@ const formatMonthYear = (month: string, year: string) => {
 };
 
 export function DeductionList({ initialData = [] }: DeductionListProps) {
-  const [employees, setEmployees] = useState<EmployeeDropdownOption[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [subDepartments, setSubDepartments] = useState<SubDepartment[]>([]);
   const [deductionHeads, setDeductionHeads] = useState<DeductionHead[]>([]);
@@ -140,25 +138,6 @@ export function DeductionList({ initialData = [] }: DeductionListProps) {
       }
     };
     fetchData();
-  }, []);
-
-  // Fetch employees on mount
-  useEffect(() => {
-    const fetchEmployees = async () => {
-      try {
-        const result = await getEmployeesForDropdown();
-        if (result.status && result.data) {
-          setEmployees(result.data);
-        } else {
-          setEmployees([]);
-        }
-      } catch (error) {
-        console.error("Error:", error);
-        setEmployees([]);
-      }
-    };
-
-    fetchEmployees();
   }, []);
 
   // Fetch sub-departments when department changes
@@ -285,7 +264,6 @@ export function DeductionList({ initialData = [] }: DeductionListProps) {
       <DeductionFilters
         departments={departments}
         subDepartments={subDepartments}
-        employees={employees}
         deductionHeads={deductionHeads}
         loading={loading}
         loadingSubDepartments={loadingSubDepartments}

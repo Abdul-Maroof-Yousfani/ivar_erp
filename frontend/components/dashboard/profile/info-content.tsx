@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { User, Phone, Mail, MapPin, Building, Calendar, CreditCard } from "lucide-react";
 import { format } from "date-fns";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ProtectedSalaryCell } from "@/components/common/protected-salary-cell";
 
 interface InfoContentProps {
   employee: Employee | null;
@@ -181,7 +182,9 @@ export function InfoContent({ employee }: InfoContentProps) {
             <div className="text-sm font-family-mono">{employee.accountNumber || "N/A"}</div>
             
             <div className="text-sm font-medium text-muted-foreground">Salary</div>
-            <div className="text-sm">PKR {employee.employeeSalary?.toLocaleString() || "N/A"}</div>
+            <div className="text-sm">
+              <ProtectedSalaryCell salary={employee.employeeSalary || 0} />
+            </div>
           </div>
         </CardContent>
       </Card>

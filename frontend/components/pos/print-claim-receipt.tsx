@@ -10,6 +10,7 @@ import { Printer, FileText, Loader2 } from "lucide-react";
 import type { PosSettings } from "@/hooks/use-pos-settings";
 import { POS_SETTINGS_DEFAULTS } from "@/hooks/use-pos-settings";
 import { useAuth } from "@/components/providers/auth-provider";
+import { printThermal } from "@/lib/utils/print";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -172,12 +173,15 @@ export function PrintClaimReceipt({
         }))
         : (claimedLinesProp || []);
 
+    // Extract voucher details if claim is approved
+    const voucher = claim?.voucher;
+
     useEffect(() => {
         if (!isLoading && settings.receiptAutoPrint) {
-            const timer = setTimeout(() => window.print(), 400);
+            const timer = setTimeout(() => printThermal("claim-print-root", settings), 400);
             return () => clearTimeout(timer);
         }
-    }, [isLoading, settings.receiptAutoPrint]);
+    }, [isLoading, settings.receiptAutoPrint, settings]);
 
     // ── Store info ───────────────────────
     const storeName =
@@ -196,24 +200,59 @@ export function PrintClaimReceipt({
         reasonCode, reasonNotes, reviewNotes,
         claimedLines, claimedAmount, approvedAmount,
         submittedAt, reviewedAt, settings,
+        voucher, // Pass voucher data
     };
 
     return (
         <>
             {/* ── Print styles ── */}
             <style>{`
+                /* Ensure print root and its descendants are rendered in solid black and white for standard/PDF rendering */
+                #claim-print-root,
+                #claim-print-root * {
+                    color: #000 !important;
+                    border-color: #000 !important;
+                    background-color: transparent !important;
+                    background: none !important;
+                }
+
+                #claim-print-root [role="separator"],
+                #claim-print-root hr {
+                    background-color: #000 !important;
+                    height: 1px !important;
+                }
+
+                /* Badges/statuses: instead of colored background, show black text with a black border */
+                #claim-print-root [style*="background-color"] {
+                    background-color: transparent !important;
+                    color: #000 !important;
+                    border: 1px solid #000 !important;
+                }
+
                 @media print {
-                    body * { visibility: hidden !important; }
+                    body *:not(#claim-print-root):not(#claim-print-root *) {
+                        visibility: hidden !important;
+                        height: 0 !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        border: none !important;
+                    }
 
                     #claim-print-root,
-                    #claim-print-root * { visibility: visible !important; }
+                    #claim-print-root * {
+                        visibility: visible !important;
+                        color: #000 !important;
+                        border-color: #000 !important;
+                        background-color: transparent !important;
+                        background: none !important;
+                    }
 
                     #claim-print-root {
-                        position: fixed !important;
+                        position: absolute !important;
                         left: 0 !important;
                         top: 0 !important;
-                        width: 80mm !important;
-                        padding: 4mm 3mm !important;
+                        width: 72.1mm !important;
+                        padding: 2mm 1mm !important;
                         background: #fff !important;
                         color: #000 !important;
                         font-family: 'Courier New', Courier, monospace !important;
@@ -248,7 +287,7 @@ export function PrintClaimReceipt({
 
                     <DialogFooter className="px-5 py-3 border-t shrink-0 gap-2">
                         <Button variant="outline" onClick={onClose} className="flex-1">Close</Button>
-                        <Button onClick={() => window.print()} className="flex-1 gap-2 bg-amber-600 hover:bg-amber-700" disabled={isLoading}>
+                        <Button onClick={() => printThermal("claim-print-root", settings)} className="flex-1 gap-2 bg-amber-600 hover:bg-amber-700" disabled={isLoading}>
                             {isLoading
                                 ? <><Loader2 className="h-4 w-4 animate-spin" /> Preparing…</>
                                 : <><Printer className="h-4 w-4" /> Print Claim Receipt</>
@@ -262,7 +301,7 @@ export function PrintClaimReceipt({
             {!isLoading && (
                 <div
                     id="claim-print-root"
-                    style={{ position: "fixed", left: "-9999px", top: 0, width: "80mm", pointerEvents: "none" }}
+                    style={{ position: "fixed", left: "-9999px", top: 0, width: "72.1mm", pointerEvents: "none" }}
                     aria-hidden="true"
                 >
                     <ClaimBody {...bodyProps} />
@@ -291,6 +330,7 @@ interface ClaimBodyProps {
     submittedAt?: string;
     reviewedAt?: string;
     settings: PosSettings;
+    voucher?: any; // Voucher details
 }
 
 function ClaimBody({
@@ -299,6 +339,7 @@ function ClaimBody({
     reasonCode, reasonNotes, reviewNotes,
     claimedLines, claimedAmount, approvedAmount,
     submittedAt, reviewedAt, settings,
+    voucher, // Voucher data
 }: ClaimBodyProps) {
 
     const Row = ({ label, value, bold = false }: {
@@ -323,67 +364,49 @@ function ClaimBody({
     const statusText = status.replace(/_/g, " ");
 
     return (
-        <div className="font-mono text-xs w-full max-w-95 mx-auto space-y-2">
+        <div className="font-mono text-[10px] w-full max-w-[72.1mm] mx-auto" style={{ lineHeight: 1.25 }}>
 
             {/* ── Store Header ── */}
-            <div className="text-center space-y-0.5">
-                <p className="font-black text-sm leading-tight uppercase tracking-wide">{storeName}</p>
+            <div className="text-center pb-1 border-b border-zinc-400">
+                <p className="font-black text-[13px] leading-tight uppercase tracking-wide">{storeName}</p>
                 {(storeAddress || storePhone) && (
-                    <p className="text-[11px] leading-snug">
+                    <p className="text-[9px] leading-snug">
                         {storeAddress}{storeAddress && storePhone ? " | " : ""}{storePhone}
                     </p>
                 )}
             </div>
 
-            <Separator />
-
-            {/* ── Claim Receipt Title ── */}
-            <div className="text-center space-y-0.5">
-                <p className="font-bold text-sm tracking-widest uppercase">CLAIM RECEIPT</p>
-            </div>
-
-            <Separator />
-
-            {/* ── Claim meta ── */}
-            <div className="space-y-0.5 text-[11px]">
-                <Row label="Claim #" value={claimNumber} bold />
-                <Row label="Order #" value={orderNumber} bold />
-                <Row label="Claim Type" value={claimType.replace(/_/g, " ")} />
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>Status:</span>
-                    <span style={{
-                        backgroundColor: statusColor,
-                        color: "white",
-                        padding: "2px 8px",
-                        borderRadius: "4px",
-                        fontSize: "10px",
-                        fontWeight: "bold",
-                        textTransform: "uppercase"
-                    }}>
-                        {statusText}
-                    </span>
+            {/* ── Claim Title + Meta ── */}
+            <div className="py-1 border-b border-dashed border-zinc-400">
+                <p className="text-center font-bold text-[10px] uppercase tracking-widest">CLAIM RECEIPT</p>
+                <div className="mt-0.5 space-y-0 text-[9px]">
+                    <Row label="Claim #" value={claimNumber} bold />
+                    <Row label="Order #" value={orderNumber} bold />
+                    <Row label="Type" value={claimType.replace(/_/g, " ")} />
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span>Status:</span>
+                        <span style={{
+                            backgroundColor: statusColor, color: "white",
+                            padding: "1px 6px", borderRadius: "3px",
+                            fontSize: "9px", fontWeight: "bold", textTransform: "uppercase"
+                        }}>{statusText}</span>
+                    </div>
+                    <Row label="Submitted" value={`${fmtDate(submittedAt)}, ${fmtTime(submittedAt)}`} />
+                    {reviewedAt && <Row label="Reviewed" value={`${fmtDate(reviewedAt)}, ${fmtTime(reviewedAt)}`} />}
                 </div>
-                <Row label="Submitted" value={`${fmtDate(submittedAt)}, ${fmtTime(submittedAt)}`} />
-                {reviewedAt && <Row label="Reviewed" value={`${fmtDate(reviewedAt)}, ${fmtTime(reviewedAt)}`} />}
             </div>
 
             {reasonCode && (
-                <>
-                    <Separator />
-                    <div className="space-y-0.5 text-[11px]">
-                        <p className="font-bold">Reason</p>
-                        <p style={{ paddingLeft: "8px" }}>Code: {reasonCode.replace(/_/g, " ")}</p>
-                        {reasonNotes && <p style={{ paddingLeft: "8px", fontSize: "10px" }}>{reasonNotes}</p>}
-                    </div>
-                </>
+                <div className="py-0.5 border-b border-dashed border-zinc-400 space-y-0 text-[9px]">
+                    <p className="font-bold">Reason: {reasonCode.replace(/_/g, " ")}</p>
+                    {reasonNotes && <p style={{ paddingLeft: "8px", fontSize: "9px" }}>{reasonNotes}</p>}
+                </div>
             )}
-
-            <Separator />
 
             {/* ── Column headers ── */}
             <div
-                className="text-[10px] font-bold border-b pb-1"
-                style={{ display: "grid", gridTemplateColumns: "2fr 0.7fr 0.7fr 1fr", gap: "0 4px" }}
+                className="text-[9px] font-bold border-b border-zinc-400 py-0.5"
+                style={{ display: "grid", gridTemplateColumns: "2fr 0.7fr 0.7fr 1fr", gap: "0 3px" }}
             >
                 <span>Item</span>
                 <span style={{ textAlign: "center" }}>Qty</span>
@@ -395,103 +418,81 @@ function ClaimBody({
             {claimedLines.map((line, idx) => {
                 const displayAmount = line.approvedAmount ?? line.claimedAmount;
                 const displayQty = line.approvedQty ?? line.claimedQty;
-
                 return (
-                    <div key={idx} className="pb-2 border-b border-dashed last:border-0">
-                        {/* Item name */}
-                        <p className="font-bold text-[11px] leading-tight mb-0.5">{line.name}</p>
-
-                        {/* Data row */}
+                    <div key={idx} className="border-b border-dashed border-zinc-300 py-0.5">
+                        <p className="font-bold text-[10px] leading-tight">{line.name}</p>
                         <div
-                            className="text-[11px]"
-                            style={{ display: "grid", gridTemplateColumns: "2fr 0.7fr 0.7fr 1fr", gap: "0 4px" }}
+                            className="text-[9px]"
+                            style={{ display: "grid", gridTemplateColumns: "2fr 0.7fr 0.7fr 1fr", gap: "0 3px" }}
                         >
-                            <span className="truncate" style={{ color: "gray" }}>SKU: {line.sku}</span>
+                            <span className="truncate text-zinc-600">SKU: {line.sku}</span>
                             <span style={{ textAlign: "center", fontWeight: "bold" }}>{line.claimedQty}</span>
-                            <span style={{ textAlign: "center", fontWeight: "bold", color: statusColor }}>
-                                {displayQty}
-                            </span>
+                            <span style={{ textAlign: "center", fontWeight: "bold", color: statusColor }}>{displayQty}</span>
                             <span style={{ textAlign: "right", fontWeight: "bold" }}>Rs. {fmt(displayAmount)}</span>
                         </div>
-
-                        {/* Price breakdown */}
-                        <div className="mt-1 space-y-0.5 text-[10px]">
-                            <Row label="Unit Paid Price" value={`Rs. ${fmt(line.unitPaidPrice)}`} />
-                            {line.itemStatus && (
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                    <span>Item Status:</span>
-                                    <span style={{
-                                        backgroundColor: line.itemStatus === "APPROVED" ? "#10b981" : line.itemStatus === "REJECTED" ? "#ef4444" : "#f59e0b",
-                                        color: "white",
-                                        padding: "1px 6px",
-                                        borderRadius: "3px",
-                                        fontSize: "9px",
-                                        fontWeight: "bold"
-                                    }}>
-                                        {line.itemStatus.replace(/_/g, " ")}
-                                    </span>
-                                </div>
-                            )}
-                        </div>
+                        <p className="text-[9px] text-zinc-500 leading-tight">
+                            Unit: Rs. {fmt(line.unitPaidPrice)}
+                            {line.itemStatus && ` | ${line.itemStatus.replace(/_/g, " ")}`}
+                        </p>
                     </div>
                 );
             })}
 
-            <Separator />
-
             {/* ── Totals ── */}
-            <div className="space-y-0.5 text-[11px]">
+            <div className="py-1 border-b border-zinc-400 space-y-0 text-[9px]">
                 <Row label="Items Claimed" value={`${totalUnits} unit${totalUnits !== 1 ? "s" : ""}`} />
                 <Row label="Claimed Amount" value={`Rs. ${fmt(claimedAmount)}`} bold />
                 {approvedAmount !== undefined && approvedAmount !== claimedAmount && (
-                    <div
-                        className="font-black text-sm border-t pt-0.5 mt-0.5"
-                        style={{ display: "flex", justifyContent: "space-between", fontWeight: "900", color: statusColor }}
-                    >
-                        <span>TOTAL APPROVED</span>
-                        <span>Rs. {fmt(approvedAmount)}</span>
-                    </div>
+                    <Row label="TOTAL APPROVED" value={`Rs. ${fmt(approvedAmount)}`} bold />
                 )}
             </div>
 
             {/* ── Status message ── */}
-            <Separator />
-            <div className="text-[11px] space-y-1 border border-dashed rounded px-2 py-2" style={{ borderColor: statusColor }}>
+            <div className="py-1 border-b border-dashed border-zinc-400 text-[9px] space-y-0.5">
                 {isApproved && (
                     <>
                         <p className="font-bold text-center" style={{ color: statusColor }}>✓ CLAIM APPROVED ✓</p>
-                        <p className="text-center">Please present this receipt to collect your refund.</p>
+                        <p className="text-center text-[8px]">Present this receipt to collect your refund.</p>
+                        {voucher && voucher.voucherType === 'EXCHANGE' && (
+                            <div className="mt-1 pt-1 border-t border-dashed space-y-0.5" style={{ borderColor: statusColor }}>
+                                <p className="font-bold text-center" style={{ color: "#10b981" }}>🎫 EXCHANGE VOUCHER 🎫</p>
+                                <Row label="Code" value={voucher.code} bold />
+                                <Row label="Amount" value={`Rs. ${fmt(Number(voucher.faceValue))}`} bold />
+                                <Row label="Valid Until" value={fmtDate(voucher.expiresAt)} />
+                                <p className="text-center text-[8px]">Use this voucher for your next purchase!</p>
+                            </div>
+                        )}
                     </>
                 )}
                 {isRejected && (
                     <>
                         <p className="font-bold text-center" style={{ color: statusColor }}>✗ CLAIM REJECTED ✗</p>
-                        <p className="text-center">This claim has been reviewed and rejected.</p>
+                        <p className="text-center text-[8px]">This claim has been reviewed and rejected.</p>
+                        {reviewNotes && (
+                            <p className="text-center text-[8px] mt-0.5">Reason: {reviewNotes}</p>
+                        )}
+                        <p className="text-center text-[8px] mt-0.5">📦 Product ready for pickup. Collect within 7 days.</p>
                     </>
                 )}
                 {isPending && (
                     <>
-                        <p className="font-bold text-center" style={{ color: statusColor }}>⏳ CLAIM UNDER PROCESS ⏳</p>
-                        <p className="text-center">Your claim is being reviewed. Please check back later.</p>
+                        <p className="font-bold text-center" style={{ color: statusColor }}>⏳ UNDER PROCESS ⏳</p>
+                        <p className="text-center text-[8px]">Your claim is being reviewed. Check back later.</p>
+                        <p className="text-center text-[8px] mt-0.5">⚠️ This does NOT guarantee acceptance. Final decision rests with Product Line.</p>
                     </>
                 )}
             </div>
 
             {/* ── Review notes ── */}
             {reviewNotes && (
-                <>
-                    <Separator />
-                    <div className="text-[10px] space-y-0.5">
-                        <p className="font-bold">Review Notes:</p>
-                        <p style={{ paddingLeft: "8px" }}>{reviewNotes}</p>
-                    </div>
-                </>
+                <div className="py-0.5 border-b border-dashed border-zinc-400 text-[9px] space-y-0">
+                    <p className="font-bold">Review Notes:</p>
+                    <p style={{ paddingLeft: "8px" }}>{reviewNotes}</p>
+                </div>
             )}
 
-            <Separator />
-
             {/* ── Footer ── */}
-            <div className="text-center text-[10px] space-y-0.5 pb-1">
+            <div className="text-center text-[9px] pt-1 pb-1 space-y-0">
                 <p>Thank you for your patience</p>
                 <p>For queries: {storePhone || "+92-XXX-XXXXXXX"}</p>
                 <p className="tracking-widest font-bold">{claimNumber}</p>

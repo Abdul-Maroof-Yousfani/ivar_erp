@@ -13,14 +13,17 @@ import {
 } from './dto/social-security.dto';
 import { PrismaMasterService } from '../../database/prisma-master.service';
 import { runInBackground } from '../../common/utils/run-in-background.util';
+import { Decimal } from '@prisma/client/runtime/client';
+import { MasterDeleteGuardService } from '../../common/services/master-delete-guard.service';
 
 @Injectable()
 export class SocialSecurityService {
   constructor(
+    private readonly masterDeleteGuard: MasterDeleteGuardService,
     private prisma: PrismaService,
     private prismaMaster: PrismaMasterService,
     private activityLogs: ActivityLogsService,
-  ) {}
+  ) { }
 
   // ========== Social Security Institution CRUD ==========
   async listInstitutions() {
@@ -34,14 +37,18 @@ export class SocialSecurityService {
           },
         },
       },
+      where: { isDeleted: false }
     });
 
     return { status: true, data: items };
   }
 
   async getInstitution(id: string) {
-    const item = await this.prisma.socialSecurityInstitution.findUnique({
-      where: { id },
+    const item = await this.prisma.socialSecurityInstitution.findFirst({
+      where: {
+        id,
+        isDeleted: false
+      },
       include: {
         employerRegistrations: true,
         employeeRegistrations: true,
@@ -75,16 +82,16 @@ export class SocialSecurityService {
         'Create Record',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'create',
-        module: 'social-security',
-        entity: 'SocialSecurityInstitution',
-        entityId: created.id,
-        description: `Created social security institution ${created.name}`,
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'success',
-      }),
+          action: 'create',
+          module: 'social-security',
+          entity: 'SocialSecurityInstitution',
+          entityId: created.id,
+          description: `Created social security institution ${created.name}`,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
       );
       return { status: true, message: 'Created successfully' };
     } catch (error: any) {
@@ -92,15 +99,15 @@ export class SocialSecurityService {
         'Failed to create institution',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'create',
-        module: 'social-security',
-        entity: 'SocialSecurityInstitution',
-        description: 'Failed to create institution',
-        errorMessage: error?.message,
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'failure',
+          action: 'create',
+          module: 'social-security',
+          entity: 'SocialSecurityInstitution',
+          description: 'Failed to create institution',
+          errorMessage: error?.message,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
         }),
       );
       return { status: false, message: 'Failed to create institution' };
@@ -114,8 +121,11 @@ export class SocialSecurityService {
   ) {
     try {
       const existing =
-        await this.prisma.socialSecurityInstitution.findUnique({
-          where: { id },
+        await this.prisma.socialSecurityInstitution.findFirst({
+          where: {
+            id,
+            isDeleted: false
+          },
         });
       if (!existing) return { status: false, message: 'Institution not found' };
       const updated = await this.prisma.socialSecurityInstitution.update({
@@ -139,36 +149,36 @@ export class SocialSecurityService {
         'Update Record',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'update',
-        module: 'social-security',
-        entity: 'SocialSecurityInstitution',
-        entityId: id,
-        description: `Updated institution ${updated.name}`,
-        oldValues: JSON.stringify(existing),
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'success',
-      }),
+          action: 'update',
+          module: 'social-security',
+          entity: 'SocialSecurityInstitution',
+          entityId: id,
+          description: `Updated institution ${updated.name}`,
+          oldValues: JSON.stringify(existing),
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
       );
       return response;
     } catch (error: any) {
-      
+
       runInBackground(
         'Failed to update institution',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'update',
-        module: 'social-security',
-        entity: 'SocialSecurityInstitution',
-        entityId: id,
-        description: 'Failed to update institution',
-        errorMessage: error?.message,
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'failure',
-      }),
+          action: 'update',
+          module: 'social-security',
+          entity: 'SocialSecurityInstitution',
+          entityId: id,
+          description: 'Failed to update institution',
+          errorMessage: error?.message,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
       );
       return { status: false, message: 'Failed to update institution' };
     }
@@ -179,54 +189,61 @@ export class SocialSecurityService {
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
+      const deleteBlocked = await this.masterDeleteGuard.checkBlocked(this.prisma, 'socialSecurityInstitution', id);
+      if (deleteBlocked) return { status: false, message: deleteBlocked };
+
       const existing =
-        await this.prisma.socialSecurityInstitution.findUnique({
-          where: { id },
+        await this.prisma.socialSecurityInstitution.findFirst({
+          where: {
+            id,
+            isDeleted: false
+          },
         });
       if (!existing) return { status: false, message: 'Institution not found' };
-      await this.prisma.socialSecurityInstitution.delete({
+      await this.prisma.socialSecurityInstitution.update({
         where: { id },
+        data: { isDeleted: true, deletedAt: new Date() }
       });
       runInBackground(
         'Delete Record',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'delete',
-        module: 'social-security',
-        entity: 'SocialSecurityInstitution',
-        entityId: id,
-        description: `Deleted institution ${existing.name}`,
-        oldValues: JSON.stringify(existing),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'success',
-      }),
+          action: 'delete',
+          module: 'social-security',
+          entity: 'SocialSecurityInstitution',
+          entityId: id,
+          description: `Deleted institution ${existing.name}`,
+          oldValues: JSON.stringify(existing),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
       );
       return { status: true, message: 'Deleted successfully' };
     } catch (error: any) {
-      
+
       runInBackground(
         'Failed to delete institution',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'delete',
-        module: 'social-security',
-        entity: 'SocialSecurityInstitution',
-        entityId: id,
-        description: 'Failed to delete institution',
-        errorMessage: error?.message,
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'failure',
-      }),
+          action: 'delete',
+          module: 'social-security',
+          entity: 'SocialSecurityInstitution',
+          entityId: id,
+          description: 'Failed to delete institution',
+          errorMessage: error?.message,
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
       );
       return { status: false, message: 'Failed to delete institution' };
     }
   }
 
   // ========== Employer Registration CRUD ==========
-  async listEmployerRegistrations(companyId: string, institutionId?: string) {
-    const where: any = { companyId };
+  async listEmployerRegistrations(companyId?: string, institutionId?: string) {
+    const where: any = { isDeleted: false };
     if (institutionId) where.institutionId = institutionId;
     const items =
       await this.prisma.socialSecurityEmployerRegistration.findMany({
@@ -247,8 +264,11 @@ export class SocialSecurityService {
 
   async getEmployerRegistration(id: string) {
     const item =
-      await this.prisma.socialSecurityEmployerRegistration.findUnique({
-        where: { id },
+      await this.prisma.socialSecurityEmployerRegistration.findFirst({
+        where: {
+          id,
+          isDeleted: false
+        },
         include: {
           institution: true,
           employeeRegistrations: true,
@@ -299,16 +319,16 @@ export class SocialSecurityService {
         'Create Record',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'create',
-        module: 'social-security',
-        entity: 'SocialSecurityEmployerRegistration',
-        entityId: created.id,
-        description: `Created employer registration ${created.registrationNumber}`,
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'success',
-      }),
+          action: 'create',
+          module: 'social-security',
+          entity: 'SocialSecurityEmployerRegistration',
+          entityId: created.id,
+          description: `Created employer registration ${created.registrationNumber}`,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
       );
       return { status: true, data: created, message: 'Created successfully' };
     } catch (error: any) {
@@ -316,16 +336,16 @@ export class SocialSecurityService {
         'Failed to create employer registration',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'create',
-        module: 'social-security',
-        entity: 'SocialSecurityEmployerRegistration',
-        description: 'Failed to create employer registration',
-        errorMessage: error?.message,
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'failure',
-      }),
+          action: 'create',
+          module: 'social-security',
+          entity: 'SocialSecurityEmployerRegistration',
+          description: 'Failed to create employer registration',
+          errorMessage: error?.message,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
       );
       return {
         status: false,
@@ -341,8 +361,11 @@ export class SocialSecurityService {
   ) {
     try {
       const existing =
-        await this.prisma.socialSecurityEmployerRegistration.findUnique({
-          where: { id },
+        await this.prisma.socialSecurityEmployerRegistration.findFirst({
+          where: {
+            id,
+            isDeleted: false
+          },
         });
       if (!existing)
         return { status: false, message: 'Employer registration not found' };
@@ -383,36 +406,36 @@ export class SocialSecurityService {
         'Update Record',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'update',
-        module: 'social-security',
-        entity: 'SocialSecurityEmployerRegistration',
-        entityId: id,
-        description: `Updated employer registration ${updated.registrationNumber}`,
-        oldValues: JSON.stringify(existing),
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'success',
-      }),
+          action: 'update',
+          module: 'social-security',
+          entity: 'SocialSecurityEmployerRegistration',
+          entityId: id,
+          description: `Updated employer registration ${updated.registrationNumber}`,
+          oldValues: JSON.stringify(existing),
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
       );
       return { status: true, data: updated, message: 'Updated successfully' };
     } catch (error: any) {
-      
+
       runInBackground(
         'Failed to update employer registration',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'update',
-        module: 'social-security',
-        entity: 'SocialSecurityEmployerRegistration',
-        entityId: id,
-        description: 'Failed to update employer registration',
-        errorMessage: error?.message,
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'failure',
-      }),
+          action: 'update',
+          module: 'social-security',
+          entity: 'SocialSecurityEmployerRegistration',
+          entityId: id,
+          description: 'Failed to update employer registration',
+          errorMessage: error?.message,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
       );
       return {
         status: false,
@@ -426,29 +449,36 @@ export class SocialSecurityService {
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
+      const deleteBlocked = await this.masterDeleteGuard.checkBlocked(this.prisma, 'socialSecurityEmployerRegistration', id);
+      if (deleteBlocked) return { status: false, message: deleteBlocked };
+
       const existing =
-        await this.prisma.socialSecurityEmployerRegistration.findUnique({
-          where: { id },
+        await this.prisma.socialSecurityEmployerRegistration.findFirst({
+          where: {
+            id,
+            isDeleted: false
+          },
         });
       if (!existing)
         return { status: false, message: 'Employer registration not found' };
-      await this.prisma.socialSecurityEmployerRegistration.delete({
+      await this.prisma.socialSecurityEmployerRegistration.update({
         where: { id },
+        data: { isDeleted: true, deletedAt: new Date() }
       });
       runInBackground(
         'Delete Record',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'delete',
-        module: 'social-security',
-        entity: 'SocialSecurityEmployerRegistration',
-        entityId: id,
-        description: `Deleted employer registration ${existing.registrationNumber}`,
-        oldValues: JSON.stringify(existing),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'success',
-      }),
+          action: 'delete',
+          module: 'social-security',
+          entity: 'SocialSecurityEmployerRegistration',
+          entityId: id,
+          description: `Deleted employer registration ${existing.registrationNumber}`,
+          oldValues: JSON.stringify(existing),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
       );
       return { status: true, message: 'Deleted successfully' };
     } catch (error: any) {
@@ -456,16 +486,16 @@ export class SocialSecurityService {
         'Failed to delete employer registration',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'delete',
-        module: 'social-security',
-        entity: 'SocialSecurityEmployerRegistration',
-        entityId: id,
-        description: 'Failed to delete employer registration',
-        errorMessage: error?.message,
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'failure',
-      }),
+          action: 'delete',
+          module: 'social-security',
+          entity: 'SocialSecurityEmployerRegistration',
+          entityId: id,
+          description: 'Failed to delete employer registration',
+          errorMessage: error?.message,
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
       );
       return {
         status: false,
@@ -481,7 +511,7 @@ export class SocialSecurityService {
     institutionId?: string,
     employerRegistrationId?: string,
   ) {
-    const where: any = { companyId };
+    const where: any = { isDeleted: false };
     if (employeeId) where.employeeId = employeeId;
     if (institutionId) where.institutionId = institutionId;
     if (employerRegistrationId)
@@ -522,7 +552,10 @@ export class SocialSecurityService {
     // Fetch departments from Master DB for these employees
     const deptIds = employees.map((e) => e.departmentId).filter(Boolean);
     const departments = await this.prisma.department.findMany({
-      where: { id: { in: deptIds } },
+      where: {
+        id: { in: deptIds },
+        isDeleted: false
+      },
     });
     const deptMap = departments.reduce(
       (acc, dept) => {
@@ -545,8 +578,11 @@ export class SocialSecurityService {
 
   async getEmployeeRegistration(id: string) {
     const item =
-      await this.prisma.socialSecurityEmployeeRegistration.findUnique({
-        where: { id },
+      await this.prisma.socialSecurityEmployeeRegistration.findFirst({
+        where: {
+          id,
+          isDeleted: false
+        },
         include: {
           institution: true,
           employerRegistration: true,
@@ -613,8 +649,11 @@ export class SocialSecurityService {
         body.contributionRate === null
       ) {
         const inst =
-          await this.prisma.socialSecurityInstitution.findUnique({
-            where: { id: body.institutionId },
+          await this.prisma.socialSecurityInstitution.findFirst({
+            where: {
+              id: body.institutionId,
+              isDeleted: false
+            },
           });
         if (inst) {
           await this.prisma.socialSecurityEmployeeRegistration.update({
@@ -634,16 +673,16 @@ export class SocialSecurityService {
         'Create Record',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'create',
-        module: 'social-security',
-        entity: 'SocialSecurityEmployeeRegistration',
-        entityId: created.id,
-        description: `Created employee registration ${created.registrationNumber}`,
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'success',
-      }),
+          action: 'create',
+          module: 'social-security',
+          entity: 'SocialSecurityEmployeeRegistration',
+          entityId: created.id,
+          description: `Created employee registration ${created.registrationNumber}`,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
       );
       return { status: true, message: 'Created successfully' };
     } catch (error: any) {
@@ -651,16 +690,16 @@ export class SocialSecurityService {
         'Failed to create employee registration',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'create',
-        module: 'social-security',
-        entity: 'SocialSecurityEmployeeRegistration',
-        description: 'Failed to create employee registration',
-        errorMessage: error?.message,
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'failure',
-      }),
+          action: 'create',
+          module: 'social-security',
+          entity: 'SocialSecurityEmployeeRegistration',
+          description: 'Failed to create employee registration',
+          errorMessage: error?.message,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
       );
       return {
         status: false,
@@ -676,8 +715,11 @@ export class SocialSecurityService {
   ) {
     try {
       const existing =
-        await this.prisma.socialSecurityEmployeeRegistration.findUnique({
-          where: { id },
+        await this.prisma.socialSecurityEmployeeRegistration.findFirst({
+          where: {
+            id,
+            isDeleted: false
+          },
         });
       if (!existing)
         return { status: false, message: 'Employee registration not found' };
@@ -730,36 +772,36 @@ export class SocialSecurityService {
         'Update Record',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'update',
-        module: 'social-security',
-        entity: 'SocialSecurityEmployeeRegistration',
-        entityId: id,
-        description: `Updated employee registration ${updated.registrationNumber}`,
-        oldValues: JSON.stringify(existing),
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'success',
-      }),
+          action: 'update',
+          module: 'social-security',
+          entity: 'SocialSecurityEmployeeRegistration',
+          entityId: id,
+          description: `Updated employee registration ${updated.registrationNumber}`,
+          oldValues: JSON.stringify(existing),
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
       );
       return { status: true, message: 'Updated successfully' };
     } catch (error: any) {
-      
+
       runInBackground(
         'Failed to update employee registration',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'update',
-        module: 'social-security',
-        entity: 'SocialSecurityEmployeeRegistration',
-        entityId: id,
-        description: 'Failed to update employee registration',
-        errorMessage: error?.message,
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'failure',
-      }),
+          action: 'update',
+          module: 'social-security',
+          entity: 'SocialSecurityEmployeeRegistration',
+          entityId: id,
+          description: 'Failed to update employee registration',
+          errorMessage: error?.message,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
       );
       return {
         status: false,
@@ -773,29 +815,36 @@ export class SocialSecurityService {
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
+      const deleteBlocked = await this.masterDeleteGuard.checkBlocked(this.prisma, 'socialSecurityEmployeeRegistration', id);
+      if (deleteBlocked) return { status: false, message: deleteBlocked };
+
       const existing =
-        await this.prisma.socialSecurityEmployeeRegistration.findUnique({
-          where: { id },
+        await this.prisma.socialSecurityEmployeeRegistration.findFirst({
+          where: {
+            id,
+            isDeleted: false
+          },
         });
       if (!existing)
         return { status: false, message: 'Employee registration not found' };
-      await this.prisma.socialSecurityEmployeeRegistration.delete({
+      await this.prisma.socialSecurityEmployeeRegistration.update({
         where: { id },
+        data: { isDeleted: true, deletedAt: new Date() }
       });
       runInBackground(
         'Delete Record',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'delete',
-        module: 'social-security',
-        entity: 'SocialSecurityEmployeeRegistration',
-        entityId: id,
-        description: `Deleted employee registration ${existing.registrationNumber}`,
-        oldValues: JSON.stringify(existing),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'success',
-      }),
+          action: 'delete',
+          module: 'social-security',
+          entity: 'SocialSecurityEmployeeRegistration',
+          entityId: id,
+          description: `Deleted employee registration ${existing.registrationNumber}`,
+          oldValues: JSON.stringify(existing),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
       );
       return { status: true, message: 'Deleted successfully' };
     } catch (error: any) {
@@ -803,16 +852,16 @@ export class SocialSecurityService {
         'Failed to delete employee registration',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'delete',
-        module: 'social-security',
-        entity: 'SocialSecurityEmployeeRegistration',
-        entityId: id,
-        description: 'Failed to delete employee registration',
-        errorMessage: error?.message,
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'failure',
-      }),
+          action: 'delete',
+          module: 'social-security',
+          entity: 'SocialSecurityEmployeeRegistration',
+          entityId: id,
+          description: 'Failed to delete employee registration',
+          errorMessage: error?.message,
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
       );
       return {
         status: false,
@@ -829,7 +878,7 @@ export class SocialSecurityService {
     month?: string,
     year?: string,
   ) {
-    const where: any = { companyId };
+    const where: any = { isDeleted: false };
     if (employeeId) where.employeeId = employeeId;
     if (institutionId) where.institutionId = institutionId;
     if (month) where.month = month;
@@ -875,8 +924,11 @@ export class SocialSecurityService {
   }
 
   async getContribution(id: string) {
-    const item = await this.prisma.socialSecurityContribution.findUnique({
-      where: { id },
+    const item = await this.prisma.socialSecurityContribution.findFirst({
+      where: {
+        id,
+        isDeleted: false
+      },
       include: {
         institution: true,
         employerRegistration: true,
@@ -891,8 +943,8 @@ export class SocialSecurityService {
     });
     const payrollDetail = item.payrollDetailId
       ? await this.prisma.payrollDetail.findUnique({
-          where: { id: item.payrollDetailId },
-        })
+        where: { id: item.payrollDetailId },
+      })
       : null;
 
     return { status: true, data: { ...item, employee, payrollDetail } };
@@ -940,34 +992,34 @@ export class SocialSecurityService {
         'Create Record',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'create',
-        module: 'social-security',
-        entity: 'SocialSecurityContribution',
-        entityId: created.id,
-        description: `Created contribution for employee ${body.employeeId}`,
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'success',
-      }),
+          action: 'create',
+          module: 'social-security',
+          entity: 'SocialSecurityContribution',
+          entityId: created.id,
+          description: `Created contribution for employee ${body.employeeId}`,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
       );
-      return { status: true,  message: 'Created successfully' };
+      return { status: true, message: 'Created successfully' };
     } catch (error: any) {
-    
+
       runInBackground(
         'Failed to create contribution',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'create',
-        module: 'social-security',
-        entity: 'SocialSecurityContribution',
-        description: 'Failed to create contribution',
-        errorMessage: error?.message,
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'failure',
-      }),
+          action: 'create',
+          module: 'social-security',
+          entity: 'SocialSecurityContribution',
+          description: 'Failed to create contribution',
+          errorMessage: error?.message,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
       );
       return { status: false, message: 'Failed to create contribution' };
     }
@@ -980,8 +1032,11 @@ export class SocialSecurityService {
   ) {
     try {
       const existing =
-        await this.prisma.socialSecurityContribution.findUnique({
-          where: { id },
+        await this.prisma.socialSecurityContribution.findFirst({
+          where: {
+            id,
+            isDeleted: false
+          },
         });
       if (!existing)
         return { status: false, message: 'Contribution not found' };
@@ -1024,36 +1079,36 @@ export class SocialSecurityService {
         'Update Record',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'update',
-        module: 'social-security',
-        entity: 'SocialSecurityContribution',
-        entityId: id,
-        description: `Updated contribution ${id}`,
-        oldValues: JSON.stringify(existing),
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'success',
-      }),
+          action: 'update',
+          module: 'social-security',
+          entity: 'SocialSecurityContribution',
+          entityId: id,
+          description: `Updated contribution ${id}`,
+          oldValues: JSON.stringify(existing),
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
       );
       return response;
     } catch (error: any) {
-      
+
       runInBackground(
         'Failed to update contribution',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'update',
-        module: 'social-security',
-        entity: 'SocialSecurityContribution',
-        entityId: id,
-        description: 'Failed to update contribution',
-        errorMessage: error?.message,
-        newValues: JSON.stringify(body),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'failure',
-      }),
+          action: 'update',
+          module: 'social-security',
+          entity: 'SocialSecurityContribution',
+          entityId: id,
+          description: 'Failed to update contribution',
+          errorMessage: error?.message,
+          newValues: JSON.stringify(body),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
       );
       return { status: false, message: 'Failed to update contribution' };
     }
@@ -1065,28 +1120,32 @@ export class SocialSecurityService {
   ) {
     try {
       const existing =
-        await this.prisma.socialSecurityContribution.findUnique({
-          where: { id },
+        await this.prisma.socialSecurityContribution.findFirst({
+          where: {
+            id,
+            isDeleted: false
+          },
         });
       if (!existing)
         return { status: false, message: 'Contribution not found' };
-      await this.prisma.socialSecurityContribution.delete({
+      await this.prisma.socialSecurityContribution.update({
         where: { id },
+        data: { isDeleted: true, deletedAt: new Date() }
       });
       runInBackground(
         'Delete Record',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'delete',
-        module: 'social-security',
-        entity: 'SocialSecurityContribution',
-        entityId: id,
-        description: `Deleted contribution ${id}`,
-        oldValues: JSON.stringify(existing),
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'success',
-      }),
+          action: 'delete',
+          module: 'social-security',
+          entity: 'SocialSecurityContribution',
+          entityId: id,
+          description: `Deleted contribution ${id}`,
+          oldValues: JSON.stringify(existing),
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'success',
+        }),
       );
       return { status: true, message: 'Contribution deleted successfully' };
     } catch (error: any) {
@@ -1094,16 +1153,16 @@ export class SocialSecurityService {
         'Failed to delete contribution (Failure Log)',
         this.activityLogs.log({
           userId: ctx.userId,
-        action: 'delete',
-        module: 'social-security',
-        entity: 'SocialSecurityContribution',
-        entityId: id,
-        description: 'Failed to delete contribution',
-        errorMessage: error?.message,
-        ipAddress: ctx.ipAddress,
-        userAgent: ctx.userAgent,
-        status: 'failure',
-      }),
+          action: 'delete',
+          module: 'social-security',
+          entity: 'SocialSecurityContribution',
+          entityId: id,
+          description: 'Failed to delete contribution',
+          errorMessage: error?.message,
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+          status: 'failure',
+        }),
       );
       return { status: false, message: 'Failed to delete contribution' };
     }

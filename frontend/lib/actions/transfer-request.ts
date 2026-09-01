@@ -3,7 +3,7 @@
 import { authFetch } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
-export async function getTransferRequests(params?: { warehouseId?: string; status?: string }) {
+export async function getTransferRequests(params?: { warehouseId?: string; status?: string; id?: string }) {
     try {
         const query = params ? new URLSearchParams(params as any).toString() : '';
         const response = await authFetch(`/transfer-request?${query}`);
@@ -34,9 +34,10 @@ export async function getReturnTransferRequests(locationId: string) {
     }
 }
 
-export async function getOutboundTransferRequests(locationId: string) {
+export async function getOutboundTransferRequests(locationId: string, status?: string) {
     try {
-        const response = await authFetch(`/transfer-request/outbound-requests?locationId=${locationId}`);
+        const query = status ? `?locationId=${locationId}&status=${status}` : `?locationId=${locationId}`;
+        const response = await authFetch(`/transfer-request/outbound-requests${query}`);
         return response.data ?? { status: false, data: [] };
     } catch (error) {
         console.error("Get outbound transfer requests error:", error);
@@ -44,9 +45,10 @@ export async function getOutboundTransferRequests(locationId: string) {
     }
 }
 
-export async function getInboundTransferRequests(locationId: string) {
+export async function getInboundTransferRequests(locationId: string, status?: string) {
     try {
-        const response = await authFetch(`/transfer-request/inbound-requests?locationId=${locationId}`);
+        const query = status ? `?locationId=${locationId}&status=${status}` : `?locationId=${locationId}`;
+        const response = await authFetch(`/transfer-request/inbound-requests${query}`);
         return response.data ?? { status: false, data: [] };
     } catch (error) {
         console.error("Get inbound transfer requests error:", error);
@@ -109,13 +111,19 @@ export async function updateTransferRequestStatus(id: string, status: string) {
     }
 }
 
-export async function acceptTransferRequest(id: string, userId?: string) {
+export async function acceptTransferRequest(
+    id: string,
+    userId?: string,
+    receivedItems?: { itemId: string; receivedQty: number }[],
+    notes?: string
+) {
     try {
         const response = await authFetch(`/transfer-request/${id}/accept`, {
             method: "POST",
-            body: JSON.stringify({ userId }),
+            body: JSON.stringify({ userId, receivedItems, notes }),
         });
         revalidatePath("/erp/inventory/transactions/stock-transfer");
+        revalidatePath("/pos/inventory/receiving");
         return response.data ?? { status: false, message: "Failed to accept transfer request" };
     } catch (error) {
         console.error("Accept transfer request error:", error);
@@ -123,16 +131,30 @@ export async function acceptTransferRequest(id: string, userId?: string) {
     }
 }
 
-export async function approveSourceTransferRequest(id: string, userId?: string) {
+export async function approveSourceTransferRequest(id: string, userId?: string, items?: any[]) {
     try {
         const response = await authFetch(`/transfer-request/${id}/approve-source`, {
             method: "POST",
-            body: JSON.stringify({ userId }),
+            body: JSON.stringify({ userId, items }),
         });
         revalidatePath("/erp/inventory/transactions/stock-transfer");
         return response.data ?? { status: false, message: "Failed to approve source" };
     } catch (error) {
         console.error("Approve source transfer request error:", error);
         throw error;
+    }
+}
+
+export async function acknowledgeClaimTransfer(id: string, userId?: string) {
+    try {
+        const response = await authFetch(`/transfer-request/${id}/acknowledge-claim`, {
+            method: "POST",
+            body: JSON.stringify({ userId }),
+        });
+        revalidatePath("/erp/inventory/transactions/plm-claims");
+        return response.data ?? { status: false, message: "Failed to acknowledge claim" };
+    } catch (error) {
+        console.error("Acknowledge claim transfer error:", error);
+        return { status: false, message: error instanceof Error ? error.message : "Failed to acknowledge claim" };
     }
 }

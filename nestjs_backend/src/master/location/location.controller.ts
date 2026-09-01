@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Put,
   Req,
@@ -21,12 +22,16 @@ import {
   ApiBearerAuth,
   ApiBody,
 } from '@nestjs/swagger';
-import { CreateLocationDto, UpdateLocationDto } from './dto/location.dto';
+import {
+  CreateLocationDto,
+  UpdateLocationDto,
+  UpdateLocationOtherInfoDto,
+} from './dto/location.dto';
 
 @ApiTags('Location')
 @Controller('api')
 export class LocationController {
-  constructor(private service: LocationService,) {}
+  constructor(private service: LocationService) {}
 
   @Get('public/locations')
   @ApiOperation({ summary: 'List all active locations (Public)' })
@@ -51,7 +56,7 @@ export class LocationController {
   }
 
   @Get('locations')
-  @UseGuards(JwtAuthGuard, PermissionGuard('master.location.read'))
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List all locations' })
   async list() {
@@ -94,12 +99,42 @@ export class LocationController {
     });
   }
 
+  @Put('locations/:id/other-info')
+  @ApiOperation({ summary: 'Update other location details' })
+  async updateOtherInfo(
+    @Param('id') id: string,
+    @Body() body: UpdateLocationOtherInfoDto,
+    @Req() req,
+  ) {
+    return this.service.updateOtherInfo(id, body, {
+      userId: req.user?.userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+  }
+
   @Delete('locations/:id')
   @UseGuards(JwtAuthGuard, PermissionGuard('master.location.delete'))
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete location' })
   async remove(@Param('id') id: string, @Req() req) {
     return this.service.remove(id, {
+      userId: req.user?.userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+  }
+
+  @Patch('locations/:id/online-status')
+  @UseGuards(JwtAuthGuard, PermissionGuard('master.location.update'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Set outlet online / offline status' })
+  async setOnlineStatus(
+    @Param('id') id: string,
+    @Body() body: { isOnline: boolean },
+    @Req() req,
+  ) {
+    return this.service.updateOnlineStatus(id, body.isOnline, {
       userId: req.user?.userId,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],

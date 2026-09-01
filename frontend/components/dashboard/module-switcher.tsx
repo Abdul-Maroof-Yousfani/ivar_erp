@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useEnvironment, EnvironmentType } from "@/components/providers/environment-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,7 +11,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { Users, Package, ShoppingCart, ShieldCheck, ChevronDown, Check } from "lucide-react";
+import { Users, Package, ShoppingCart, ShieldCheck, Database, ChevronDown, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { menuData, MenuItem } from "@/components/dashboard/sidebar-menu-data";
@@ -50,9 +51,28 @@ function findFirstAccessibleRoute(
 
 export function ModuleSwitcher() {
     const { environment, setEnvironment } = useEnvironment();
-    const { isAdmin, hasAnyPermission } = useAuth();
+    const { isAdmin, hasAnyPermission, user } = useAuth();
 
     const superAdmin = isAdmin();
+
+    // Check if user has ANY permission starting with a given prefix (e.g. "hr.", "erp.", "pos.")
+    const hasPermissionPrefix = React.useCallback((prefix: string): boolean => {
+        if (superAdmin) return true;
+        // Collect all permission name strings from the user object
+        const perms: string[] = [];
+        if (user?.role?.permissions && Array.isArray(user.role.permissions)) {
+            for (const p of user.role.permissions) {
+                const name = typeof p === "string" ? p : p?.permission?.name ?? (p as any)?.name;
+                if (name) perms.push(name);
+            }
+        }
+        if ((user as any)?.permissions && Array.isArray((user as any).permissions)) {
+            for (const p of (user as any).permissions) {
+                if (typeof p === "string") perms.push(p);
+            }
+        }
+        return perms.some((p) => p.startsWith(prefix));
+    }, [superAdmin, user]);
 
     const getLandingRoute = (env: EnvironmentType, root: string): string => {
         if (superAdmin) return root;
@@ -67,13 +87,7 @@ export function ModuleSwitcher() {
             color: "text-blue-600",
             bg: "bg-blue-500/10",
             root: "/hr",
-            accessCheck: () => superAdmin || hasAnyPermission([
-                'hr.dashboard.view',
-                'hr.employee.read',
-                'hr.attendance.view',
-                'hr.leave.read',
-                'hr.payroll.read',
-            ]),
+            accessCheck: () => hasPermissionPrefix("hr."),
         },
         {
             id: "ERP" as EnvironmentType,
@@ -82,19 +96,7 @@ export function ModuleSwitcher() {
             color: "text-emerald-600",
             bg: "bg-emerald-500/10",
             root: "/erp",
-            accessCheck: () => superAdmin || hasAnyPermission([
-                'erp.finance.journal-voucher.read',
-                'erp.finance.chart-of-account.read',
-                'erp.finance.payment-voucher.read',
-                'erp.finance.receipt-voucher.read',
-                'erp.item.read',
-                'procurement.read',
-                'inventory.read',
-                'sales.read',
-                'sales.customer.read',
-                'sales.order.read',
-                'erp.claims.read',
-            ]),
+            accessCheck: () => hasPermissionPrefix("erp."),
         },
         {
             id: "POS" as EnvironmentType,
@@ -103,12 +105,16 @@ export function ModuleSwitcher() {
             color: "text-indigo-600",
             bg: "bg-indigo-500/10",
             root: "/pos",
-            accessCheck: () => superAdmin || hasAnyPermission([
-                'pos.dashboard.view',
-                'pos.sale.create',
-                'pos.sales.history.view',
-                'pos.inventory.view',
-            ]),
+            accessCheck: () => hasPermissionPrefix("pos."),
+        },
+        {
+            id: "MASTER" as EnvironmentType,
+            label: "Master Module",
+            icon: Database,
+            color: "text-rose-600",
+            bg: "bg-rose-500/10",
+            root: "/master",
+            accessCheck: () => hasPermissionPrefix("master."),
         },
     ];
 

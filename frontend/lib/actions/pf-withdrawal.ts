@@ -90,3 +90,24 @@ export async function getPFWithdrawals(filters?: any): Promise<{ status: boolean
         };
     }
 }
+
+// Approve PF withdrawal
+export async function approvePFWithdrawal(id: string): Promise<{ status: boolean; message?: string }> {
+    try {
+        const response = await authFetch(`/pf/withdrawals/${id}/approve`, {
+            method: "PATCH",
+            body: JSON.stringify({}),
+        });
+        if (!response.ok) {
+            const errorData = response.data || { message: "Failed to approve PF withdrawal" };
+            return { status: false, message: errorData.message || `HTTP error! status: ${response.status}` };
+        }
+        return response.data;
+    } catch (error) {
+        console.error("Error approving PF withdrawal:", error);
+        return {
+            status: false,
+            message: error instanceof Error ? error.message : "An unexpected error occurred",
+        };
+    }
+}

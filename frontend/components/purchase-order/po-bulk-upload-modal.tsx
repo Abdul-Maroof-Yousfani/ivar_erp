@@ -11,6 +11,11 @@ import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { getApiBaseUrl } from '@/lib/utils';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { getVendors } from '@/lib/actions/procurement';
 
 const BASE = () => `${getApiBaseUrl()}/purchase-order/bulk-upload`;
 
@@ -20,9 +25,14 @@ interface Props {
     onSuccess?: () => void;
     uploadId?: string | null;
     onUploadIdChange?: (id: string | null) => void;
+    vendorId?: string;
+    orderType?: string;
+    goodsType?: string;
+    expectedDeliveryDate?: string;
+    notes?: string;
 }
 
-export function PoBulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUploadIdChange }: Props) {
+export function PoBulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onUploadIdChange, vendorId, orderType, goodsType, expectedDeliveryDate, notes }: Props) {
     const [file, setFile] = useState<File | null>(null);
     const [internalUploadId, setInternalUploadId] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState(false);
@@ -32,12 +42,67 @@ export function PoBulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onU
     const fileInputRef = useRef<HTMLInputElement>(null);
     const errorEndRef = useRef<HTMLDivElement>(null);
 
-    React.useEffect(() => {
-        if (uploadId !== undefined) setInternalUploadId(uploadId ?? null);
-    }, [uploadId]);
+    // Vendor and PO Metadata states
+    const [vendors, setVendors] = useState<any[]>([]);
+    const [isLoadingVendors, setIsLoadingVendors] = useState(false);
+    const [selectedVendorId, setSelectedVendorId] = useState<string>('');
+    const [selectedOrderType, setSelectedOrderType] = useState<string>('LOCAL');
+    const [selectedGoodsType, setSelectedGoodsType] = useState<string>('CONSUMABLE');
+    const [selectedExpectedDeliveryDate, setSelectedExpectedDeliveryDate] = useState<string>('');
+    const [selectedNotes, setSelectedNotes] = useState<string>('');
 
+    // Sync input props into local states when modal opens
+    React.useEffect(() => {
+        if (open) {
+            setSelectedVendorId(vendorId || '');
+            setSelectedOrderType(orderType || 'LOCAL');
+            setSelectedGoodsType(goodsType || 'CONSUMABLE');
+            setSelectedExpectedDeliveryDate(expectedDeliveryDate || '');
+            setSelectedNotes(notes || '');
+        }
+    }, [open, vendorId, orderType, goodsType, expectedDeliveryDate, notes]);
+
+    // Fetch vendors when modal is open and validation completes
     const activeId = internalUploadId ?? null;
     const { data, speed, isValidated, isValidating, isFailed, isProcessing, isCancelled } = useUploadProgress(activeId);
+
+    React.useEffect(() => {
+        if (open && activeId && data?.status === 'validated') {
+            const fetchVendorsList = async () => {
+                setIsLoadingVendors(true);
+                try {
+                    const res = await getVendors();
+                    if (res?.status && res.data) {
+                        setVendors(res.data);
+                        // Auto-toggle orderType based on vendor selection if already set
+                        if (selectedVendorId) {
+                            const match = res.data.find((v: any) => v.id === selectedVendorId);
+                            if (match) {
+                                const resolvedType = match.type === 'IMPORT' || match.type === 'INTERNATIONAL' ? 'IMPORT' : 'LOCAL';
+                                setSelectedOrderType(resolvedType);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error fetching vendors:', e);
+                } finally {
+                    setIsLoadingVendors(false);
+                }
+            };
+            fetchVendorsList();
+        }
+    }, [open, activeId, data?.status, selectedVendorId]);
+
+    const handleVendorChange = (id: string) => {
+        setSelectedVendorId(id);
+        const match = vendors.find(v => v.id === id);
+        if (match) {
+            const resolvedType = match.type === 'IMPORT' || match.type === 'INTERNATIONAL' ? 'IMPORT' : 'LOCAL';
+            setSelectedOrderType(resolvedType);
+        }
+    };
+
+
 
     React.useEffect(() => {
         if (showErrors && errorEndRef.current) errorEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -60,8 +125,18 @@ export function PoBulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onU
         setInternalUploadId(null);
         const formData = new FormData();
         formData.append('file', file);
+
+        const params = new URLSearchParams();
+        if (vendorId) params.append('vendorId', vendorId);
+        if (orderType) params.append('orderType', orderType);
+        if (goodsType) params.append('goodsType', goodsType);
+        if (expectedDeliveryDate) params.append('expectedDeliveryDate', expectedDeliveryDate);
+        if (notes) params.append('notes', notes);
+        const queryStr = params.toString();
+        const url = queryStr ? `${BASE()}?${queryStr}` : BASE();
+
         try {
-            const res = await fetch(BASE(), { method: 'POST', body: formData, credentials: 'include' });
+            const res = await fetch(url, { method: 'POST', body: formData, credentials: 'include' });
             const result = await res.json();
             if (result.status && result.data?.uploadId) {
                 setInternalUploadId(result.data.uploadId);
@@ -79,9 +154,23 @@ export function PoBulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onU
 
     const handleConfirm = async () => {
         if (!activeId || isConfirming) return;
+        if (!selectedVendorId) {
+            toast.error('Please select a Vendor before confirming.');
+            return;
+        }
         setIsConfirming(true);
+
+        const params = new URLSearchParams();
+        params.append('vendorId', selectedVendorId);
+        params.append('orderType', selectedOrderType);
+        params.append('goodsType', selectedGoodsType);
+        if (selectedExpectedDeliveryDate) params.append('expectedDeliveryDate', selectedExpectedDeliveryDate);
+        if (selectedNotes) params.append('notes', selectedNotes);
+        const queryStr = params.toString();
+        const url = `${BASE()}/${activeId}/confirm?${queryStr}`;
+
         try {
-            const res = await fetch(`${BASE()}/${activeId}/confirm`, { method: 'POST', credentials: 'include' });
+            const res = await fetch(url, { method: 'POST', credentials: 'include' });
             const result = await res.json();
             if (result.status) {
                 toast.success('PO import started');
@@ -111,14 +200,6 @@ export function PoBulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onU
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    // Auto-confirm if 100% valid
-    React.useEffect(() => {
-        if (isValidated && data?.failedRecords === 0 && !isProcessing && data?.status === 'validated' && !hasAutoConfirmed.current && !isConfirming) {
-            hasAutoConfirmed.current = true;
-            handleConfirm();
-        }
-    }, [isValidated, data?.failedRecords, data?.status, isProcessing, isConfirming]);
-
     const handleClose = () => {
         if (isProcessing) { onOpenChange(false); return; }
         if (data?.status === 'completed' && onSuccess) { onSuccess(); onUploadIdChange?.(null); }
@@ -141,7 +222,7 @@ export function PoBulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onU
                         {data?.status && <Badge variant="outline" className="ml-2 capitalize">{data.status}</Badge>}
                     </DialogTitle>
                     <DialogDescription className="text-sm">
-                        Upload a CSV/Excel with rows per item. One vendor, one order type, one goods type per file.
+                        Upload a CSV/Excel containing BarCode and Quantity. Item details will be resolved automatically from the selected vendor and master data.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -180,7 +261,7 @@ export function PoBulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onU
                                             <div className="text-center space-y-2">
                                                 <p className="font-bold text-xl">Upload PO items list</p>
                                                 <p className="text-sm text-muted-foreground max-w-xs">
-                                                    One row per item. Single vendor, single order type (LOCAL/IMPORT), single goods type per file.
+                                                    One row per item. The file should only contain BarCode and Quantity columns.
                                                 </p>
                                             </div>
                                             <div className="flex gap-2 mt-2">
@@ -198,7 +279,7 @@ export function PoBulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onU
                                         </div>
                                         <div>
                                             <p className="font-bold text-sm">Download Template</p>
-                                            <p className="text-xs text-muted-foreground">Vendor Code, Item ID, Qty, Unit Price, Order Type (LOCAL/IMPORT), Goods Type (CONSUMABLE/FRESH)</p>
+                                            <p className="text-xs text-muted-foreground">BarCode, Quantity</p>
                                         </div>
                                     </div>
                                     <Button variant="secondary" size="sm" onClick={() => window.open(`${BASE()}/template/download`, '_blank')} className="font-semibold shadow-sm">
@@ -267,7 +348,7 @@ export function PoBulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onU
                                                 <h4 className="font-black text-lg">Validation Complete</h4>
                                                 <p className="text-sm text-muted-foreground">
                                                     {data?.failedRecords === 0
-                                                        ? 'All rows valid. POs will be grouped by Vendor Code on import.'
+                                                        ? 'All rows valid. Please set your PO import parameters below to finish.'
                                                         : `${data?.failedRecords} rows have issues and will be skipped.`}
                                                 </p>
                                             </div>
@@ -321,6 +402,97 @@ export function PoBulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onU
                                     </div>
                                 )}
 
+                                {/* Metadata Settings Form */}
+                                {isValidated && data?.status === 'validated' && (
+                                    <div className="p-6 rounded-2xl border bg-muted/20 space-y-4 animate-in fade-in duration-300">
+                                        <div className="flex items-center gap-2 border-b pb-3 mb-2">
+                                            <Database className="h-5 w-5 text-primary animate-pulse" />
+                                            <h4 className="font-bold text-base text-foreground">Import Purchase Order Settings</h4>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 gap-4">
+                                            {/* Vendor Selection */}
+                                            <div className="space-y-2">
+                                                <Label htmlFor="modal-vendor" className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                                    Vendor / Supplier <span className="text-destructive">*</span>
+                                                </Label>
+                                                <Select value={selectedVendorId} onValueChange={handleVendorChange} disabled={isLoadingVendors}>
+                                                    <SelectTrigger id="modal-vendor" className="bg-background border-muted hover:border-primary/50 transition-colors h-10 font-medium">
+                                                        <SelectValue placeholder={isLoadingVendors ? "Loading vendors..." : "Select Vendor"} />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {vendors.map((vendor) => (
+                                                            <SelectItem key={vendor.id} value={vendor.id} className="font-medium">
+                                                                {vendor.name} ({vendor.code})
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+
+                                            {/* Order Type */}
+                                            <div className="space-y-2">
+                                                <Label htmlFor="modal-ordertype" className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                                                    Order Type
+                                                </Label>
+                                                <Select value={selectedOrderType} onValueChange={setSelectedOrderType}>
+                                                    <SelectTrigger id="modal-ordertype" className="bg-background border-muted hover:border-primary/50 transition-colors h-10 font-medium">
+                                                        <SelectValue placeholder="Select Order Type" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="LOCAL" className="font-medium">Local</SelectItem>
+                                                        <SelectItem value="IMPORT" className="font-medium">Import</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+
+                                            {/* Goods Type */}
+                                            <div className="space-y-2">
+                                                <Label htmlFor="modal-goodstype" className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                                                    Goods Type
+                                                </Label>
+                                                <Select value={selectedGoodsType} onValueChange={setSelectedGoodsType}>
+                                                    <SelectTrigger id="modal-goodstype" className="bg-background border-muted hover:border-primary/50 transition-colors h-10 font-medium">
+                                                        <SelectValue placeholder="Select Goods Type" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="CONSUMABLE" className="font-medium">Consumable</SelectItem>
+                                                        <SelectItem value="FRESH" className="font-medium">Finish Goods / Fresh</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+
+                                            {/* Expected Delivery Date */}
+                                            <div className="space-y-2">
+                                                <Label htmlFor="modal-deliverydate" className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                                                    Expected Delivery Date
+                                                </Label>
+                                                <Input
+                                                    id="modal-deliverydate"
+                                                    type="date"
+                                                    value={selectedExpectedDeliveryDate}
+                                                    onChange={(e) => setSelectedExpectedDeliveryDate(e.target.value)}
+                                                    className="bg-background border-muted hover:border-primary/50 transition-colors h-10 font-medium"
+                                                />
+                                            </div>
+
+                                            {/* Notes */}
+                                            <div className="col-span-2 space-y-2">
+                                                <Label htmlFor="modal-notes" className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                                                    Notes / Remarks
+                                                </Label>
+                                                <Textarea
+                                                    id="modal-notes"
+                                                    value={selectedNotes}
+                                                    onChange={(e) => setSelectedNotes(e.target.value)}
+                                                    placeholder="Add administrative notes or details for this purchase order..."
+                                                    className="bg-background border-muted hover:border-primary/50 transition-colors font-medium min-h-[60px] max-h-[120px]"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Completion */}
                                 {data?.status === 'completed' && (
                                     <div className="p-8 bg-green-500/5 border-2 border-green-500/20 rounded-3xl flex flex-col items-center gap-4 text-center animate-in zoom-in-95 duration-500">
@@ -359,11 +531,21 @@ export function PoBulkUploadModal({ open, onOpenChange, onSuccess, uploadId, onU
                                 <>
                                     {isProcessing ? (
                                         <Button variant="destructive" onClick={handleCancel} className="font-bold">Abort Job</Button>
-                                    ) : isValidated ? (
+                                    ) : isValidated && data?.status === 'validated' ? (
                                         <div className="flex gap-3">
-                                            <Button variant="outline" onClick={reset} className="font-bold">Re-upload File</Button>
-                                            <Button onClick={handleConfirm} disabled={isProcessing || isConfirming} className="px-10 font-black bg-green-600 hover:bg-green-700 shadow-lg shadow-green-600/20">
-                                                {isConfirming ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Starting...</> : <><Database className="mr-2 h-4 w-4" /> Confirm & Create POs</>}
+                                            <Button variant="outline" onClick={reset} className="font-bold" disabled={isProcessing || isConfirming}>Re-upload File</Button>
+                                            <Button 
+                                                onClick={handleConfirm} 
+                                                disabled={isProcessing || isConfirming || !selectedVendorId} 
+                                                className="px-10 font-black bg-green-600 hover:bg-green-700 shadow-lg shadow-green-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {isConfirming ? (
+                                                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Starting...</>
+                                                ) : !selectedVendorId ? (
+                                                    <><Database className="mr-2 h-4 w-4" /> Select Vendor First</>
+                                                ) : (
+                                                    <><Database className="mr-2 h-4 w-4" /> Confirm & Create POs</>
+                                                )}
                                             </Button>
                                         </div>
                                     ) : (

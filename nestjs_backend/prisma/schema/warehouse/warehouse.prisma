@@ -1,4 +1,6 @@
 model Warehouse {
+  isDeleted            Boolean             @default(false)
+  deletedAt            DateTime?
   id                   String              @id @default(uuid())
   code                 String              @unique
   name                 String
@@ -17,6 +19,7 @@ model Warehouse {
   stockLedgerEntries   StockLedger[]
   inventoryItems       InventoryItem[]
   purchaseReturns      PurchaseReturn[]
+  stockAdjustments     StockAdjustment[]
   fromTransferRequests TransferRequest[]   @relation("TransferRequest_fromWarehouse")
   toTransferRequests   TransferRequest[]   @relation("TransferRequest_toWarehouse")
 
@@ -25,39 +28,53 @@ model Warehouse {
   deliveryChallans DeliveryChallan[]
   erpSalesInvoices ERPSalesInvoice[]
   purchaseInvoices PurchaseInvoice[]
+  fabricTrackers   FabricVendorTracker[]
 
   @@index([companyId])
   @@index([type])
 }
 
 model Location {
-  id                        String                     @id @default(uuid())
-  name                      String                     @unique
-  code                      String                     @unique @default(cuid())
-  phone                     String?
-  warehouseId               String?                    @map("warehouse_id")
-  geoFenceEnabled           Boolean                    @default(false)
-  geoFenceRadius            Int                        @default(100)
-  ipWhitelist               String?
-  ipWhitelistEnabled        Boolean                    @default(false)
-  address                   String?
-  latitude                  Decimal?                   @db.Decimal(10, 8)
-  longitude                 Decimal?                   @db.Decimal(11, 8)
-  cityId                    String?
-  companyId                 String?
-  status                    String                     @default("active")
-  createdById               String?
-  createdAt                 DateTime                   @default(now())
-  updatedAt                 DateTime                   @updatedAt
+  isDeleted          Boolean   @default(false)
+  deletedAt          DateTime?
+  id                 String    @id @default(uuid())
+  name               String    @unique
+  code               String    @unique @default(cuid())
+  shortCode          String?   @unique @map("short_code")
+  phone              String?
+  warehouseId        String?   @map("warehouse_id")
+  geoFenceEnabled    Boolean   @default(false)
+  geoFenceRadius     Int       @default(100)
+  ipWhitelist        String?
+  ipWhitelistEnabled Boolean   @default(false)
+  address            String?
+  latitude           Decimal?  @db.Decimal(10, 8)
+  longitude          Decimal?  @db.Decimal(11, 8)
+  cityId             String?
+  companyId          String?
+  status             String    @default("active")
+  createdById        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
   // ── FBR POS credentials (per-location) ──────────────────────────────
-  fbrBposId                 String?                    @map("fbr_bpos_id")
-  fbrBearerToken            String?                    @map("fbr_bearer_token") @db.Text
-  fbrNtn                    String?                    @map("fbr_ntn")
-  fbrSellerName             String?                    @map("fbr_seller_name")
-  fbrEnabled                Boolean                    @default(false) @map("fbr_enabled")
-  employees                 Employee[]
-  transferHistoriesNew      EmployeeTransferHistory[]  @relation("TransferNewLoc")
-  transferHistoriesPrev     EmployeeTransferHistory[]  @relation("TransferPrevLoc")
+  fbrBposId          String?   @map("fbr_bpos_id")
+  fbrBearerToken     String?   @map("fbr_bearer_token") @db.Text
+  fbrNtn             String?   @map("fbr_ntn")
+  fbrSellerName      String?   @map("fbr_seller_name")
+  fbrEnabled         Boolean   @default(false) @map("fbr_enabled")
+  
+  /// Whether this outlet is currently marked as online.
+  isOnline           Boolean   @default(false) @map("is_online")
+  /// Whether this outlet is a stock holding location.
+  isStockLocation    Boolean   @default(true) @map("is_stock_location")
+
+  /// Cash GL Codes
+  cashGLCode         String?
+  /// Timestamp of the last time this outlet was marked online.
+  lastOnlineAt       DateTime?  @map("last_online_at")
+  employees          Employee[]
+  transferHistoriesNew EmployeeTransferHistory[]  @relation("TransferNewLoc")
+  transferHistoriesPrev EmployeeTransferHistory[]  @relation("TransferPrevLoc")
   pos                       Pos[]
   allianceDiscountLocations AllianceDiscountLocation[]
   couponCodeLocations       CouponCodeLocation[]
@@ -67,9 +84,12 @@ model Location {
   fromStockMovements        StockMovement[]            @relation("StockMovement_fromLocation")
   toStockMovements          StockMovement[]            @relation("StockMovement_toLocation")
   inventoryItems            InventoryItem[]
+  stockAdjustmentItems      StockAdjustmentItem[]
 
   voucherLocations          VoucherLocation[]
   discountCampaignLocations DiscountCampaignLocation[]
+  merchantConfigLocations   MerchantConfigLocation[]
 
   @@index([warehouseId])
 }
+

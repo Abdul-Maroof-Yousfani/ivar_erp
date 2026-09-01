@@ -13,7 +13,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class SalesOrderItemDto {
+export class PosSalesOrderItemDto {
     @ApiProperty({ description: 'Item UUID' })
     @IsString()
     itemId: string;
@@ -35,6 +35,18 @@ export class SalesOrderItemDto {
     @Max(100)
     discountPercent?: number;
 
+    @ApiPropertyOptional({ description: 'Manager override discount percentage (0-100)', default: null })
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Max(100)
+    overrideDiscountPercent?: number;
+
+    @ApiPropertyOptional({ description: 'Reason/Note for override discount' })
+    @IsOptional()
+    @IsString()
+    overrideDiscountNote?: string;
+
     @ApiPropertyOptional({ description: 'Tax percentage', default: 0 })
     @IsOptional()
     @IsNumber()
@@ -46,17 +58,14 @@ export class SalesOrderItemDto {
     @IsNumber()
     @Min(0)
     promoDiscountAmount?: number;
-
-    @ApiPropertyOptional({ description: 'Mark item as stock in transit (customer ordered but stock not yet at location)' })
-    @IsOptional()
-    isStockInTransit?: boolean;
 }
+export { PosSalesOrderItemDto as SalesOrderItemDto };
 
 // ── Multi-tender item ────────────────────────────────────────────────────
 export class TenderItemDto {
-    @ApiProperty({ description: 'Tender method: cash | card | bank_transfer | voucher' })
+    @ApiProperty({ description: 'Tender method: cash | card | bank_transfer | voucher | credit_account' })
     @IsString()
-    @IsIn(['cash', 'card', 'bank_transfer', 'voucher'])
+    @IsIn(['cash', 'card', 'bank_transfer', 'voucher', 'credit_account'])
     method: string;
 
     @ApiProperty({ description: 'Amount tendered' })
@@ -73,6 +82,17 @@ export class TenderItemDto {
     @IsOptional()
     @IsString()
     slipNo?: string;
+
+    @ApiPropertyOptional({ description: 'Voucher UUID (for voucher tenders)' })
+    @IsOptional()
+    @IsString()
+    voucherId?: string;
+
+    @ApiPropertyOptional({ description: 'Voucher face value (total amount of the voucher)' })
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    voucherFaceValue?: number;
 }
 
 // ── Alliance / bank card meta ─────────────────────────────────────────────
@@ -91,6 +111,11 @@ export class AllianceMetaDto {
     @IsOptional()
     @IsString()
     merchantSlip?: string;
+
+    @ApiPropertyOptional({ description: 'Selected BIN number' })
+    @IsOptional()
+    @IsString()
+    binNumber?: string;
 }
 
 // ── Voucher redemption item ───────────────────────────────────────────────
@@ -123,7 +148,7 @@ export class PromoScopeDto {
     itemIds?: string[];
 }
 
-export class CreateSalesOrderDto {
+export class CreatePosSalesOrderDto {
     @ApiPropertyOptional({ description: 'POS terminal UUID' })
     @IsOptional()
     @IsString()
@@ -148,6 +173,11 @@ export class CreateSalesOrderDto {
     @IsOptional()
     @IsString()
     notes?: string;
+
+    @ApiPropertyOptional({ description: 'Manual discount / item override note' })
+    @IsOptional()
+    @IsString()
+    manualDiscountNote?: string;
 
     // ── Discount fields ──────────────────────────────────────────────────
     @ApiPropertyOptional({ description: 'Global discount percentage (0-100)' })
@@ -227,6 +257,11 @@ export class CreateSalesOrderDto {
     @IsString()
     holdOrderId?: string;
 
+    @ApiPropertyOptional({ description: 'Specific time at which hold expires' })
+    @IsOptional()
+    @IsString()
+    holdExpiresAt?: string;
+
     @ApiPropertyOptional({ description: 'Flag to indicate this is a credit sale (customer will pay later)' })
     @IsOptional()
     isCreditSale?: boolean;
@@ -247,14 +282,21 @@ export class CreateSalesOrderDto {
     @ValidateNested({ each: true })
     @Type(() => VoucherRedemptionDto)
     voucherRedemptions?: VoucherRedemptionDto[];
+
     @ApiPropertyOptional({ description: 'ID of the cashier/employee who performed the sale' })
     @IsOptional()
     @IsString()
     cashierUserId?: string;
 
-    @ApiProperty({ type: [SalesOrderItemDto] })
+    @ApiPropertyOptional({ description: 'Merchant config ID (bank/acquirer used for card payment)' })
+    @IsOptional()
+    @IsString()
+    merchantId?: string;
+
+    @ApiProperty({ type: [PosSalesOrderItemDto] })
     @IsArray()
     @ValidateNested({ each: true })
-    @Type(() => SalesOrderItemDto)
-    items: SalesOrderItemDto[];
+    @Type(() => PosSalesOrderItemDto)
+    items: PosSalesOrderItemDto[];
 }
+export { CreatePosSalesOrderDto as CreateSalesOrderDto };

@@ -10,7 +10,7 @@ export class AttendanceService {
   constructor(
     private prisma: PrismaService,
     private activityLogs: ActivityLogsService,
-  ) { }
+  ) {}
 
   async list(filters?: {
     employeeId?: string;
@@ -18,6 +18,269 @@ export class AttendanceService {
     dateTo?: Date;
     status?: string;
   }) {
+    // If employeeId and date range are provided, generate a merged daily calendar
+    if (filters?.employeeId && filters?.dateFrom && filters?.dateTo) {
+      // Fetch employee details
+      const employee = await this.prisma.employee.findUnique({
+        where: { id: filters.employeeId },
+        select: {
+          id: true,
+          employeeId: true,
+          employeeName: true,
+          workingHoursPolicyId: true,
+          joiningDate: true,
+        },
+      });
+
+      if (employee) {
+        const fromDate = new Date(filters.dateFrom);
+        fromDate.setUTCHours(0, 0, 0, 0);
+        const toDate = new Date(filters.dateTo);
+        toDate.setUTCHours(23, 59, 59, 999);
+
+        // Fetch raw attendance records
+        const attendances = await this.prisma.attendance.findMany({
+          where: {
+            employeeId: employee.id,
+            date: {
+              gte: fromDate,
+              lte: toDate,
+            },
+          },
+          include: {
+            employee: {
+              select: {
+                id: true,
+                employeeId: true,
+                employeeName: true,
+                departmentId: true,
+                subDepartmentId: true,
+                workingHoursPolicyId: true,
+              },
+            },
+          },
+        });
+
+        // Fetch holidays in the date range
+        const holidays = await this.prisma.holiday.findMany({
+          where: { status: 'active' },
+        });
+
+        // Fetch approved leaves for this employee in the range
+        const approvedLeaves = await this.prisma.leaveApplication.findMany({
+          where: {
+            employeeId: employee.id,
+            status: 'approved',
+            fromDate: { lte: toDate },
+            toDate: { gte: fromDate },
+          },
+        });
+
+        // Fetch policy assignments and policy details
+        const policyAssignments =
+          await this.prisma.workingHoursPolicyAssignment.findMany({
+            where: {
+              employeeId: employee.id,
+              startDate: { lte: toDate },
+              endDate: { gte: fromDate },
+            },
+          });
+
+        const policyIds = [
+          ...new Set([
+            employee.workingHoursPolicyId,
+            ...policyAssignments.map((a) => a.workingHoursPolicyId),
+          ]),
+        ].filter(Boolean) as string[];
+
+        const policies = await this.prisma.workingHoursPolicy.findMany({
+          where: { id: { in: policyIds } },
+        });
+
+        const policiesMap = new Map(policies.map((p) => [p.id, p]));
+
+        const getPolicyForDateInMemory = (date: Date) => {
+          const assignment = policyAssignments.find((a) => {
+            const start = new Date(a.startDate);
+            const end = new Date(a.endDate);
+            start.setHours(0, 0, 0, 0);
+            end.setHours(23, 59, 59, 999);
+            return date >= start && date <= end;
+          });
+          const policyId =
+            assignment?.workingHoursPolicyId || employee.workingHoursPolicyId;
+          return policyId ? policiesMap.get(policyId) : null;
+        };
+
+        const isDayOff = (date: Date, policy: any): boolean => {
+          const dayNames = [
+            'sunday',
+            'monday',
+            'tuesday',
+            'wednesday',
+            'thursday',
+            'friday',
+            'saturday',
+          ];
+          const dayName = dayNames[date.getDay()];
+
+          let isOff = date.getDay() === 0 || date.getDay() === 6; // default Sat/Sun
+          if (policy) {
+            isOff = policy.isDefault
+              ? dayName === 'saturday' || dayName === 'sunday'
+              : false;
+            if (
+              policy.dayOverrides &&
+              typeof policy.dayOverrides === 'object'
+            ) {
+              const overrides = policy.dayOverrides as any;
+              if (overrides[dayName]?.enabled) {
+                isOff = false; // It is overrides to a working day
+              }
+            }
+          }
+          return isOff;
+        };
+
+        // Create a map of attendance by normalized date for O(1) lookup
+        const attendanceMap = new Map<string, (typeof attendances)[0]>();
+        attendances.forEach((att) => {
+          const attDate = new Date(att.date);
+          const dateKey = `${attDate.getUTCFullYear()}-${String(attDate.getUTCMonth() + 1).padStart(2, '0')}-${String(attDate.getUTCDate()).padStart(2, '0')}`;
+          attendanceMap.set(dateKey, att);
+        });
+
+        const mergedRecords: any[] = [];
+        const currentDate = new Date(fromDate);
+
+        while (currentDate <= toDate) {
+          const dateKey = `${currentDate.getUTCFullYear()}-${String(currentDate.getUTCMonth() + 1).padStart(2, '0')}-${String(currentDate.getUTCDate()).padStart(2, '0')}`;
+
+          // Check if employee had joined yet
+          if (employee.joiningDate) {
+            const jd = new Date(employee.joiningDate);
+            const joiningDateKey = `${jd.getUTCFullYear()}-${String(jd.getUTCMonth() + 1).padStart(2, '0')}-${String(jd.getUTCDate()).padStart(2, '0')}`;
+            if (dateKey < joiningDateKey) {
+              mergedRecords.push({
+                id: null,
+                employeeId: employee.id,
+                date: new Date(currentDate),
+                status: 'not-joined',
+                isRemote: false,
+                checkIn: null,
+                checkOut: null,
+                notes: 'Not Joined Yet',
+                employee: {
+                  id: employee.id,
+                  employeeId: employee.employeeId,
+                  employeeName: employee.employeeName,
+                },
+              });
+              currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+              continue;
+            }
+          }
+
+          const existingAtt = attendanceMap.get(dateKey);
+
+          if (existingAtt) {
+            mergedRecords.push(existingAtt);
+          } else {
+            let virtualStatus = 'absent';
+            let notes: null | string = null;
+
+            // 1. Check for approved leave
+            const leave = approvedLeaves.find((l) => {
+              const leaveStart = new Date(l.fromDate);
+              leaveStart.setHours(0, 0, 0, 0);
+              const leaveEnd = new Date(l.toDate);
+              leaveEnd.setHours(23, 59, 59, 999);
+              return currentDate >= leaveStart && currentDate <= leaveEnd;
+            });
+
+            if (leave) {
+              virtualStatus = 'leave';
+              notes = leave.reasonForLeave || 'Approved Leave';
+            } else {
+              // 2. Check for holiday
+              const isHoliday = holidays.some((holiday) => {
+                const holidayStart = new Date(
+                  new Date(holiday.dateFrom).getTime() + 12 * 60 * 60 * 1000,
+                )
+                  .toISOString()
+                  .split('T')[0];
+                const holidayEnd = new Date(
+                  new Date(holiday.dateTo).getTime() + 12 * 60 * 60 * 1000,
+                )
+                  .toISOString()
+                  .split('T')[0];
+                const checkDate = currentDate.toISOString().split('T')[0];
+                return checkDate >= holidayStart && checkDate <= holidayEnd;
+              });
+
+              if (isHoliday) {
+                virtualStatus = 'holiday';
+                const matchingHoliday = holidays.find((holiday) => {
+                  const holidayStart = new Date(
+                    new Date(holiday.dateFrom).getTime() + 12 * 60 * 60 * 1000,
+                  )
+                    .toISOString()
+                    .split('T')[0];
+                  const holidayEnd = new Date(
+                    new Date(holiday.dateTo).getTime() + 12 * 60 * 60 * 1000,
+                  )
+                    .toISOString()
+                    .split('T')[0];
+                  const checkDate = currentDate.toISOString().split('T')[0];
+                  return checkDate >= holidayStart && checkDate <= holidayEnd;
+                });
+                notes = matchingHoliday ? matchingHoliday.name : 'Holiday';
+              } else {
+                // 3. Check for weekend/weekly-off
+                const policy = getPolicyForDateInMemory(currentDate);
+                if (isDayOff(currentDate, policy)) {
+                  virtualStatus = 'weekly-off';
+                }
+              }
+            }
+
+            mergedRecords.push({
+              id: null,
+              employeeId: employee.id,
+              date: new Date(currentDate),
+              status: virtualStatus,
+              isRemote: false,
+              checkIn: null,
+              checkOut: null,
+              notes: notes,
+              employee: {
+                id: employee.id,
+                employeeId: employee.employeeId,
+                employeeName: employee.employeeName,
+              },
+            });
+          }
+
+          currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+        }
+
+        // Apply status filter if provided
+        let filteredRecords = mergedRecords;
+        if (filters.status) {
+          filteredRecords = mergedRecords.filter(
+            (r) => r.status.toLowerCase() === filters.status!.toLowerCase(),
+          );
+        }
+
+        // Sort descending by date
+        filteredRecords.sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+        );
+
+        return { status: true, data: filteredRecords };
+      }
+    }
+
     const where: any = {};
     if (filters?.employeeId) where.employeeId = filters.employeeId;
     if (filters?.dateFrom || filters?.dateTo) {
@@ -209,12 +472,17 @@ export class AttendanceService {
     const totalHours = checkOutHours - checkInHours - breakDuration / 60;
     const workingHours = new Decimal(Math.max(0, totalHours));
 
-    const overtimeStartTime =
-      policy.overtimeStartsAt || this.addMinutesToTime(endTime, 60);
-    const overtimeStartHours = this.parseTimeToHours(overtimeStartTime);
-    const overtimeHours = isDayOff
-      ? new Decimal(Math.max(0, totalHours))
-      : new Decimal(Math.max(0, checkOutHours - overtimeStartHours));
+    // Calculate overtime (hours worked beyond expected hours, or from otStartsAt)
+    let overtimeHours = new Decimal(0);
+    if (isDayOff) {
+      overtimeHours = new Decimal(Math.max(0, totalHours - expectedHours));
+    } else if (policy.otStartsAt) {
+      const otStartsAtHours = this.parseTimeToHours(policy.otStartsAt);
+      const otStart = Math.max(checkInHours, otStartsAtHours);
+      overtimeHours = new Decimal(Math.max(0, checkOutHours - otStart));
+    } else {
+      overtimeHours = new Decimal(Math.max(0, totalHours - expectedHours));
+    }
 
     return {
       workingHours,
@@ -231,20 +499,6 @@ export class AttendanceService {
   private parseTimeToHours(timeStr: string): number {
     const [hours, minutes] = timeStr.split(':').map(Number);
     return hours + minutes / 60;
-  }
-
-  private addMinutesToTime(timeStr: string, minutesToAdd: number): string {
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    const normalizedHours = Number.isFinite(hours) ? hours : 0;
-    const normalizedMinutes = Number.isFinite(minutes) ? minutes : 0;
-    const totalMinutes =
-      ((normalizedHours * 60 + normalizedMinutes + minutesToAdd) % 1440 + 1440) %
-      1440;
-    const resultHours = Math.floor(totalMinutes / 60)
-      .toString()
-      .padStart(2, '0');
-    const resultMinutes = (totalMinutes % 60).toString().padStart(2, '0');
-    return `${resultHours}:${resultMinutes}`;
   }
 
   /**
@@ -273,7 +527,9 @@ export class AttendanceService {
   ) {
     try {
       // Add 12 hours before normalizing to preserve the intended calendar day
-      const date = new Date(new Date(body.date).getTime() + 12 * 60 * 60 * 1000);
+      const date = new Date(
+        new Date(body.date).getTime() + 12 * 60 * 60 * 1000,
+      );
       date.setUTCHours(0, 0, 0, 0); // Normalize to start of day in UTC
 
       const checkIn = body.checkIn ? new Date(body.checkIn) : null;
@@ -305,7 +561,7 @@ export class AttendanceService {
         // Use UTC components to avoid server-local timezone shifts (setHours(0) shifts to previous day in UTC if server is in positive TZ)
         const jd = new Date(empInfo.joiningDate);
         const joiningDateStr = `${jd.getUTCFullYear()}-${String(jd.getUTCMonth() + 1).padStart(2, '0')}-${String(jd.getUTCDate()).padStart(2, '0')}`;
-        
+
         const rawDate = new Date(body.date);
         const targetDateStr = `${rawDate.getUTCFullYear()}-${String(rawDate.getUTCMonth() + 1).padStart(2, '0')}-${String(rawDate.getUTCDate()).padStart(2, '0')}`;
 
@@ -322,7 +578,8 @@ export class AttendanceService {
           });
           return {
             status: false,
-            message: 'Attendance cannot be marked before employee joining date.',
+            message:
+              'Attendance cannot be marked before employee joining date.',
           };
         }
       }
@@ -442,11 +699,15 @@ export class AttendanceService {
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     try {
-      // Add 12 hours before normalizing to preserve the intended calendar day 
+      // Add 12 hours before normalizing to preserve the intended calendar day
       // (prevents April 30th 19:00 UTC from becoming April 30th 00:00 UTC instead of May 1st)
-      const fromDate = new Date(new Date(body.fromDate).getTime() + 12 * 60 * 60 * 1000);
-      const toDate = new Date(new Date(body.toDate).getTime() + 12 * 60 * 60 * 1000);
-      
+      const fromDate = new Date(
+        new Date(body.fromDate).getTime() + 12 * 60 * 60 * 1000,
+      );
+      const toDate = new Date(
+        new Date(body.toDate).getTime() + 12 * 60 * 60 * 1000,
+      );
+
       fromDate.setUTCHours(0, 0, 0, 0);
       toDate.setUTCHours(23, 59, 59, 999);
 
@@ -476,10 +737,10 @@ export class AttendanceService {
       if (empForRange?.joiningDate) {
         const jd = new Date(empForRange.joiningDate);
         const joiningDateStr = `${jd.getUTCFullYear()}-${String(jd.getUTCMonth() + 1).padStart(2, '0')}-${String(jd.getUTCDate()).padStart(2, '0')}`;
-        
+
         const rawFromDate = new Date(body.fromDate);
         const fromDateStr = `${rawFromDate.getUTCFullYear()}-${String(rawFromDate.getUTCMonth() + 1).padStart(2, '0')}-${String(rawFromDate.getUTCDate()).padStart(2, '0')}`;
-        
+
         const rawToDate = new Date(body.toDate);
         const toDateStr = `${rawToDate.getUTCFullYear()}-${String(rawToDate.getUTCMonth() + 1).padStart(2, '0')}-${String(rawToDate.getUTCDate()).padStart(2, '0')}`;
 
@@ -491,7 +752,11 @@ export class AttendanceService {
         }
         if (fromDateStr < joiningDateStr) {
           const jdObj = new Date(empForRange.joiningDate);
-          fromDate.setUTCFullYear(jdObj.getUTCFullYear(), jdObj.getUTCMonth(), jdObj.getUTCDate());
+          fromDate.setUTCFullYear(
+            jdObj.getUTCFullYear(),
+            jdObj.getUTCMonth(),
+            jdObj.getUTCDate(),
+          );
           fromDate.setUTCHours(0, 0, 0, 0);
         }
       }
@@ -500,13 +765,13 @@ export class AttendanceService {
       const currentDate = new Date(fromDate);
       while (currentDate <= toDate) {
         const dateStr = currentDate.toISOString().split('T')[0];
-        
+
         // 1. Determine status for the day
         let currentStatus = body.status || 'present';
         let isSpecialDay = false;
 
         // Check for Approved Leave
-        const hasLeave = approvedLeaves.some(leave => {
+        const hasLeave = approvedLeaves.some((leave) => {
           const leaveStart = new Date(leave.fromDate);
           const leaveEnd = new Date(leave.toDate);
           leaveStart.setUTCHours(0, 0, 0, 0);
@@ -524,9 +789,21 @@ export class AttendanceService {
         // Check for Holiday (if not already leave)
         if (!isSpecialDay) {
           const isHoliday = holidays.some((holiday) => {
-            const holidayStart = new Date(new Date(holiday.dateFrom).getTime() + 12 * 60 * 60 * 1000).toISOString().split('T')[0];
-            const holidayEnd = new Date(new Date(holiday.dateTo).getTime() + 12 * 60 * 60 * 1000).toISOString().split('T')[0];
-            const checkDate = new Date(currentDate.getTime() + 12 * 60 * 60 * 1000).toISOString().split('T')[0];
+            const holidayStart = new Date(
+              new Date(holiday.dateFrom).getTime() + 12 * 60 * 60 * 1000,
+            )
+              .toISOString()
+              .split('T')[0];
+            const holidayEnd = new Date(
+              new Date(holiday.dateTo).getTime() + 12 * 60 * 60 * 1000,
+            )
+              .toISOString()
+              .split('T')[0];
+            const checkDate = new Date(
+              currentDate.getTime() + 12 * 60 * 60 * 1000,
+            )
+              .toISOString()
+              .split('T')[0];
 
             return checkDate >= holidayStart && checkDate <= holidayEnd;
           });
@@ -545,12 +822,14 @@ export class AttendanceService {
           }
         }
 
-        const checkInDateTime = body.checkIn && !isSpecialDay
-          ? new Date(`${dateStr}T${body.checkIn}`)
-          : null;
-        const checkOutDateTime = body.checkOut && !isSpecialDay
-          ? new Date(`${dateStr}T${body.checkOut}`)
-          : null;
+        const checkInDateTime =
+          body.checkIn && !isSpecialDay
+            ? new Date(`${dateStr}T${body.checkIn}`)
+            : null;
+        const checkOutDateTime =
+          body.checkOut && !isSpecialDay
+            ? new Date(`${dateStr}T${body.checkOut}`)
+            : null;
 
         try {
           // If record exists, update it; otherwise create it
@@ -565,16 +844,20 @@ export class AttendanceService {
 
           let result;
           if (existing) {
-            result = await this.update(existing.id, {
-              status: currentStatus,
-              checkIn: checkInDateTime,
-              checkOut: checkOutDateTime,
-              isRemote: body.isRemote,
-              location: body.location,
-              latitude: body.latitude,
-              longitude: body.longitude,
-              notes: body.notes,
-            }, ctx);
+            result = await this.update(
+              existing.id,
+              {
+                status: currentStatus,
+                checkIn: checkInDateTime,
+                checkOut: checkOutDateTime,
+                isRemote: body.isRemote,
+                location: body.location,
+                latitude: body.latitude,
+                longitude: body.longitude,
+                notes: body.notes,
+              },
+              ctx,
+            );
           } else {
             result = await this.create(
               {
@@ -623,26 +906,31 @@ export class AttendanceService {
       console.log('🎯 [BULK CREATE] Applying sandwich rules for date range...');
       if (body.status === 'absent') {
         // Find all Fridays and Mondays in the created records
-        const createdDates = results.map(r => new Date(r.date));
-        const fridays = createdDates.filter(d => d.getDay() === 5);
-        const mondays = createdDates.filter(d => d.getDay() === 1);
-        
-        console.log(`🎯 [BULK CREATE] Found ${fridays.length} Fridays and ${mondays.length} Mondays`);
-        
+        const createdDates = results.map((r) => new Date(r.date));
+        const fridays = createdDates.filter((d) => d.getDay() === 5);
+        const mondays = createdDates.filter((d) => d.getDay() === 1);
+
+        console.log(
+          `🎯 [BULK CREATE] Found ${fridays.length} Fridays and ${mondays.length} Mondays`,
+        );
+
         // Apply sandwich rule for each Friday-Monday pair
         for (const friday of fridays) {
           const monday = new Date(friday);
           monday.setDate(monday.getDate() + 3);
-          
+
           // Check if this Monday is in our created records
-          const mondayExists = mondays.some(m => 
-            m.getFullYear() === monday.getFullYear() &&
-            m.getMonth() === monday.getMonth() &&
-            m.getDate() === monday.getDate()
+          const mondayExists = mondays.some(
+            (m) =>
+              m.getFullYear() === monday.getFullYear() &&
+              m.getMonth() === monday.getMonth() &&
+              m.getDate() === monday.getDate(),
           );
-          
+
           if (mondayExists) {
-            console.log(`🎯 [BULK CREATE] Applying sandwich rule for Friday ${friday.toISOString().split('T')[0]}`);
+            console.log(
+              `🎯 [BULK CREATE] Applying sandwich rule for Friday ${friday.toISOString().split('T')[0]}`,
+            );
             await this.markWeekendAsAbsent(body.employeeId, friday, ctx);
           }
         }
@@ -665,6 +953,143 @@ export class AttendanceService {
     }
   }
 
+  async checkIn(
+    body: {
+      employeeId: string;
+      date?: string | Date;
+      checkInTime?: string | Date;
+      isRemote?: boolean;
+      location?: string;
+      latitude?: number;
+      longitude?: number;
+      notes?: string;
+    },
+    ctx: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    try {
+      const checkInDate = body.date ? new Date(body.date) : new Date();
+      const date = new Date(checkInDate.getTime() + 12 * 60 * 60 * 1000);
+      date.setUTCHours(0, 0, 0, 0);
+
+      const checkInTime = body.checkInTime
+        ? new Date(body.checkInTime)
+        : new Date();
+
+      const existing = await this.prisma.attendance.findUnique({
+        where: {
+          employeeId_date: {
+            employeeId: body.employeeId,
+            date: date,
+          },
+        },
+      });
+
+      if (existing) {
+        return this.update(
+          existing.id,
+          {
+            checkIn: checkInTime,
+            checkOut: existing.checkOut,
+            isRemote:
+              body.isRemote !== undefined ? body.isRemote : existing.isRemote,
+            location: body.location || existing.location || undefined,
+            latitude: body.latitude !== undefined ? body.latitude : undefined,
+            longitude:
+              body.longitude !== undefined ? body.longitude : undefined,
+            notes: body.notes
+              ? existing.notes
+                ? `${existing.notes} | ${body.notes}`
+                : body.notes
+              : existing.notes || undefined,
+          },
+          ctx,
+        );
+      } else {
+        return this.create(
+          {
+            employeeId: body.employeeId,
+            date: date,
+            checkIn: checkInTime,
+            status: 'present',
+            isRemote: body.isRemote,
+            location: body.location,
+            latitude: body.latitude,
+            longitude: body.longitude,
+            notes: body.notes,
+          },
+          ctx,
+        );
+      }
+    } catch (error: any) {
+      return {
+        status: false,
+        message: error?.message || 'Failed to check in',
+      };
+    }
+  }
+
+  async checkOut(
+    body: {
+      employeeId: string;
+      date?: string | Date;
+      checkOutTime?: string | Date;
+      location?: string;
+      latitude?: number;
+      longitude?: number;
+      notes?: string;
+    },
+    ctx: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    try {
+      const checkOutDate = body.date ? new Date(body.date) : new Date();
+      const date = new Date(checkOutDate.getTime() + 12 * 60 * 60 * 1000);
+      date.setUTCHours(0, 0, 0, 0);
+
+      const checkOutTime = body.checkOutTime
+        ? new Date(body.checkOutTime)
+        : new Date();
+
+      const existing = await this.prisma.attendance.findUnique({
+        where: {
+          employeeId_date: {
+            employeeId: body.employeeId,
+            date: date,
+          },
+        },
+      });
+
+      if (!existing) {
+        return {
+          status: false,
+          message:
+            'Check-in record not found for today. Please check in first.',
+        };
+      }
+
+      return this.update(
+        existing.id,
+        {
+          checkIn: existing.checkIn,
+          checkOut: checkOutTime,
+          location: body.location || existing.location || undefined,
+          latitude: body.latitude !== undefined ? body.latitude : undefined,
+          longitude: body.longitude !== undefined ? body.longitude : undefined,
+          notes: body.notes
+            ? existing.notes
+              ? `${existing.notes} | ${body.notes}`
+              : body.notes
+            : existing.notes || undefined,
+        },
+        ctx,
+      );
+    } catch (error: any) {
+      return {
+        status: false,
+        message: error?.message || 'Failed to check out',
+      };
+    }
+  }
+
   /**
    * Apply sandwich rule: If Friday and Monday are absent, mark weekend (Sat, Sun) as absent too
    * Also handles removal: If Friday or Monday changes from absent to present, remove sandwich rule from weekend
@@ -676,10 +1101,18 @@ export class AttendanceService {
     status: string,
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
-    console.log('🔍 [SANDWICH RULE] Called for:', { employeeId, date: date.toISOString(), status });
-    
+    console.log('🔍 [SANDWICH RULE] Called for:', {
+      employeeId,
+      date: date.toISOString(),
+      status,
+    });
+
     const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, 5 = Friday, 6 = Saturday
-    console.log('🔍 [SANDWICH RULE] Day of week:', dayOfWeek, '(0=Sun, 1=Mon, 5=Fri)');
+    console.log(
+      '🔍 [SANDWICH RULE] Day of week:',
+      dayOfWeek,
+      '(0=Sun, 1=Mon, 5=Fri)',
+    );
 
     // Check if it's Friday (5) or Monday (1)
     if (dayOfWeek === 5) {
@@ -698,27 +1131,46 @@ export class AttendanceService {
         },
       });
 
-      console.log('🔍 [SANDWICH RULE] Monday attendance:', mondayAttendance ? `Status: ${mondayAttendance.status}` : 'Not found');
+      console.log(
+        '🔍 [SANDWICH RULE] Monday attendance:',
+        mondayAttendance ? `Status: ${mondayAttendance.status}` : 'Not found',
+      );
 
-      if (status === 'absent' && mondayAttendance && mondayAttendance.status === 'absent') {
-        console.log('✅ [SANDWICH RULE] Both Friday and Monday are absent - checking leaves...');
+      if (
+        status === 'absent' &&
+        mondayAttendance &&
+        mondayAttendance.status === 'absent'
+      ) {
+        console.log(
+          '✅ [SANDWICH RULE] Both Friday and Monday are absent - checking leaves...',
+        );
         // Check if Friday or Monday has approved leave - if yes, don't apply sandwich rule
-        const hasApprovedLeave = await this.hasApprovedLeaveOnDates(employeeId, date, monday);
+        const hasApprovedLeave = await this.hasApprovedLeaveOnDates(
+          employeeId,
+          date,
+          monday,
+        );
         console.log('🔍 [SANDWICH RULE] Has approved leave:', hasApprovedLeave);
-        
+
         if (!hasApprovedLeave) {
-          console.log('🎯 [SANDWICH RULE] Applying sandwich rule - marking weekend as absent!');
+          console.log(
+            '🎯 [SANDWICH RULE] Applying sandwich rule - marking weekend as absent!',
+          );
           // Both Friday and Monday are absent and no approved leave, mark Saturday and Sunday as absent
           await this.markWeekendAsAbsent(employeeId, date, ctx);
         } else {
           console.log('⏭️ [SANDWICH RULE] Skipping - approved leave found');
         }
       } else if (status !== 'absent') {
-        console.log('🗑️ [SANDWICH RULE] Friday is not absent - removing sandwich rule');
+        console.log(
+          '🗑️ [SANDWICH RULE] Friday is not absent - removing sandwich rule',
+        );
         // Friday is no longer absent, remove sandwich rule from weekend if it was applied
         await this.removeWeekendSandwichRule(employeeId, date, ctx);
       } else {
-        console.log('⏭️ [SANDWICH RULE] Skipping - Monday is not absent or not found');
+        console.log(
+          '⏭️ [SANDWICH RULE] Skipping - Monday is not absent or not found',
+        );
       }
     } else if (dayOfWeek === 1) {
       console.log('✅ [SANDWICH RULE] This is Monday - checking Friday...');
@@ -736,32 +1188,51 @@ export class AttendanceService {
         },
       });
 
-      console.log('🔍 [SANDWICH RULE] Friday attendance:', fridayAttendance ? `Status: ${fridayAttendance.status}` : 'Not found');
+      console.log(
+        '🔍 [SANDWICH RULE] Friday attendance:',
+        fridayAttendance ? `Status: ${fridayAttendance.status}` : 'Not found',
+      );
 
-      if (status === 'absent' && fridayAttendance && fridayAttendance.status === 'absent') {
-        console.log('✅ [SANDWICH RULE] Both Friday and Monday are absent - checking leaves...');
+      if (
+        status === 'absent' &&
+        fridayAttendance &&
+        fridayAttendance.status === 'absent'
+      ) {
+        console.log(
+          '✅ [SANDWICH RULE] Both Friday and Monday are absent - checking leaves...',
+        );
         // Check if Friday or Monday has approved leave - if yes, don't apply sandwich rule
-        const hasApprovedLeave = await this.hasApprovedLeaveOnDates(employeeId, friday, date);
+        const hasApprovedLeave = await this.hasApprovedLeaveOnDates(
+          employeeId,
+          friday,
+          date,
+        );
         console.log('🔍 [SANDWICH RULE] Has approved leave:', hasApprovedLeave);
-        
+
         if (!hasApprovedLeave) {
-          console.log('🎯 [SANDWICH RULE] Applying sandwich rule - marking weekend as absent!');
+          console.log(
+            '🎯 [SANDWICH RULE] Applying sandwich rule - marking weekend as absent!',
+          );
           // Both Friday and Monday are absent and no approved leave, mark Saturday and Sunday as absent
           await this.markWeekendAsAbsent(employeeId, friday, ctx);
         } else {
           console.log('⏭️ [SANDWICH RULE] Skipping - approved leave found');
         }
       } else if (status !== 'absent') {
-        console.log('🗑️ [SANDWICH RULE] Monday is not absent - removing sandwich rule');
+        console.log(
+          '🗑️ [SANDWICH RULE] Monday is not absent - removing sandwich rule',
+        );
         // Monday is no longer absent, remove sandwich rule from weekend if it was applied
         await this.removeWeekendSandwichRule(employeeId, friday, ctx);
       } else {
-        console.log('⏭️ [SANDWICH RULE] Skipping - Friday is not absent or not found');
+        console.log(
+          '⏭️ [SANDWICH RULE] Skipping - Friday is not absent or not found',
+        );
       }
     } else {
       console.log('⏭️ [SANDWICH RULE] Not Friday or Monday - skipping');
     }
-    
+
     // RETROACTIVE CHECK: If we're marking any day as absent, check if it completes a Friday-Monday pair
     // This handles cases where Friday was marked absent first, then Monday later (or vice versa)
     if (status === 'absent') {
@@ -780,37 +1251,45 @@ export class AttendanceService {
     ctx: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
     const dayOfWeek = date.getDay();
-    
+
     // If this is Friday, check if the following Monday is already absent
     if (dayOfWeek === 5) {
       const monday = new Date(date);
       monday.setUTCDate(monday.getUTCDate() + 3);
       monday.setUTCHours(0, 0, 0, 0);
-      
+
       const mondayAttendance = await this.prisma.attendance.findUnique({
         where: { employeeId_date: { employeeId, date: monday } },
       });
-      
+
       if (mondayAttendance && mondayAttendance.status === 'absent') {
-        const hasApprovedLeave = await this.hasApprovedLeaveOnDates(employeeId, date, monday);
+        const hasApprovedLeave = await this.hasApprovedLeaveOnDates(
+          employeeId,
+          date,
+          monday,
+        );
         if (!hasApprovedLeave) {
           await this.markWeekendAsAbsent(employeeId, date, ctx);
         }
       }
     }
-    
+
     // If this is Monday, check if the previous Friday is already absent
     if (dayOfWeek === 1) {
       const friday = new Date(date);
       friday.setUTCDate(friday.getUTCDate() - 3);
       friday.setUTCHours(0, 0, 0, 0);
-      
+
       const fridayAttendance = await this.prisma.attendance.findUnique({
         where: { employeeId_date: { employeeId, date: friday } },
       });
-      
+
       if (fridayAttendance && fridayAttendance.status === 'absent') {
-        const hasApprovedLeave = await this.hasApprovedLeaveOnDates(employeeId, friday, date);
+        const hasApprovedLeave = await this.hasApprovedLeaveOnDates(
+          employeeId,
+          friday,
+          date,
+        );
         if (!hasApprovedLeave) {
           await this.markWeekendAsAbsent(employeeId, friday, ctx);
         }
@@ -886,7 +1365,8 @@ export class AttendanceService {
             employeeId,
             date,
             status: 'absent',
-            notes: 'Sandwich rule applied - absent due to Friday and Monday absence',
+            notes:
+              'Sandwich rule applied - absent due to Friday and Monday absence',
             createdById: ctx.userId,
           },
         });
@@ -948,7 +1428,9 @@ export class AttendanceService {
     try {
       const existing = await this.prisma.attendance.findUnique({
         where: { id },
-        include: { employee: { select: { joiningDate: true, employeeName: true } } },
+        include: {
+          employee: { select: { joiningDate: true, employeeName: true } },
+        },
       });
       if (!existing) {
         return { status: false, message: 'Attendance not found' };
@@ -958,14 +1440,15 @@ export class AttendanceService {
       if (existing.employee?.joiningDate) {
         const jd = new Date(existing.employee.joiningDate);
         const joiningDateStr = `${jd.getUTCFullYear()}-${String(jd.getUTCMonth() + 1).padStart(2, '0')}-${String(jd.getUTCDate()).padStart(2, '0')}`;
-        
+
         const dateObj = new Date(existing.date);
         const targetDateStr = `${dateObj.getUTCFullYear()}-${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}-${String(dateObj.getUTCDate()).padStart(2, '0')}`;
 
         if (targetDateStr < joiningDateStr) {
           return {
             status: false,
-            message: 'Attendance cannot be modified before employee joining date.',
+            message:
+              'Attendance cannot be modified before employee joining date.',
           };
         }
       }
@@ -1094,7 +1577,10 @@ export class AttendanceService {
 
       await this.prisma.attendance.delete({ where: { id } });
 
-      const response = { status: true, message: 'Attendance deleted successfully' };
+      const response = {
+        status: true,
+        message: 'Attendance deleted successfully',
+      };
       runInBackground(
         'Delete Attendance',
         this.activityLogs.log({
@@ -1483,11 +1969,11 @@ export class AttendanceService {
           const checkIn =
             checkInValue && checkInValue.trim()
               ? (() => {
-                const time24 = convertTo24Hour(checkInValue);
-                const dateTimeStr = `${dateStr}T${time24}`;
-                const parsed = new Date(dateTimeStr);
-                return isNaN(parsed.getTime()) ? undefined : parsed;
-              })()
+                  const time24 = convertTo24Hour(checkInValue);
+                  const dateTimeStr = `${dateStr}T${time24}`;
+                  const parsed = new Date(dateTimeStr);
+                  return isNaN(parsed.getTime()) ? undefined : parsed;
+                })()
               : undefined;
 
           const checkOutValue =
@@ -1502,11 +1988,11 @@ export class AttendanceService {
           const checkOut =
             checkOutValue && checkOutValue.trim()
               ? (() => {
-                const time24 = convertTo24Hour(checkOutValue);
-                const dateTimeStr = `${dateStr}T${time24}`;
-                const parsed = new Date(dateTimeStr);
-                return isNaN(parsed.getTime()) ? undefined : parsed;
-              })()
+                  const time24 = convertTo24Hour(checkOutValue);
+                  const dateTimeStr = `${dateStr}T${time24}`;
+                  const parsed = new Date(dateTimeStr);
+                  return isNaN(parsed.getTime()) ? undefined : parsed;
+                })()
               : undefined;
           // Check if this date is a public holiday
           const holiday = await this.prisma.holiday.findFirst({
@@ -1635,8 +2121,8 @@ export class AttendanceService {
               longitude:
                 record.Longitude || record.longitude
                   ? new Decimal(
-                    parseFloat(record.Longitude || record.longitude),
-                  )
+                      parseFloat(record.Longitude || record.longitude),
+                    )
                   : null,
               workingHours: workingHours,
               overtimeHours: overtimeHours,
@@ -1664,8 +2150,8 @@ export class AttendanceService {
               longitude:
                 record.Longitude || record.longitude
                   ? new Decimal(
-                    parseFloat(record.Longitude || record.longitude),
-                  )
+                      parseFloat(record.Longitude || record.longitude),
+                    )
                   : null,
               workingHours: workingHours,
               overtimeHours: overtimeHours,
@@ -1939,30 +2425,53 @@ export class AttendanceService {
         shortExcessTime: string;
       }> = [];
 
-      for (const employee of employees) {
-        // Get all attendance records for this employee in the date range
-        // Normalize date comparison - attendance.date is DateTime but we compare by date only
-        const attendances = await this.prisma.attendance.findMany({
-          where: {
-            employeeId: employee.id,
-            date: {
-              gte: startDate,
-              lte: endDate,
-            },
+      // Get all attendance records for all employees in the date range in a single query
+      const allAttendances = await this.prisma.attendance.findMany({
+        where: {
+          employeeId: { in: employees.map((e) => e.id) },
+          date: {
+            gte: startDate,
+            lte: endDate,
           },
-          orderBy: { date: 'asc' },
-        });
+        },
+        orderBy: { date: 'asc' },
+      });
 
-        // Get approved leave applications for this employee in the date range
-        // Leave applications overlap if: (fromDate <= endDate) AND (toDate >= startDate)
-        const leaveApplications = await this.prisma.leaveApplication.findMany({
-          where: {
-            employeeId: employee.id,
-            status: 'approved',
-            fromDate: { lte: endDate },
-            toDate: { gte: startDate },
-          },
-        });
+      // Group attendances by employeeId Map for O(1) retrieval
+      const attendanceByEmployeeMap = new Map<string, typeof allAttendances>();
+      allAttendances.forEach((att) => {
+        if (!attendanceByEmployeeMap.has(att.employeeId)) {
+          attendanceByEmployeeMap.set(att.employeeId, []);
+        }
+        attendanceByEmployeeMap.get(att.employeeId)!.push(att);
+      });
+
+      // Get approved leave applications for all employees in the date range in a single query
+      const allLeaveApplications = await this.prisma.leaveApplication.findMany({
+        where: {
+          employeeId: { in: employees.map((e) => e.id) },
+          status: 'approved',
+          fromDate: { lte: endDate },
+          toDate: { gte: startDate },
+        },
+      });
+
+      // Group leave applications by employeeId Map for O(1) retrieval
+      const leavesByEmployeeMap = new Map<
+        string,
+        typeof allLeaveApplications
+      >();
+      allLeaveApplications.forEach((leave) => {
+        if (!leavesByEmployeeMap.has(leave.employeeId)) {
+          leavesByEmployeeMap.set(leave.employeeId, []);
+        }
+        leavesByEmployeeMap.get(leave.employeeId)!.push(leave);
+      });
+
+      for (const employee of employees) {
+        // Retrieve employee attendances and leave applications from in-memory maps (eliminating N+1 database hits)
+        const attendances = attendanceByEmployeeMap.get(employee.id) || [];
+        const leaveApplications = leavesByEmployeeMap.get(employee.id) || [];
 
         // Create a map of leave applications by date
         const leaveMap = new Map<string, (typeof leaveApplications)[0]>();
@@ -1990,7 +2499,7 @@ export class AttendanceService {
         const totalDays =
           Math.round(
             (endMidnight.getTime() - startMidnight.getTime()) /
-            (1000 * 60 * 60 * 24),
+              (1000 * 60 * 60 * 24),
           ) + 1;
         let scheduleDays = 0;
         let offDays = 0;
@@ -2106,6 +2615,7 @@ export class AttendanceService {
                 // For now, let's treat it consistent with logic above: remove from schedule
                 scheduleDays--;
                 totalScheduleTime -= scheduledHours;
+                currentDate.setDate(currentDate.getDate() + 1);
                 continue;
               }
 
@@ -2211,7 +2721,8 @@ export class AttendanceService {
     userAgent?: string;
   }) {
     try {
-      const { dateFrom, dateTo, employeeId, userId, ipAddress, userAgent } = params;
+      const { dateFrom, dateTo, employeeId, userId, ipAddress, userAgent } =
+        params;
 
       // Build where clause for finding Friday absences
       const whereClause: any = {
@@ -2238,7 +2749,7 @@ export class AttendanceService {
 
       for (const friday of fridayAbsences) {
         const dayOfWeek = friday.date.getDay();
-        
+
         // Only process Fridays
         if (dayOfWeek !== 5) continue;
 
@@ -2296,6 +2807,257 @@ export class AttendanceService {
       return {
         status: false,
         message: error?.message || 'Failed to apply sandwich rules',
+      };
+    }
+  }
+
+  /**
+   * Get monthly summary of attendance for a specific employee
+   * Grouped by months with present days, absent days, late arrivals, and detailed records
+   */
+  async getMonthlySummary(filters: {
+    employeeId: string;
+    dateFrom?: Date;
+    dateTo?: Date;
+  }) {
+    try {
+      const { employeeId } = filters;
+      if (!employeeId) {
+        return { status: false, message: 'employeeId is required' };
+      }
+
+      // Find employee
+      const employee = await this.prisma.employee.findUnique({
+        where: { id: employeeId },
+      });
+
+      if (!employee) {
+        return { status: false, message: 'Employee not found' };
+      }
+
+      // Setup dates
+      const dateFrom =
+        filters.dateFrom || new Date(new Date().getFullYear(), 0, 1); // default to Jan 1st of current year
+      const dateTo = filters.dateTo || new Date();
+
+      const startDate = new Date(dateFrom);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(dateTo);
+      endDate.setHours(23, 59, 59, 999);
+
+      // Get holidays
+      const allHolidays = await this.prisma.holiday.findMany({
+        where: { status: 'active' },
+      });
+
+      const isHoliday = (date: Date): boolean => {
+        const month = date.getMonth() + 1;
+        const day = date.getDate();
+        return allHolidays.some((holiday) => {
+          const holidayFrom = new Date(holiday.dateFrom);
+          const holidayTo = new Date(holiday.dateTo);
+          const holidayMonthFrom = holidayFrom.getMonth() + 1;
+          const holidayDayFrom = holidayFrom.getDate();
+          const holidayMonthTo = holidayTo.getMonth() + 1;
+          const holidayDayTo = holidayTo.getDate();
+
+          if (holidayMonthFrom === holidayMonthTo) {
+            return (
+              month === holidayMonthFrom &&
+              day >= holidayDayFrom &&
+              day <= holidayDayTo
+            );
+          } else {
+            return (
+              (month === holidayMonthFrom && day >= holidayDayFrom) ||
+              (month === holidayMonthTo && day <= holidayDayTo)
+            );
+          }
+        });
+      };
+
+      const isWeekend = (date: Date): boolean => {
+        const day = date.getDay();
+        return day === 0 || day === 6;
+      };
+
+      // Get employee's attendance and leaves (efficient batch fetch)
+      const [attendances, leaveApplications] = await Promise.all([
+        this.prisma.attendance.findMany({
+          where: {
+            employeeId: employee.id,
+            date: {
+              gte: startDate,
+              lte: endDate,
+            },
+          },
+          orderBy: { date: 'asc' },
+        }),
+        this.prisma.leaveApplication.findMany({
+          where: {
+            employeeId: employee.id,
+            status: 'approved',
+            fromDate: { lte: endDate },
+            toDate: { gte: startDate },
+          },
+        }),
+      ]);
+
+      // Map leave applications by date
+      const leaveMap = new Map<string, (typeof leaveApplications)[0]>();
+      leaveApplications.forEach((leave) => {
+        const leaveStart = new Date(leave.fromDate);
+        leaveStart.setHours(0, 0, 0, 0);
+        const leaveEnd = new Date(leave.toDate);
+        leaveEnd.setHours(23, 59, 59, 999);
+        const currentLeaveDate = new Date(leaveStart);
+        while (currentLeaveDate <= leaveEnd) {
+          const dateKey = currentLeaveDate.toISOString().split('T')[0];
+          if (currentLeaveDate >= startDate && currentLeaveDate <= endDate) {
+            leaveMap.set(dateKey, leave);
+          }
+          currentLeaveDate.setDate(currentLeaveDate.getDate() + 1);
+        }
+      });
+
+      // Map attendances by date
+      const attendanceMap = new Map<string, (typeof attendances)[0]>();
+      attendances.forEach((att) => {
+        const attDate = new Date(att.date);
+        attDate.setHours(0, 0, 0, 0);
+        const dateKey = attDate.toISOString().split('T')[0];
+        attendanceMap.set(dateKey, att);
+      });
+
+      // Group monthly buckets
+      const monthlyDataMap = new Map<
+        string,
+        {
+          monthKey: string;
+          monthName: string;
+          presentDays: number;
+          absentDays: number;
+          lateArrivals: number;
+          records: Array<{
+            date: string;
+            status: string;
+            checkIn: Date | null;
+            checkOut: Date | null;
+            lateMinutes: number | null;
+            workingHours: string | null;
+            isHoliday: boolean;
+            isWeekend: boolean;
+          }>;
+        }
+      >();
+
+      const currentDate = new Date(startDate);
+      while (currentDate <= endDate) {
+        const year = currentDate.getFullYear();
+        const monthNum = currentDate.getMonth(); // 0-11
+        const monthKey = `${year}-${String(monthNum + 1).padStart(2, '0')}`;
+        const monthName = currentDate.toLocaleString('default', {
+          month: 'long',
+          year: 'numeric',
+        });
+
+        if (!monthlyDataMap.has(monthKey)) {
+          monthlyDataMap.set(monthKey, {
+            monthKey,
+            monthName,
+            presentDays: 0,
+            absentDays: 0,
+            lateArrivals: 0,
+            records: [],
+          });
+        }
+
+        const monthBucket = monthlyDataMap.get(monthKey)!;
+        const dateKey = currentDate.toISOString().split('T')[0];
+        const attendance = attendanceMap.get(dateKey);
+        const leaveApplication = leaveMap.get(dateKey);
+        const isHolidayDate = isHoliday(currentDate);
+        const isWeekendDate = isWeekend(currentDate);
+
+        let finalStatus = 'Absent';
+        let checkInVal: Date | null = null;
+        let checkOutVal: Date | null = null;
+        let lateMinVal: number | null = null;
+        let workHoursVal: string | null = null;
+
+        if (attendance) {
+          checkInVal = attendance.checkIn;
+          checkOutVal = attendance.checkOut;
+          lateMinVal = attendance.lateMinutes;
+          workHoursVal = attendance.workingHours
+            ? String(attendance.workingHours)
+            : null;
+          const statusLower = attendance.status.toLowerCase();
+
+          if (
+            statusLower === 'present' ||
+            statusLower === 'late' ||
+            statusLower === 'half-day' ||
+            statusLower === 'halfday' ||
+            statusLower === 'short-day' ||
+            statusLower === 'shortday'
+          ) {
+            finalStatus = attendance.status;
+            monthBucket.presentDays++;
+            if (attendance.lateMinutes && attendance.lateMinutes > 0) {
+              monthBucket.lateArrivals++;
+            }
+          } else if (statusLower === 'absent') {
+            if (leaveApplication) {
+              finalStatus = 'On Leave';
+            } else {
+              finalStatus = 'Absent';
+              monthBucket.absentDays++;
+            }
+          } else if (statusLower === 'on-leave' || statusLower === 'onleave') {
+            finalStatus = 'On Leave';
+          } else if (statusLower === 'holiday') {
+            finalStatus = 'Holiday';
+            if (attendance.checkIn || attendance.checkOut) {
+              monthBucket.presentDays++; // Worked on holiday
+            }
+          }
+        } else {
+          if (leaveApplication) {
+            finalStatus = 'On Leave';
+          } else if (isHolidayDate) {
+            finalStatus = 'Holiday';
+          } else if (isWeekendDate) {
+            finalStatus = 'Weekend';
+          } else {
+            finalStatus = 'Absent';
+            monthBucket.absentDays++;
+          }
+        }
+
+        monthBucket.records.push({
+          date: dateKey,
+          status: finalStatus,
+          checkIn: checkInVal,
+          checkOut: checkOutVal,
+          lateMinutes: lateMinVal,
+          workingHours: workHoursVal,
+          isHoliday: isHolidayDate,
+          isWeekend: isWeekendDate,
+        });
+
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      const data = Array.from(monthlyDataMap.values()).sort((a, b) =>
+        a.monthKey.localeCompare(b.monthKey),
+      );
+
+      return { status: true, data };
+    } catch (error: any) {
+      return {
+        status: false,
+        message: error?.message || 'Failed to get monthly attendance summary',
       };
     }
   }

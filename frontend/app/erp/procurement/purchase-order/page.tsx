@@ -89,12 +89,58 @@ export default function PurchaseOrderList() {
                                         <TableCell>{new Date(order.orderDate).toLocaleDateString()}</TableCell>
                                         <TableCell className="font-semibold">Rs. {formatCurrency(order.totalAmount)}</TableCell>
                                         <TableCell>
-                                            <Badge variant={
-                                                order.status === 'OPEN' ? 'default' :
-                                                    order.status === 'CLOSED' ? 'secondary' : 'outline'
-                                            }>
-                                                {order.status}
-                                            </Badge>
+                                            {(() => {
+                                                switch (order.status) {
+                                                    case 'PENDING_CHECKER':
+                                                        return (
+                                                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 font-medium dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900">
+                                                                Pending Checker
+                                                            </Badge>
+                                                        );
+                                                    case 'PENDING_AUTHORIZER':
+                                                        return (
+                                                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-medium dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-900">
+                                                                Pending Authorizer
+                                                            </Badge>
+                                                        );
+                                                    case 'OPEN':
+                                                        return (
+                                                            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-medium dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900">
+                                                                Open
+                                                            </Badge>
+                                                        );
+                                                    case 'REJECTED':
+                                                        return (
+                                                            <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200 font-medium dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900">
+                                                                Rejected
+                                                            </Badge>
+                                                        );
+                                                    case 'CLOSED':
+                                                        return (
+                                                            <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 font-medium dark:bg-slate-950/30 dark:text-slate-400 dark:border-slate-900">
+                                                                Closed
+                                                            </Badge>
+                                                        );
+                                                    case 'PARTIALLY_RECEIVED':
+                                                        return (
+                                                            <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200 font-medium dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-900">
+                                                                Partially Received
+                                                            </Badge>
+                                                        );
+                                                    case 'RECEIVED':
+                                                        return (
+                                                            <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 font-medium dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-900">
+                                                                Received
+                                                            </Badge>
+                                                        );
+                                                    default:
+                                                        return (
+                                                            <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 font-medium">
+                                                                {order.status}
+                                                            </Badge>
+                                                        );
+                                                }
+                                            })()}
                                         </TableCell>
                                         <TableCell>
                                             <Link href={`/erp/procurement/purchase-order/${order.id}`} transitionTypes={["nav-forward"]}>

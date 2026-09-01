@@ -43,6 +43,18 @@ export class CreateItemDto {
   @IsOptional()
   status?: string;
 
+  @IsString()
+  @IsOptional()
+  itemType?: string;
+
+  @IsString()
+  @IsOptional()
+  uom?: string;
+
+  @IsNumber()
+  @IsOptional()
+  rollSize?: number;
+
   // Pricing & Discounts
   @IsNumber()
   @IsOptional()
@@ -299,4 +311,12 @@ export class BulkSalePriceDto {
   @IsString()
   @IsOptional()
   appliedById?: string;
+}
+
+// ─── Bulk Search ──────────────────────────────────────────────────────────────
+
+export class BulkSearchIdsDto {
+  @IsArray()
+  @IsString({ each: true })
+  barcodes: string[];
 }

@@ -15,7 +15,7 @@ if (-not (Test-Path $backendEnv)) {
     $backendEnvContent = @"
 DATABASE_URL=postgresql://speedlimit:speedlimit123@localhost:5432/speedlimit
 PORT=3000
-FRONTEND_URL=http://localhost:3001
+FRONTEND_URL=http://localhost:3002
 JWT_ACCESS_SECRET=your-super-secret-access-key-change-in-production
 JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-in-production
 NODE_ENV=development
@@ -106,7 +106,7 @@ Write-Host ""
 Write-Host "=== Starting Development Servers ===" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Backend will run on: http://localhost:3000" -ForegroundColor Green
-Write-Host "Frontend will run on: http://localhost:3001" -ForegroundColor Green
+Write-Host "Frontend will run on: http://localhost:3002" -ForegroundColor Green
 Write-Host ""
 Write-Host "Press Ctrl+C to stop both servers" -ForegroundColor Yellow
 Write-Host ""
@@ -117,7 +117,7 @@ $backendScript = @"
 cd `"$PWD\nestjs_backend`"
 `$env:DATABASE_URL = 'postgresql://speedlimit:speedlimit123@localhost:5432/speedlimit'
 `$env:PORT = '3000'
-`$env:FRONTEND_URL = 'http://localhost:3001'
+`$env:FRONTEND_URL = 'http://localhost:3002'
 `$env:NODE_ENV = 'development'
 bun run start:dev
 "@
@@ -148,7 +148,7 @@ Write-Host ""
 Write-Host "[OK] Both servers are starting in separate windows!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Backend: http://localhost:3000" -ForegroundColor Cyan
-Write-Host "Frontend: http://localhost:3001" -ForegroundColor Cyan
+Write-Host "Frontend: http://localhost:3002" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Close the PowerShell windows to stop the servers." -ForegroundColor Yellow
 

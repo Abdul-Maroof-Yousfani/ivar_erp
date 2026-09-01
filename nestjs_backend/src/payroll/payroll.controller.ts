@@ -17,6 +17,7 @@ import {
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { PreviewPayrollDto, ConfirmPayrollDto } from './dto/payroll.dto';
 
 @ApiTags('Payroll')
 @Controller('api')
@@ -32,12 +33,12 @@ export class PayrollController {
     status: 200,
     description: 'Payroll preview generated successfully',
   })
-  async previewPayroll(
-    @Body('month') month: string,
-    @Body('year') year: string,
-    @Body('employeeIds') employeeIds?: string[],
-  ) {
-    return this.payrollService.previewPayroll(month, year, employeeIds);
+  async previewPayroll(@Body() body: PreviewPayrollDto) {
+    return this.payrollService.previewPayroll(
+      body.month,
+      body.year,
+      body.employeeIds,
+    );
   }
 
   @Post('payroll/confirm')
@@ -46,18 +47,26 @@ export class PayrollController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Confirm payroll' })
   @ApiResponse({ status: 200, description: 'Payroll confirmed successfully' })
-  async confirmPayroll(
-    @Body('month') month: string,
-    @Body('year') year: string,
-    @Body('generatedBy') generatedBy: string,
-    @Body('details') details: any[],
-  ) {
+  async confirmPayroll(@Body() body: ConfirmPayrollDto) {
     return this.payrollService.confirmPayroll({
-      month,
-      year,
-      generatedBy,
-      details,
+      month: body.month,
+      year: body.year,
+      generatedBy: body.generatedBy,
+      details: body.details,
     });
+  }
+
+  @Get('payroll/list')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('hr.payroll.read')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get list of available payrolls with basic info' })
+  @ApiResponse({ status: 200, description: 'Returns list of payrolls with IDs' })
+  async getPayrollList(
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    return this.payrollService.getPayrollList({ year, month });
   }
 
   @Get('payroll')
@@ -66,18 +75,48 @@ export class PayrollController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all payrolls' })
   @ApiResponse({ status: 200, description: 'Returns list of payrolls' })
-  async getAllPayrolls(@Query('year') year?: string) {
-    return { message: 'Use /generate to create payroll' };
+  async getAllPayrolls(
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+    @Query('departmentId') departmentId?: string,
+    @Query('subDepartmentId') subDepartmentId?: string,
+    @Query('employeeId') employeeId?: string,
+  ) {
+    return this.payrollService.getPayrollReport({
+      month,
+      year,
+      departmentId,
+      subDepartmentId,
+      employeeId,
+    });
   }
 
   @Get('payroll/:id')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @Permissions('hr.payroll.read')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get payroll by id' })
+  @ApiOperation({ summary: 'Get payroll by employee ID or payroll ID' })
   @ApiResponse({ status: 200, description: 'Returns payroll details' })
-  async getPayrollDetails(@Param('id') id: string) {
-    return this.payrollService.getPayrollById(id);
+  async getPayrollDetails(
+    @Param('id') id: string,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    return this.payrollService.getPayrollByIdOrEmployeeId(id, { year, month });
+  }
+
+  @Get('payroll/employee/:employeeId')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('hr.payroll.read')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get payroll by employee ID' })
+  @ApiResponse({ status: 200, description: 'Returns employee payroll details' })
+  async getEmployeePayroll(
+    @Param('employeeId') employeeId: string,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    return this.payrollService.getEmployeePayroll(employeeId, { year, month });
   }
 
   @Get('payroll/report')

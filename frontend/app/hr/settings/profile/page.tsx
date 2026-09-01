@@ -13,7 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { authFetch } from "@/lib/auth";
 
 export default function ProfilePage() {
-    const { user, refreshUser } = useAuth();
+    const { user, refreshUser, hasPermission } = useAuth();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
         id: "",
@@ -22,6 +22,9 @@ export default function ProfilePage() {
         phone: "",
         avatar: "",
     });
+
+    // Check if user has permission to update profile
+    const canUpdateProfile = hasPermission('profile.update');
 
     useEffect(() => {
         if (user) {
@@ -74,7 +77,16 @@ export default function ProfilePage() {
             <Separator />
 
             <form onSubmit={handleSubmit} className="space-y-8">
-                <div className="grid gap-4 py-4">
+                {/* Show warning if user doesn't have permission */}
+                {!canUpdateProfile && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                        <p className="text-sm text-amber-800 font-medium">
+                            ⚠️ You don't have permission to update your profile. Please contact your administrator.
+                        </p>
+                    </div>
+                )}
+
+                <div className={`grid gap-4 py-4 ${!canUpdateProfile ? 'opacity-60 pointer-events-none' : ''}`}>
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label htmlFor="firstName">First name</Label>
@@ -83,6 +95,7 @@ export default function ProfilePage() {
                                 value={formData.firstName}
                                 onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                                 placeholder="Enter first name"
+                                disabled={!canUpdateProfile}
                             />
                         </div>
                         <div className="space-y-2">
@@ -92,6 +105,7 @@ export default function ProfilePage() {
                                 value={formData.lastName}
                                 onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                                 placeholder="Enter last name"
+                                disabled={!canUpdateProfile}
                             />
                         </div>
                     </div>
@@ -111,14 +125,15 @@ export default function ProfilePage() {
                             value={formData.phone}
                             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                             placeholder="Enter phone number"
+                            disabled={!canUpdateProfile}
                         />
                     </div>
                 </div>
 
                 <div className="flex justify-start">
-                    <Button type="submit" disabled={loading}>
+                    <Button type="submit" disabled={loading || !canUpdateProfile}>
                         {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Update profile
+                        {canUpdateProfile ? 'Update profile' : 'Update profile (No Permission)'}
                     </Button>
                 </div>
             </form>
@@ -139,11 +154,11 @@ export default function ProfilePage() {
                         </div>
                         <div>
                             <Label className="text-muted-foreground">Department</Label>
-                            <p className="font-medium">{user.employee.department.name}</p>
+                            <p className="font-medium">{user.employee.department?.name || "Not assigned"}</p>
                         </div>
                         <div>
                             <Label className="text-muted-foreground">Designation</Label>
-                            <p className="font-medium">{user.employee.designation.name}</p>
+                            <p className="font-medium">{user.employee.designation?.name || "Not assigned"}</p>
                         </div>
                     </CardContent>
                 </Card>

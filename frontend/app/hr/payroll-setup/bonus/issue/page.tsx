@@ -41,10 +41,9 @@ import {
   Trash2,
   Plus,
 } from "lucide-react";
+import { useEmployeeDropdown } from "@/hooks/use-employee-dropdown";
 import {
-  getEmployeesForDropdown,
   getEmployeeById,
-  type EmployeeDropdownOption,
   type Employee,
 } from "@/lib/actions/employee";
 import {
@@ -145,11 +144,9 @@ interface EmployeeBonusItem {
 
 export default function IssueBonusPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
   const [loadingSubDepartments, setLoadingSubDepartments] = useState(false);
   const [loadingBonusTypes, setLoadingBonusTypes] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [employees, setEmployees] = useState<EmployeeDropdownOption[]>([]);
   const [employeeDetails, setEmployeeDetails] = useState<{
     [key: string]: Employee;
   }>({});
@@ -188,6 +185,12 @@ export default function IssueBonusPage() {
   const selectedEmployeeIdsForm = form.watch("employeeIds");
   const selectedBonusMonthYear = form.watch("bonusMonthYear");
 
+  const { getEmployee, isInitialLoading, multiSelectProps } = useEmployeeDropdown({
+    departmentId: selectedDepartmentId,
+    subDepartmentId: selectedSubDepartmentId,
+    selectedIds: selectedEmployeeIdsForm,
+  });
+
   // Fetch departments on mount
   useEffect(() => {
     const fetchDepartments = async () => {
@@ -223,30 +226,6 @@ export default function IssueBonusPage() {
       }
     };
     fetchBonusTypes();
-  }, []);
-
-  // Fetch employees on mount
-  useEffect(() => {
-    const fetchEmployees = async () => {
-      setLoading(true);
-      try {
-        const result = await getEmployeesForDropdown();
-        if (result.status && result.data) {
-          setEmployees(result.data);
-        } else {
-          toast.error(result.message || "Failed to load employees");
-          setEmployees([]);
-        }
-      } catch (error) {
-        console.error("Error:", error);
-        toast.error("Failed to load employees");
-        setEmployees([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchEmployees();
   }, []);
 
   // Fetch employee details when employees are selected
@@ -338,34 +317,6 @@ export default function IssueBonusPage() {
     fetchSubDepartments();
   }, [selectedDepartmentId, form]);
 
-  // Filter employees based on department and sub-department
-  const filteredEmployees = useMemo(() => {
-    let filtered = [...employees];
-
-    if (selectedDepartmentId) {
-      filtered = filtered.filter(
-        (emp) => emp.departmentId === selectedDepartmentId
-      );
-    }
-
-    if (selectedSubDepartmentId) {
-      filtered = filtered.filter(
-        (emp) => emp.subDepartmentId === selectedSubDepartmentId
-      );
-    }
-
-    return filtered;
-  }, [employees, selectedDepartmentId, selectedSubDepartmentId]);
-
-  // Employee options for MultiSelect
-  const employeeOptions = useMemo(() => {
-    return filteredEmployees.map((emp) => ({
-      value: emp.id,
-      label: `${emp.employeeName} (${emp.employeeId})`,
-      description: emp.departmentName || undefined,
-    }));
-  }, [filteredEmployees]);
-
   // Bonus type options for Autocomplete
   const bonusTypeOptions = useMemo(() => {
     return bonusTypes.map((bt) => ({
@@ -413,7 +364,7 @@ export default function IssueBonusPage() {
 
     // Create bonus items for all selected employees
     const newBonuses: EmployeeBonusItem[] = employeeIds.map((empId) => {
-      const employee = employees.find((e) => e.id === empId);
+      const employee = getEmployee(empId);
       let calculatedAmount = 0;
       let calculatedPercentage: number | undefined = undefined;
 
@@ -711,25 +662,28 @@ export default function IssueBonusPage() {
                         Employees <span className="text-destructive">*</span>
                       </FormLabel>
                       <FormControl>
-                        {loading ? (
+                        {isInitialLoading ? (
                           <div className="h-10 bg-muted rounded-md animate-pulse" />
                         ) : (
                           <MultiSelect
-                            options={employeeOptions}
+                            options={multiSelectProps.options}
                             value={field.value}
                             onValueChange={(value) => {
                               field.onChange(value);
                             }}
+                            onSearch={multiSelectProps.onSearch}
+                            onLoadMore={multiSelectProps.onLoadMore}
+                            hasMore={multiSelectProps.hasMore}
+                            isLoading={multiSelectProps.isLoading}
                             placeholder="Select one or more employees"
-                            searchPlaceholder="Search employees..."
-                            emptyMessage="No employees found"
+                            searchPlaceholder="Search by name or employee ID..."
+                            emptyMessage={multiSelectProps.isLoading ? "Loading employees..." : "No employees found"}
                             disabled={
                               form.formState.isSubmitting ||
-                              submitting ||
-                              loading
+                              submitting
                             }
                             maxDisplayedItems={3}
-                            showSelectAll={true}
+                            showSelectAll={false}
                             icon={<Users className="h-3 w-3" />}
                           />
                         )}

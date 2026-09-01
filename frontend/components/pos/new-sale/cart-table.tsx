@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
     Table,
     TableBody,
@@ -11,8 +12,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Minus, Plus, Trash2, CircleDot, Truck } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { Minus, Plus, Trash2, CircleDot } from "lucide-react";
+import { formatCurrency, cn } from "@/lib/utils";
+import { ManagerVerificationDialog } from "@/components/auth/manager-verification-dialog";
+import { useAuth } from "@/components/providers/auth-provider";
 
 export interface CartItem {
     id: string;
@@ -24,22 +27,23 @@ export interface CartItem {
     color: string;
     quantity: number;
     price: number;
-    discountPercent: number;
+    discountPercent: number; // Original/default discount
     discountAmount: number;
+    overrideDiscountPercent?: number; // Manager override discount (for record)
+    overrideDiscountNote?: string;
     taxPercent: number;
     taxAmount: number;
     total: number;
     inStock: boolean;
     stockQty: number;
-    isStockInTransit?: boolean;
 }
 
 interface CartTableProps {
     items: CartItem[];
     onQuantityChange: (id: string, quantity: number) => void;
-    onDiscountChange?: (id: string, discountPercent: number) => void;
+    onDiscountChange?: (id: string, discountPercent: number, note?: string) => void;
     onRemoveItem: (id: string) => void;
-    onToggleTransit?: (id: string) => void;
+    focusedIndex?: number;
 }
 
 export function CartTable({
@@ -47,10 +51,97 @@ export function CartTable({
     onQuantityChange,
     onDiscountChange,
     onRemoveItem,
-    onToggleTransit,
+    focusedIndex = -1,
 }: CartTableProps) {
+    const { user } = useAuth();
+    
+    const [showManagerVerification, setShowManagerVerification] = useState(false);
+    const [pendingDiscountChange, setPendingDiscountChange] = useState<{
+        itemId: string;
+        newDiscount: number;
+    } | null>(null);
+    
+    // Track editing state for each item
+    const [editingDiscounts, setEditingDiscounts] = useState<Record<string, string>>({});
+
+    const handleDiscountInputChange = (itemId: string, value: string) => {
+        // Allow typing without immediate validation
+        setEditingDiscounts(prev => ({ ...prev, [itemId]: value }));
+    };
+
+    const handleDiscountBlur = (itemId: string) => {
+        const value = editingDiscounts[itemId];
+        if (value === undefined || value === '') {
+            // Clear editing state if empty
+            setEditingDiscounts(prev => {
+                const next = { ...prev };
+                delete next[itemId];
+                return next;
+            });
+            return;
+        }
+
+        const newDiscount = Number(value);
+        const item = items.find(i => i.id === itemId);
+        if (!item) return;
+
+        const currentDiscount = item.overrideDiscountPercent ?? item.discountPercent;
+        const maxAllowedDiscount = 100;
+
+        // Validation: Cannot decrease current discount
+        if (newDiscount < currentDiscount) {
+            alert(`Cannot decrease discount from ${currentDiscount}% to ${newDiscount}%. Discount can only be increased.`);
+            setEditingDiscounts(prev => {
+                const next = { ...prev };
+                delete next[itemId];
+                return next;
+            });
+            return;
+        }
+
+        // Validation: Cannot exceed maximum limit
+        if (newDiscount > maxAllowedDiscount) {
+            alert(`Cannot set discount above ${maxAllowedDiscount}%. Maximum limit reached.`);
+            setEditingDiscounts(prev => {
+                const next = { ...prev };
+                delete next[itemId];
+                return next;
+            });
+            return;
+        }
+
+        // Clear editing state
+        setEditingDiscounts(prev => {
+            const next = { ...prev };
+            delete next[itemId];
+            return next;
+        });
+
+        // Always require manager verification with a note for discount override
+        setPendingDiscountChange({ itemId, newDiscount });
+        setShowManagerVerification(true);
+    };
+
+    const handleManagerVerified = (managerUserId?: string, note?: string) => {
+        if (pendingDiscountChange) {
+            onDiscountChange?.(
+                pendingDiscountChange.itemId,
+                pendingDiscountChange.newDiscount,
+                note
+            );
+            setPendingDiscountChange(null);
+            setShowManagerVerification(false);
+        }
+    };
+
+    const handleVerificationCancel = () => {
+        setPendingDiscountChange(null);
+        setShowManagerVerification(false);
+    };
+
     return (
-        <div className="rounded-xl border bg-card shadow-sm overflow-x-auto flex-1 min-w-0">
+        <>
+            <div className="rounded-xl border bg-card shadow-sm overflow-x-auto flex-1 min-w-0">
             <Table>
                 <TableHeader>
                     <TableRow className="bg-muted/40 hover:bg-muted/40">
@@ -115,7 +206,10 @@ export function CartTable({
                         items.map((item, index) => (
                             <TableRow
                                 key={item.id}
-                                className="group transition-colors"
+                                className={cn(
+                                    "group transition-colors relative",
+                                    index === focusedIndex && "bg-primary/5 dark:bg-primary/10 border-l-4 border-l-primary font-medium shadow-inner"
+                                )}
                             >
                                 {/* Row number */}
                                 <TableCell className="text-center text-muted-foreground font-medium">
@@ -163,44 +257,25 @@ export function CartTable({
 
                                 {/* Stock status */}
                                 <TableCell className="text-center">
-                                    <div className="flex flex-col items-center gap-1">
+                                                                    <div className="flex flex-col items-center gap-1">
                                         <div className="flex items-center gap-1">
                                             <CircleDot
-                                                className={`h-3 w-3 ${item.isStockInTransit
-                                                    ? "text-amber-500"
-                                                    : item.stockQty > 0
+                                                className={`h-3 w-3 ${item.stockQty > 0
                                                         ? "text-emerald-500"
                                                         : "text-red-500"
                                                     }`}
                                             />
                                             <span
-                                                className={`text-[11px] font-medium ${item.isStockInTransit
-                                                    ? "text-amber-600 dark:text-amber-400"
-                                                    : item.stockQty > 0
+                                                className={`text-[11px] font-medium ${item.stockQty > 0
                                                         ? "text-emerald-600 dark:text-emerald-400"
                                                         : "text-red-600 dark:text-red-400"
                                                     }`}
                                             >
-                                                {item.isStockInTransit
-                                                    ? "In Transit"
-                                                    : item.stockQty > 0
+                                                {item.stockQty > 0
                                                         ? `Qty: ${item.stockQty}`
                                                         : "Out of Stock"}
                                             </span>
                                         </div>
-                                        {onToggleTransit && (
-                                            <button
-                                                onClick={() => onToggleTransit(item.id)}
-                                                title={item.isStockInTransit ? "Remove transit flag" : "Mark as stock in transit"}
-                                                className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded transition-colors ${item.isStockInTransit
-                                                    ? "bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400"
-                                                    : "bg-muted text-muted-foreground hover:bg-amber-100 hover:text-amber-700"
-                                                    }`}
-                                            >
-                                                <Truck className="h-2.5 w-2.5" />
-                                                Transit
-                                            </button>
-                                        )}
                                     </div>
                                 </TableCell>
 
@@ -249,24 +324,38 @@ export function CartTable({
 
                                 {/* Discount % */}
                                 <TableCell>
-                                    <div className="flex items-center justify-center gap-1">
-                                        <Input
-                                            type="number"
-                                            min={0}
-                                            max={100}
-                                            value={item.discountPercent}
-                                            disabled={!onDiscountChange}
-                                            onChange={(e) =>
-                                                onDiscountChange?.(
-                                                    item.id,
-                                                    Number(e.target.value)
-                                                )
-                                            }
-                                            className="w-14 h-7 text-center text-sm p-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-40 disabled:cursor-not-allowed"
-                                        />
-                                        <span className="text-xs text-muted-foreground">
-                                            %
-                                        </span>
+                                    <div className="flex flex-col items-center gap-0.5">
+                                        <div className="flex items-center justify-center gap-1">
+                                            <Input
+                                                id={`discount-input-${index}`}
+                                                type="number"
+                                                min={item.overrideDiscountPercent ?? item.discountPercent}
+                                                max={100}
+                                                value={editingDiscounts[item.id] ?? (item.overrideDiscountPercent ?? item.discountPercent)}
+                                                disabled={!onDiscountChange}
+                                                onChange={(e) =>
+                                                    handleDiscountInputChange(
+                                                        item.id,
+                                                        e.target.value
+                                                    )
+                                                }
+                                                onBlur={() => handleDiscountBlur(item.id)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.currentTarget.blur();
+                                                    }
+                                                }}
+                                                className="w-14 h-7 text-center text-sm p-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-40 disabled:cursor-not-allowed"
+                                            />
+                                            <span className="text-xs text-muted-foreground">
+                                                %
+                                            </span>
+                                        </div>
+                                        {item.overrideDiscountPercent != null && (
+                                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                                                Override: {item.discountPercent}% → {item.overrideDiscountPercent}%
+                                            </span>
+                                        )}
                                     </div>
                                 </TableCell>
 
@@ -318,5 +407,17 @@ export function CartTable({
                 </TableBody>
             </Table>
         </div>
+
+        {/* Manager Verification Dialog */}
+        <ManagerVerificationDialog
+            open={showManagerVerification}
+            onOpenChange={handleVerificationCancel}
+            onVerified={handleManagerVerified}
+            requireNote={true}
+            notePlaceholder="Enter reason/note for override (required)..."
+            title="Manager Verification Required"
+            description="Discount override requires manager authorization and a justification note. Enter manager password and note to proceed."
+        />
+    </>
     );
 }

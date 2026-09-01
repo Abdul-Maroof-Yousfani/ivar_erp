@@ -9,7 +9,7 @@ RUN bun install
 # Copy source code
 COPY . .
 
-EXPOSE 3001
+EXPOSE 3002
 
 CMD ["bun", "run", "dev"]
 

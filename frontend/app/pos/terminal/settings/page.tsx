@@ -13,20 +13,24 @@ import {
 } from "@/components/ui/select";
 import {
     ArrowLeft, Receipt, Monitor, ShoppingCart, Info,
-    Save, RotateCcw, Terminal,
+    Save, RotateCcw, Terminal, ShieldAlert, Lock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
 import { PermissionGuard } from "@/components/auth/permission-guard";
+import { updatePos } from "@/lib/actions/pos";
+import { ManagerVerificationDialog } from "@/components/auth/manager-verification-dialog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface PosSettings {
     // Receipt
     receiptStoreName: string;
+    receiptCompanyName: string;
     receiptFooter: string;
     receiptShowTax: boolean;
     receiptAutoPrint: boolean;
     receiptShowCashier: boolean;
+    receiptPrinterName: string;
     // Sale defaults
     defaultPaymentMethod: string;
     requireCustomer: boolean;
@@ -37,10 +41,12 @@ interface PosSettings {
 
 const DEFAULTS: PosSettings = {
     receiptStoreName: "",
+    receiptCompanyName: "",
     receiptFooter: "Thank you for your purchase!",
     receiptShowTax: true,
     receiptAutoPrint: false,
     receiptShowCashier: true,
+    receiptPrinterName: "",
     defaultPaymentMethod: "cash",
     requireCustomer: false,
     defaultTaxPercent: "0",
@@ -108,6 +114,74 @@ export default function TerminalSettingsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [terminalCtx, setTerminalCtx] = useState<any>(null);
+
+    // Printer list for Electron
+    const [printers, setPrinters] = useState<string[]>([]);
+    const isElectron = typeof window !== "undefined" && !!window.posDesktop;
+
+    useEffect(() => {
+        if (isElectron && window.posDesktop) {
+            window.posDesktop.getPrinters()
+                .then((list) => {
+                    const printerNames = list.map((p: any) => p.name);
+                    setPrinters(printerNames);
+                })
+                .catch((err) => {
+                    console.error("Failed to load local printers:", err);
+                });
+        }
+    }, [isElectron]);
+
+    // Terminal PIN states
+    const [newPin, setNewPin] = useState("");
+    const [confirmPin, setConfirmPin] = useState("");
+    const [verificationOpen, setVerificationOpen] = useState(false);
+    const [isPinUpdating, setIsPinUpdating] = useState(false);
+
+    const handlePinChangeClick = () => {
+        if (!newPin) {
+            toast.error("Please enter a new PIN");
+            return;
+        }
+        if (!confirmPin) {
+            toast.error("Please confirm the new PIN");
+            return;
+        }
+        if (newPin !== confirmPin) {
+            toast.error("PINs do not match");
+            return;
+        }
+        if (!/^\d{4,6}$/.test(newPin)) {
+            toast.error("Terminal PIN must be numeric and between 4 and 6 digits");
+            return;
+        }
+        if (!terminalCtx?.terminalId) {
+            toast.error("No active POS terminal found to update");
+            return;
+        }
+        setVerificationOpen(true);
+    };
+
+    const handlePinVerified = async () => {
+        setIsPinUpdating(true);
+        try {
+            const res = await updatePos(terminalCtx.terminalId, {
+                terminalPin: newPin,
+            });
+            if (res.status) {
+                toast.success(res.message || "Terminal PIN updated successfully");
+                setNewPin("");
+                setConfirmPin("");
+            } else {
+                toast.error(res.message || "Failed to update terminal PIN");
+            }
+        } catch (error) {
+            toast.error("An error occurred while updating the terminal PIN");
+        } finally {
+            setIsPinUpdating(false);
+            setVerificationOpen(false);
+        }
+    };
 
     // Load saved settings
     const loadSettings = useCallback(async () => {
@@ -211,6 +285,17 @@ export default function TerminalSettingsPage() {
                     </div>
 
                     <div className="space-y-2">
+                        <Label>Company Legal Name on Receipt (above NTN)</Label>
+                        <Input
+                            value={settings.receiptCompanyName}
+                            onChange={e => set("receiptCompanyName", e.target.value)}
+                            placeholder={getCookie("companyName") || "e.g. YAFEEZ & SONS (PRIVATE) LIMITED"}
+                            className="rounded-xl bg-muted/30 border-transparent focus-visible:ring-primary"
+                        />
+                        <p className="text-xs text-muted-foreground">Appears above NTN on cash memo / receipts</p>
+                    </div>
+
+                    <div className="space-y-2">
                         <Label>Receipt Footer Message</Label>
                         <Input
                             value={settings.receiptFooter}
@@ -219,6 +304,27 @@ export default function TerminalSettingsPage() {
                             className="rounded-xl bg-muted/30 border-transparent focus-visible:ring-primary"
                         />
                     </div>
+
+                    {isElectron && (
+                        <div className="space-y-2 mt-4">
+                            <Label>Receipt Printer (Silent Printing)</Label>
+                            <Select
+                                value={settings.receiptPrinterName || ""}
+                                onValueChange={v => set("receiptPrinterName", v)}
+                            >
+                                <SelectTrigger className="rounded-xl bg-muted/30 border-transparent focus:ring-primary">
+                                    <SelectValue placeholder="Select printer for silent printing" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="_default_">System Default Printer</SelectItem>
+                                    {printers.map(name => (
+                                        <SelectItem key={name} value={name}>{name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">Select the thermal receipt printer for direct silent printing without dialog popups.</p>
+                        </div>
+                    )}
 
                     <Separator />
 
@@ -301,6 +407,54 @@ export default function TerminalSettingsPage() {
                     </div>
                 </Section>
 
+                {/* ── TERMINAL PIN & SECURITY ── */}
+                {terminalCtx && (
+                    <Section icon={Lock} title="Terminal Security">
+                        <div className="space-y-4">
+                            <p className="text-xs text-muted-foreground">
+                                Change the security PIN for this terminal. A valid PIN must be numeric and 4 to 6 digits long.
+                                Changing the PIN requires Manager authorization.
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="new-pin">New Terminal PIN</Label>
+                                    <Input
+                                        id="new-pin"
+                                        type="password"
+                                        maxLength={6}
+                                        placeholder="Enter 4-6 digit PIN"
+                                        value={newPin}
+                                        onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))}
+                                        className="rounded-xl bg-muted/30 border-transparent focus-visible:ring-primary font-mono tracking-widest text-center text-lg"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="confirm-pin">Confirm Terminal PIN</Label>
+                                    <Input
+                                        id="confirm-pin"
+                                        type="password"
+                                        maxLength={6}
+                                        placeholder="Confirm 4-6 digit PIN"
+                                        value={confirmPin}
+                                        onChange={e => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                                        className="rounded-xl bg-muted/30 border-transparent focus-visible:ring-primary font-mono tracking-widest text-center text-lg"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex justify-end pt-2">
+                                <Button 
+                                    onClick={handlePinChangeClick} 
+                                    disabled={isPinUpdating || !newPin || !confirmPin}
+                                    className="rounded-full px-6 gap-2 bg-amber-600 hover:bg-amber-700 text-white"
+                                >
+                                    <ShieldAlert className="w-4 h-4" />
+                                    {isPinUpdating ? "Updating..." : "Change PIN"}
+                                </Button>
+                            </div>
+                        </div>
+                    </Section>
+                )}
+
                 {/* ── TERMINAL INFO ── */}
                 <Section icon={Terminal} title="Terminal Info">
                     {!terminalCtx ? (
@@ -332,6 +486,13 @@ export default function TerminalSettingsPage() {
 
             </div>
         </div>
+        <ManagerVerificationDialog
+            open={verificationOpen}
+            onOpenChange={setVerificationOpen}
+            onVerified={handlePinVerified}
+            title="Authorize PIN Change"
+            description="Please verify manager credentials to authorize changing the terminal security PIN."
+        />
         </PermissionGuard>
     );
 }

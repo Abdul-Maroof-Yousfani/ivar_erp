@@ -16,6 +16,10 @@ export class CreatePaymentVoucherDetailDto {
   @IsNotEmpty()
   accountId: string;
 
+  @IsString()
+  @IsOptional()
+  tagAccountId?: string;
+
   @IsNumber()
   @Min(0)
   debit: number;
@@ -24,6 +28,26 @@ export class CreatePaymentVoucherDetailDto {
   @Min(0)
   @IsOptional()
   credit?: number;
+
+  @IsString()
+  @IsOptional()
+  narration?: string;       // Per-line narration
+
+  @IsString()
+  @IsOptional()
+  refBillNo?: string;       // Bill/ref number for this line
+
+  @IsString()
+  @IsOptional()
+  refBillNo2?: string;
+
+  @IsString()
+  @IsOptional()
+  taxType?: string;
+
+  @IsString()
+  @IsOptional()
+  cprNo?: string;
 }
 
 export class CreatePaymentVoucherInvoiceDto {
@@ -94,13 +118,13 @@ export class CreatePaymentVoucherDto {
   @IsOptional()
   isAdvance?: boolean;
 
-  @IsBoolean()
+  @IsString()
   @IsOptional()
-  isTaxApplicable?: boolean;
+  taxType?: string;
 
   @IsString()
-  @IsNotEmpty()
-  description: string;
+  @IsOptional()
+  description?: string;
 
   @IsString()
   @IsOptional()

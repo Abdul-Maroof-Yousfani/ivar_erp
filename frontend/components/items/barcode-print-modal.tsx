@@ -14,7 +14,7 @@ import {
     LayoutGrid, ScanBarcode, ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { encodeCode128 } from "@/lib/barcode";
+import JsBarcode from "jsbarcode";
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -57,34 +57,32 @@ interface SvgBarcodeProps {
 }
 
 function SvgBarcode({ value, height = 40, className }: SvgBarcodeProps) {
-    const bits = encodeCode128(value);
-    const moduleWidth = 1.5;
-    const totalWidth = bits.length * moduleWidth;
+    const svgRef = useRef<SVGSVGElement>(null);
 
-    const bars: { x: number; w: number }[] = [];
-    let x = 0;
-    let i = 0;
-    while (i < bits.length) {
-        const bit = bits[i];
-        let run = 0;
-        while (i + run < bits.length && bits[i + run] === bit) run++;
-        if (bit === "1") bars.push({ x, w: run * moduleWidth });
-        x += run * moduleWidth;
-        i += run;
-    }
+    useEffect(() => {
+        if (svgRef.current) {
+            try {
+                JsBarcode(svgRef.current, value, {
+                    format: "CODE128",
+                    width: 1.5,
+                    height: height,
+                    displayValue: false,
+                    margin: 8, // Generates clean quiet zone (margin of 8 modules)
+                    background: "#ffffff",
+                    lineColor: "#000000",
+                });
+            } catch (e) {
+                console.error("Barcode generation error:", e);
+            }
+        }
+    }, [value, height]);
 
     return (
         <svg
-            viewBox={`0 0 ${totalWidth} ${height}`}
-            width={totalWidth}
-            height={height}
+            ref={svgRef}
             className={className}
-            style={{ display: "block" }}
-        >
-            {bars.map((b, idx) => (
-                <rect key={idx} x={b.x} y={0} width={b.w} height={height} fill="black" />
-            ))}
-        </svg>
+            style={{ display: "block", maxWidth: "100%", height: "auto" }}
+        />
     );
 }
 

@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { PauseCircle, Clock, RotateCcw, Truck, RefreshCw, X } from "lucide-react";
+import { PauseCircle, Clock, RotateCcw, RefreshCw, X } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { PermissionGuard } from "@/components/auth/permission-guard";
 
@@ -67,7 +67,6 @@ export default function HoldOrdersPage() {
                     taxAmount: Number(oi.taxAmount),
                     total: Number(oi.lineTotal),
                     inStock: true, stockQty: 999,
-                    isStockInTransit: oi.isStockInTransit || false,
                 }));
                 sessionStorage.setItem("pos_resume_cart", JSON.stringify(cartItems));
                 toast.success(`Resuming order ${order.orderNumber}`);
@@ -150,11 +149,6 @@ export default function HoldOrdersPage() {
                                         </span>
                                         <div className="flex items-center gap-2">
                                             <span className="font-medium">×{item.quantity}</span>
-                                            {item.isStockInTransit && (
-                                                <Badge variant="outline" className="text-amber-600 border-amber-400 text-[10px] px-1 py-0">
-                                                    <Truck className="h-2.5 w-2.5" />
-                                                </Badge>
-                                            )}
                                         </div>
                                     </div>
                                 ))}

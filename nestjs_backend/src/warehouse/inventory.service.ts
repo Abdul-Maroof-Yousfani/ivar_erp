@@ -12,22 +12,26 @@ export class InventoryService {
   ) { }
 
   async getStockLevel(itemId: string, warehouseId: string): Promise<any> {
-    const inventory = await this.prisma.inventoryItem.groupBy({
-      by: ['itemId'],
+    // Use the stock ledger (immutable source of truth) to calculate the net
+    // available quantity. This accounts for ALL movements — purchases,
+    // fabric vendor issues, returns, adjustments, etc.
+    const ledger = await this.prisma.stockLedger.aggregate({
       where: {
         itemId,
         warehouseId,
-        status: 'AVAILABLE',
+        locationId: null, // warehouse-level stock only
       },
       _sum: {
-        quantity: true,
+        qty: true,
       },
     });
+
+    const totalQuantity = ledger._sum?.qty || 0;
 
     return {
       itemId,
       warehouseId,
-      totalQuantity: inventory[0]?._sum?.quantity || 0,
+      totalQuantity: Number(totalQuantity),
     };
   }
 
@@ -84,6 +88,7 @@ export class InventoryService {
       categoryIds?: string[];
       silhouetteIds?: string[];
       genderIds?: string[];
+      itemType?: string;
     }
   ) {
     const filterWhere: any = {};
@@ -91,12 +96,15 @@ export class InventoryService {
     if (filters?.categoryIds?.length) filterWhere.categoryId = { in: filters.categoryIds };
     if (filters?.silhouetteIds?.length) filterWhere.silhouetteId = { in: filters.silhouetteIds };
     if (filters?.genderIds?.length) filterWhere.genderId = { in: filters.genderIds };
+    if (filters?.itemType) filterWhere.itemType = filters.itemType;
 
     const items = await this.prisma.item.findMany({
       where: {
         OR: query
           ? [
               { sku: { contains: query, mode: 'insensitive' } },
+              { barCode: { contains: query, mode: 'insensitive' } },
+              { itemId: { contains: query, mode: 'insensitive' } },
               { description: { contains: query, mode: 'insensitive' } },
             ]
           : undefined,
@@ -106,7 +114,9 @@ export class InventoryService {
       take: 50,
       select: {
         id: true,
+        itemId: true,
         sku: true,
+        barCode: true,
         description: true,
         unitPrice: true,
         unitCost: true, // Added unitCost field
@@ -115,6 +125,8 @@ export class InventoryService {
         category: { select: { id: true, name: true } },
         silhouette: { select: { id: true, name: true } },
         gender: { select: { id: true, name: true } },
+        color: { select: { id: true, name: true } },
+        size: { select: { id: true, name: true } },
       },
     });
 

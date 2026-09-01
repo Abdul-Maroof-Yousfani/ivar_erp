@@ -7,7 +7,16 @@ import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { WebhookService } from '../webhook/webhook.service';
 import { Prisma } from '@prisma/client';
 import { SocialSecurityInstitution } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/client';
 import * as bcrypt from 'bcrypt';
+
+function formatUploadUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.includes('/uploads/') && !url.includes('/api/uploads/')) {
+    return url.replace('/uploads/', '/api/uploads/');
+  }
+  return url;
+}
 
 @Injectable()
 export class EmployeeService {
@@ -80,7 +89,7 @@ export class EmployeeService {
         stateName: emp.state?.name || null,
         countryName: emp.country?.name || null,
         socialSecurityInstitutionName: emp.socialSecurityInstitution?.name || null,
-        avatarUrl: user?.avatar || null,
+        avatarUrl: formatUploadUrl(user?.avatar) || null,
         // Legacy compatibility
         department: emp.department?.name || emp.departmentId,
         subDepartment: emp.subDepartment?.name || emp.subDepartmentId,
@@ -176,13 +185,42 @@ export class EmployeeService {
 
 
   // Minimal fields for dropdowns/selects
-  async listForDropdown(query?: { page?: number; limit?: number; search?: string }) {
-    const page = Number(query?.page) || 1;
-    const limit = Number(query?.limit) || 100; // Dropdowns might want more by default
+  async listForDropdown(query?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    departmentId?: string;
+    subDepartmentId?: string;
+    providentFund?: string;
+    locationId?: string;
+    eobi?: string;
+  }) {
     const search = query?.search || '';
-    const skip = (page - 1) * limit;
 
-    const where: Prisma.EmployeeWhereInput = {};
+    const where: Prisma.EmployeeWhereInput = {
+      status: 'active',
+    };
+
+    if (query?.departmentId) {
+      where.departmentId = query.departmentId;
+    }
+
+    if (query?.subDepartmentId) {
+      where.subDepartmentId = query.subDepartmentId;
+    }
+
+    if (query?.locationId) {
+      where.locationId = query.locationId;
+    }
+
+    if (query?.providentFund === 'true') {
+      where.providentFund = true;
+    }
+
+    if (query?.eobi === 'true') {
+      where.eobi = true;
+    }
+
     if (search) {
       where.OR = [
         { employeeName: { contains: search, mode: 'insensitive' } },
@@ -191,11 +229,21 @@ export class EmployeeService {
       ];
     }
 
+    let skip: number | undefined = undefined;
+    let take: number | undefined = undefined;
+
+    if (query?.page || query?.limit) {
+      const pageVal = Number(query.page) || 1;
+      const limitVal = Number(query.limit) || 100;
+      skip = (pageVal - 1) * limitVal;
+      take = limitVal;
+    }
+
     const [employees, total] = await Promise.all([
       this.prisma.employee.findMany({
         where,
-        skip,
-        take: limit,
+        ...(skip !== undefined ? { skip } : {}),
+        ...(take !== undefined ? { take } : {}),
         select: {
           id: true,
           employeeId: true,
@@ -204,6 +252,7 @@ export class EmployeeService {
           subDepartmentId: true,
           designationId: true,
           providentFund: true,
+          eobi: true,
           officialEmail: true,
           personalEmail: true,
           department: { select: { id: true, name: true } },
@@ -225,18 +274,22 @@ export class EmployeeService {
       subDepartmentName: emp.subDepartment?.name || null,
       designationName: emp.designation?.name || null,
       providentFund: emp.providentFund,
+      eobi: emp.eobi,
       officialEmail: emp.officialEmail,
       personalEmail: emp.personalEmail,
     }));
+
+    const pageVal = query?.page ? Number(query.page) : 1;
+    const limitVal = take !== undefined ? take : total;
 
     return {
       status: true,
       data: result,
       meta: {
         total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
+        page: pageVal,
+        limit: limitVal,
+        totalPages: take !== undefined ? Math.ceil(total / limitVal) : 1,
       },
     };
   }
@@ -306,6 +359,13 @@ export class EmployeeService {
 
     const emp = employee as any;
 
+    // Fetch social security registrations for employee
+    const ssRegistrations =
+      await this.prisma.socialSecurityEmployeeRegistration.findMany({
+        where: { employeeId: id, isDeleted: false },
+        include: { institution: true },
+      });
+
     // Map relations to IDs for form compatibility, while keeping relation objects
     const mappedEmployee = {
       ...emp,
@@ -324,14 +384,38 @@ export class EmployeeService {
       location: emp.location?.id || emp.locationId,
       leavesPolicy: emp.leavesPolicy?.id || emp.leavesPolicyId,
       allocation: emp.allocation?.id || emp.allocationId || null,
+      socialSecurityInstitutionId:
+        emp.socialSecurityInstitutionId ||
+        emp.socialSecurityInstitution?.id ||
+        null,
       socialSecurityInstitution:
         emp.socialSecurityInstitution?.id ||
         emp.socialSecurityInstitutionId ||
         null,
+      socialSecurityRegistrations: ssRegistrations.map((r) => ({
+        id: r.id,
+        institutionId: r.institutionId,
+        registrationNumber: r.registrationNumber,
+        cardNumber: r.cardNumber || '',
+        registrationDate: r.registrationDate,
+        expiryDate: r.expiryDate,
+        status: r.status,
+        contributionRate: r.contributionRate ? Number(r.contributionRate) : 0,
+        baseSalary: r.baseSalary ? Number(r.baseSalary) : 0,
+        monthlyContribution: r.monthlyContribution
+          ? Number(r.monthlyContribution)
+          : 0,
+        employeeContribution: r.employeeContribution
+          ? Number(r.employeeContribution)
+          : 0,
+        employerContribution: r.employerContribution
+          ? Number(r.employerContribution)
+          : 0,
+      })),
       // Avatar from user table
-      avatarUrl: user?.avatar || null,
+      avatarUrl: formatUploadUrl(user?.avatar) || null,
       // EOBI Document URL
-      eobiDocumentUrl: emp.eobiDocumentUrl || null,
+      eobiDocumentUrl: formatUploadUrl(emp.eobiDocumentUrl) || null,
       // Document URLs (JSON field)
       documentUrls: emp.documentUrls || null,
       // Explicitly preserve address fields
@@ -705,23 +789,35 @@ export class EmployeeService {
       const resolvedState = stateId;
       const resolvedCity = cityId;
 
-      // Create or find user if officialEmail is provided
+      // Create or find user if officialEmail is provided OR employeeId is provided
       let userId: string | null = null;
       const officialEmailValue = getBodyString('officialEmail');
-      if (officialEmailValue) {
-        let user = await this.prismaMaster.user.findUnique({
-          where: { email: officialEmailValue },
-        });
+      const employeeIdValue = getBodyString('employeeId');
+
+      if (officialEmailValue || employeeIdValue) {
+        let user: any = null;
+        if (officialEmailValue) {
+          user = await this.prismaMaster.user.findUnique({
+            where: { email: officialEmailValue },
+          });
+        } else if (employeeIdValue) {
+          user = await this.prismaMaster.user.findUnique({
+            where: { employeeId: employeeIdValue },
+          });
+        }
 
         if (user) {
           userId = user.id;
 
-          // Update user avatar if provided
+          // Update user avatar and employeeId if provided
           const avatarUrlValue = getBodyString('avatarUrl');
-          if (avatarUrlValue) {
+          const updateData: any = {};
+          if (avatarUrlValue) updateData.avatar = avatarUrlValue;
+          if (employeeIdValue) updateData.employeeId = employeeIdValue;
+          if (Object.keys(updateData).length > 0) {
             await this.prismaMaster.user.update({
-              where: { id: userId },
-              data: { avatar: avatarUrlValue },
+              where: { id: user.id },
+              data: updateData,
             });
           }
         } else {
@@ -739,17 +835,16 @@ export class EmployeeService {
 
           const contactNumberValue = getBodyString('contactNumber');
           const avatarUrlValue = getBodyString('avatarUrl');
-          const employeeIdValue = getBodyString('employeeId');
 
           user = await this.prismaMaster.user.create({
             data: {
-              email: officialEmailValue,
+              email: officialEmailValue || null,
               password: hashedPassword,
               firstName: firstName,
               lastName: lastName,
               phone: contactNumberValue || null,
               avatar: avatarUrlValue || null,
-              employeeId: employeeIdValue,
+              employeeId: employeeIdValue || null,
               mustChangePassword: true,
               status: 'active',
             },
@@ -759,7 +854,7 @@ export class EmployeeService {
       }
 
       // Extract all body values safely
-      const employeeIdValue = getBodyString('employeeId');
+      // employeeIdValue is already extracted
       const employeeNameValue = getBodyString('employeeName');
       const fatherHusbandNameValue = getBodyString('fatherHusbandName');
       const attendanceIdValue = getBodyString('attendanceId');
@@ -1054,6 +1149,7 @@ export class EmployeeService {
                       stateId: stateIdStr,
                       year: yearValue,
                       grade: gradeStr,
+                      documentUrl: (q as any).documentUrl || null,
                     };
                   }),
               }
@@ -1078,6 +1174,8 @@ export class EmployeeService {
         userAgent: ctx.userAgent,
         status: 'success',
       });
+
+      await this.ensureSocialSecuritySync(created);
 
       await this.cacheManager.del('employees_list');
       await this.cacheManager.del('employees_dropdown');
@@ -1635,6 +1733,7 @@ export class EmployeeService {
                       stateId: stateIdStr,
                       year: yearValue,
                       grade: gradeStr,
+                      documentUrl: (q as any).documentUrl || null,
                     };
                   }),
               }
@@ -1650,20 +1749,33 @@ export class EmployeeService {
         | string
         | undefined;
 
-      if (officialEmailValue) {
+      // If we have an email OR an employeeId, manage the user account
+      const currentEmployeeId = employeeIdValue || existing?.employeeId;
+      if (officialEmailValue || currentEmployeeId) {
         if (updated.userId) {
-          // Employee already has a user, update avatar
-          if (avatarUrlValue !== undefined) {
+          // Employee already has a user, update details
+          const updateData: any = {};
+          if (avatarUrlValue !== undefined) updateData.avatar = avatarUrlValue;
+          if (employeeIdValue !== undefined) updateData.employeeId = employeeIdValue;
+          if (officialEmailValue !== undefined) updateData.email = officialEmailValue || null;
+          if (Object.keys(updateData).length > 0) {
             await this.prismaMaster.user.update({
               where: { id: updated.userId },
-              data: { avatar: avatarUrlValue },
+              data: updateData,
             });
           }
         } else {
           // Employee doesn't have a user yet, create or link one
-          let user = await this.prismaMaster.user.findUnique({
-            where: { email: officialEmailValue },
-          });
+          let user: any = null;
+          if (officialEmailValue) {
+            user = await this.prismaMaster.user.findUnique({
+              where: { email: officialEmailValue },
+            });
+          } else if (currentEmployeeId) {
+            user = await this.prismaMaster.user.findUnique({
+              where: { employeeId: currentEmployeeId },
+            });
+          }
 
           if (user) {
             // User exists, link to employee
@@ -1672,10 +1784,14 @@ export class EmployeeService {
               data: { userId: user.id },
             });
 
-            if (avatarUrlValue !== undefined) {
+            const updateData: any = {};
+            if (avatarUrlValue !== undefined) updateData.avatar = avatarUrlValue;
+            if (employeeIdValue !== undefined) updateData.employeeId = employeeIdValue;
+            if (officialEmailValue !== undefined) updateData.email = officialEmailValue || null;
+            if (Object.keys(updateData).length > 0) {
               await this.prismaMaster.user.update({
                 where: { id: user.id },
-                data: { avatar: avatarUrlValue },
+                data: updateData,
               });
             }
           } else {
@@ -1689,20 +1805,18 @@ export class EmployeeService {
             const lastName = nameParts.slice(1).join(' ') || '';
 
             // Generate temporary password and hash it
-            const tempPassword =
-              'Welcome@' + Math.random().toString(36).substring(2, 10);
-
+            const tempPassword = "Access@123";
             const hashedPassword: string = await bcrypt.hash(tempPassword, 10);
 
             user = await this.prismaMaster.user.create({
               data: {
-                email: officialEmailValue,
+                email: officialEmailValue || null,
                 password: hashedPassword,
                 firstName: firstName,
                 lastName: lastName,
                 phone: contactNumberValue || existing?.contactNumber || null,
                 avatar: avatarUrlValue || null,
-                employeeId: employeeIdValue || existing?.employeeId || null,
+                employeeId: currentEmployeeId || null,
                 mustChangePassword: true,
                 status: 'active',
               },
@@ -1738,6 +1852,128 @@ export class EmployeeService {
       this.webhooks.trigger('employee.updated', updated).catch((err) => {
         this.logger.error(`Failed to trigger employee.updated webhook: ${err.message}`);
       });
+
+      // Ensure Social Security Employee Registration and Contribution Sync
+      if (updated.socialSecurityInstitutionId) {
+        try {
+          const instId = updated.socialSecurityInstitutionId;
+          let reg = await this.prisma.socialSecurityEmployeeRegistration.findFirst({
+            where: {
+              employeeId: updated.id,
+              institutionId: instId,
+              isDeleted: false,
+            },
+          });
+
+          if (!reg) {
+            let employerReg = await this.prisma.socialSecurityEmployerRegistration.findFirst({
+              where: {
+                institutionId: instId,
+                status: 'active',
+                isDeleted: false,
+              },
+            });
+            if (!employerReg) {
+              employerReg = await this.prisma.socialSecurityEmployerRegistration.create({
+                data: {
+                  companyId: (updated as any).companyId || 'default-company',
+                  institutionId: instId,
+                  registrationNumber: `AUTO-${instId}-${Date.now()}`,
+                  employerName: 'Auto Employer',
+                  employerType: 'company',
+                  businessAddress: 'N/A',
+                  registrationDate: new Date(),
+                  status: 'active',
+                  totalEmployees: 0,
+                  monthlyContribution: 0,
+                },
+              });
+            }
+            const inst = await this.prisma.socialSecurityInstitution.findUnique({
+              where: { id: instId },
+            });
+            const rate = inst?.contributionRate ? Number(inst.contributionRate) : 6;
+            const salary = updated.employeeSalary ? Number(updated.employeeSalary) : 0;
+            const monthlyContrib = (salary * rate) / 100;
+
+            reg = await this.prisma.socialSecurityEmployeeRegistration.create({
+              data: {
+                companyId: employerReg.companyId,
+                institutionId: instId,
+                employerRegistrationId: employerReg.id,
+                employeeId: updated.id,
+                registrationNumber: `SS-${updated.employeeId || updated.id.slice(0, 8)}`,
+                registrationDate: new Date(),
+                status: 'active',
+                contributionRate: rate,
+                baseSalary: salary,
+                monthlyContribution: monthlyContrib,
+                isEmployerContribution: true,
+              },
+            });
+          }
+
+          // Sync any confirmed payrolls for this employee
+          const confirmedDetails = await this.prisma.payrollDetail.findMany({
+            where: {
+              employeeId: updated.id,
+              payroll: { status: 'confirmed' },
+            },
+            include: { payroll: true },
+          });
+
+          for (const pd of confirmedDetails) {
+            if (!pd.payroll) continue;
+            const monthStr = pd.payroll.month.padStart(2, '0');
+            const yearStr = pd.payroll.year.toString();
+            const date = new Date(parseInt(yearStr, 10), parseInt(monthStr, 10) - 1, 28);
+
+            const existingContrib = await this.prisma.socialSecurityContribution.findFirst({
+              where: {
+                employeeRegistrationId: reg.id,
+                month: monthStr,
+                year: yearStr,
+                isDeleted: false,
+              },
+            });
+
+            if (!existingContrib) {
+              const inst = await this.prisma.socialSecurityInstitution.findUnique({
+                where: { id: instId },
+              });
+              const rate = inst?.contributionRate ? Number(inst.contributionRate) : 6;
+              const salary = Number(pd.basicSalary || updated.employeeSalary || 0);
+              const amount = Number(pd.socialSecurityContributionAmount) > 0
+                ? Number(pd.socialSecurityContributionAmount)
+                : (salary * rate) / 100;
+
+              if (amount > 0) {
+                await this.prisma.socialSecurityContribution.create({
+                  data: {
+                    companyId: reg.companyId || 'default-company',
+                    institutionId: instId,
+                    employerRegistrationId: reg.employerRegistrationId,
+                    employeeRegistrationId: reg.id,
+                    employeeId: updated.id,
+                    month: monthStr,
+                    year: yearStr,
+                    date,
+                    baseSalary: new Decimal(salary),
+                    contributionRate: new Decimal(rate),
+                    contributionAmount: new Decimal(amount),
+                    employerContribution: new Decimal(amount),
+                    employeeContribution: new Decimal(0),
+                    paymentStatus: 'pending',
+                    status: 'active',
+                  },
+                });
+              }
+            }
+          }
+        } catch (err) {
+          // Ignore registration sync error
+        }
+      }
 
       return {
         status: true,
@@ -2270,15 +2506,90 @@ export class EmployeeService {
         (body as { socialSecurityInstitutionId?: string })
           .socialSecurityInstitutionId !== undefined
       ) {
-        updateData.socialSecurityInstitutionId = (
+        const instId = (
           body as { socialSecurityInstitutionId?: string }
         ).socialSecurityInstitutionId as string;
+        updateData.socialSecurityInstitutionId = instId || null;
+
+        if (instId) {
+          try {
+            const existingReg =
+              await this.prisma.socialSecurityEmployeeRegistration.findFirst({
+                where: {
+                  employeeId: existing.id,
+                  institutionId: instId,
+                  isDeleted: false,
+                },
+              });
+            if (!existingReg) {
+              let employerReg =
+                await this.prisma.socialSecurityEmployerRegistration.findFirst(
+                  {
+                    where: {
+                      institutionId: instId,
+                      status: 'active',
+                      isDeleted: false,
+                    },
+                  },
+                );
+              if (!employerReg) {
+                employerReg =
+                  await this.prisma.socialSecurityEmployerRegistration.create({
+                    data: {
+                      companyId: (existing as any).companyId || 'default-company',
+                      institutionId: instId,
+                      registrationNumber: `AUTO-${instId}-${Date.now()}`,
+                      employerName: 'Auto Employer',
+                      employerType: 'company',
+                      businessAddress: 'N/A',
+                      registrationDate: new Date(),
+                      status: 'active',
+                      totalEmployees: 0,
+                      monthlyContribution: 0,
+                    },
+                  });
+              }
+              const inst =
+                await this.prisma.socialSecurityInstitution.findUnique({
+                  where: { id: instId },
+                });
+              const rate = inst?.contributionRate
+                ? Number(inst.contributionRate)
+                : 0;
+              const salary = existing.employeeSalary
+                ? Number(existing.employeeSalary)
+                : 0;
+              const monthlyContrib = (salary * rate) / 100;
+
+              await this.prisma.socialSecurityEmployeeRegistration.create({
+                data: {
+                  companyId: employerReg.companyId,
+                  institutionId: instId,
+                  employerRegistrationId: employerReg.id,
+                  employeeId: existing.id,
+                  registrationNumber: `SS-${existing.employeeId || existing.id}`,
+                  registrationDate: new Date(),
+                  status: 'active',
+                  contributionRate: rate,
+                  baseSalary: salary,
+                  monthlyContribution: monthlyContrib,
+                  isEmployerContribution: true,
+                },
+              });
+            }
+          } catch (e) {
+            // Ignore error if duplicate registration
+          }
+        }
       }
 
       // Handle Social Security update
       const socialSecurityRegistrationsValue = (body as any)
         .socialSecurityRegistrations;
-      if (socialSecurityRegistrationsValue !== undefined) {
+      if (
+        Array.isArray(socialSecurityRegistrationsValue) &&
+        socialSecurityRegistrationsValue.length > 0
+      ) {
         // Delete existing
         await this.prisma.socialSecurityEmployeeRegistration.deleteMany({
           where: { employeeId: existing.id },
@@ -2291,7 +2602,7 @@ export class EmployeeService {
                 await this.prisma.socialSecurityInstitution.findUnique({
                   where: { id: reg.institutionId },
                 });
-              const employerReg =
+              let employerReg =
                 await this.prisma.socialSecurityEmployerRegistration.findFirst(
                   {
                     where: {
@@ -2300,6 +2611,25 @@ export class EmployeeService {
                     },
                   },
                 );
+
+              if (!employerReg) {
+                employerReg =
+                  await this.prisma.socialSecurityEmployerRegistration.create({
+                    data: {
+                      companyId: (existing as any).companyId || 'default-company',
+                      institutionId: reg.institutionId,
+                      registrationNumber: `AUTO-${reg.institutionId}-${Date.now()}`,
+                      employerName: 'Auto Employer',
+                      employerType: 'company',
+                      businessAddress: 'N/A',
+                      registrationDate: new Date(),
+                      status: 'active',
+                      totalEmployees: 0,
+                      monthlyContribution: 0,
+                    },
+                  });
+              }
+
               if (employerReg) {
                 await this.prisma.socialSecurityEmployeeRegistration.create(
                   {
@@ -3954,6 +4284,129 @@ export class EmployeeService {
         status: false,
         message: error instanceof Error ? error.message : String(error),
       };
+    }
+  }
+
+  // Ensure Social Security Registration & Contribution Sync for any employee
+  public async ensureSocialSecuritySync(emp: any) {
+    if (!emp || !emp.socialSecurityInstitutionId) return;
+    try {
+      const instId = emp.socialSecurityInstitutionId;
+      let reg = await this.prisma.socialSecurityEmployeeRegistration.findFirst({
+        where: {
+          employeeId: emp.id,
+          institutionId: instId,
+          isDeleted: false,
+        },
+      });
+
+      if (!reg) {
+        let employerReg = await this.prisma.socialSecurityEmployerRegistration.findFirst({
+          where: {
+            institutionId: instId,
+            status: 'active',
+            isDeleted: false,
+          },
+        });
+        if (!employerReg) {
+          employerReg = await this.prisma.socialSecurityEmployerRegistration.create({
+            data: {
+              companyId: (emp as any).companyId || 'default-company',
+              institutionId: instId,
+              registrationNumber: `AUTO-${instId}-${Date.now()}`,
+              employerName: 'Auto Employer',
+              employerType: 'company',
+              businessAddress: 'N/A',
+              registrationDate: new Date(),
+              status: 'active',
+              totalEmployees: 0,
+              monthlyContribution: 0,
+            },
+          });
+        }
+        const inst = await this.prisma.socialSecurityInstitution.findUnique({
+          where: { id: instId },
+        });
+        const rate = inst?.contributionRate ? Number(inst.contributionRate) : 6;
+        const salary = emp.employeeSalary ? Number(emp.employeeSalary) : 0;
+        const monthlyContrib = (salary * rate) / 100;
+
+        reg = await this.prisma.socialSecurityEmployeeRegistration.create({
+          data: {
+            companyId: employerReg.companyId,
+            institutionId: instId,
+            employerRegistrationId: employerReg.id,
+            employeeId: emp.id,
+            registrationNumber: `SS-${emp.employeeId || emp.id.slice(0, 8)}`,
+            registrationDate: new Date(),
+            status: 'active',
+            contributionRate: rate,
+            baseSalary: salary,
+            monthlyContribution: monthlyContrib,
+            isEmployerContribution: true,
+          },
+        });
+      }
+
+      // Sync any confirmed payrolls for this employee if contributions are missing
+      const confirmedDetails = await this.prisma.payrollDetail.findMany({
+        where: {
+          employeeId: emp.id,
+          payroll: { status: 'confirmed' },
+        },
+        include: { payroll: true },
+      });
+
+      for (const pd of confirmedDetails) {
+        if (!pd.payroll) continue;
+        const monthStr = pd.payroll.month.padStart(2, '0');
+        const yearStr = pd.payroll.year.toString();
+        const date = new Date(parseInt(yearStr, 10), parseInt(monthStr, 10) - 1, 28);
+
+        const existingContrib = await this.prisma.socialSecurityContribution.findFirst({
+          where: {
+            employeeRegistrationId: reg.id,
+            month: monthStr,
+            year: yearStr,
+            isDeleted: false,
+          },
+        });
+
+        if (!existingContrib) {
+          const inst = await this.prisma.socialSecurityInstitution.findUnique({
+            where: { id: instId },
+          });
+          const rate = inst?.contributionRate ? Number(inst.contributionRate) : 6;
+          const salary = Number(pd.basicSalary || emp.employeeSalary || 0);
+          const amount = Number(pd.socialSecurityContributionAmount) > 0
+            ? Number(pd.socialSecurityContributionAmount)
+            : (salary * rate) / 100;
+
+          if (amount > 0) {
+            await this.prisma.socialSecurityContribution.create({
+              data: {
+                companyId: reg.companyId || 'default-company',
+                institutionId: instId,
+                employerRegistrationId: reg.employerRegistrationId,
+                employeeRegistrationId: reg.id,
+                employeeId: emp.id,
+                month: monthStr,
+                year: yearStr,
+                date,
+                baseSalary: new Decimal(salary),
+                contributionRate: new Decimal(rate),
+                contributionAmount: new Decimal(amount),
+                employerContribution: new Decimal(amount),
+                employeeContribution: new Decimal(0),
+                paymentStatus: 'pending',
+                status: 'active',
+              },
+            });
+          }
+        }
+      }
+    } catch (err) {
+      // Ignore sync error
     }
   }
 }

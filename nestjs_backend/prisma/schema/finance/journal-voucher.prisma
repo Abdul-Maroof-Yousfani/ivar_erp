@@ -1,8 +1,9 @@
 model JournalVoucher {
   id          String                 @id @default(uuid())
   jvNo        String                 @unique
+  folio       String?
   jvDate      DateTime
-  description String
+  description String?
   status      String                 @default("pending")
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
@@ -10,16 +11,23 @@ model JournalVoucher {
 }
 
 model JournalVoucherDetail {
-  id               String         @id @default(uuid())
+  id               String          @id @default(uuid())
   journalVoucherId String
   accountId        String
-  debit            Decimal        @default(0.0) @db.Decimal(15, 2)
-  credit           Decimal        @default(0.0) @db.Decimal(15, 2)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  account          ChartOfAccount @relation(fields: [accountId], references: [id])
-  journalVoucher   JournalVoucher @relation(fields: [journalVoucherId], references: [id], onDelete: Cascade)
+  tagAccountId     String?         // Optional sub-ledger tag (child chart-of-account)
+  debit            Decimal         @default(0.0) @db.Decimal(15, 2)
+  credit           Decimal         @default(0.0) @db.Decimal(15, 2)
+  narration        String?
+  refBillNo        String?
+  refBillNo2       String?
+  taxType          String          @default("Taxable")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  account          ChartOfAccount  @relation("JVDetailAccount", fields: [accountId], references: [id])
+  tagAccount       ChartOfAccount? @relation("JVDetailTagAccount", fields: [tagAccountId], references: [id])
+  journalVoucher   JournalVoucher  @relation(fields: [journalVoucherId], references: [id], onDelete: Cascade)
 
   @@index([journalVoucherId])
   @@index([accountId])
+  @@index([tagAccountId])
 }

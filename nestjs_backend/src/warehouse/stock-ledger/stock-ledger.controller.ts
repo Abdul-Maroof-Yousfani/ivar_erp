@@ -1,10 +1,25 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Post, Query, Param, Req, Res, UseGuards, Body } from '@nestjs/common';
 import { StockLedgerService } from './stock-ledger.service';
+import { StockActivityExportService } from './stock-activity-export.service';
+import { StockValuationExportService } from './stock-valuation-export.service';
+import { StockTransactionDetailExportService } from './stock-transaction-detail-export.service';
+import { AvailableStockSummaryExportService } from './available-stock-summary-export.service';
+import { OverallAvailableReservedStockExportService } from './overall-available-reserved-stock-export.service';
+import { OutOfStockReportService } from './out-of-stock-report.service';
 import { MovementType } from '@prisma/client';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 @Controller('api/stock-ledger')
 export class StockLedgerController {
-  constructor(private readonly stockLedgerService: StockLedgerService,) { }
+  constructor(
+    private readonly stockLedgerService: StockLedgerService,
+    private readonly stockActivityExportService: StockActivityExportService,
+    private readonly stockValuationExportService: StockValuationExportService,
+    private readonly stockTransactionDetailExportService: StockTransactionDetailExportService,
+    private readonly availableStockSummaryExportService: AvailableStockSummaryExportService,
+    private readonly overallAvailableReservedStockExportService: OverallAvailableReservedStockExportService,
+    private readonly outOfStockReportService: OutOfStockReportService,
+  ) { }
 
   @Get('levels')
   async getStockLevels(@Query('warehouseId') warehouseId?: string, @Query('locationId') locationId?: string) {
@@ -14,19 +29,643 @@ export class StockLedgerController {
   @Get()
   async findAll(
     @Query('warehouseId') warehouseId?: string,
+    @Query('locationId') locationId?: string,
     @Query('movementType') movementType?: MovementType,
     @Query('itemId') itemId?: string,
     @Query('referenceType') referenceType?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('search') search?: string,
   ) {
     return this.stockLedgerService.findAll({
       warehouseId,
+      locationId,
       movementType,
       itemId,
       referenceType,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
+      search,
     });
+  }
+
+  @Post('export')
+  @UseGuards(JwtAuthGuard)
+  async queueExport(
+    @Req() req: any,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('locationId') locationId?: string,
+    @Query('movementType') movementType?: MovementType,
+    @Query('itemId') itemId?: string,
+    @Query('referenceType') referenceType?: string,
+    @Query('search') search?: string,
+  ) {
+    const result = await this.stockLedgerService.queueExport({
+      userId: req.user?.userId || req.user?.id,
+      warehouseId,
+      locationId,
+      movementType,
+      itemId,
+      referenceType,
+      search,
+    });
+
+    return {
+      status: true,
+      message: "Export queued. You'll receive a notification when your file is ready.",
+      data: result,
+    };
+  }
+
+  @Get('export/:jobId/status')
+  @UseGuards(JwtAuthGuard)
+  async getStatus(@Param('jobId') jobId: string) {
+    const result = await this.stockLedgerService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('export/:jobId/download')
+  async download(@Param('jobId') jobId: string, @Res() res: any) {
+    try {
+      await this.stockLedgerService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });
+    }
+  }
+
+  @Get('activity-report')
+  @UseGuards(JwtAuthGuard)
+  async getActivityReport(
+    @Query('locationId') locationId?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('summaryOnly') summaryOnly?: string,
+    @Query('showBrand') showBrand?: string,
+    @Query('showDivision') showDivision?: string,
+    @Query('showCategory') showCategory?: string,
+    @Query('showGender') showGender?: string,
+    @Query('showSilhouette') showSilhouette?: string,
+    @Query('showArticle') showArticle?: string,
+    @Query('showVariant') showVariant?: string,
+  ) {
+    const data = await this.stockLedgerService.getStockActivityReport({
+      locationId,
+      warehouseId,
+      startDate,
+      endDate,
+      summaryOnly: summaryOnly === 'true',
+      showBrand: showBrand !== undefined ? showBrand === 'true' : undefined,
+      showDivision: showDivision !== undefined ? showDivision === 'true' : undefined,
+      showCategory: showCategory !== undefined ? showCategory === 'true' : undefined,
+      showGender: showGender !== undefined ? showGender === 'true' : undefined,
+      showSilhouette: showSilhouette !== undefined ? showSilhouette === 'true' : undefined,
+      showArticle: showArticle !== undefined ? showArticle === 'true' : undefined,
+      showVariant: showVariant !== undefined ? showVariant === 'true' : undefined,
+    });
+    return { status: true, data };
+  }
+
+  @Post('activity-report/export/queue')
+  @UseGuards(JwtAuthGuard)
+  async queueActivityReportExport(
+    @Req() req: any,
+    @Body() body: {
+      locationId?: string;
+      warehouseId?: string;
+      startDate?: string;
+      endDate?: string;
+      format: 'xlsx' | 'pdf';
+      summaryOnly?: boolean;
+      showBrand?: boolean;
+      showDivision?: boolean;
+      showCategory?: boolean;
+      showGender?: boolean;
+      showSilhouette?: boolean;
+      showArticle?: boolean;
+      showVariant?: boolean;
+    },
+  ) {
+    const userId = req.user?.id || req.user?.userId;
+    const result = await this.stockActivityExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      warehouseId: body.warehouseId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      format: body.format,
+      summaryOnly: body.summaryOnly,
+      showBrand: body.showBrand,
+      showDivision: body.showDivision,
+      showCategory: body.showCategory,
+      showGender: body.showGender,
+      showSilhouette: body.showSilhouette,
+      showArticle: body.showArticle,
+      showVariant: body.showVariant,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('activity-report/export/:jobId/status')
+  @UseGuards(JwtAuthGuard)
+  async getActivityReportStatus(@Param('jobId') jobId: string) {
+    const result = await this.stockActivityExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('activity-report/export/:jobId/download')
+  async downloadActivityReportExport(@Param('jobId') jobId: string, @Res() res: any) {
+    try {
+      await this.stockActivityExportService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });
+    }
+  }
+
+  @Get('valuation-report')
+  @UseGuards(JwtAuthGuard)
+  async getValuationReport(
+    @Query('locationId') locationId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('summaryOnly') summaryOnly?: string,
+    @Query('showBrand') showBrand?: string,
+    @Query('showDivision') showDivision?: string,
+    @Query('showCategory') showCategory?: string,
+    @Query('showGender') showGender?: string,
+    @Query('showSilhouette') showSilhouette?: string,
+    @Query('showArticle') showArticle?: string,
+    @Query('showVariant') showVariant?: string,
+  ) {
+    const data = await this.stockValuationExportService.getValuationReportData({
+      locationId,
+      startDate,
+      endDate,
+      summaryOnly: summaryOnly === 'true',
+      showBrand: showBrand !== undefined ? showBrand === 'true' : undefined,
+      showDivision: showDivision !== undefined ? showDivision === 'true' : undefined,
+      showCategory: showCategory !== undefined ? showCategory === 'true' : undefined,
+      showGender: showGender !== undefined ? showGender === 'true' : undefined,
+      showSilhouette: showSilhouette !== undefined ? showSilhouette === 'true' : undefined,
+      showArticle: showArticle !== undefined ? showArticle === 'true' : undefined,
+      showVariant: showVariant !== undefined ? showVariant === 'true' : undefined,
+    });
+    return { status: true, data };
+  }
+
+  @Post('valuation-report/export/queue')
+  @UseGuards(JwtAuthGuard)
+  async queueValuationReportExport(
+    @Req() req: any,
+    @Body() body: {
+      locationId?: string;
+      startDate?: string;
+      endDate?: string;
+      format: 'xlsx' | 'pdf';
+      exportType?: 'hierarchical' | 'flat';
+      filterBrands?: string[];
+      filterDivisions?: string[];
+      filterCategories?: string[];
+      filterGenders?: string[];
+      filterSilhouettes?: string[];
+      searchText?: string;
+      summaryOnly?: boolean;
+      showBrand?: boolean;
+      showDivision?: boolean;
+      showCategory?: boolean;
+      showGender?: boolean;
+      showSilhouette?: boolean;
+      showArticle?: boolean;
+      showVariant?: boolean;
+    },
+  ) {
+    const userId = req.user?.id;
+    const result = await this.stockValuationExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      format: body.format,
+      exportType: body.exportType,
+      filterBrands: body.filterBrands,
+      filterDivisions: body.filterDivisions,
+      filterCategories: body.filterCategories,
+      filterGenders: body.filterGenders,
+      filterSilhouettes: body.filterSilhouettes,
+      searchText: body.searchText,
+      summaryOnly: body.summaryOnly,
+      showBrand: body.showBrand,
+      showDivision: body.showDivision,
+      showCategory: body.showCategory,
+      showGender: body.showGender,
+      showSilhouette: body.showSilhouette,
+      showArticle: body.showArticle,
+      showVariant: body.showVariant,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('valuation-report/export/:jobId/status')
+  @UseGuards(JwtAuthGuard)
+  async getValuationReportStatus(@Param('jobId') jobId: string) {
+    const result = await this.stockValuationExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('valuation-report/export/:jobId/download')
+  async downloadValuationReportExport(@Param('jobId') jobId: string, @Res() res: any) {
+    try {
+      await this.stockValuationExportService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });
+    }
+  }
+
+  @Get('transaction-detail-report')
+  @UseGuards(JwtAuthGuard)
+  async getTransactionDetailReport(
+    @Query('locationId') locationId?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('itemId') itemId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('search') search?: string,
+    @Query('showBrand') showBrand?: string,
+    @Query('showDivision') showDivision?: string,
+    @Query('showCategory') showCategory?: string,
+    @Query('showGender') showGender?: string,
+    @Query('showSilhouette') showSilhouette?: string,
+    @Query('showArticle') showArticle?: string,
+    @Query('showVariant') showVariant?: string,
+  ) {
+    const result = await this.stockLedgerService.getStockTransactionDetailReport({
+      locationId,
+      warehouseId,
+      itemId,
+      startDate,
+      endDate,
+      search,
+      showBrand: showBrand !== undefined ? showBrand === 'true' : undefined,
+      showDivision: showDivision !== undefined ? showDivision === 'true' : undefined,
+      showCategory: showCategory !== undefined ? showCategory === 'true' : undefined,
+      showGender: showGender !== undefined ? showGender === 'true' : undefined,
+      showSilhouette: showSilhouette !== undefined ? showSilhouette === 'true' : undefined,
+      showArticle: showArticle !== undefined ? showArticle === 'true' : undefined,
+      showVariant: showVariant !== undefined ? showVariant === 'true' : undefined,
+    });
+    return { status: true, data: result };
+  }
+
+  @Post('transaction-detail-report/export/queue')
+  @UseGuards(JwtAuthGuard)
+  async queueTransactionDetailReportExport(
+    @Req() req: any,
+    @Body() body: {
+      locationId?: string;
+      warehouseId?: string;
+      itemId?: string;
+      startDate?: string;
+      endDate?: string;
+      format: 'xlsx' | 'pdf';
+      search?: string;
+      summaryOnly?: boolean;
+      showBrand?: boolean;
+      showDivision?: boolean;
+      showCategory?: boolean;
+      showGender?: boolean;
+      showSilhouette?: boolean;
+      showArticle?: boolean;
+      showVariant?: boolean;
+    },
+  ) {
+    const userId = req.user?.id || req.user?.userId;
+    const result = await this.stockTransactionDetailExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      warehouseId: body.warehouseId,
+      itemId: body.itemId,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      format: body.format,
+      search: body.search,
+      showBrand: body.showBrand,
+      showDivision: body.showDivision,
+      showCategory: body.showCategory,
+      showGender: body.showGender,
+      showSilhouette: body.showSilhouette,
+      showArticle: body.showArticle,
+      showVariant: body.showVariant,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('transaction-detail-report/export/:jobId/status')
+  @UseGuards(JwtAuthGuard)
+  async getTransactionDetailReportStatus(@Param('jobId') jobId: string) {
+    const result = await this.stockTransactionDetailExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('transaction-detail-report/export/:jobId/download')
+  async downloadTransactionDetailReportExport(@Param('jobId') jobId: string, @Res() res: any) {
+    try {
+      await this.stockTransactionDetailExportService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });
+    }
+  }
+
+  @Get(['available-stock-summary', 'available-stock-summary-report'])
+  @UseGuards(JwtAuthGuard)
+  async getAvailableStockSummaryReport(
+    @Query('locationId') locationId?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('asOfDate') asOfDate?: string,
+    @Query('date') date?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('summaryOnly') summaryOnly?: string,
+    @Query('showBrand') showBrand?: string,
+    @Query('showDivision') showDivision?: string,
+    @Query('showCategory') showCategory?: string,
+    @Query('showGender') showGender?: string,
+    @Query('showSilhouette') showSilhouette?: string,
+    @Query('showArticle') showArticle?: string,
+    @Query('showVariant') showVariant?: string,
+  ) {
+    const data = await this.availableStockSummaryExportService.getAvailableStockSummaryReportData({
+      locationId,
+      warehouseId,
+      asOfDate,
+      date,
+      startDate,
+      endDate,
+      summaryOnly: summaryOnly === 'true',
+      showBrand: showBrand !== undefined ? showBrand === 'true' : undefined,
+      showDivision: showDivision !== undefined ? showDivision === 'true' : undefined,
+      showCategory: showCategory !== undefined ? showCategory === 'true' : undefined,
+      showGender: showGender !== undefined ? showGender === 'true' : undefined,
+      showSilhouette: showSilhouette !== undefined ? showSilhouette === 'true' : undefined,
+      showArticle: showArticle !== undefined ? showArticle === 'true' : undefined,
+      showVariant: showVariant !== undefined ? showVariant === 'true' : undefined,
+    });
+    return { status: true, data };
+  }
+
+  @Post(['available-stock-summary/export/queue', 'available-stock-summary-report/export/queue'])
+  @UseGuards(JwtAuthGuard)
+  async queueAvailableStockSummaryExport(
+    @Req() req: any,
+    @Body() body: {
+      locationId?: string;
+      warehouseId?: string;
+      asOfDate?: string;
+      date?: string;
+      startDate?: string;
+      endDate?: string;
+      format: 'xlsx' | 'pdf';
+      summaryOnly?: boolean;
+      showBrand?: boolean;
+      showDivision?: boolean;
+      showCategory?: boolean;
+      showGender?: boolean;
+      showSilhouette?: boolean;
+      showArticle?: boolean;
+      showVariant?: boolean;
+      includeCosting?: boolean;
+    },
+  ) {
+    const userId = req.user?.id || req.user?.userId;
+    const result = await this.availableStockSummaryExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      warehouseId: body.warehouseId,
+      asOfDate: body.asOfDate,
+      date: body.date,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      format: body.format,
+      summaryOnly: body.summaryOnly,
+      showBrand: body.showBrand,
+      showDivision: body.showDivision,
+      showCategory: body.showCategory,
+      showGender: body.showGender,
+      showSilhouette: body.showSilhouette,
+      showArticle: body.showArticle,
+      showVariant: body.showVariant,
+      includeCosting: body.includeCosting,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get(['available-stock-summary/export/:jobId/status', 'available-stock-summary-report/export/:jobId/status'])
+  @UseGuards(JwtAuthGuard)
+  async getAvailableStockSummaryStatus(@Param('jobId') jobId: string) {
+    const result = await this.availableStockSummaryExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get(['available-stock-summary/export/:jobId/download', 'available-stock-summary-report/export/:jobId/download'])
+  async downloadAvailableStockSummaryExport(@Param('jobId') jobId: string, @Res() res: any) {
+    try {
+      await this.availableStockSummaryExportService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });
+    }
+  }
+
+  @Get('overall-available-reserved-stock')
+  @UseGuards(JwtAuthGuard)
+  async getOverallAvailableReservedStockReport(
+    @Query('locationId') locationId?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('asOfDate') asOfDate?: string,
+    @Query('summaryOnly') summaryOnly?: string,
+    @Query('showBrand') showBrand?: string,
+    @Query('showDivision') showDivision?: string,
+    @Query('showCategory') showCategory?: string,
+    @Query('showGender') showGender?: string,
+    @Query('showSilhouette') showSilhouette?: string,
+    @Query('showArticle') showArticle?: string,
+    @Query('showVariant') showVariant?: string,
+    @Query('includeCosting') includeCosting?: string,
+  ) {
+    const data = await this.overallAvailableReservedStockExportService.getOverallAvailableReservedStockReportData({
+      locationId,
+      warehouseId,
+      asOfDate,
+      summaryOnly: summaryOnly === 'true',
+      showBrand: showBrand !== undefined ? showBrand === 'true' : undefined,
+      showDivision: showDivision !== undefined ? showDivision === 'true' : undefined,
+      showCategory: showCategory !== undefined ? showCategory === 'true' : undefined,
+      showGender: showGender !== undefined ? showGender === 'true' : undefined,
+      showSilhouette: showSilhouette !== undefined ? showSilhouette === 'true' : undefined,
+      showArticle: showArticle !== undefined ? showArticle === 'true' : undefined,
+      showVariant: showVariant !== undefined ? showVariant === 'true' : undefined,
+      includeCosting: includeCosting === 'true',
+    });
+    return { status: true, data };
+  }
+
+  @Post('overall-available-reserved-stock/export/queue')
+  @UseGuards(JwtAuthGuard)
+  async queueOverallAvailableReservedStockExport(
+    @Req() req: any,
+    @Body() body: {
+      locationId?: string;
+      warehouseId?: string;
+      asOfDate?: string;
+      format: 'xlsx' | 'pdf';
+      summaryOnly?: boolean;
+      showBrand?: boolean;
+      showDivision?: boolean;
+      showCategory?: boolean;
+      showGender?: boolean;
+      showSilhouette?: boolean;
+      showArticle?: boolean;
+      showVariant?: boolean;
+      includeCosting?: boolean;
+    },
+  ) {
+    const userId = req.user?.id || req.user?.userId;
+    const result = await this.overallAvailableReservedStockExportService.queueExport({
+      userId,
+      locationId: body.locationId,
+      warehouseId: body.warehouseId,
+      asOfDate: body.asOfDate,
+      format: body.format,
+      summaryOnly: body.summaryOnly,
+      showBrand: body.showBrand,
+      showDivision: body.showDivision,
+      showCategory: body.showCategory,
+      showGender: body.showGender,
+      showSilhouette: body.showSilhouette,
+      showArticle: body.showArticle,
+      showVariant: body.showVariant,
+      includeCosting: body.includeCosting,
+    });
+    return { status: true, data: result };
+  }
+
+  @Get('overall-available-reserved-stock/export/:jobId/status')
+  @UseGuards(JwtAuthGuard)
+  async getOverallAvailableReservedStockStatus(@Param('jobId') jobId: string) {
+    const result = await this.overallAvailableReservedStockExportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('overall-available-reserved-stock/export/:jobId/download')
+  async downloadOverallAvailableReservedStockExport(@Param('jobId') jobId: string, @Res() res: any) {
+    try {
+      await this.overallAvailableReservedStockExportService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });
+    }
+  }
+
+  // ─── Out-of-Stock Items Report Endpoints ─────────────────────────────────────
+  @Get('out-of-stock-report')
+  @UseGuards(JwtAuthGuard)
+  async getOutOfStockReport(
+    @Query('locationId') locationId?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('brandIds') brandIds?: string,
+    @Query('categoryIds') categoryIds?: string,
+    @Query('divisionIds') divisionIds?: string,
+    @Query('genderIds') genderIds?: string,
+    @Query('seasonIds') seasonIds?: string,
+    @Query('search') search?: string,
+    @Query('threshold') threshold?: 'zero' | 'negative' | 'low_stock' | 'all',
+    @Query('minThreshold') minThreshold?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: any,
+    @Query('sortOrder') sortOrder?: 'asc' | 'desc',
+  ) {
+    const parseArray = (val?: string) => (val ? val.split(',').map((s) => s.trim()).filter(Boolean) : []);
+
+    const data = await this.outOfStockReportService.getOutOfStockReport({
+      locationId: locationId && locationId !== 'all' ? locationId : undefined,
+      warehouseId: warehouseId && warehouseId !== 'all' ? warehouseId : undefined,
+      brandIds: parseArray(brandIds),
+      categoryIds: parseArray(categoryIds),
+      divisionIds: parseArray(divisionIds),
+      genderIds: parseArray(genderIds),
+      seasonIds: parseArray(seasonIds),
+      search: search?.trim(),
+      threshold: threshold || 'zero',
+      minThreshold: minThreshold ? parseInt(minThreshold, 10) : 5,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 50,
+      sortBy: sortBy || 'salesLast30Days',
+      sortOrder: sortOrder || 'desc',
+    });
+
+    return { status: true, data };
+  }
+
+  @Post('out-of-stock-report/export/queue')
+  @UseGuards(JwtAuthGuard)
+  async queueOutOfStockReportExport(
+    @Req() req: any,
+    @Body()
+    body: {
+      locationId?: string;
+      warehouseId?: string;
+      brandIds?: string[];
+      categoryIds?: string[];
+      divisionIds?: string[];
+      genderIds?: string[];
+      seasonIds?: string[];
+      search?: string;
+      threshold?: 'zero' | 'negative' | 'low_stock' | 'all';
+      minThreshold?: number;
+      format?: 'xlsx' | 'pdf';
+      sortBy?: any;
+      sortOrder?: 'asc' | 'desc';
+    },
+  ) {
+    const userId = req.user?.id || req.user?.userId;
+    const result = await this.outOfStockReportService.queueExport({
+      userId,
+      locationId: body.locationId && body.locationId !== 'all' ? body.locationId : undefined,
+      warehouseId: body.warehouseId && body.warehouseId !== 'all' ? body.warehouseId : undefined,
+      brandIds: body.brandIds,
+      categoryIds: body.categoryIds,
+      divisionIds: body.divisionIds,
+      genderIds: body.genderIds,
+      seasonIds: body.seasonIds,
+      search: body.search,
+      threshold: body.threshold || 'zero',
+      minThreshold: body.minThreshold || 5,
+      format: body.format || 'xlsx',
+      sortBy: body.sortBy || 'salesLast30Days',
+      sortOrder: body.sortOrder || 'desc',
+    });
+
+    return { status: true, data: result };
+  }
+
+  @Get('out-of-stock-report/export/:jobId/status')
+  @UseGuards(JwtAuthGuard)
+  async getOutOfStockReportStatus(@Param('jobId') jobId: string) {
+    const result = await this.outOfStockReportService.getJobStatus(jobId);
+    return { status: true, data: result };
+  }
+
+  @Get('out-of-stock-report/export/:jobId/download')
+  async downloadOutOfStockReportExport(@Param('jobId') jobId: string, @Res() res: any) {
+    try {
+      await this.outOfStockReportService.streamExportFile(jobId, res);
+    } catch (err: any) {
+      const status = err?.status ?? 404;
+      res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });
+    }
   }
 }

@@ -45,6 +45,7 @@ model PurchaseInvoiceItem {
   taxAmount         Decimal               @default(0.0) @map("tax_amount") @db.Decimal(15, 2)
   discountRate      Decimal               @default(0.0) @map("discount_rate") @db.Decimal(10, 2)
   discountAmount    Decimal               @default(0.0) @map("discount_amount") @db.Decimal(15, 2)
+  rollSize          Float?                @map("roll_size")
   purchaseInvoice   PurchaseInvoice       @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
   grnItem           GoodsReceiptNoteItem? @relation(fields: [grnItemId], references: [id])
   item              Item                  @relation(fields: [itemId], references: [id])

@@ -19,7 +19,10 @@
  *                        master.season.*, master.segment.*, master.item-class.*, master.item-subclass.*
  */
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 import { PrismaClient } from '@prisma/management-client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -33,37 +36,37 @@ const prisma = new PrismaClient({ adapter } as any);
 const ROLES = [
   {
     name: 'super-admin',
-    description: 'Complete rights across all modules. Assigned to Faheem Akhter & Junaid Rasheed.',
+    description: 'Complete rights across all modules.',
     isSystem: true,
   },
   {
     name: 'pos-monitoring',
-    description: 'POS full access + ERP read/monitoring. Excludes Finance and HRM. Assigned to Anwarullah Ansari & Rehan.',
+    description: 'POS full access + ERP read/monitoring. Excludes Finance and HRM.',
     isSystem: false,
   },
   {
     name: 'local-purchase',
-    description: 'Local Purchase & Landed Cost (Procurement module). Assigned to Numair Arshad.',
+    description: 'Local Purchase & Landed Cost (Procurement module).',
     isSystem: false,
   },
   {
     name: 'pos-inventory-move',
-    description: 'POS access + inventory movement (transfers, receiving, returns). Assigned to Nasir Jamal.',
+    description: 'POS access + inventory movement (transfers, receiving, returns).',
     isSystem: false,
   },
   {
     name: 'pos-inventory-mgmt',
-    description: 'POS access + full inventory management. Assigned to Hasan Tanveer & Sheheryar.',
+    description: 'POS access + full inventory management.',
     isSystem: false,
   },
   {
     name: 'pos-only',
-    description: 'POS module only. Assigned to Moid Khan, Ahmed, Shakeel, Ahsan, Shayan Rehman, Mustufa.',
+    description: 'POS module only.',
     isSystem: false,
   },
   {
     name: 'product-info',
-    description: 'Product / Item information management. Assigned to Mustufa & Imran Khalid.',
+    description: 'Product / Item information management.',
     isSystem: false,
   },
 ];
@@ -85,8 +88,8 @@ const EMPLOYEE_BASE_PATTERNS = [
   'hr.leave-encashment.read',
   'hr.holiday.read',
   'hr.working-hour-policy.read',
-  'hr.employee.read',
-  'hr.employee.user-account',
+  // 'hr.employee.read',
+  // 'hr.employee.user-account',
 ];
 
 /**
@@ -145,7 +148,7 @@ const INVENTORY_MOVE_PATTERNS = [
   'erp.inventory.explorer.view',
   'erp.inventory.transfer.create',
   'erp.inventory.stock-transfer.*',
-  'erp.inventory.stock-received.*',
+  'erp.inventory.stock-ledger.*',
   'erp.inventory.return-transfer.*',
   'erp.inventory.delivery-note.*',
   'erp.inventory.warehouse.view',
@@ -318,14 +321,14 @@ async function main() {
 
     console.log('\n🎉 Role seeding completed successfully!');
     console.log('\n📌 Role summary (all non-super-admin roles include employee self-service permissions):');
-    console.log('  super-admin        → Faheem Akhter, Junaid Rasheed  [ALL permissions]');
-    console.log('  pos-monitoring     → Anwarullah Ansari, Rehan        [POS + ERP monitoring + employee base]');
-    console.log('  local-purchase     → Numair Arshad                   [Procurement + employee base]');
-    console.log('  pos-inventory-move → Nasir Jamal                     [POS + inventory movement + employee base]');
-    console.log('  pos-inventory-mgmt → Hasan Tanveer, Sheheryar        [POS + full inventory + employee base]');
-    console.log('  pos-only           → Moid Khan, Ahmed, Shakeel, Ahsan, Shayan Rehman [POS + employee base]');
-    console.log('  product-info       → Mustufa, Imran Khalid           [Item/product masters + employee base]');
-    console.log('\n  ℹ️  Assign roles to users manually via the admin panel.');
+    console.log('  super-admin        [ALL permissions]');
+    console.log('  pos-monitoring     [POS + ERP monitoring + employee base]');
+    console.log('  local-purchase     [Procurement + employee base]');
+    console.log('  pos-inventory-move [POS + inventory movement + employee base]');
+    console.log('  pos-inventory-mgmt [POS + full inventory + employee base]');
+    console.log('  pos-only           [POS + employee base]');
+    console.log('  product-info       [Item/product masters + employee base]');
+
 
   } catch (error) {
     console.error('❌ Error:', error);

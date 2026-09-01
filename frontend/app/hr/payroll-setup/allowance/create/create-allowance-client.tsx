@@ -29,13 +29,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { MonthYearPicker } from "@/components/ui/month-year-picker";
-import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { toast } from "sonner";
 import { Loader2, Search, Plus, Trash2, DollarSign, Percent, Wallet } from "lucide-react";
 import {
-  getEmployeesForDropdown,
   getEmployeeById,
-  type EmployeeDropdownOption,
   type Employee,
 } from "@/lib/actions/employee";
 import {
@@ -46,6 +44,7 @@ import {
 import { bulkCreateAllowances, type AllowanceHead } from "@/lib/actions/allowance";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import { useMemo } from "react";
+import { useEmployeeDropdown } from "@/hooks/use-employee-dropdown";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 
@@ -67,19 +66,16 @@ interface EmployeeAllowanceItem {
 
 interface CreateAllowanceClientProps {
   initialDepartments: Department[];
-  initialEmployees: EmployeeDropdownOption[];
   initialAllowanceHeads: AllowanceHead[];
 }
 
 export function CreateAllowanceClient({
   initialDepartments,
-  initialEmployees,
   initialAllowanceHeads,
 }: CreateAllowanceClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [departments] = useState<Department[]>(initialDepartments);
-  const [employees] = useState<EmployeeDropdownOption[]>(initialEmployees);
   const [allowanceHeads] = useState<AllowanceHead[]>(initialAllowanceHeads);
   const [subDepartments, setSubDepartments] = useState<SubDepartment[]>([]);
   const [loadingSubDepartments, setLoadingSubDepartments] = useState(false);
@@ -104,6 +100,12 @@ export function CreateAllowanceClient({
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [employeeAllowances, setEmployeeAllowances] = useState<EmployeeAllowanceItem[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
+
+  const { getEmployee, isInitialLoading, multiSelectProps } = useEmployeeDropdown({
+    departmentId: formData.department,
+    subDepartmentId: formData.subDepartment,
+    selectedIds: selectedEmployeeIds,
+  });
 
   // Fetch sub-departments when department changes
   useEffect(() => {
@@ -132,16 +134,7 @@ export function CreateAllowanceClient({
     fetchSubDepartments();
   }, [formData.department]);
 
-  // Filter employees based on department and sub-department
-  const filteredEmployees = employees.filter((emp) => {
-    if (formData.department && formData.department !== "all") {
-      if (emp.departmentId !== formData.department) return false;
-    }
-    if (formData.subDepartment && formData.subDepartment !== "all") {
-      if (emp.subDepartmentId !== formData.subDepartment) return false;
-    }
-    return true;
-  });
+  // Employee selection uses server-side search via EmployeeMultiSelect
 
   // Fetch employee details when employees are selected
   useEffect(() => {
@@ -233,13 +226,6 @@ export function CreateAllowanceClient({
     setEmployeeAllowances(employeeAllowances.filter((item) => selectedIds.includes(item.employeeId)));
   };
 
-  // Prepare employee options for MultiSelect
-  const employeeOptions: MultiSelectOption[] = filteredEmployees.map((emp) => ({
-    value: emp.id,
-    label: emp.employeeName,
-    description: `${emp.employeeId}${emp.departmentName ? ` • ${emp.departmentName}` : ""}`,
-  }));
-
   const handleSearch = () => {
     if (!formData.allowanceType) {
       toast.error("Please select an allowance type");
@@ -308,7 +294,7 @@ export function CreateAllowanceClient({
     // Create allowance items for all selected employees and months
     const newAllowances: EmployeeAllowanceItem[] = [];
     selectedEmployeeIds.forEach((empId) => {
-      const employee = employees.find((e) => e.id === empId);
+      const employee = getEmployee(empId);
       let calculatedAmount = 0;
 
       // Special handling for Incentive - use user's choice
@@ -526,16 +512,25 @@ export function CreateAllowanceClient({
                 <Label htmlFor="employee">
                   Employee <span className="text-destructive">*</span>
                 </Label>
-                <MultiSelect
-                  options={employeeOptions}
-                  value={selectedEmployeeIds}
-                  onValueChange={handleEmployeeSelectionChange}
-                  placeholder="Select employee(s)"
-                  searchPlaceholder="Search employees..."
-                  emptyMessage="No employees found"
-                  disabled={isPending}
-                  maxDisplayedItems={2}
-                />
+                {isInitialLoading ? (
+                  <div className="h-10 bg-muted rounded-md animate-pulse" />
+                ) : (
+                  <MultiSelect
+                    options={multiSelectProps.options}
+                    value={selectedEmployeeIds}
+                    onValueChange={handleEmployeeSelectionChange}
+                    onSearch={multiSelectProps.onSearch}
+                    onLoadMore={multiSelectProps.onLoadMore}
+                    hasMore={multiSelectProps.hasMore}
+                    isLoading={multiSelectProps.isLoading}
+                    placeholder="Select employee(s)"
+                    searchPlaceholder="Search by name or employee ID..."
+                    emptyMessage={multiSelectProps.isLoading ? "Loading employees..." : "No employees found"}
+                    disabled={isPending}
+                    maxDisplayedItems={2}
+                    showSelectAll={false}
+                  />
+                )}
               </div>
             </div>
 

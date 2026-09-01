@@ -1,4 +1,5 @@
 import { getStockTransfers } from "@/lib/actions/stock-transfer";
+import { getWarehouses } from "@/lib/actions/warehouse";
 import { StockTransferHistoryList } from "./transfer-history-list";
 import { ListError } from "@/components/dashboard/list-error";
 import { PermissionGuard } from "@/components/auth/permission-guard";
@@ -8,9 +9,24 @@ import { ArrowLeft, FileText } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-export default async function DeliveryNotePage() {
+export default async function DeliveryNotePage({
+    searchParams,
+}: {
+    searchParams: Promise<{
+        warehouseId?: string;
+        status?: string;
+        transferType?: string;
+        search?: string;
+        dateFrom?: string;
+        dateTo?: string;
+    }>;
+}) {
     try {
-        const result = await getStockTransfers();
+        const filters = await searchParams;
+        const [result, warehouses] = await Promise.all([
+            getStockTransfers(filters),
+            getWarehouses(),
+        ]);
 
         if (!result.status) {
             return (
@@ -53,7 +69,11 @@ export default async function DeliveryNotePage() {
                         </Button>
                     </div>
 
-                    <StockTransferHistoryList initialEntries={data} />
+                    <StockTransferHistoryList 
+                        initialEntries={data} 
+                        warehouses={warehouses}
+                        initialFilters={filters}
+                    />
                 </div>
             </PermissionGuard>
         );
@@ -71,3 +91,4 @@ export default async function DeliveryNotePage() {
         );
     }
 }
+

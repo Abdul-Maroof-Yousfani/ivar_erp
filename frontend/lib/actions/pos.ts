@@ -13,6 +13,8 @@ export interface Pos {
     status: 'active' | 'inactive';
     terminalPin?: string;
     terminalCode: string;
+    /// True when this is the parent (master) terminal for the outlet.
+    isParent: boolean;
     createdAt: string;
     updatedAt: string;
 }
@@ -43,6 +45,7 @@ export async function createPos(data: {
     terminalPin?: string;
     status?: string;
     terminalCode?: string;
+    isParent?: boolean;
 }): Promise<{ status: boolean; message: string; data?: Pos }> {
     try {
         const res = await authFetch(`/pos`, {
@@ -66,7 +69,8 @@ export async function updatePos(
         name?: string;
         companyId?: string;
         terminalPin?: string;
-        status?: string,
+        status?: string;
+        isParent?: boolean;
     }): Promise<{ status: boolean; message: string }> {
     try {
         const res = await authFetch(`/pos/${id}`, {

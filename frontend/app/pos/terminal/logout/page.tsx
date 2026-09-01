@@ -64,11 +64,11 @@ export default function LogoutTerminalPage() {
                         </div>
                         <div>
                             <p className="font-semibold text-lg">This will deregister the terminal</p>
-                            <p className="text-sm text-muted-foreground mt-1">
+                            {/* <p className="text-sm text-muted-foreground mt-1">
                                 The <code className="text-xs bg-muted px-1.5 py-0.5 rounded">posTerminalToken</code> cookie
                                 will be cleared from this device. To use this screen as a POS terminal again,
                                 you'll need to re-enter the terminal code and PIN.
-                            </p>
+                            </p> */}
                         </div>
                     </div>
 

@@ -11,6 +11,7 @@ export interface HsCodeParsedRecord {
         regulatoryDutyRd?: number;
         additionalCustomsDutyAcd?: number;
         salesTax?: number;
+        additionalSalesTaxAst?: number;
         incomeTax?: number;
     };
 }
@@ -130,6 +131,9 @@ export class HsCodeCsvParserService {
             salesTax: this.parseNumber(this.getValue(row, [
                 'ST', 'st', 'Sales Tax', 'salesTax', 'ST%', 'ST (%)', 'ST(%)'
             ])) as number,
+            additionalSalesTaxAst: this.parseNumber(this.getValue(row, [
+                'AST', 'ast', 'Additional Sales Tax', 'additionalSalesTaxAst', 'AST%', 'AST (%)', 'AST(%)'
+            ])) as number,
             incomeTax: this.parseNumber(this.getValue(row, [
                 'IT', 'it', 'Income Tax', 'incomeTax', 'IT%', 'IT (%)', 'IT(%)'
             ])) as number,
@@ -150,8 +154,9 @@ export class HsCodeCsvParserService {
                     parser.pause();
                     for (const row of results.data) {
                         if (!this.isEmptyRow(row)) {
+                            rowCount++;
                             await onRecord({
-                                row: ++rowCount + 1,
+                                row: rowCount + 1, // +1 to account for header row
                                 data: this.mapColumns(row),
                             });
                         }
@@ -193,7 +198,7 @@ export class HsCodeCsvParserService {
             const headers: string[] = [];
             for (let C = range.s.c; C <= range.e.c; ++C) {
                 const cell = worksheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];
-                headers.push(cell ? cell.v : `UNKNOWN_${C}`);
+                headers.push(cell ? String(cell.v) : `UNKNOWN_${C}`);
             }
 
             let rowCount = 0;
@@ -202,8 +207,11 @@ export class HsCodeCsvParserService {
                 let hasData = false;
                 for (let C = range.s.c; C <= range.e.c; ++C) {
                     const cell = worksheet[XLSX.utils.encode_cell({ r: R, c: C })];
-                    if (cell && cell.v !== null) {
-                        rowObj[headers[C]] = cell.v;
+                    if (cell && cell.v !== null && cell.v !== undefined) {
+                        // Use formatted text (cell.w) when available to preserve trailing zeros
+                        // e.g. 3923.3010 would be stored as number 3923.301 in cell.v
+                        // but cell.w contains the display string "3923.3010"
+                        rowObj[headers[C]] = cell.w !== undefined ? cell.w : cell.v;
                         hasData = true;
                     }
                 }

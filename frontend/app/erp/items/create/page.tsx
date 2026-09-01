@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, startTransition, addTransitionType } from "react";
+import { useState, useEffect, useRef, startTransition, addTransitionType } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -21,19 +21,23 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { CalendarIcon, Upload, ArrowLeft } from "lucide-react";
+import { CalendarIcon, Upload, ArrowLeft, Sparkles } from "lucide-react";
 import { format } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { getBrands } from "@/lib/actions/brand";
+import { getDivisions } from "@/lib/actions/division";
 import { getCategories } from "@/lib/actions/category";
 import { getGenders } from "@/lib/actions/gender";
 import { getColors } from "@/lib/actions/color";
 import { getSilhouettes } from "@/lib/actions/silhouette";
 import { getChannelClasses } from "@/lib/actions/channel-class";
+import { getItemClasses } from "@/lib/actions/item-class";
+import { getItemSubclasses } from "@/lib/actions/item-subclass";
 import { getSeasons } from "@/lib/actions/season";
 import { getSizes } from "@/lib/actions/size";
+import { getSegments } from "@/lib/actions/segment";
 import { createItem, getNextItemId } from "@/lib/actions/items";
 import { getTaxRates } from "@/lib/actions/tax-rate";
 import { getHsCodes } from "@/lib/actions/hs-code";
@@ -47,8 +51,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PermissionGuard } from "@/components/auth/permission-guard";
 import { QRCodeSVG } from "qrcode.react";
 import {
-    generateBarcode, encodeCode128, BARCODE_PATTERNS, type BarcodePattern,
+    generateBarcode, BARCODE_PATTERNS, type BarcodePattern,
 } from "@/lib/barcode";
+import JsBarcode from "jsbarcode";
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
     DropdownMenuSeparator, DropdownMenuLabel,
@@ -59,7 +64,10 @@ import { Wand2, RefreshCw, Printer, CheckCircle2, ChevronDown, ScanBarcode } fro
 
 const itemFormSchema = z.object({
     // Step 1: Basic Info
-    brandId: z.string().min(1, "Brand is required"),
+    itemType: z.enum(["FINISHED", "RAW_FABRIC"]),
+    uom: z.string().optional(),
+    rollSize: z.coerce.number().min(0).optional(),
+    brandId: z.string().optional(),
     description: z.string().optional(),
     sku: z.string().min(1, "SKU is required"),
     // itemId removed (auto-generated)
@@ -69,12 +77,16 @@ const itemFormSchema = z.object({
     imageUrl: z.string().optional(),
 
     // Step 2: Classification (Masters)
+    divisionId: z.string().optional(),
     categoryId: z.string().optional(),
     subCategoryId: z.string().optional(),
+    itemClassId: z.string().optional(),
+    itemSubclassId: z.string().optional(),
     channelClassId: z.string().optional(),
     genderId: z.string().optional(),
     seasonId: z.string().optional(),
     // uomId removed
+    segmentId: z.string().optional(),
 
     // Step 3: Pricing & Discount
     unitPrice: z.coerce.number().min(0),
@@ -91,35 +103,40 @@ const itemFormSchema = z.object({
     sizeId: z.string().optional(),
     colorId: z.string().optional(),
     silhouetteId: z.string().optional(),
+    case: z.string().optional(),
+    band: z.string().optional(),
+    movementType: z.string().optional(),
+    heelHeight: z.string().optional(),
+    width: z.string().optional(),
 });
 
 type ItemFormValues = z.infer<typeof itemFormSchema>;
 
-const STEPS = ["Basic Details", "Classification", "Pricing & Discounts", "Attributes", "Review"];
+const DEFAULT_STEPS = ["Basic Details", "Classification", "Pricing & Discounts", "Attributes", "Review"];
 
 // ─── Inline barcode preview (used in form + success screen) ──────────────────
+// Uses JsBarcode (CODE128) — same library as the print modal for consistency.
 
-function SvgBarcodePreview({ value, height = 32 }: { value: string; height?: number }) {
-    const bits = encodeCode128(value.toUpperCase());
-    const mw = 1.2;
-    const totalWidth = bits.length * mw;
-    const bars: { x: number; w: number }[] = [];
-    let x = 0, i = 0;
-    while (i < bits.length) {
-        const bit = bits[i];
-        let run = 0;
-        while (i + run < bits.length && bits[i + run] === bit) run++;
-        if (bit === "1") bars.push({ x, w: run * mw });
-        x += run * mw;
-        i += run;
-    }
-    return (
-        <svg viewBox={`0 0 ${totalWidth} ${height}`} height={height} style={{ display: "block", maxWidth: "100%" }}>
-            {bars.map((b, idx) => (
-                <rect key={idx} x={b.x} y={0} width={b.w} height={height} fill="black" />
-            ))}
-        </svg>
-    );
+function SvgBarcodePreview({ value, height = 36 }: { value: string; height?: number }) {
+    const svgRef = useRef<SVGSVGElement>(null);
+    useEffect(() => {
+        if (svgRef.current && value) {
+            try {
+                JsBarcode(svgRef.current, value, {
+                    format: "CODE128",
+                    width: 1.2,
+                    height,
+                    displayValue: false,
+                    margin: 4,
+                    background: "#ffffff",
+                    lineColor: "#000000",
+                });
+            } catch (e) {
+                console.error("Barcode preview error:", e);
+            }
+        }
+    }, [value, height]);
+    return <svg ref={svgRef} style={{ display: "block", maxWidth: "100%", height: "auto" }} />;
 }
 
 // ─── Success screen ───────────────────────────────────────────────────────────
@@ -240,26 +257,34 @@ export default function ItemCreatePage() {
     const [currentStep, setCurrentStep] = useState(0);
     const [masters, setMasters] = useState<{
         brands: any[];
+        divisions: any[];
         categories: any[];
         genders: any[];
         colors: any[];
         silhouettes: any[];
         channelClasses: any[];
+        itemClasses: any[];
+        itemSubclasses: any[];
         seasons: any[];
         // uoms removed
         sizes: any[];
+        segments: any[];
         taxRates: { id: string; taxRate1: number }[];
         hsCodes: any[];
     }>({
         brands: [],
+        divisions: [],
         categories: [],
         genders: [],
         colors: [],
         silhouettes: [],
         channelClasses: [],
+        itemClasses: [],
+        itemSubclasses: [],
         seasons: [],
         // uoms removed
         sizes: [],
+        segments: [],
         taxRates: [],
         hsCodes: [],
     });
@@ -277,6 +302,9 @@ export default function ItemCreatePage() {
     const form = useForm({
         resolver: zodResolver(itemFormSchema),
         defaultValues: {
+            itemType: "FINISHED",
+            uom: "Meter",
+            rollSize: undefined,
             brandId: "",
             description: "",
             sku: "",
@@ -294,7 +322,14 @@ export default function ItemCreatePage() {
         mode: "onChange",
     });
 
+    const watchItemType = form.watch("itemType") || "FINISHED";
+    const STEPS = watchItemType === "RAW_FABRIC"
+        ? ["Fabric Details", "Review"]
+        : DEFAULT_STEPS;
+
+    const watchBrandId = form.watch("brandId");
     const watchCategoryId = form.watch("categoryId");
+    const watchItemClassId = form.watch("itemClassId");
 
     // Image Upload State
     const [cropDialogOpen, setCropDialogOpen] = useState(false);
@@ -375,34 +410,33 @@ export default function ItemCreatePage() {
             setLoading(true);
             try {
                 const [
-                    brands, categories, genders, colors,
-                    silhouettes, channelClasses,
-                    seasons, sizes, nextIdResp, taxRates, hsCodes
+                    brands, divisions, categories, genders, colors,
+                    silhouettes, channelClasses, itemClasses, itemSubclasses,
+                    seasons, sizes, segments, nextIdResp, taxRates, hsCodes
                 ] = await Promise.all([
-                    getBrands(), getCategories(), getGenders(), getColors(),
-                    getSilhouettes(), getChannelClasses(),
-                    getSeasons(), getSizes(), getNextItemId(), getTaxRates(),
+                    getBrands(), getDivisions(), getCategories(), getGenders(), getColors(),
+                    getSilhouettes(), getChannelClasses(), getItemClasses(), getItemSubclasses(),
+                    getSeasons(), getSizes(), getSegments(), getNextItemId(), getTaxRates(),
                     getHsCodes()
                 ]);
 
-                const brandsData = brands.data || [];
-                const ivarBrand = brandsData.find((b: any) => b?.name?.toUpperCase() === "IVAR");
-                const fallbackBrand = brandsData[0];
-
                 setMasters({
-                    brands: brandsData,
+                    brands: brands.data || [],
+                    divisions: divisions.data || [],
                     categories: categories.data || [],
                     genders: genders.data || [],
                     colors: colors.data || [],
                     silhouettes: silhouettes.data || [],
                     channelClasses: channelClasses.data || [],
+                    itemClasses: itemClasses.data || [],
+                    itemSubclasses: itemSubclasses.data || [],
                     seasons: seasons.data || [],
                     // uoms removed
                     sizes: sizes.data || [],
+                    segments: segments.data || [],
                     taxRates: taxRates.data || [],
                     hsCodes: hsCodes.data || [],
                 });
-                form.setValue("brandId", ivarBrand?.id || fallbackBrand?.id || "", { shouldValidate: true });
                 if (nextIdResp?.status && nextIdResp?.data?.nextId) {
                     setNextItemId(nextIdResp.data.nextId);
                 }
@@ -418,12 +452,21 @@ export default function ItemCreatePage() {
     }, []);
 
     // Filtered masters for dependent dropdowns
+    const filteredDivisions = masters.divisions.filter((d: any) => d.brandId === watchBrandId);
     const filteredSubCategories = masters.categories.filter((c: any) => c.parentId === watchCategoryId);
+    const filteredItemSubclasses = masters.itemSubclasses.filter((s: any) => s.itemClassId === watchItemClassId);
 
     const nextStep = async () => {
         const fieldsToValidate = getFieldsForStep(currentStep);
         const isValid = await form.trigger(fieldsToValidate);
         if (isValid) {
+            if (watchItemType === "FINISHED" && currentStep === 0) {
+                const brandId = form.getValues("brandId");
+                if (!brandId) {
+                    form.setError("brandId", { type: "manual", message: "Brand is required" });
+                    return;
+                }
+            }
             setCurrentStep((prev) => Math.min(prev + 1, STEPS.length - 1));
         }
     };
@@ -433,6 +476,10 @@ export default function ItemCreatePage() {
     };
 
     const onSubmit = async (data: ItemFormValues) => {
+        if (watchItemType === "FINISHED" && !data.brandId) {
+            form.setError("brandId", { type: "manual", message: "Brand is required" });
+            return;
+        }
         try {
             const result = await createItem(data);
             if (result.status) {
@@ -441,7 +488,7 @@ export default function ItemCreatePage() {
                     barCode: data.barCode || "",
                     sku: data.sku,
                     description: data.description || "",
-                    unitPrice: data.unitPrice,
+                    unitPrice: data.unitPrice || 0,
                     itemId: result.data?.itemId || nextItemId,
                 });
             } else {
@@ -454,15 +501,23 @@ export default function ItemCreatePage() {
     };
 
     const getFieldsForStep = (step: number): (keyof ItemFormValues)[] => {
+        if (watchItemType === "RAW_FABRIC") {
+            switch (step) {
+                case 0:
+                    return ["itemType", "brandId", "segmentId", "sku", "barCode", "isActive", "description", "uom", "rollSize", "colorId", "unitCost", "unitPrice"];
+                default:
+                    return [];
+            }
+        }
         switch (step) {
             case 0:
-                return ["brandId", "sku", "barCode", "hsCodeId", "isActive", "description"];
+                return ["itemType", "brandId", "segmentId", "sku", "barCode", "hsCodeId", "isActive", "description"];
             case 1:
-                return ["categoryId", "subCategoryId", "channelClassId", "genderId", "seasonId"];
+                return ["divisionId", "categoryId", "subCategoryId", "itemClassId", "itemSubclassId", "channelClassId", "genderId", "seasonId"];
             case 2:
                 return ["unitPrice", "fob", "unitCost", "taxRate1", "taxRate2", "discountRate", "discountAmount", "discountStartDate", "discountEndDate"];
             case 3:
-                return ["sizeId", "colorId", "silhouetteId"];
+                return ["sizeId", "colorId", "silhouetteId", "case", "band", "movementType", "heelHeight", "width"];
             default:
                 return [];
         }
@@ -528,35 +583,404 @@ export default function ItemCreatePage() {
                                     {/* STEP 1: BASIC DETAILS */}
                                     {currentStep === 0 && (
                                         <>
-                                            {/* Image Upload Section */}
-                                            <div className="flex flex-col items-center gap-6 mb-6">
-                                                <div
-                                                    className="relative cursor-pointer group"
-                                                    onClick={() => document.getElementById("item-image-input")?.click()}
-                                                >
-                                                    {imagePreview ? (
-                                                        <img
-                                                            src={imagePreview}
-                                                            alt="Item preview"
-                                                            className="w-40 h-40 rounded-md object-cover border-4 border-border group-hover:opacity-80 transition-opacity"
-                                                        />
-                                                    ) : (
-                                                        <div className="w-40 h-40 rounded-md bg-muted flex items-center justify-center border-4 border-border group-hover:bg-muted/80 transition-colors">
-                                                            <div className="flex flex-col items-center text-muted-foreground">
-                                                                <Upload className="h-10 w-10 mb-2" />
-                                                                <span className="text-xs">Upload Image</span>
+                                            {/* Item Type Switcher */}
+                                            <FormField
+                                                control={form.control}
+                                                name="itemType"
+                                                render={({ field }) => (
+                                                    <FormItem className="mb-8">
+                                                        <FormLabel className="text-sm font-semibold tracking-wide text-foreground uppercase">Item Workflow Type</FormLabel>
+                                                        <FormControl>
+                                                            <div className="grid grid-cols-2 gap-4 bg-muted p-1.5 rounded-xl border border-border shadow-inner">
+                                                                <button
+                                                                    type="button"
+                                                                    className={cn(
+                                                                        "flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200",
+                                                                        field.value === "FINISHED"
+                                                                            ? "bg-white text-primary shadow-sm scale-[1.02]"
+                                                                            : "text-muted-foreground hover:text-foreground hover:bg-white/50"
+                                                                    )}
+                                                                    onClick={() => {
+                                                                        field.onChange("FINISHED");
+                                                                        form.setValue("uom", "Meter");
+                                                                    }}
+                                                                >
+                                                                    <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                                                                    Finished Goods
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className={cn(
+                                                                        "flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200",
+                                                                        field.value === "RAW_FABRIC"
+                                                                            ? "bg-white text-primary shadow-sm scale-[1.02]"
+                                                                            : "text-muted-foreground hover:text-foreground hover:bg-white/50"
+                                                                    )}
+                                                                    onClick={() => {
+                                                                        field.onChange("RAW_FABRIC");
+                                                                        form.setValue("uom", "Meter");
+                                                                    }}
+                                                                >
+                                                                    <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                                                                    Production Fabric
+                                                                </button>
                                                             </div>
+                                                        </FormControl>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            {watchItemType === "FINISHED" ? (
+                                                <>
+                                                    {/* Image Upload Section */}
+                                                    <div className="flex flex-col items-center gap-6 mb-6">
+                                                        <div
+                                                            className="relative cursor-pointer group"
+                                                            onClick={() => document.getElementById("item-image-input")?.click()}
+                                                        >
+                                                            {imagePreview ? (
+                                                                <img
+                                                                    src={imagePreview}
+                                                                    alt="Item preview"
+                                                                    className="w-40 h-40 rounded-md object-cover border-4 border-border group-hover:opacity-80 transition-opacity"
+                                                                />
+                                                            ) : (
+                                                                <div className="w-40 h-40 rounded-md bg-muted flex items-center justify-center border-4 border-border group-hover:bg-muted/80 transition-colors">
+                                                                    <div className="flex flex-col items-center text-muted-foreground">
+                                                                        <Upload className="h-10 w-10 mb-2" />
+                                                                        <span className="text-xs">Upload Image</span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                    )}
+                                                        <input
+                                                            type="file"
+                                                            id="item-image-input"
+                                                            className="hidden"
+                                                            accept="image/*"
+                                                            onChange={handleImageChange}
+                                                        />
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                        <FormField
+                                                            control={form.control}
+                                                            name="brandId"
+                                                            render={({ field }) => (
+                                                                <MasterSelect
+                                                                    label="Brand (Concept)"
+                                                                    field={field}
+                                                                    options={masters.brands}
+                                                                />
+                                                            )}
+                                                        />
+                                                        <FormField
+                                                            control={form.control}
+                                                            name="segmentId"
+                                                            render={({ field }) => (
+                                                                <MasterSelect
+                                                                    label="Segment"
+                                                                    field={field}
+                                                                    options={masters.segments}
+                                                                />
+                                                            )}
+                                                        />
+                                                        <FormField
+                                                            control={form.control}
+                                                            name="sku"
+                                                            render={({ field }: { field: any }) => (
+                                                                <FormItem>
+                                                                    <FormLabel>SKU</FormLabel>
+                                                                    <FormControl>
+                                                                        <Input placeholder="Enter SKU" {...field} value={field.value ?? ""} />
+                                                                    </FormControl>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                        <FormField
+                                                            control={form.control}
+                                                            name="hsCodeId"
+                                                            render={({ field }) => (
+                                                                <MasterSelect
+                                                                    label="HS Code"
+                                                                    field={field}
+                                                                    options={masters.hsCodes.map(h => ({ id: h.id, name: h.hsCode }))}
+                                                                />
+                                                            )}
+                                                        />
+                                                        <FormField
+                                                            control={form.control}
+                                                            name="barCode"
+                                                            render={({ field }: { field: any }) => (
+                                                                <FormItem>
+                                                                    <FormLabel>Barcode</FormLabel>
+                                                                    <div className="flex gap-2">
+                                                                        <FormControl>
+                                                                            <Input
+                                                                                placeholder="EAN / UPC / Code128"
+                                                                                {...field}
+                                                                                value={field.value ?? ""}
+                                                                                className="font-mono"
+                                                                            />
+                                                                        </FormControl>
+                                                                        <DropdownMenu>
+                                                                            <DropdownMenuTrigger asChild>
+                                                                                <Button
+                                                                                    type="button"
+                                                                                    variant="outline"
+                                                                                    size="icon"
+                                                                                    className="shrink-0"
+                                                                                    title="Auto-generate barcode"
+                                                                                >
+                                                                                    <Sparkles className="h-4 w-4 text-primary" />
+                                                                                </Button>
+                                                                            </DropdownMenuTrigger>
+                                                                            <DropdownMenuContent align="end">
+                                                                                <DropdownMenuItem onClick={() => field.onChange(generateBarcode("ean13", form.getValues("sku")))}>
+                                                                                    Generate EAN-13
+                                                                                </DropdownMenuItem>
+                                                                                <DropdownMenuItem onClick={() => field.onChange(generateBarcode("code128", form.getValues("sku")))}>
+                                                                                    Generate CODE-128
+                                                                                </DropdownMenuItem>
+                                                                            </DropdownMenuContent>
+                                                                        </DropdownMenu>
+                                                                    </div>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+
+                                                        <FormField
+                                                            control={form.control}
+                                                            name="description"
+                                                            render={({ field }: { field: any }) => (
+                                                                <FormItem className="col-span-full">
+                                                                    <FormLabel>Description</FormLabel>
+                                                                    <FormControl>
+                                                                        <Textarea
+                                                                            placeholder="Enter item description..."
+                                                                            className="resize-none"
+                                                                            {...field}
+                                                                            value={field.value ?? ""}
+                                                                        />
+                                                                    </FormControl>
+                                                                    <FormMessage />
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                        <FormField
+                                                            control={form.control}
+                                                            name="isActive"
+                                                            render={({ field }) => (
+                                                                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 col-span-full">
+                                                                    <FormControl>
+                                                                        <Checkbox
+                                                                            checked={field.value}
+                                                                            onCheckedChange={field.onChange}
+                                                                        />
+                                                                    </FormControl>
+                                                                    <div className="space-y-1 leading-none">
+                                                                        <FormLabel>
+                                                                            Active Item
+                                                                        </FormLabel>
+                                                                        <FormDescription>
+                                                                            This item will be visible in sales and inventory channels.
+                                                                        </FormDescription>
+                                                                    </div>
+                                                                </FormItem>
+                                                            )}
+                                                        />
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 border p-6 rounded-xl bg-slate-50/50 backdrop-blur-sm">
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="uom"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Unit of Measure (UOM)</FormLabel>
+                                                                <Select onValueChange={field.onChange} value={field.value || "Meter"}>
+                                                                    <FormControl>
+                                                                        <SelectTrigger>
+                                                                            <SelectValue placeholder="Select UOM" />
+                                                                        </SelectTrigger>
+                                                                    </FormControl>
+                                                                    <SelectContent>
+                                                                        <SelectItem value="Meter">Meter</SelectItem>
+                                                                        <SelectItem value="Yard">Yard</SelectItem>
+                                                                        <SelectItem value="Kg">Kg</SelectItem>
+                                                                        <SelectItem value="Roll">Roll</SelectItem>
+                                                                    </SelectContent>
+                                                                </Select>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="rollSize"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Roll Size / Length</FormLabel>
+                                                                <FormControl>
+                                                                    <Input
+                                                                        type="number"
+                                                                        placeholder="e.g. 1000 or 3000"
+                                                                        {...field}
+                                                                        value={field.value ?? ""}
+                                                                    />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="colorId"
+                                                        render={({ field }) => (
+                                                            <MasterSelect
+                                                                label="Color"
+                                                                field={field}
+                                                                options={masters.colors}
+                                                            />
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="brandId"
+                                                        render={({ field }) => (
+                                                            <MasterSelect
+                                                                label="Brand (Concept)"
+                                                                field={field}
+                                                                options={masters.brands}
+                                                            />
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="sku"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Fabric Code / SKU</FormLabel>
+                                                                <FormControl>
+                                                                    <Input placeholder="Enter SKU" {...field} value={field.value ?? ""} />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="unitCost"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Cost per Unit (Estimated)</FormLabel>
+                                                                <FormControl>
+                                                                    <Input type="number" placeholder="0.00" {...field} value={field.value ?? ""} />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="unitPrice"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Retail / Issue Price (Optional)</FormLabel>
+                                                                <FormControl>
+                                                                    <Input type="number" placeholder="0.00" {...field} value={field.value ?? ""} />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="barCode"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Barcode (Optional)</FormLabel>
+                                                                <div className="flex gap-2">
+                                                                    <FormControl>
+                                                                        <Input
+                                                                            placeholder="Barcode"
+                                                                            {...field}
+                                                                            value={field.value ?? ""}
+                                                                            className="font-mono"
+                                                                        />
+                                                                    </FormControl>
+                                                                    <DropdownMenu>
+                                                                        <DropdownMenuTrigger asChild>
+                                                                            <Button
+                                                                                type="button"
+                                                                                variant="outline"
+                                                                                size="icon"
+                                                                                className="shrink-0"
+                                                                                title="Auto-generate barcode"
+                                                                            >
+                                                                                <Sparkles className="h-4 w-4 text-primary" />
+                                                                            </Button>
+                                                                        </DropdownMenuTrigger>
+                                                                        <DropdownMenuContent align="end">
+                                                                            <DropdownMenuItem onClick={() => field.onChange(generateBarcode("ean13", form.getValues("sku")))}>
+                                                                                Generate EAN-13
+                                                                            </DropdownMenuItem>
+                                                                            <DropdownMenuItem onClick={() => field.onChange(generateBarcode("code128", form.getValues("sku")))}>
+                                                                                Generate CODE-128
+                                                                            </DropdownMenuItem>
+                                                                        </DropdownMenuContent>
+                                                                    </DropdownMenu>
+                                                                </div>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="description"
+                                                        render={({ field }: { field: any }) => (
+                                                            <FormItem className="col-span-full">
+                                                                <FormLabel>Fabric Details / Description</FormLabel>
+                                                                <FormControl>
+                                                                    <Textarea
+                                                                        placeholder="Enter description, weight, composite..."
+                                                                        className="resize-none"
+                                                                        {...field}
+                                                                        value={field.value ?? ""}
+                                                                    />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={form.control}
+                                                        name="isActive"
+                                                        render={({ field }) => (
+                                                            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 col-span-full">
+                                                                <FormControl>
+                                                                    <Checkbox
+                                                                        checked={field.value}
+                                                                        onCheckedChange={field.onChange}
+                                                                    />
+                                                                </FormControl>
+                                                                <div className="space-y-1 leading-none">
+                                                                    <FormLabel>
+                                                                        Active Fabric Item
+                                                                    </FormLabel>
+                                                                    <FormDescription>
+                                                                        This fabric will be available for POs, Direct Invoices, and issues.
+                                                                    </FormDescription>
+                                                                </div>
+                                                            </FormItem>
+                                                        )}
+                                                    />
                                                 </div>
-                                                <input
-                                                    id="item-image-input"
-                                                    type="file"
-                                                    accept="image/*"
-                                                    onChange={handleImageChange}
-                                                    className="hidden"
-                                                />
-                                            </div>
+                                            )}
 
                                             <Dialog open={cropDialogOpen} onOpenChange={handleCropDialogClose}>
                                                 <DialogContent className="sm:max-w-[480px]">
@@ -586,12 +1010,30 @@ export default function ItemCreatePage() {
                                             </Dialog>
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                <FormItem>
-                                                    <FormLabel>Concept (Brand)</FormLabel>
-                                                    <FormControl>
-                                                        <Input value="IVAR" disabled />
-                                                    </FormControl>
-                                                </FormItem>
+                                                <FormField
+
+                                                    control={form.control}
+                                                    name="segmentId"
+                                                    render={({ field }) => (
+                                                        <MasterSelect
+                                                            label="Segment"
+                                                            field={field}
+                                                            options={masters.segments}
+
+                                                        />
+                                                    )}
+                                                />
+                                                <FormField
+                                                    control={form.control}
+                                                    name="brandId"
+                                                    render={({ field }) => (
+                                                        <MasterSelect
+                                                            label="Concept (Brand)"
+                                                            field={field}
+                                                            options={masters.brands}
+                                                        />
+                                                    )}
+                                                />
                                                 <FormItem>
                                                     <FormLabel>Item ID (Auto)</FormLabel>
                                                     <FormControl>
@@ -737,8 +1179,20 @@ export default function ItemCreatePage() {
                                     )}
 
                                     {/* STEP 2: CLASSIFICATION */}
-                                    {currentStep === 1 && (
+                                    {watchItemType === "FINISHED" && currentStep === 1 && (
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                            <FormField
+                                                control={form.control}
+                                                name="divisionId"
+                                                render={({ field }) => (
+                                                    <MasterSelect
+                                                        label="Division"
+                                                        field={field}
+                                                        options={filteredDivisions}
+                                                        disabled={!watchBrandId}
+                                                    />
+                                                )}
+                                            />
                                             <FormField
                                                 control={form.control}
                                                 name="categoryId"
@@ -759,6 +1213,29 @@ export default function ItemCreatePage() {
                                                         field={field}
                                                         options={filteredSubCategories}
                                                         disabled={!watchCategoryId}
+                                                    />
+                                                )}
+                                            />
+                                            <FormField
+                                                control={form.control}
+                                                name="itemClassId"
+                                                render={({ field }) => (
+                                                    <MasterSelect
+                                                        label="Item Class"
+                                                        field={field}
+                                                        options={masters.itemClasses}
+                                                    />
+                                                )}
+                                            />
+                                            <FormField
+                                                control={form.control}
+                                                name="itemSubclassId"
+                                                render={({ field }) => (
+                                                    <MasterSelect
+                                                        label="Item Subclass"
+                                                        field={field}
+                                                        options={filteredItemSubclasses}
+                                                        disabled={!watchItemClassId}
                                                     />
                                                 )}
                                             />
@@ -801,7 +1278,7 @@ export default function ItemCreatePage() {
                                     )}
 
                                     {/* STEP 3: PRICING & DISCOUNTS */}
-                                    {currentStep === 2 && (
+                                    {watchItemType === "FINISHED" && currentStep === 2 && (
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                             <FormField
                                                 control={form.control}
@@ -1000,7 +1477,7 @@ export default function ItemCreatePage() {
                                     )}
 
                                     {/* STEP 4: ATTRIBUTES */}
-                                    {currentStep === 3 && (
+                                    {watchItemType === "FINISHED" && currentStep === 3 && (
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                             <FormField
                                                 control={form.control}
@@ -1035,21 +1512,78 @@ export default function ItemCreatePage() {
                                                     />
                                                 )}
                                             />
+                                            <FormField
+                                                control={form.control}
+                                                name="case"
+                                                render={({ field }: { field: any }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Case</FormLabel>
+                                                        <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+                                            <FormField
+                                                control={form.control}
+                                                name="band"
+                                                render={({ field }: { field: any }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Band</FormLabel>
+                                                        <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+                                            <FormField
+                                                control={form.control}
+                                                name="movementType"
+                                                render={({ field }: { field: any }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Movement Type</FormLabel>
+                                                        <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+                                            <FormField
+                                                control={form.control}
+                                                name="heelHeight"
+                                                render={({ field }: { field: any }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Heel Height</FormLabel>
+                                                        <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
+                                            <FormField
+                                                control={form.control}
+                                                name="width"
+                                                render={({ field }: { field: any }) => (
+                                                    <FormItem>
+                                                        <FormLabel>Width</FormLabel>
+                                                        <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}
+                                            />
                                         </div>
                                     )}
 
                                     {/* STEP 5: REVIEW */}
-                                    {currentStep === 4 && (
+                                    {((watchItemType === "RAW_FABRIC" && currentStep === 1) || (watchItemType === "FINISHED" && currentStep === 4)) && (
                                         <div className="space-y-6">
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                                <div className="border p-3 rounded-md bg-white">
-                                                    <Label className="text-muted-foreground text-xs">Image</Label>
-                                                    <div className="font-medium">
-                                                        {imagePreview ? (
-                                                            <img src={imagePreview} alt="Item" className="w-16 h-16 object-cover rounded mt-1" />
-                                                        ) : "N/A"}
+                                                {watchItemType === "FINISHED" && (
+                                                    <div className="border p-3 rounded-md bg-white">
+                                                        <Label className="text-muted-foreground text-xs">Image</Label>
+                                                        <div className="font-medium">
+                                                            {imagePreview ? (
+                                                                <img src={imagePreview} alt="Item" className="w-16 h-16 object-cover rounded mt-1" />
+                                                            ) : "N/A"}
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                )}
                                                 <div className="border p-3 rounded-md bg-white">
                                                     <Label className="text-muted-foreground text-xs">Item ID</Label>
                                                     <div className="font-medium">{nextItemId}</div>
@@ -1058,17 +1592,45 @@ export default function ItemCreatePage() {
                                                     <Label className="text-muted-foreground text-xs">SKU</Label>
                                                     <div className="font-medium">{form.getValues("sku")}</div>
                                                 </div>
+                                                {watchItemType === "RAW_FABRIC" && (
+                                                    <div className="border p-3 rounded-md bg-white">
+                                                        <Label className="text-muted-foreground text-xs">UOM</Label>
+                                                        <div className="font-medium">{form.getValues("uom") || "N/A"}</div>
+                                                    </div>
+                                                )}
+                                                {watchItemType === "RAW_FABRIC" && (
+                                                    <div className="border p-3 rounded-md bg-white">
+                                                        <Label className="text-muted-foreground text-xs">Color</Label>
+                                                        <div className="font-medium">
+                                                            {(masters.colors.find((c: any) => c.id === form.getValues("colorId")) as any)?.name || "N/A"}
+                                                        </div>
+                                                    </div>
+                                                )}
                                                 <div className="border p-3 rounded-md bg-white">
                                                     <Label className="text-muted-foreground text-xs">Brand (Concept)</Label>
                                                     <div className="font-medium">
-                                                        {(masters.brands.find((b: any) => b.id === form.getValues("brandId")) as any)?.name}
+                                                        {(masters.brands.find((b: any) => b.id === form.getValues("brandId")) as any)?.name || "N/A"}
                                                     </div>
                                                 </div>
+                                                {watchItemType === "FINISHED" && (
+                                                    <>
+                                                        <div className="border p-3 rounded-md bg-white">
+                                                            <Label className="text-muted-foreground text-xs">Division</Label>
+                                                            <div className="font-medium">
+                                                                {(masters.divisions.find((d: any) => d.id === form.getValues("divisionId")) as any)?.name || "N/A"}
+                                                            </div>
+                                                        </div>
+                                                        <div className="border p-3 rounded-md bg-white">
+                                                            <Label className="text-muted-foreground text-xs">Category</Label>
+                                                            <div className="font-medium">
+                                                                {(masters.categories.find((c: any) => c.id === form.getValues("categoryId")) as any)?.name || "N/A"}
+                                                            </div>
+                                                        </div>
+                                                    </>
+                                                )}
                                                 <div className="border p-3 rounded-md bg-white">
-                                                    <Label className="text-muted-foreground text-xs">Category</Label>
-                                                    <div className="font-medium">
-                                                        {(masters.categories.find((c: any) => c.id === form.getValues("categoryId")) as any)?.name || "N/A"}
-                                                    </div>
+                                                    <Label className="text-muted-foreground text-xs">Cost Price</Label>
+                                                    <div className="font-medium">{String(form.getValues("unitCost") || 0)}</div>
                                                 </div>
                                                 <div className="border p-3 rounded-md bg-white">
                                                     <Label className="text-muted-foreground text-xs">Price</Label>

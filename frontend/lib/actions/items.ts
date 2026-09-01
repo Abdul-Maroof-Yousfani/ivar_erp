@@ -5,6 +5,29 @@ import { revalidatePath } from "next/cache";
 
 function sanitizeItemData(data: any) {
     const sanitized = { ...data };
+
+    // Strip properties that are not part of CreateItemDto / UpdateItemDto or read-only / auto-generated
+    delete sanitized.id;
+    delete sanitized.itemId;
+    delete sanitized.uniqueNo;
+    delete sanitized.uomId;
+    delete sanitized.createdAt;
+    delete sanitized.updatedAt;
+    delete sanitized.brand;
+    delete sanitized.division;
+    delete sanitized.category;
+    delete sanitized.subCategory;
+    delete sanitized.itemClass;
+    delete sanitized.itemSubclass;
+    delete sanitized.channelClass;
+    delete sanitized.gender;
+    delete sanitized.season;
+    delete sanitized.size;
+    delete sanitized.color;
+    delete sanitized.silhouette;
+    delete sanitized.segment;
+    delete sanitized.hsCode;
+
     // List of keys that are optional UUIDs or might be empty strings should be removed or set to undefined
     const keysToCheck = [
         "brandId",
@@ -20,6 +43,7 @@ function sanitizeItemData(data: any) {
         "sizeId",
         "colorId",
         "silhouetteId",
+        "hsCodeId",
     ];
 
     for (const key of keysToCheck) {
@@ -31,6 +55,7 @@ function sanitizeItemData(data: any) {
     // Also sanitizing other string fields if they are empty
     if (sanitized.barCode === "") sanitized.barCode = undefined;
     if (sanitized.hsCode === "") sanitized.hsCode = undefined;
+    if (sanitized.hsCodeStr === "") sanitized.hsCodeStr = undefined;
     if (sanitized.description === "") sanitized.description = undefined;
     if (sanitized.imageUrl === "") sanitized.imageUrl = undefined;
     if (sanitized.case === "") sanitized.case = undefined;
@@ -38,6 +63,13 @@ function sanitizeItemData(data: any) {
     if (sanitized.movementType === "") sanitized.movementType = undefined;
     if (sanitized.heelHeight === "") sanitized.heelHeight = undefined;
     if (sanitized.width === "") sanitized.width = undefined;
+    
+    // Convert rollSize to number if provided, otherwise set to undefined
+    if (sanitized.rollSize === "" || sanitized.rollSize === null || sanitized.rollSize === undefined || isNaN(Number(sanitized.rollSize))) {
+        sanitized.rollSize = undefined;
+    } else {
+        sanitized.rollSize = Number(sanitized.rollSize);
+    }
 
     return sanitized;
 }
@@ -305,6 +337,53 @@ export async function bulkUpdateSalePrice(payload: BulkSalePricePayload) {
         return result ?? { status: false, message: "No response from server" };
     } catch (error) {
         console.error("Bulk sale price error:", error);
+        return { status: false, message: "Failed to connect to server" };
+    }
+}
+
+// ─── Export Items ─────────────────────────────────────────────────────────────
+
+export async function bulkSearchItems(barcodes: string[]) {
+    try {
+        const response = await authFetch("/finance/items/bulk-search", {
+            method: "POST",
+            body: JSON.stringify({ barcodes }),
+        });
+        return response.data ?? { status: false, data: [] };
+    } catch (error) {
+        console.error("Bulk search items error:", error);
+        return { status: false, data: [] };
+    }
+}
+
+export async function queueItemsExport(
+    search?: string,
+    sortBy?: string,
+    sortOrder?: "asc" | "desc",
+    filters?: {
+        brandIds?: string[];
+        categoryIds?: string[];
+        silhouetteIds?: string[];
+        genderIds?: string[];
+    },
+): Promise<{ status: boolean; data?: { jobId: string }; message?: string }> {
+    try {
+        const params = new URLSearchParams();
+        if (search) params.append("search", search);
+        if (sortBy) params.append("sortBy", sortBy);
+        if (sortOrder) params.append("sortOrder", sortOrder);
+        if (filters?.brandIds?.length) params.append("brandIds", filters.brandIds.join(","));
+        if (filters?.categoryIds?.length) params.append("categoryIds", filters.categoryIds.join(","));
+        if (filters?.silhouetteIds?.length) params.append("silhouetteIds", filters.silhouetteIds.join(","));
+        if (filters?.genderIds?.length) params.append("genderIds", filters.genderIds.join(","));
+        const qs = params.toString();
+
+        const response = await authFetch(`/finance/items/export${qs ? `?${qs}` : ""}`, {
+            method: "POST",
+        });
+        return response.data ?? { status: false, message: "No response from server" };
+    } catch (error) {
+        console.error("Queue export error:", error);
         return { status: false, message: "Failed to connect to server" };
     }
 }

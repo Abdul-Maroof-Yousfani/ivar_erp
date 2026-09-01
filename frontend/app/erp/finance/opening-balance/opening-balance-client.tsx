@@ -10,9 +10,9 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import { CalendarIcon, Save } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, COMPANY_NAME } from "@/lib/utils";
 import { getChartOfAccounts } from "@/lib/actions/chart-of-account";
-import { saveOpeningBalance } from "@/lib/actions/opening-balance";
+import { saveOpeningBalance, getOpeningBalances } from "@/lib/actions/opening-balance";
 import { toast } from "sonner";
 
 interface Account {
@@ -38,40 +38,118 @@ export function OpeningBalanceClient() {
   const [entries, setEntries] = useState<Record<string, OpeningBalanceEntry>>({});
   const [date, setDate] = useState<Date>(new Date());
   const [isPending, startTransition] = useTransition();
-  const [companyName, setCompanyName] = useState("Ivar");
+  const [companyName, setCompanyName] = useState(COMPANY_NAME || "Speed pvt.LD");
 
   useEffect(() => {
     loadAccounts();
   }, []);
 
   const loadAccounts = async () => {
-    const res = await getChartOfAccounts();
+    const [res, obRes] = await Promise.all([
+      getChartOfAccounts(),
+      getOpeningBalances(),
+    ]);
+
     if (res.data) {
       setAccounts(res.data);
-      const flat = flattenAccounts(res.data);
+      const tree = buildTree(res.data);
+      const flat = flattenTree(tree);
       setFlatAccounts(flat);
+
+      const obMap = new Map<string, { debit: number; credit: number; date?: string }>();
+      if (obRes.status && Array.isArray(obRes.data)) {
+        obRes.data.forEach((tx: any) => {
+          obMap.set(tx.accountId, {
+            debit: Number(tx.debit || 0),
+            credit: Number(tx.credit || 0),
+            date: tx.transactionDate,
+          });
+        });
+      }
       
       // Initialize entries
       const initialEntries: Record<string, OpeningBalanceEntry> = {};
       flat.forEach(acc => {
         if (!acc.isGroup) {
-          initialEntries[acc.id] = {
-            accountId: acc.id,
-            type: acc.type === "ASSET" || acc.type === "EXPENSE" ? "DEBIT" : "CREDIT",
-            amount: 0,
-          };
+          const ob = obMap.get(acc.id);
+          const isNormalDebit = acc.type === "ASSET" || acc.type === "EXPENSE";
+
+          if (ob && (ob.debit > 0 || ob.credit > 0)) {
+            initialEntries[acc.id] = {
+              accountId: acc.id,
+              type: ob.debit > 0 ? "DEBIT" : "CREDIT",
+              amount: ob.debit > 0 ? ob.debit : ob.credit,
+            };
+          } else {
+            const bal = Number(acc.balance) || 0;
+            if (bal !== 0) {
+              initialEntries[acc.id] = {
+                accountId: acc.id,
+                type: isNormalDebit
+                  ? (bal > 0 ? "DEBIT" : "CREDIT")
+                  : (bal > 0 ? "CREDIT" : "DEBIT"),
+                amount: Math.abs(bal),
+              };
+            } else {
+              initialEntries[acc.id] = {
+                accountId: acc.id,
+                type: isNormalDebit ? "DEBIT" : "CREDIT",
+                amount: 0,
+              };
+            }
+          }
         }
       });
       setEntries(initialEntries);
     }
   };
 
-  const flattenAccounts = (accounts: Account[], level = 0): Account[] => {
+  const buildTree = (flat: Account[]): Account[] => {
+    const map = new Map<string, Account>();
+    const roots: Account[] = [];
+
+    flat.forEach((item) => map.set(item.id, { ...item, children: [] }));
+
+    flat.forEach((item) => {
+      const node = map.get(item.id)!;
+      if (item.parentId && map.has(item.parentId)) {
+        map.get(item.parentId)!.children!.push(node);
+      } else {
+        roots.push(node);
+      }
+    });
+
+    // Contract/bypass redundant nested group nodes with the exact same name (case-insensitive)
+    const contract = (nodes: Account[], parentName?: string): Account[] => {
+      const result: Account[] = [];
+      for (const node of nodes) {
+        if (node.children && node.children.length > 0) {
+          node.children = contract(node.children, node.name);
+        }
+        if (
+          parentName &&
+          node.isGroup &&
+          node.name.toLowerCase().replace(/\s+/g, ' ').trim() === parentName.toLowerCase().replace(/\s+/g, ' ').trim()
+        ) {
+          if (node.children) {
+            result.push(...node.children);
+          }
+        } else {
+          result.push(node);
+        }
+      }
+      return result;
+    };
+
+    return contract(roots);
+  };
+
+  const flattenTree = (nodes: Account[], level = 0): Account[] => {
     let result: Account[] = [];
-    accounts.forEach(acc => {
+    nodes.forEach(acc => {
       result.push({ ...acc, level });
       if (acc.children && acc.children.length > 0) {
-        result = result.concat(flattenAccounts(acc.children, level + 1));
+        result = result.concat(flattenTree(acc.children, level + 1));
       }
     });
     return result;
@@ -99,8 +177,8 @@ export function OpeningBalanceClient() {
 
   const handleSave = async (accountId: string) => {
     const entry = entries[accountId];
-    if (!entry || entry.amount === 0) {
-      toast.error("Please enter an amount");
+    if (!entry || entry.amount < 0) {
+      toast.error("Please enter a valid amount");
       return;
     }
 
@@ -113,7 +191,7 @@ export function OpeningBalanceClient() {
       });
 
       if (res.status) {
-        toast.success("Opening balance saved successfully");
+        toast.success(res.message || "Opening balance saved successfully");
         // Reload accounts to update balances
         loadAccounts();
       } else {
@@ -126,7 +204,7 @@ export function OpeningBalanceClient() {
     if (account.isGroup) {
       return (
         <tr key={account.id} className="bg-muted/20 border-t dark:border-border">
-          <td colSpan={6} className="px-4 py-2 font-bold text-xs uppercase tracking-widest text-muted-foreground">
+          <td colSpan={6} className="px-4 py-2 font-bold text-xs uppercase tracking-widest text-muted-foreground" style={{ paddingLeft: `${16 + (account.level || 0) * 16}px` }}>
             {account.code} - {account.name}
           </td>
         </tr>
@@ -159,7 +237,7 @@ export function OpeningBalanceClient() {
           <Input
             type="number"
             step="0.01"
-            value={entry.amount || ""}
+            value={entry.amount === 0 ? "" : entry.amount}
             onChange={(e) => handleAmountChange(account.id, e.target.value)}
             className="text-right font-mono"
             placeholder="0.00"
@@ -169,7 +247,7 @@ export function OpeningBalanceClient() {
           <Button
             size="sm"
             onClick={() => handleSave(account.id)}
-            disabled={isPending || entry.amount === 0}
+            disabled={isPending || entry.amount < 0}
             className="bg-green-600 hover:bg-green-700"
           >
             <Save className="h-4 w-4 mr-1" />

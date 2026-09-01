@@ -17,14 +17,13 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
-import type { EmployeeDropdownOption } from "@/lib/actions/employee";
+import { EmployeeSelect } from "@/components/employees/employee-select";
 import type { Department, SubDepartment } from "@/lib/actions/department";
 import type { BonusType } from "@/lib/actions/bonus-type";
 
 interface BonusFiltersProps {
   departments: Department[];
   subDepartments: SubDepartment[];
-  employees: EmployeeDropdownOption[];
   bonusTypes: BonusType[];
   loading?: boolean;
   loadingSubDepartments?: boolean;
@@ -54,7 +53,6 @@ interface BonusFiltersProps {
 export function BonusFilters({
   departments,
   subDepartments,
-  employees,
   bonusTypes,
   loading = false,
   loadingSubDepartments = false,
@@ -211,26 +209,19 @@ export function BonusFilters({
               {/* Employee Filter */}
               <div className="space-y-2">
                 <Label htmlFor="employee-filter">Employee</Label>
-                {loading ? (
-                  <div className="h-10 bg-muted rounded-md animate-pulse" />
-                ) : (
-                  <Autocomplete
-                    options={[
-                      { value: "all", label: "All Employees" },
-                      ...employees.map((emp) => ({
-                        value: emp.id,
-                        label: `${emp.employeeName} (${emp.employeeId})`,
-                      })),
-                    ]}
-                    value={filters.employeeId}
-                    onValueChange={(value) =>
-                      handleFilterChange("employeeId", value || "all")
-                    }
-                    placeholder="Select Employee"
-                    searchPlaceholder="Search employee..."
-                    emptyMessage="No employees found"
-                  />
-                )}
+                <EmployeeSelect
+                  value={filters.employeeId}
+                  onValueChange={(value) =>
+                    handleFilterChange("employeeId", value || "all")
+                  }
+                  departmentId={filters.departmentId}
+                  subDepartmentId={filters.subDepartmentId}
+                  includeAllOption
+                  placeholder="Select Employee"
+                  searchPlaceholder="Search employee..."
+                  emptyMessage="No employees found"
+                  disabled={loading}
+                />
               </div>
 
               {/* Bonus Type Filter */}

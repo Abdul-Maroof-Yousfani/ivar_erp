@@ -3,28 +3,44 @@
 import { authFetch } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
+export interface PaymentVoucherDetail {
+    id: string;
+    accountId: string;
+    accountName?: string;
+    accountCode?: string;
+    tagAccountId?: string;
+    tagAccountName?: string;
+    tagAccountCode?: string;
+    debit: number;
+    credit: number;
+    narration?: string;
+    refBillNo?: string;
+    refBillNo2?: string;
+    taxType?: string;
+    cprNo?: string | null;
+}
+
 export interface PaymentVoucher {
     id: string;
     type: "bank" | "cash";
     pvNo: string;
     pvDate: string; // ISO string from API
     refBillNo?: string;
+    refBillNo2?: string;
     billDate?: string; // ISO string
     creditAccountId: string;
+    creditAccountCode?: string;
     creditAccount?: any; // populated from backend
     creditAccountName?: string; // helper for UI
     creditAmount: number;
     status: "pending" | "approved" | "rejected";
-    description: string;
-    isTaxApplicable: boolean;
+    description?: string;
+    taxType?: string;
     isAdvance: boolean;
     chequeNo?: string;
     chequeDate?: string; // ISO string
-    details: {
-        accountId: string;
-        accountName?: string;
-        debit: number;
-    }[];
+    details: PaymentVoucherDetail[];
+    folio?: string | null;
     createdAt: string;
     createdBy: string;
 }
@@ -60,14 +76,20 @@ export async function getPaymentVouchers(type?: "bank" | "cash") {
             };
         }
 
-        // Map backend data to frontend interface if needed
-        // Backend returns `creditAccount` object, frontend list expects `creditAccountName`
+        // Map backend data to frontend interface
         const mappedData = vouchersArray.map((pv: any) => ({
             ...pv,
+            creditAmount: pv.creditAmount !== undefined ? Number(pv.creditAmount) : 0,
             creditAccountName: pv.creditAccount?.name || "Unknown Account",
+            creditAccountCode: pv.creditAccount?.code || "",
             details: pv.details?.map((d: any) => ({
                 ...d,
-                accountName: d.account?.name || "Unknown Account"
+                accountName:     d.account?.name     || d.accountName     || "Unknown Account",
+                accountCode:     d.account?.code     || d.accountCode     || "",
+                tagAccountName:  d.tagAccount?.name  || d.tagAccountName  || "",
+                tagAccountCode:  d.tagAccount?.code  || d.tagAccountCode  || "",
+                debit:           Number(d.debit)  || 0,
+                credit:          Number(d.credit) || 0,
             })) || []
         }));
 
@@ -259,3 +281,156 @@ export async function getSupplierSummary(supplierId: string) {
         return { status: false, data: null };
     }
 }
+
+// Get a single payment voucher by ID
+export async function getPaymentVoucher(id: string): Promise<{ status: boolean; data: PaymentVoucher | null; message?: string }> {
+    try {
+        const response = await authFetch(`/finance/payment-vouchers/${id}`, {
+            cache: 'no-store',
+            next: { revalidate: 0 },
+        });
+
+        if (!response.ok) {
+            return { status: false, data: null, message: `Failed to fetch voucher: ${response.status}` };
+        }
+
+        const raw = response.data?.data ?? response.data;
+        const voucher: PaymentVoucher = {
+            ...raw,
+            creditAmount: raw.creditAmount !== undefined ? Number(raw.creditAmount) : 0,
+            creditAccountName: raw.creditAccount?.name || raw.creditAccountName || "Unknown Account",
+            creditAccountCode: raw.creditAccount?.code || raw.creditAccountCode || "",
+            details: (raw.details ?? []).map((d: any) => ({
+                ...d,
+                accountName:     d.account?.name     || d.accountName     || "Unknown Account",
+                accountCode:     d.account?.code     || d.accountCode     || "",
+                tagAccountName:  d.tagAccount?.name  || d.tagAccountName  || "",
+                tagAccountCode:  d.tagAccount?.code  || d.tagAccountCode  || "",
+                debit:           Number(d.debit)  || 0,
+                credit:          Number(d.credit) || 0,
+            })),
+        };
+
+        return { status: true, data: voucher };
+    } catch (error: any) {
+        console.error("Error fetching payment voucher:", error);
+        return { status: false, data: null, message: error.message };
+    }
+}
+
+export async function updatePaymentVoucher(id: string, data: any) {
+    try {
+        const payload = {
+            ...data,
+            pvDate: new Date(data.pvDate).toISOString(),
+            billDate: data.billDate ? new Date(data.billDate).toISOString() : undefined,
+            chequeDate: data.chequeDate ? new Date(data.chequeDate).toISOString() : undefined,
+        };
+
+        const response = await authFetch(`/finance/payment-vouchers/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const errorData = response.data || {};
+            return {
+                status: false,
+                message: errorData.message || `Failed to update Payment Voucher: ${response.statusText || response.status}`
+            };
+        }
+
+        revalidatePath("/finance/payment-voucher/list");
+        revalidatePath(`/erp/finance/payment-voucher/${id}`);
+        revalidatePath("/erp/finance/payment-voucher/list");
+
+        return { status: true, message: "Payment Voucher updated successfully" };
+    } catch (error: any) {
+        console.error("Error updating payment voucher:", error);
+        return { status: false, message: error.message || "An unexpected error occurred" };
+    }
+}
+
+export async function updatePaymentVoucherStatus(id: string, status: "approved" | "rejected" | "pending", remarks?: string) {
+    try {
+        const response = await authFetch(`/finance/payment-vouchers/${id}/status`, {
+            method: "PATCH",
+            body: JSON.stringify({ status, remarks }),
+        });
+
+        if (!response.ok) {
+            const errorData = response.data || {};
+            return {
+                status: false,
+                message: errorData.message || `Failed to update status: ${response.statusText || response.status}`
+            };
+        }
+
+        revalidatePath("/finance/payment-voucher/list");
+        revalidatePath(`/erp/finance/payment-voucher/${id}`);
+        revalidatePath("/erp/finance/payment-voucher/list");
+
+        return { status: true, message: `Payment Voucher ${status} successfully` };
+    } catch (error: any) {
+        console.error("Error updating payment voucher status:", error);
+        return { status: false, message: error.message || "An unexpected error occurred" };
+    }
+}
+
+// ── Background export ─────────────────────────────────────────────────────────
+export async function queuePaymentVouchersExport(opts?: {
+    type?: string;
+    status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+}): Promise<{ status: boolean; jobId?: string; message?: string }> {
+    try {
+        const params = new URLSearchParams();
+        if (opts?.type   && opts.type   !== 'all') params.set('type',   opts.type);
+        if (opts?.status && opts.status !== 'all') params.set('status', opts.status);
+        if (opts?.dateFrom)                         params.set('dateFrom', opts.dateFrom);
+        if (opts?.dateTo)                           params.set('dateTo',   opts.dateTo);
+
+        const response = await authFetch(
+            `/finance/payment-vouchers/export?${params.toString()}`,
+            { method: 'POST' },
+        );
+
+        if (!response.ok) {
+            const err = response.data || {};
+            return { status: false, message: err.message || 'Failed to queue export' };
+        }
+
+        const result = response.data;
+        return { status: true, jobId: result?.data?.jobId };
+    } catch (error: any) {
+        return { status: false, message: error.message || 'An unexpected error occurred' };
+    }
+}
+
+export async function updatePaymentVoucherCpr(id: string, details: { id: string; cprNo?: string | null }[]) {
+    try {
+        const response = await authFetch(`/finance/payment-vouchers/${id}/cpr`, {
+            method: "PATCH",
+            body: JSON.stringify({ details }),
+        });
+
+        if (!response.ok) {
+            const errorData = response.data || {};
+            return {
+                status: false,
+                message: errorData.message || `Failed to update CPR numbers: ${response.statusText || response.status}`
+            };
+        }
+
+        revalidatePath("/finance/payment-voucher/list");
+        revalidatePath(`/erp/finance/payment-voucher/${id}`);
+        revalidatePath("/erp/finance/payment-voucher/list");
+
+        return { status: true, message: "CPR numbers updated successfully" };
+    } catch (error: any) {
+        console.error("Error updating payment voucher CPR numbers:", error);
+        return { status: false, message: error.message || "An unexpected error occurred" };
+    }
+}
+

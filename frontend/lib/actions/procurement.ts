@@ -114,3 +114,27 @@ export async function createVendor(data: any) {
         return { status: false, message: "Failed to create vendor" };
     }
 }
+
+// ─── Export Suppliers ─────────────────────────────────────────────────────────
+
+export async function queueSuppliersExport(
+  search?: string,
+  status?: string,
+  type?: string,
+): Promise<{ status: boolean; data?: { jobId: string }; message?: string }> {
+  try {
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    if (status) params.append('status', status);
+    if (type)   params.append('type',   type);
+    const qs = params.toString();
+
+    const res = await authFetch(`/finance/suppliers/export${qs ? `?${qs}` : ''}`, {
+      method: 'POST',
+    });
+    return res.data ?? { status: false, message: 'No response from server' };
+  } catch (error) {
+    console.error('Queue supplier export error:', error);
+    return { status: false, message: 'Failed to connect to server' };
+  }
+}

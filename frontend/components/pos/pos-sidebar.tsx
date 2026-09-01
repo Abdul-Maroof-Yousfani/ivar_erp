@@ -30,8 +30,9 @@ import {
     Wallet,
     PauseCircle,
     BookOpen,
+    FileText,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, COMPANY_NAME } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 
 const posMenuGroups = [
@@ -45,6 +46,7 @@ const posMenuGroups = [
             { title: "Returns & Exchanges", icon: RefreshCw, href: "/pos/sales/returns" },
             { title: "Customer Ladger", icon: BookOpen, href: "/pos/customer-ledger" },
             { title: "Cash Drawer", icon: Wallet, href: "/pos/terminal/drawer" },
+            { title: "Reconciliation Report", icon: FileText, href: "/pos/reports/reconciliation" },
         ],
     },
     {
@@ -52,6 +54,8 @@ const posMenuGroups = [
         items: [
             { title: "Products", icon: Package, href: "/pos/products" },
             { title: "Stock", icon: TrendingUp, href: "/pos/stock" },
+            { title: "Stock Activity", icon: TrendingUp, href: "/pos/reports/stock-activity" },
+            { title: "Net Sales Summary", icon: FileText, href: "/pos/reports/net-sales-summary" },
         ],
     },
     {
@@ -93,7 +97,7 @@ export function PosSidebar() {
                         </div>
                         <div className="flex flex-col group-data-[collapsible=icon]:hidden transition-opacity duration-200">
                             <span className="font-bold text-base leading-tight text-sidebar-foreground">
-                                Ivar
+                                {COMPANY_NAME}
                             </span>
                             <span className="text-xs text-sidebar-foreground/60 font-medium">
                                 POS Terminal
@@ -164,7 +168,7 @@ export function PosSidebar() {
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                     <SidebarMenuItem>
-                        <SidebarMenuButton 
+                        <SidebarMenuButton
                             onClick={logout}
                             className="text-destructive hover:text-destructive hover:bg-destructive/10 transition-colors pointer-events-auto cursor-pointer"
                         >
@@ -187,7 +191,7 @@ export function PosSidebar() {
                         </div>
                         <div className="flex flex-col min-w-0">
                             <span className="text-xs font-semibold text-sidebar-foreground truncate">
-                                {/* Speed (Pvt.) Limited */}
+                                {/* IVAR */}
                                 Innovative Network
                             </span>
                         </div>

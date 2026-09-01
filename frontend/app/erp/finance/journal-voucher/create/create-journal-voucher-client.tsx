@@ -1,12 +1,11 @@
 "use client";
 
 import { JournalVoucherForm } from "../components/journal-voucher-form";
-import { ChartOfAccount } from "@/lib/actions/chart-of-account";
 
-export function CreateJournalVoucherClient({ accounts }: { accounts: ChartOfAccount[] }) {
+export function CreateJournalVoucherClient() {
     return (
         <div className="flex flex-1 flex-col">
-            <JournalVoucherForm accounts={accounts} />
+            <JournalVoucherForm />
         </div>
     );
 }

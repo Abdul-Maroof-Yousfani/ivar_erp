@@ -58,6 +58,7 @@ import { UserPreferencesModule } from './user-preferences/user-preferences.modul
 import { SocialSecurityModule } from './master/social-security/social-security.module';
 import { AllocationModule } from './master/allocation/allocation.module';
 import { PFModule } from './pf/pf.module';
+import { EOBIModule } from './eobi/eobi.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { RoleModule } from './role/role.module';
 import { PermissionModule } from './permission/permission.module';
@@ -114,6 +115,8 @@ import { TaskProjectModule } from './task-project/task-project.module';
 import { TaskListModule } from './task-list/task-list.module';
 import { TaskModule } from './task/task.module';
 import { TaskReportsModule } from './task-reports/task-reports.module';
+import { PayeeModule } from './master/payee/payee.module';
+import { FabricVendorTrackerModule } from './fabric-vendor-tracker/fabric-vendor-tracker.module';
 
 @Module({
   imports: [
@@ -195,6 +198,7 @@ import { TaskReportsModule } from './task-reports/task-reports.module';
     SocialSecurityModule, // added swagger
     AllocationModule,
     PFModule,
+    EOBIModule,
     DashboardModule,
     RoleModule,
     PermissionModule,
@@ -252,6 +256,8 @@ import { TaskReportsModule } from './task-reports/task-reports.module';
     TaskListModule,
     TaskModule,
     TaskReportsModule,
+    PayeeModule,
+    FabricVendorTrackerModule,
   ],
   controllers: [AppController],
   providers: [AppService],

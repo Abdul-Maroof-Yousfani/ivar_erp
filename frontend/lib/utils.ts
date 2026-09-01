@@ -68,12 +68,12 @@ export function getCookie(name: string): string | null {
 // Format currency
 export function formatCurrency(amount: number | string, currency = 'PKR'): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  if (isNaN(num)) return 'PKR 0.00';
+  if (isNaN(num)) return `${currency} 0`;
 
   const formatted = new Intl.NumberFormat('en-PK', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num);
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Math.round(num));
 
   return `${currency} ${formatted}`;
 }
@@ -89,3 +89,5 @@ export function formatDate(date: string | Date): string {
     day: 'numeric',
   }).format(d);
 }
+
+export const COMPANY_NAME = "IVAR";

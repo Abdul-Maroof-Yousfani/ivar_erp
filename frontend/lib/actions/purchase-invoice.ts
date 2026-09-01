@@ -51,12 +51,32 @@ export async function createPurchaseInvoice(data: {
         unitPrice: number;
         taxRate?: number;
         discountRate?: number;
+        rollSize?: number;
     }[];
 }) {
     try {
+        // Next.js server actions serialize `undefined` as "$undefined" string.
+        // Strip those out before sending to backend to avoid DTO validation failures.
+        const cleanData = JSON.parse(
+            JSON.stringify(data, (_, value) =>
+                value === '$undefined' || value === undefined ? undefined : value
+            )
+        );
+
+        // Also clean items: remove null rollSize (backend expects number or omitted)
+        if (cleanData.items) {
+            cleanData.items = cleanData.items.map((item: any) => {
+                const { rollSize, ...rest } = item;
+                if (rollSize !== null && rollSize !== undefined) {
+                    return { ...rest, rollSize };
+                }
+                return rest;
+            });
+        }
+
         const response = await authFetch("/purchase/purchase-invoices", {
             method: "POST",
-            body: JSON.stringify(data),
+            body: JSON.stringify(cleanData),
         });
         const result = response.data;
         revalidatePath("/erp/procurement/purchase-invoice");
@@ -147,6 +167,7 @@ export async function updatePurchaseInvoice(id: string, data: {
         unitPrice: number;
         taxRate?: number;
         discountRate?: number;
+        rollSize?: number;
     }[];
 }) {
     try {
@@ -182,6 +203,7 @@ export async function searchItemsForDirectPI(query: string, filters?: {
     categoryIds?: string[];
     silhouetteIds?: string[];
     genderIds?: string[];
+    itemType?: string;
 }) {
     try {
         const params = new URLSearchParams();
@@ -191,6 +213,7 @@ export async function searchItemsForDirectPI(query: string, filters?: {
         if (filters?.categoryIds?.length) params.append('categoryIds', filters.categoryIds.join(','));
         if (filters?.silhouetteIds?.length) params.append('silhouetteIds', filters.silhouetteIds.join(','));
         if (filters?.genderIds?.length) params.append('genderIds', filters.genderIds.join(','));
+        if (filters?.itemType) params.append('itemType', filters.itemType);
         const response = await authFetch(`/finance/items?${params.toString()}`);
         return response.data?.data ?? response.data ?? [];
     } catch (error) {

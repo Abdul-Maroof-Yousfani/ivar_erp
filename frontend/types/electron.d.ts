@@ -45,6 +45,17 @@ interface PosDesktopBridge {
   maximizeWindow: () => void;
   closeWindow: () => void;
   isMaximized: () => Promise<boolean>;
+  navigate: (url: string) => Promise<void>;
+
+  // Context menu
+  showContextMenu: (params: {
+    x: number; y: number;
+    hasSelection: boolean; isEditable: boolean; selectionText: string;
+  }) => void;
+
+  // Printer settings & Silent printing
+  getPrinters: () => Promise<any[]>;
+  printHtml: (htmlContent: string, printerName?: string) => Promise<{ success: boolean; error?: string }>;
 
   // Events
   onOfflineModeChanged: (cb: (offlineMode: boolean) => void) => () => void;

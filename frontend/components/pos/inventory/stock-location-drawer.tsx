@@ -36,6 +36,8 @@ interface StockLocationDrawerProps {
         sku: string;
         description: string;
         totalQuantity: number;
+        size?: string;
+        color?: string;
     } | null;
     isOpen: boolean;
     onClose: () => void;
@@ -88,10 +90,21 @@ export function StockLocationDrawer({
                             </div>
                             <SheetTitle className="text-xl font-bold tracking-tight">Stock Breakdown</SheetTitle>
                         </div>
-                        <SheetDescription className="text-muted-foreground font-medium">
-                            <span className="font-bold text-foreground">{item?.sku}</span>
-                            <br />
-                            {item?.description}
+                        <SheetDescription className="text-muted-foreground font-medium flex flex-col gap-1">
+                            <div className="flex items-center flex-wrap gap-2">
+                                <span className="font-bold text-foreground">{item?.sku}</span>
+                                {item?.size && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 ring-1 ring-inset ring-indigo-700/10 dark:ring-indigo-300/20">
+                                         Size: {item.size}
+                                    </span>
+                                )}
+                                {item?.color && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-pink-50 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300 ring-1 ring-inset ring-pink-700/10 dark:ring-pink-300/20">
+                                         Color: {item.color}
+                                    </span>
+                                )}
+                            </div>
+                            <span className="text-sm text-muted-foreground/90">{item?.description}</span>
                         </SheetDescription>
                     </SheetHeader>
 

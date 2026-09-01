@@ -20,6 +20,8 @@ interface InventoryItem {
     stockQty: number;
     unitPrice?: number;
     brand?: string;
+    size?: string;
+    color?: string;
 }
 
 function StockBadge({ qty }: { qty: number }) {
@@ -74,7 +76,7 @@ export default function InventoryViewPage() {
             >
                 <div className="flex items-center justify-between mb-4">
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight">Stock View</h1>
+                        <h1 className="text-2xl font-bold tracking-tight">Outlet Request</h1>
                         <p className="text-sm text-muted-foreground font-medium mt-0.5">
                             {items.length > 0 ? `${items.length} items found` : "Search to check stock levels"}
                         </p>
@@ -131,12 +133,22 @@ export default function InventoryViewPage() {
                         >
                             {/* SKU + Name */}
                             <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-0.5">
+                                <div className="flex items-center flex-wrap gap-2 mb-0.5">
                                     <span className="font-mono text-[10px] font-bold tracking-widest text-muted-foreground uppercase bg-muted/60 px-1.5 py-0.5 rounded">
                                         {item.sku}
                                     </span>
                                     {item.brand && (
                                         <span className="text-[10px] text-muted-foreground/70 font-medium">{item.brand}</span>
+                                    )}
+                                    {item.size && (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 ring-1 ring-inset ring-indigo-700/10 dark:ring-indigo-300/20">
+                                            Size: {item.size}
+                                        </span>
+                                    )}
+                                    {item.color && (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-pink-50 text-pink-700 dark:bg-pink-950/40 dark:text-pink-300 ring-1 ring-inset ring-pink-700/10 dark:ring-pink-300/20">
+                                            Color: {item.color}
+                                        </span>
                                     )}
                                 </div>
                                 <p className="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
@@ -163,6 +175,8 @@ export default function InventoryViewPage() {
                     sku: selectedItem.sku,
                     description: selectedItem.description,
                     totalQuantity: selectedItem.stockQty,
+                    size: selectedItem.size,
+                    color: selectedItem.color,
                 } : null}
                 isOpen={isDrawerOpen}
                 onClose={() => setIsDrawerOpen(false)}

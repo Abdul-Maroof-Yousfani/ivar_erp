@@ -331,7 +331,12 @@ export interface MasterItem {
 }
 
 export const itemApi = {
-  getAll: () => fetchApi<{ status: boolean; data: MasterItem[] }>('/finance/items'),
+  getAll: (params?: { itemType?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.itemType) searchParams.append('itemType', params.itemType);
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return fetchApi<{ status: boolean; data: MasterItem[] }>(`/finance/items${query}`);
+  },
   getById: (id: string) => fetchApi<{ status: boolean; data: MasterItem }>(`/finance/items/${id}`),
   getByCode: (code: string) => fetchApi<{ status: boolean; data: MasterItem }>(`/finance/items/code/${code}`),
 };
@@ -438,6 +443,14 @@ export interface PurchaseOrder {
     contactNo?: string;
   };
   vendorQuotation?: VendorQuotation;
+  creatorName?: string | null;
+  checkerName?: string | null;
+  authorizerName?: string | null;
+  createdById?: string | null;
+  checkedById?: string | null;
+  checkedAt?: string | null;
+  authorizedById?: string | null;
+  authorizedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -557,6 +570,14 @@ export interface Grn {
     name: string;
   };
   createdAt: string;
+  creatorName?: string | null;
+  checkerName?: string | null;
+  authorizerName?: string | null;
+  createdById?: string | null;
+  checkedById?: string | null;
+  checkedAt?: string | null;
+  authorizedById?: string | null;
+  authorizedAt?: string | null;
 }
 
 export const grnApi = {
@@ -571,6 +592,11 @@ export const grnApi = {
     fetchApi<Grn>('/grn', {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  updateStatus: (id: string, status: string) =>
+    fetchApi<Grn>(`/grn/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
     }),
 };
 
@@ -942,6 +968,7 @@ export const inventoryApi = {
       categoryIds?: string[];
       silhouetteIds?: string[];
       genderIds?: string[];
+      itemType?: string;
     }
   ) => {
     const params = new URLSearchParams({ q: query });
@@ -951,9 +978,14 @@ export const inventoryApi = {
     if (filters?.categoryIds?.length) params.append('categoryIds', filters.categoryIds.join(','));
     if (filters?.silhouetteIds?.length) params.append('silhouetteIds', filters.silhouetteIds.join(','));
     if (filters?.genderIds?.length) params.append('genderIds', filters.genderIds.join(','));
+    if (filters?.itemType) params.append('itemType', filters.itemType);
     return fetchApi<{ status: boolean; data: any[] }>(`/inventory/search?${params.toString()}`);
   },
   getDetails: (itemId: string) => fetchApi<{ status: boolean; data: any[] }>(`/inventory/details/${itemId}`),
+  getStockLevel: (itemId: string, warehouseId: string) =>
+    fetchApi<{ itemId: string; warehouseId: string; totalQuantity: number }>(
+      `/inventory/stock-level?itemId=${itemId}&warehouseId=${warehouseId}`
+    ),
 };
 
 export const brandApi = {
@@ -1447,3 +1479,98 @@ export const salesInvoiceApi = {
   }),
   getSummary: () => fetchApi<{ status: boolean; data: any }>('/sales/invoices/summary'),
 };
+
+// Fabric Vendor Tracker API
+export interface FabricVendorTracker {
+  id: string;
+  trackerNumber: string;
+  supplierId: string;
+  itemId: string;
+  warehouseId: string;
+  qtyIssued: string;
+  issueDate: string;
+  qtyUsed: string;
+  qtyReturned: string;
+  qtyShortage: string;
+  consumptionDate: string | null;
+  status: 'PENDING' | 'PARTIAL' | 'COMPLETED';
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  consumptionLogs?: {
+    id: string;
+    qtyUsed: string;
+    qtyReturned: string;
+    qtyShortage: string;
+    consumptionDate: string;
+    notes?: string;
+    createdAt: string;
+  }[];
+  supplier?: {
+    id: string;
+    code: string;
+    name: string;
+    contactNo?: string;
+  };
+  item?: {
+    id: string;
+    itemId: string;
+    sku: string;
+    description?: string;
+    uom?: string;
+  };
+  warehouse?: {
+    id: string;
+    code: string;
+    name: string;
+  };
+}
+
+export const fabricVendorTrackerApi = {
+  getAll: (params?: { supplierId?: string; itemId?: string; status?: string; search?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.supplierId) searchParams.append('supplierId', params.supplierId);
+    if (params?.itemId) searchParams.append('itemId', params.itemId);
+    if (params?.status) searchParams.append('status', params.status);
+    if (params?.search) searchParams.append('search', params.search);
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return fetchApi<FabricVendorTracker[]>(`/fabric-vendor-tracker${query}`);
+  },
+  getById: (id: string) => fetchApi<FabricVendorTracker>(`/fabric-vendor-tracker/${id}`),
+  create: (data: {
+    supplierId: string;
+    itemId: string;
+    qtyIssued: number;
+    warehouseId: string;
+    issueDate?: string;
+    notes?: string;
+  }) => fetchApi<FabricVendorTracker>('/fabric-vendor-tracker', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  updateConsumption: (id: string, data: {
+    qtyUsed: number;
+    qtyReturned: number;
+    qtyShortage: number;
+    consumptionDate?: string;
+    notes?: string;
+  }) => fetchApi<FabricVendorTracker>(`/fabric-vendor-tracker/${id}/consumption`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  delete: (id: string) => fetchApi<{ status: boolean; message: string }>(`/fabric-vendor-tracker/${id}`, {
+    method: 'DELETE',
+  }),
+  queueExport: (params?: { supplierId?: string; itemId?: string; status?: string; search?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.supplierId) searchParams.append('supplierId', params.supplierId);
+    if (params?.itemId) searchParams.append('itemId', params.itemId);
+    if (params?.status) searchParams.append('status', params.status);
+    if (params?.search) searchParams.append('search', params.search);
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return fetchApi<{ status: boolean; message: string; data?: { jobId: string } }>(
+      `/fabric-vendor-tracker/export${query}`,
+      { method: 'POST' }
+    );
+  },
+};

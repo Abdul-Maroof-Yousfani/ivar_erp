@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Search, Edit, Eye, Trash2, Upload } from "lucide-react";
+import { Plus, Search, Edit, Eye, Trash2, Upload, Download, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import { CustomerBulkUploadModal } from "@/components/customers/customer-bulk-upload-modal";
 import { PermissionGuard } from "@/components/auth/permission-guard";
+import { queueCustomersExport } from "@/lib/actions/customers";
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -35,6 +36,7 @@ export default function CustomersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [formData, setFormData] = useState({
     code: "",
     name: "",
@@ -83,8 +85,9 @@ export default function CustomersPage() {
       });
       setIsCreateOpen(false);
       loadCustomers();
-    } catch (error) {
-      toast.error("Failed to create customer");
+    } catch (error: any) {
+      const errMsg = error?.message || "Failed to create customer";
+      toast.error(errMsg);
       console.error(error);
     }
   };
@@ -99,6 +102,25 @@ export default function CustomersPage() {
     } catch (error) {
       toast.error("Failed to delete customer");
       console.error(error);
+    }
+  };
+
+  const handleExport = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const result = await queueCustomersExport(searchTerm);
+      if (result.status) {
+        toast.success("Export queued — you'll get a notification when your file is ready.", {
+          duration: 6000,
+        });
+      } else {
+        toast.error(result.message || "Failed to queue export");
+      }
+    } catch {
+      toast.error("Export failed. Please try again.");
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -126,6 +148,19 @@ export default function CustomersPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              disabled={isExporting || customers.length === 0}
+              className="border-emerald-500/40 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+            >
+              {isExporting ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 mr-2" />
+              )}
+              {isExporting ? "Queuing…" : "Export"}
+            </Button>
             <PermissionGuard permissions="erp.sales.customer.create" fallback={null}>
               <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                 <DialogTrigger asChild>

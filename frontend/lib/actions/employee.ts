@@ -134,6 +134,7 @@ export interface EmployeeDropdownOption {
   subDepartmentName?: string | null;
   designationName?: string | null;
   providentFund?: boolean;
+  eobi?: boolean;
   officialEmail?: string | null;
   personalEmail?: string | null;
 }
@@ -142,6 +143,11 @@ export async function getEmployeesForDropdown(params?: {
   page?: number;
   limit?: number;
   search?: string;
+  departmentId?: string;
+  subDepartmentId?: string;
+  providentFund?: boolean;
+  eobi?: boolean;
+  locationId?: string;
 }): Promise<{
   status: boolean;
   data?: EmployeeDropdownOption[];
@@ -158,6 +164,11 @@ export async function getEmployeesForDropdown(params?: {
     if (params?.page) searchParams.append('page', params.page.toString());
     if (params?.limit) searchParams.append('limit', params.limit.toString());
     if (params?.search) searchParams.append('search', params.search);
+    if (params?.departmentId) searchParams.append('departmentId', params.departmentId);
+    if (params?.subDepartmentId) searchParams.append('subDepartmentId', params.subDepartmentId);
+    if (params?.locationId) searchParams.append('locationId', params.locationId);
+    if (params?.providentFund) searchParams.append('providentFund', 'true');
+    if (params?.eobi) searchParams.append('eobi', 'true');
 
     const url = `/employees/dropdown${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
     const res = await authFetch(url, {});
@@ -172,6 +183,49 @@ export async function getEmployeesForDropdown(params?: {
     return {
       status: false,
       message: error instanceof Error ? error.message : 'Failed to fetch employees.'
+    };
+  }
+}
+
+export async function getAllEmployeesForDropdown(filters?: {
+  departmentId?: string;
+  subDepartmentId?: string;
+  search?: string;
+  providentFund?: boolean;
+  locationId?: string;
+}): Promise<{
+  status: boolean;
+  data?: EmployeeDropdownOption[];
+  message?: string;
+}> {
+  try {
+    const limit = 100;
+    let page = 1;
+    let allEmployees: EmployeeDropdownOption[] = [];
+    let totalPages = 1;
+
+    do {
+      const result = await getEmployeesForDropdown({
+        ...filters,
+        page,
+        limit,
+      });
+
+      if (!result.status || !result.data) {
+        return { status: false, message: result.message || 'Failed to fetch employees.' };
+      }
+
+      allEmployees = [...allEmployees, ...result.data];
+      totalPages = result.meta?.totalPages ?? 1;
+      page += 1;
+    } while (page <= totalPages);
+
+    return { status: true, data: allEmployees };
+  } catch (error) {
+    console.error('Error fetching all employees for dropdown:', error);
+    return {
+      status: false,
+      message: error instanceof Error ? error.message : 'Failed to fetch employees.',
     };
   }
 }
@@ -565,3 +619,44 @@ export async function getEmployeeRejoiningHistory(employeeId: string): Promise<{
     };
   }
 }
+
+// ─── Export Employees ─────────────────────────────────────────────────────────
+
+export async function queueEmployeesExport(
+  search?: string,
+  departmentId?: string,
+  designationId?: string,
+  status?: string,
+): Promise<{ status: boolean; data?: { jobId: string }; message?: string }> {
+  try {
+    const params = new URLSearchParams();
+    if (search)        params.append('search',        search);
+    if (departmentId)  params.append('departmentId',  departmentId);
+    if (designationId) params.append('designationId', designationId);
+    if (status)        params.append('status',        status);
+    const qs = params.toString();
+
+    const res = await authFetch(`/employees/export${qs ? `?${qs}` : ''}`, {
+      method: 'POST',
+    });
+    return res.data ?? { status: false, message: 'No response from server' };
+  } catch (error) {
+    console.error('Queue employee export error:', error);
+    return { status: false, message: 'Failed to connect to server' };
+  }
+}
+
+export async function getEmployeeExportStatus(
+  jobId: string,
+): Promise<{ status: boolean; data?: { state: string; progress: number }; message?: string }> {
+  try {
+    const res = await authFetch(`/employees/export/${jobId}/status`, {
+      method: 'GET',
+    });
+    return res.data ?? { status: false, message: 'No response from server' };
+  } catch (error) {
+    console.error('Get employee export status error:', error);
+    return { status: false, message: 'Failed to connect to server' };
+  }
+}
+
