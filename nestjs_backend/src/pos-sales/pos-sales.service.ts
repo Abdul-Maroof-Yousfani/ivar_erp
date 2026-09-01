@@ -2426,6 +2426,26 @@ export class PosSalesService implements OnModuleInit {
         select: { salesOrderId: true },
       });
       claimsInRange.forEach((c) => targetOrderIds.add(c.salesOrderId));
+
+      // 4. Return/Refund Vouchers in range
+      const voucherRangeQuery: any = {};
+      if (start) voucherRangeQuery.gte = start;
+      if (end) voucherRangeQuery.lte = end;
+
+      const voucherWhereRange: any = {
+        voucherType: { in: ['EXCHANGE', 'REFUND', 'CREDIT'] },
+        createdAt: voucherRangeQuery,
+        isDeleted: false,
+      };
+      if (locationId) voucherWhereRange.issuedByLocationId = locationId;
+
+      const vouchersInRange = await this.prisma.voucher.findMany({
+        where: voucherWhereRange,
+        select: { sourceOrderId: true, id: true },
+      });
+      vouchersInRange.forEach((v) => {
+        if (v.sourceOrderId) targetOrderIds.add(v.sourceOrderId);
+      });
     }
 
     // ── Search Filters ──
@@ -2644,12 +2664,29 @@ export class PosSalesService implements OnModuleInit {
       returnEntriesMap.get(entry.referenceId)!.push(entry);
     }
 
-    // Fetch issued vouchers
+    // Fetch issued vouchers (by order ID OR created in date range)
+    const voucherWhere: any = { isDeleted: false };
+    const ORs: any[] = [];
+    if (orderIds.length > 0) {
+      ORs.push({ sourceOrderId: { in: orderIds } });
+    }
+    if (filterByDate) {
+      const vDateQuery: any = {};
+      if (start) vDateQuery.gte = start;
+      if (end) vDateQuery.lte = end;
+      const vLocWhere: any = {
+        voucherType: { in: ['EXCHANGE', 'REFUND', 'CREDIT'] },
+        createdAt: vDateQuery,
+      };
+      if (locationId) vLocWhere.issuedByLocationId = locationId;
+      ORs.push(vLocWhere);
+    }
+    if (ORs.length > 0) {
+      voucherWhere.OR = ORs;
+    }
+
     const issuedVouchers = await this.prisma.voucher.findMany({
-      where: {
-        sourceOrderId: { in: orderIds },
-        isDeleted: false,
-      },
+      where: voucherWhere,
       select: {
         id: true,
         code: true,
@@ -2657,10 +2694,15 @@ export class PosSalesService implements OnModuleInit {
         faceValue: true,
         expiresAt: true,
         sourceOrderId: true,
+        issuedByLocationId: true,
+        createdAt: true,
+        description: true,
       },
     });
 
     const issuedVouchersMap = new Map<string, typeof issuedVouchers>();
+    const processedVoucherIds = new Set<string>();
+
     for (const v of issuedVouchers) {
       if (v.sourceOrderId) {
         if (!issuedVouchersMap.has(v.sourceOrderId)) {
@@ -2765,14 +2807,18 @@ export class PosSalesService implements OnModuleInit {
       const returnLedgers = orderLedgers.filter(
         (l) => l.referenceType === 'POS_RETURN',
       );
-      if (order.returnNumber || returnLedgers.length > 0) {
-        const exchangeVoucher = orderVouchers.find(
-          (v) => v.voucherType === 'EXCHANGE',
-        );
-        const returnDate =
-          returnLedgers.length > 0
-            ? returnLedgers[returnLedgers.length - 1].createdAt
-            : order.updatedAt;
+      const exchangeVouchers = orderVouchers.filter(
+        (v) => v.voucherType === 'EXCHANGE',
+      );
+      if (order.returnNumber || returnLedgers.length > 0 || exchangeVouchers.length > 0) {
+        exchangeVouchers.forEach((v) => processedVoucherIds.add(v.id));
+
+        const primaryExchange = exchangeVouchers[0];
+        const returnDate = primaryExchange
+          ? primaryExchange.createdAt
+          : returnLedgers.length > 0
+          ? returnLedgers[returnLedgers.length - 1].createdAt
+          : order.updatedAt;
 
         const returnedItems = returnLedgers.map((l) => {
           const orderItem = order.items.find(
@@ -2793,14 +2839,20 @@ export class PosSalesService implements OnModuleInit {
           };
         });
 
+        const totalExchangeAmount = exchangeVouchers.reduce(
+          (sum, v) => sum + Number(v.faceValue),
+          0,
+        );
+
         allActivities.push({
           id: `${order.id}-return`,
           type: 'return',
-          number: order.returnNumber || 'Return',
+          number: order.returnNumber || primaryExchange?.code || 'Return',
           date: returnDate,
-          amount: exchangeVoucher
-            ? Number(exchangeVoucher.faceValue)
-            : returnedItems.reduce((s, i) => s + i.lineTotal, 0),
+          amount:
+            totalExchangeAmount > 0
+              ? totalExchangeAmount
+              : returnedItems.reduce((s, i) => s + i.lineTotal, 0),
           orderId: order.id,
           orderNumber: order.orderNumber,
           locationId: order.locationId,
@@ -2811,16 +2863,12 @@ export class PosSalesService implements OnModuleInit {
           merchant: order.merchant,
           alliance: order.alliance,
           items: returnedItems,
-          issuedVouchers: exchangeVoucher
-            ? [
-                {
-                  code: exchangeVoucher.code,
-                  faceValue: Number(exchangeVoucher.faceValue),
-                  voucherType: 'EXCHANGE',
-                  expiresAt: exchangeVoucher.expiresAt,
-                },
-              ]
-            : [],
+          issuedVouchers: exchangeVouchers.map((v) => ({
+            code: v.code,
+            faceValue: Number(v.faceValue),
+            voucherType: 'EXCHANGE',
+            expiresAt: v.expiresAt,
+          })),
         });
       }
 
@@ -2828,16 +2876,20 @@ export class PosSalesService implements OnModuleInit {
       const refundLedgers = orderLedgers.filter(
         (l) => l.referenceType === 'POS_REFUND',
       );
-      if (order.refundNumber || refundLedgers.length > 0) {
-        const refundVouchers = orderVouchers.filter(
-          (v) =>
-            ['REFUND', 'CREDIT'].includes(v.voucherType) &&
-            !saleIssuedVouchers.some((sv) => sv.id === v.id),
-        );
-        const refundDate =
-          refundLedgers.length > 0
-            ? refundLedgers[refundLedgers.length - 1].createdAt
-            : order.updatedAt;
+      const refundVouchers = orderVouchers.filter(
+        (v) =>
+          ['REFUND', 'CREDIT'].includes(v.voucherType) &&
+          !saleIssuedVouchers.some((sv) => sv.id === v.id),
+      );
+      if (order.refundNumber || refundLedgers.length > 0 || refundVouchers.length > 0) {
+        refundVouchers.forEach((v) => processedVoucherIds.add(v.id));
+
+        const primaryRefund = refundVouchers[0];
+        const refundDate = primaryRefund
+          ? primaryRefund.createdAt
+          : refundLedgers.length > 0
+          ? refundLedgers[refundLedgers.length - 1].createdAt
+          : order.updatedAt;
 
         const refundedItems = refundLedgers.map((l) => {
           const orderItem = order.items.find(
@@ -2858,14 +2910,19 @@ export class PosSalesService implements OnModuleInit {
           };
         });
 
+        const totalRefundAmount = refundVouchers.reduce(
+          (sum, v) => sum + Number(v.faceValue),
+          0,
+        );
+
         allActivities.push({
           id: `${order.id}-refund`,
           type: 'refund',
-          number: order.refundNumber || 'Refund',
+          number: order.refundNumber || primaryRefund?.code || 'Refund',
           date: refundDate,
           amount:
-            refundVouchers.length > 0
-              ? refundVouchers.reduce((sum, v) => sum + Number(v.faceValue), 0)
+            totalRefundAmount > 0
+              ? totalRefundAmount
               : refundedItems.reduce((s, i) => s + i.lineTotal, 0),
           orderId: order.id,
           orderNumber: order.orderNumber,
@@ -2929,6 +2986,37 @@ export class PosSalesService implements OnModuleInit {
             approvedAmount: Number(ci.approvedAmount),
             status: ci.itemStatus,
           })),
+        });
+      }
+    });
+
+    // 5. Standalone issued return/refund vouchers
+    issuedVouchers.forEach((v) => {
+      if (processedVoucherIds.has(v.id)) return;
+      if (['EXCHANGE', 'REFUND'].includes(v.voucherType)) {
+        const vType = v.voucherType === 'EXCHANGE' ? 'return' : 'refund';
+        const locationName =
+          locationMap.get(v.issuedByLocationId || '') || v.issuedByLocationId || 'N/A';
+
+        allActivities.push({
+          id: `voucher-${v.id}-${vType}`,
+          type: vType,
+          number: v.code,
+          date: v.createdAt,
+          amount: Number(v.faceValue),
+          orderId: v.sourceOrderId || undefined,
+          orderNumber: v.code,
+          locationId: v.issuedByLocationId,
+          locationName,
+          issuedVouchers: [
+            {
+              code: v.code,
+              faceValue: Number(v.faceValue),
+              voucherType: v.voucherType,
+              expiresAt: v.expiresAt,
+            },
+          ],
+          items: [],
         });
       }
     });
@@ -3002,32 +3090,59 @@ export class PosSalesService implements OnModuleInit {
     );
 
     // Calculate Summary KPIs
+    const saleActivities = filteredActivities.filter((a) => a.type === 'sale');
+    const totalSalesCount = saleActivities.length;
+    const totalGrossSalesRaw = saleActivities.reduce(
+      (sum, a) => sum + (Number(a.amount) || 0),
+      0,
+    );
+
+    // FBR POS charges: 1 PKR per completed sale order (matching POS Reconciliation)
+    const totalFbrCharges = totalSalesCount * 1;
+
+    // Gross Sales excluding FBR charges (matches Reconciliation "Sale")
+    const totalSalesAmount = Math.max(0, totalGrossSalesRaw - totalFbrCharges);
+
+    const totalReturnsCount = filteredActivities.filter(
+      (a) => a.type === 'return',
+    ).length;
+    const totalReturnsAmount = filteredActivities
+      .filter((a) => a.type === 'return')
+      .reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+
+    const totalRefundsCount = filteredActivities.filter(
+      (a) => a.type === 'refund',
+    ).length;
+    const totalRefundsAmount = filteredActivities
+      .filter((a) => a.type === 'refund')
+      .reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+
+    const totalClaimsCount = filteredActivities.filter(
+      (a) => a.type === 'claim',
+    ).length;
+    const totalClaimsAmount = filteredActivities
+      .filter((a) => a.type === 'claim')
+      .reduce(
+        (sum, a) => sum + (Number(a.approvedAmount ?? a.amount) || 0),
+        0,
+      );
+
+    const totalNetRevenue =
+      totalSalesAmount - totalReturnsAmount - totalRefundsAmount;
+
     const summary = {
       totalCount: filteredActivities.length,
-      totalSalesCount: filteredActivities.filter((a) => a.type === 'sale')
-        .length,
-      totalSalesAmount: filteredActivities
-        .filter((a) => a.type === 'sale')
-        .reduce((sum, a) => sum + (Number(a.amount) || 0), 0),
-      totalReturnsCount: filteredActivities.filter((a) => a.type === 'return')
-        .length,
-      totalReturnsAmount: filteredActivities
-        .filter((a) => a.type === 'return')
-        .reduce((sum, a) => sum + (Number(a.amount) || 0), 0),
-      totalRefundsCount: filteredActivities.filter((a) => a.type === 'refund')
-        .length,
-      totalRefundsAmount: filteredActivities
-        .filter((a) => a.type === 'refund')
-        .reduce((sum, a) => sum + (Number(a.amount) || 0), 0),
-      totalClaimsCount: filteredActivities.filter((a) => a.type === 'claim')
-        .length,
-      totalClaimsAmount: filteredActivities
-        .filter((a) => a.type === 'claim')
-        .reduce(
-          (sum, a) => sum + (Number(a.approvedAmount ?? a.amount) || 0),
-          0,
-        ),
-      totalNetRevenue: 0,
+      totalSalesCount,
+      totalGrossSalesRaw,
+      totalFbrCharges,
+      totalSalesAmount, // Gross sales excl FBR charges
+      totalReturnsCount,
+      totalReturnsAmount,
+      totalRefundsCount,
+      totalRefundsAmount,
+      totalClaimsCount,
+      totalClaimsAmount,
+      totalNetRevenue, // Sale (excl FBR) - Returns - Refunds
       totalIssuedVouchersCount: filteredActivities.reduce(
         (sum, a) => sum + (a.issuedVouchers?.length || 0),
         0,
@@ -3053,10 +3168,6 @@ export class PosSalesService implements OnModuleInit {
         return sum;
       }, 0),
     };
-    summary.totalNetRevenue =
-      summary.totalSalesAmount -
-      summary.totalReturnsAmount -
-      summary.totalRefundsAmount;
 
     // Paginate in memory
     const total = filteredActivities.length;
