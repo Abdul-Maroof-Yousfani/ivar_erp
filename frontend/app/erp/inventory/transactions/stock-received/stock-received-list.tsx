@@ -140,6 +140,36 @@ export const columns: ColumnDef<StockLedgerEntry>[] = [
         },
     },
     {
+        accessorKey: "barcode",
+        header: "Barcode",
+        accessorFn: (row) => row.item?.barCode ?? "-",
+        cell: ({ row }) => (
+            <span className="text-sm text-muted-foreground whitespace-nowrap">
+                {row.original.item?.barCode || "-"}
+            </span>
+        ),
+    },
+    {
+        accessorKey: "size",
+        header: "Size",
+        accessorFn: (row) => row.item?.size?.name ?? "-",
+        cell: ({ row }) => (
+            <span className="text-sm font-medium">
+                {row.original.item?.size?.name || "-"}
+            </span>
+        ),
+    },
+    {
+        accessorKey: "color",
+        header: "Color",
+        accessorFn: (row) => row.item?.color?.name ?? "-",
+        cell: ({ row }) => (
+            <span className="text-sm font-medium">
+                {row.original.item?.color?.name || "-"}
+            </span>
+        ),
+    },
+    {
         accessorKey: "warehouse",
         header: "Warehouse / Location",
         accessorFn: (row) => row.warehouse?.name ?? row.warehouseId,
@@ -620,6 +650,9 @@ export function StockReceivedList({ initialEntries, initialMeta }: StockReceived
                 ...entry,
                 sku: entry.item?.sku || entry.itemId || "",
                 itemDescription: entry.item?.description || "",
+                barcode: entry.item?.barCode || "",
+                size: entry.item?.size?.name || "",
+                color: entry.item?.color?.name || "",
                 warehouseName: entry.warehouse?.name || entry.warehouseId || "",
                 locationName: entry.location?.name || "",
                 referenceIdStr: entry.referenceId || "",
@@ -655,7 +688,10 @@ export function StockReceivedList({ initialEntries, initialMeta }: StockReceived
                 }}
                 searchFields={[
                     { key: "sku", label: "SKU" },
+                    { key: "barcode", label: "Barcode" },
                     { key: "itemDescription", label: "Item" },
+                    { key: "size", label: "Size" },
+                    { key: "color", label: "Color" },
                     { key: "warehouseName", label: "Warehouse" },
                     { key: "locationName", label: "Location" },
                     { key: "referenceIdStr", label: "Ref ID" },

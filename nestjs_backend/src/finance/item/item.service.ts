@@ -149,6 +149,8 @@ export class ItemService {
           { brand: { name: { contains: searchTerm, mode: 'insensitive' } } },
           { category: { name: { contains: searchTerm, mode: 'insensitive' } } },
           { division: { name: { contains: searchTerm, mode: 'insensitive' } } },
+          { size: { name: { contains: searchTerm, mode: 'insensitive' } } },
+          { color: { name: { contains: searchTerm, mode: 'insensitive' } } },
         ],
       });
     }

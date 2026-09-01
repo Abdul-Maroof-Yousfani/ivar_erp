@@ -298,7 +298,7 @@ export function StockBulkUploadModal({
                                             <div className="text-center space-y-2">
                                                 <p className="font-bold text-xl">Upload Stock Sheet</p>
                                                 <p className="text-sm text-muted-foreground max-w-[360px]">
-                                                    Wide-format CSV/Excel: first column is BarCode, remaining columns are location codes with quantities.
+                                                    Wide-format CSV/Excel: first columns can be BarCode, Size, Color, remaining columns are location codes with quantities.
                                                 </p>
                                             </div>
                                             <div className="flex gap-2 mt-2">
@@ -319,7 +319,7 @@ export function StockBulkUploadModal({
                                         <div>
                                             <p className="font-bold text-sm">Download Stock Template</p>
                                             <p className="text-xs text-muted-foreground">
-                                                Columns: BarCode, then one column per location code (e.g. C40001, SS1001…). Use <code className="font-mono">-</code> for zero.
+                                                Columns: BarCode, Size (Optional), Color (Optional), then one column per location code (e.g. C40001, SS1001…). Use <code className="font-mono">-</code> for zero.
                                             </p>
                                         </div>
                                     </div>

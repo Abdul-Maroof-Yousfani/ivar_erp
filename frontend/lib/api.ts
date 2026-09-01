@@ -854,6 +854,7 @@ export interface StockLedgerEntry {
   item?: {
     itemId: string;
     sku: string;
+    barCode?: string | null;
     description: string | null;
     name?: string;
     size?: { name: string } | string | null;
@@ -1581,4 +1582,4 @@ export const fabricVendorTrackerApi = {
       { method: 'POST' }
     );
   },
-};
+};
