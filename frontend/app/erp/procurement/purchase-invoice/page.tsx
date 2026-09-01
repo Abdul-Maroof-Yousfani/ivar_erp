@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Filter, Eye, Edit, Trash2 } from "lucide-react";
+import { Plus, Search, Filter, Eye, Edit, Trash2, Upload, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -15,6 +15,8 @@ import {
 import { toast } from "sonner";
 import { PermissionGuard } from "@/components/auth/permission-guard";
 import { Autocomplete } from "@/components/ui/autocomplete";
+import { DirectPiBulkUploadModal } from "@/components/purchase-invoice/direct-pi-bulk-upload-modal";
+import { useUploadProgress } from "@/hooks/use-upload-progress";
 
 interface PurchaseInvoice {
   id: string;
@@ -38,6 +40,28 @@ export default function PurchaseInvoiceListPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("");
+
+  // Bulk Upload states
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
+  const [activeUploadId, setActiveUploadId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("direct_pi_bulk_upload_id");
+    }
+    return null;
+  });
+
+  const { data: uploadProgress } = useUploadProgress(activeUploadId, "direct-pi");
+
+  const handleUploadIdChange = useCallback((id: string | null) => {
+    setActiveUploadId(id);
+    if (typeof window !== "undefined") {
+      if (id) {
+        localStorage.setItem("direct_pi_bulk_upload_id", id);
+      } else {
+        localStorage.removeItem("direct_pi_bulk_upload_id");
+      }
+    }
+  }, []);
 
   // Options for autocomplete dropdowns
   const statusOptions = [
@@ -119,7 +143,64 @@ export default function PurchaseInvoiceListPage() {
               Manage supplier invoices and payments
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {activeUploadId && !isBulkUploadOpen && (
+              <Button
+                variant={
+                  uploadProgress?.status === "failed"
+                    ? "destructive"
+                    : uploadProgress?.status === "completed"
+                    ? "default"
+                    : "outline"
+                }
+                className={`border-primary text-primary relative overflow-hidden min-w-[170px] ${
+                  uploadProgress?.status === "failed"
+                    ? "text-destructive-foreground! bg-destructive!"
+                    : uploadProgress?.status === "completed"
+                    ? "text-primary-foreground! bg-primary!"
+                    : ""
+                }`}
+                onClick={() => setIsBulkUploadOpen(true)}
+              >
+                <div
+                  className="absolute inset-0 bg-primary/10 transition-all duration-500"
+                  style={{ width: `${uploadProgress?.progress ?? 0}%` }}
+                />
+                <div className="relative flex items-center gap-2">
+                  {(uploadProgress?.status === "validating" ||
+                    uploadProgress?.status === "processing" ||
+                    uploadProgress?.status === "pending") && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                  <span className="font-bold text-xs">
+                    {uploadProgress?.status === "failed"
+                      ? "Import Failed"
+                      : uploadProgress?.status === "completed"
+                      ? "Import Complete"
+                      : uploadProgress?.status === "validated"
+                      ? "Validation Ready"
+                      : uploadProgress?.status === "validating"
+                      ? "Validating"
+                      : "Importing"}
+                    {["failed", "completed", "validated"].includes(
+                      uploadProgress?.status || ""
+                    )
+                      ? ""
+                      : ` ${uploadProgress?.progress ?? 0}%`}
+                  </span>
+                </div>
+              </Button>
+            )}
+
+            <Button
+              variant="outline"
+              onClick={() => setIsBulkUploadOpen(true)}
+              className="gap-1.5"
+            >
+              <Upload className="w-4 h-4 mr-1" />
+              Bulk Upload
+            </Button>
+
             <Link
               href="/erp/procurement/purchase-invoice/create-direct"
               transitionTypes={["nav-forward"]}
@@ -320,6 +401,18 @@ export default function PurchaseInvoiceListPage() {
             )}
           </CardContent>
         </Card>
+
+        <DirectPiBulkUploadModal
+          open={isBulkUploadOpen}
+          onOpenChange={setIsBulkUploadOpen}
+          uploadId={activeUploadId}
+          onUploadIdChange={handleUploadIdChange}
+          onSuccess={() => {
+            fetchInvoices();
+            toast.success("Purchase invoices refreshed");
+            handleUploadIdChange(null);
+          }}
+        />
       </div>
     </PermissionGuard>
   );

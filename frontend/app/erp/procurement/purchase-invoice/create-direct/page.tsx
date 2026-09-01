@@ -21,7 +21,7 @@ import { toast } from 'sonner';
 import {
     Search, Filter, X, ChevronRight, Plus, CheckCircle2, Info,
     Loader2, Trash2, Save, FileText, ScanBarcode, Volume2, VolumeX,
-    Keyboard, Sparkles
+    Keyboard, Sparkles, Upload
 } from 'lucide-react';
 import { supplierApi, warehouseApi } from '@/lib/api';
 import { brandApi, categoryApi, silhouetteApi, genderApi } from '@/lib/api';
@@ -32,6 +32,7 @@ import {
 } from '@/lib/actions/purchase-invoice';
 import Link from 'next/link';
 import { PermissionGuard } from "@/components/auth/permission-guard";
+import { DirectPiBulkUploadModal } from '@/components/purchase-invoice/direct-pi-bulk-upload-modal';
 
 interface Supplier { id: string; name: string; code: string; }
 
@@ -62,6 +63,9 @@ export default function CreateDirectPurchaseInvoicePage() {
     const [supplierId, setSupplierId] = useState('');
     const [notes, setNotes] = useState('');
     const [discountAmount, setDiscountAmount] = useState(0);
+
+    // Bulk upload modal state
+    const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
 
     // Supplier list
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -517,7 +521,15 @@ export default function CreateDirectPurchaseInvoicePage() {
                         <h1 className="text-3xl font-bold tracking-tight">Direct Purchase Invoice</h1>
                         <p className="text-muted-foreground">Create a supplier invoice without GRN or PO</p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            onClick={() => setIsBulkUploadOpen(true)}
+                            className="gap-1.5"
+                        >
+                            <Upload className="h-4 w-4" />
+                            Bulk Upload
+                        </Button>
                         <Link href="/erp/procurement/purchase-invoice" transitionTypes={['nav-forward']}>
                             <Button variant="outline">Cancel</Button>
                         </Link>
@@ -1327,6 +1339,21 @@ export default function CreateDirectPurchaseInvoicePage() {
                     </CardContent>
                 </Card>
             </div>
+
+            <DirectPiBulkUploadModal
+                open={isBulkUploadOpen}
+                onOpenChange={setIsBulkUploadOpen}
+                defaultSupplierId={supplierId}
+                defaultWarehouseId={warehouseId}
+                defaultInvoiceDate={invoiceDate}
+                defaultNotes={notes}
+                onSuccess={() => {
+                    startTransition(() => {
+                        addTransitionType('nav-forward');
+                        router.push('/erp/procurement/purchase-invoice');
+                    });
+                }}
+            />
         </div>
         </PermissionGuard>
     );
