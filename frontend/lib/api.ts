@@ -1028,6 +1028,23 @@ export const stockOperationApi = {
 };
 
 // Purchase Invoice Types and API
+export const PURCHASE_TYPE_OPTIONS = [
+  'T-SHIRT PURCHASED',
+  'U.G PURCHASED',
+  'CMT PURCHASED',
+  'PAJAMA PURCHASED',
+  'FABRIC PURCHASED',
+  'GARMENT PURCHASE',
+  'BAGS PURCHASE',
+  'SHOES PURCHASE',
+  'FRAGNANCE PURCHASE',
+  'DYING PURCHASE',
+  'PURCHASE MISC',
+  'ACCESSORIES PURCHASED',
+] as const;
+
+export type PurchaseType = typeof PURCHASE_TYPE_OPTIONS[number];
+
 export interface PurchaseInvoice {
   id: string;
   invoiceNumber: string;
@@ -1036,6 +1053,9 @@ export interface PurchaseInvoice {
   supplierId: string;
   grnId?: string;
   landedCostId?: string;
+  warehouseId?: string;
+  invoiceType?: string;
+  purchaseType?: string;
   subtotal: number;
   taxAmount: number;
   discountAmount: number;

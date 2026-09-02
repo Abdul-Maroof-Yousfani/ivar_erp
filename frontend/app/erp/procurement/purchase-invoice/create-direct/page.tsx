@@ -23,7 +23,7 @@ import {
     Loader2, Trash2, Save, FileText, ScanBarcode, Volume2, VolumeX,
     Keyboard, Sparkles, Upload
 } from 'lucide-react';
-import { supplierApi, warehouseApi } from '@/lib/api';
+import { supplierApi, warehouseApi, PURCHASE_TYPE_OPTIONS } from '@/lib/api';
 import { brandApi, categoryApi, silhouetteApi, genderApi } from '@/lib/api';
 import {
     getNextInvoiceNumber,
@@ -61,6 +61,7 @@ export default function CreateDirectPurchaseInvoicePage() {
     const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
     const [dueDate, setDueDate] = useState('');
     const [supplierId, setSupplierId] = useState('');
+    const [purchaseType, setPurchaseType] = useState<string>('');
     const [notes, setNotes] = useState('');
     const [discountAmount, setDiscountAmount] = useState(0);
 
@@ -486,6 +487,7 @@ export default function CreateDirectPurchaseInvoicePage() {
                 supplierId,
                 warehouseId,
                 invoiceType: 'DIRECT',
+                purchaseType: purchaseType || undefined,
                 discountAmount,
                 notes: notes || undefined,
                 items: selectedItems.map(i => ({
@@ -583,6 +585,22 @@ export default function CreateDirectPurchaseInvoicePage() {
                                 onValueChange={setWarehouseId}
                                 placeholder="Search warehouse..."
                             />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label className="text-xs text-muted-foreground">Purchase Type</Label>
+                            <Select value={purchaseType} onValueChange={setPurchaseType}>
+                                <SelectTrigger className="w-full text-sm">
+                                    <SelectValue placeholder="Select Purchase Type..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {PURCHASE_TYPE_OPTIONS.map((type) => (
+                                        <SelectItem key={type} value={type}>
+                                            {type}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
 
                         <div className="space-y-1.5">

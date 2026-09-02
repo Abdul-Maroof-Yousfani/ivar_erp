@@ -16,7 +16,7 @@ import {
 import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { supplierApi } from "@/lib/api";
+import { supplierApi, PURCHASE_TYPE_OPTIONS } from "@/lib/api";
 import {
   getValuedGrns,
   getAvailableLandedCosts,
@@ -98,6 +98,7 @@ export default function CreatePurchaseInvoicePage() {
     invoiceDate: new Date().toISOString().split("T")[0],
     dueDate: "",
     supplierId: "",
+    purchaseType: "",
     grnId: "",
     landedCostId: "",
     discountAmount: 0,
@@ -447,26 +448,49 @@ export default function CreatePurchaseInvoicePage() {
               </div>
             </div>
 
-            <div>
-              <Label htmlFor="supplier">Supplier *</Label>
-              <Select
-                value={formData.supplierId}
-                onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, supplierId: value }))
-                }
-                disabled={true}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Supplier" />
-                </SelectTrigger>
-                <SelectContent>
-                  {suppliers.map((supplier) => (
-                    <SelectItem key={supplier.id} value={supplier.id}>
-                      {supplier.name} ({supplier.code})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="supplier">Supplier *</Label>
+                <Select
+                  value={formData.supplierId}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({ ...prev, supplierId: value }))
+                  }
+                  disabled={true}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map((supplier) => (
+                      <SelectItem key={supplier.id} value={supplier.id}>
+                        {supplier.name} ({supplier.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="purchaseType">Purchase Type</Label>
+                <Select
+                  value={formData.purchaseType}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({ ...prev, purchaseType: value }))
+                  }
+                >
+                  <SelectTrigger id="purchaseType">
+                    <SelectValue placeholder="Select Purchase Type..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PURCHASE_TYPE_OPTIONS.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </CardContent>
         </Card>

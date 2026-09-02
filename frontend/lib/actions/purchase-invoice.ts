@@ -9,6 +9,8 @@ export async function getPurchaseInvoices(params?: {
     supplierId?: string;
     status?: string;
     paymentStatus?: string;
+    invoiceType?: string;
+    purchaseType?: string;
     search?: string;
 }) {
     try {
@@ -40,6 +42,7 @@ export async function createPurchaseInvoice(data: {
     landedCostId?: string;
     warehouseId?: string;
     invoiceType?: 'GRN_BASED' | 'LANDED_COST_BASED' | 'DIRECT';
+    purchaseType?: string;
     discountAmount?: number;
     notes?: string;
     items: {
@@ -155,6 +158,8 @@ export async function updatePurchaseInvoice(id: string, data: {
     supplierId?: string;
     grnId?: string;
     landedCostId?: string;
+    warehouseId?: string;
+    purchaseType?: string;
     discountAmount?: number;
     notes?: string;
     status?: string;

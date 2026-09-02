@@ -445,6 +445,20 @@ export default function PurchaseInvoiceDetailPage() {
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-500">
+                        Purchase Type
+                      </label>
+                      <p className="font-medium">
+                        {invoice.purchaseType ? (
+                          <Badge variant="outline" className="font-semibold text-xs border-primary/20 bg-primary/5 text-primary">
+                            {invoice.purchaseType}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">
                         Status
                       </label>
                       <div>
@@ -635,6 +649,12 @@ export default function PurchaseInvoiceDetailPage() {
                   <span className="font-bold">Invoice Number:</span>
                   <span className="font-bold">{invoice.invoiceNumber}</span>
                 </div>
+                {invoice.purchaseType && (
+                  <div className="flex justify-between mb-2">
+                    <span className="font-bold">Purchase Type:</span>
+                    <span>{invoice.purchaseType}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <div className="flex gap-2">
                     <span className="font-bold">Date:</span>
