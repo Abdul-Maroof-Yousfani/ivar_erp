@@ -45,12 +45,12 @@ export class DirectPiBulkUploadController {
             throw new BadRequestException('File size exceeds 50MB limit');
         }
 
-        const { vendorId, warehouseId, invoiceDate, notes } = (req.query || {}) as any;
+        const { vendorId, warehouseId, invoiceDate, notes, purchaseType } = (req.query || {}) as any;
         const result = await this.bulkUploadService.initiateValidation(
             buffer,
             file.filename,
             userId,
-            { vendorId, warehouseId, invoiceDate, notes },
+            { vendorId, warehouseId, invoiceDate, notes, purchaseType },
         );
 
         return {
@@ -67,11 +67,11 @@ export class DirectPiBulkUploadController {
         @GetUser('id') userId: string,
         @Req() req: any,
     ) {
-        const { vendorId, warehouseId, invoiceDate, notes } = (req.query || {}) as any;
+        const { vendorId, warehouseId, invoiceDate, notes, purchaseType } = (req.query || {}) as any;
         const result = await this.bulkUploadService.confirmUpload(
             uploadId,
             userId,
-            { vendorId, warehouseId, invoiceDate, notes },
+            { vendorId, warehouseId, invoiceDate, notes, purchaseType },
         );
 
         return {

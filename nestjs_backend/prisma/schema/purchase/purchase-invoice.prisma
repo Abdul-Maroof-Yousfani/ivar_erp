@@ -17,6 +17,7 @@ model PurchaseInvoice {
   paymentStatus   String                    @default("UNPAID") @map("payment_status")
   status          String                    @default("DRAFT")
   invoiceType     String                    @default("GRN_BASED") @map("invoice_type")
+  purchaseType    String?                   @map("purchase_type")
   notes           String?
   createdAt       DateTime                  @default(now()) @map("created_at")
   updatedAt       DateTime                  @updatedAt @map("updated_at")

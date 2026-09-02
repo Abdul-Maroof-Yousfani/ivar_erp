@@ -59,6 +59,7 @@ export class PurchaseInvoiceService {
           landedCostId: createDto.landedCostId,
           warehouseId: createDto.warehouseId,
           invoiceType,
+          purchaseType: createDto.purchaseType,
           subtotal,
           taxAmount,
           discountAmount: createDto.discountAmount || 0,
@@ -146,6 +147,7 @@ export class PurchaseInvoiceService {
     if (filters?.status) where.status = filters.status;
     if (filters?.paymentStatus) where.paymentStatus = filters.paymentStatus;
     if (filters?.invoiceType) where.invoiceType = filters.invoiceType;
+    if (filters?.purchaseType) where.purchaseType = filters.purchaseType;
     
     if (filters?.search) {
       where.OR = [
@@ -751,14 +753,33 @@ export class PurchaseInvoiceService {
 
         const totalAmount = Number(invoice.totalAmount);
 
-        // Resolve local purchases account if configured
+        // Resolve local purchases account if configured (or specific COA matching purchaseType)
         let purchasesAccountId: string | null = null;
-        try {
-          purchasesAccountId = await this.financeConfig.resolveAccount(
-            AccountRoleKey.PURCHASES_LOCAL,
-          );
-        } catch (error) {
-          // Gracefully ignore if not configured
+        if ((invoice as any).purchaseType) {
+          try {
+            const matchedAccount = await tx.chartOfAccount.findFirst({
+              where: {
+                name: { equals: (invoice as any).purchaseType, mode: 'insensitive' },
+                isActive: true,
+              },
+              select: { id: true },
+            });
+            if (matchedAccount) {
+              purchasesAccountId = matchedAccount.id;
+            }
+          } catch (error) {
+            // Gracefully ignore
+          }
+        }
+
+        if (!purchasesAccountId) {
+          try {
+            purchasesAccountId = await this.financeConfig.resolveAccount(
+              AccountRoleKey.PURCHASES_LOCAL,
+            );
+          } catch (error) {
+            // Gracefully ignore if not configured
+          }
         }
 
         const payableAccounts = supplier?.chartOfAccounts || [];
@@ -911,12 +932,31 @@ export class PurchaseInvoiceService {
           });
 
           let purchasesAccount: string | null = null;
-          try {
-            purchasesAccount = await this.financeConfig.resolveAccount(
-              AccountRoleKey.PURCHASES_LOCAL,
-            );
-          } catch (error) {
-            // Gracefully ignore if not configured
+          if ((invoice as any).purchaseType) {
+            try {
+              const matchedAccount = await tx.chartOfAccount.findFirst({
+                where: {
+                  name: { equals: (invoice as any).purchaseType, mode: 'insensitive' },
+                  isActive: true,
+                },
+                select: { id: true },
+              });
+              if (matchedAccount) {
+                purchasesAccount = matchedAccount.id;
+              }
+            } catch (error) {
+              // Gracefully ignore
+            }
+          }
+
+          if (!purchasesAccount) {
+            try {
+              purchasesAccount = await this.financeConfig.resolveAccount(
+                AccountRoleKey.PURCHASES_LOCAL,
+              );
+            } catch (error) {
+              // Gracefully ignore if not configured
+            }
           }
 
           if (purchasesAccount && supplier?.chartOfAccounts?.length) {

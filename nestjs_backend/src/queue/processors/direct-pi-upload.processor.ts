@@ -603,6 +603,7 @@ export class DirectPiUploadProcessor {
                         supplierId: resolvedSupplierId!,
                         warehouseId: resolvedWarehouseId || null,
                         invoiceType: 'DIRECT',
+                        purchaseType: metadata?.purchaseType || ((firstRecord as any).purchaseType ? (firstRecord as any).purchaseType.trim() : null),
                         status: 'DRAFT',
                         subtotal: new Decimal(subtotal),
                         taxAmount: new Decimal(totalTaxAmount),

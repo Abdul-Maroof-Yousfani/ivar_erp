@@ -10,6 +10,7 @@ export interface DirectPiUploadMetadata {
     vendorId?: string;
     warehouseId?: string;
     invoiceDate?: string;
+    purchaseType?: string;
     notes?: string;
 }
 
