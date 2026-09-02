@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, startTransition, addTransitionType } from "react";
+import { useState, useEffect, startTransition, addTransitionType, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -21,7 +21,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { CalendarIcon, Loader2, ArrowLeft } from "lucide-react";
+import { CalendarIcon, Loader2, ArrowLeft, Wand2, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -44,6 +44,14 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { PermissionGuard } from "@/components/auth/permission-guard";
+import {
+    generateBarcode, BARCODE_PATTERNS, type BarcodePattern,
+} from "@/lib/barcode";
+import JsBarcode from "jsbarcode";
+import {
+    DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+    DropdownMenuSeparator, DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 
 // --- Validation Schemas ---
 
@@ -92,6 +100,29 @@ const itemFormSchema = z.object({
 type ItemFormValues = z.infer<typeof itemFormSchema>;
 
 const STEPS = ["Basic Details", "Classification", "Pricing & Discounts", "Attributes", "Review"];
+
+// ─── Inline barcode preview ──────────────────
+function SvgBarcodePreview({ value, height = 36 }: { value: string; height?: number }) {
+    const svgRef = useRef<SVGSVGElement>(null);
+    useEffect(() => {
+        if (svgRef.current && value) {
+            try {
+                JsBarcode(svgRef.current, value, {
+                    format: "CODE128",
+                    width: 1.2,
+                    height,
+                    displayValue: false,
+                    margin: 4,
+                    background: "#ffffff",
+                    lineColor: "#000000",
+                });
+            } catch (e) {
+                console.error("Barcode preview error:", e);
+            }
+        }
+    }, [value, height]);
+    return <svg ref={svgRef} style={{ display: "block", maxWidth: "100%", height: "auto" }} />;
+}
 
 export default function ItemEditPage() {
     const router = useRouter();
@@ -441,9 +472,71 @@ export default function ItemEditPage() {
                                             render={({ field }: { field: any }) => (
                                                 <FormItem>
                                                     <FormLabel>Barcode</FormLabel>
-                                                    <FormControl>
-                                                        <Input placeholder="EAN / UPC" {...field} value={field.value ?? ""} />
-                                                    </FormControl>
+                                                    <div className="flex gap-2">
+                                                        <FormControl>
+                                                            <Input
+                                                                placeholder="EAN / UPC / Code128"
+                                                                {...field}
+                                                                value={field.value ?? ""}
+                                                                className="font-mono"
+                                                            />
+                                                        </FormControl>
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="outline"
+                                                                    size="icon"
+                                                                    className="shrink-0"
+                                                                    title="Auto-generate barcode"
+                                                                >
+                                                                    <Wand2 className="h-4 w-4" />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end" className="w-52">
+                                                                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                                                                    Generate barcode
+                                                                </DropdownMenuLabel>
+                                                                <DropdownMenuSeparator />
+                                                                {BARCODE_PATTERNS.map((p) => (
+                                                                    <DropdownMenuItem
+                                                                        key={p.value}
+                                                                        onClick={() => field.onChange(generateBarcode(p.value as BarcodePattern, form.getValues("sku")))}
+                                                                    >
+                                                                        <div>
+                                                                            <div className="font-medium text-sm">{p.label}</div>
+                                                                            <div className="text-xs text-muted-foreground">{p.description}</div>
+                                                                        </div>
+                                                                    </DropdownMenuItem>
+                                                                ))}
+                                                                {field.value && (
+                                                                    <>
+                                                                        <DropdownMenuSeparator />
+                                                                        <DropdownMenuItem
+                                                                            onClick={() => {
+                                                                                // Re-generate with same pattern by detecting format
+                                                                                const v = field.value as string;
+                                                                                const pattern: BarcodePattern =
+                                                                                    /^\d{13}$/.test(v) ? "ean13" :
+                                                                                    /^\d{12}$/.test(v) ? "upca" :
+                                                                                    /^[A-Z0-9]{10}$/.test(v) ? "code128" : "sku";
+                                                                                field.onChange(generateBarcode(pattern, form.getValues("sku")));
+                                                                            }}
+                                                                        >
+                                                                            <RefreshCw className="h-3.5 w-3.5 mr-2" />
+                                                                            Regenerate
+                                                                        </DropdownMenuItem>
+                                                                    </>
+                                                                )}
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    </div>
+                                                    {field.value && (
+                                                        <div className="mt-2 flex items-center gap-3 p-2 rounded-md bg-muted/50 border">
+                                                            <SvgBarcodePreview value={field.value} />
+                                                            <span className="text-xs font-mono text-muted-foreground break-all">{field.value}</span>
+                                                        </div>
+                                                    )}
                                                     <FormMessage />
                                                 </FormItem>
                                             )}

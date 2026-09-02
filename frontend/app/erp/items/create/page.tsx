@@ -6,6 +6,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Steps } from "@/components/ui/steps-indicator";
 import { MasterSelect } from "@/components/form/master-select";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { Button } from "@/components/ui/button";
 import {
     Form,
@@ -100,8 +101,8 @@ const itemFormSchema = z.object({
     discountEndDate: z.date().optional(),
 
     // Step 4: Attributes
-    sizeId: z.string().optional(),
-    colorId: z.string().optional(),
+    sizeIds: z.array(z.string()).optional().default([]),
+    colorIds: z.array(z.string()).optional().default([]),
     silhouetteId: z.string().optional(),
     case: z.string().optional(),
     band: z.string().optional(),
@@ -142,18 +143,14 @@ function SvgBarcodePreview({ value, height = 36 }: { value: string; height?: num
 // ─── Success screen ───────────────────────────────────────────────────────────
 
 function CreatedItemSuccess({
-    item,
+    items,
     onCreateAnother,
     onGoToList,
 }: {
-    item: { barCode: string; sku: string; description: string; unitPrice: number; itemId: string };
+    items: { barCode: string; sku: string; description: string; unitPrice: number; itemId: string }[];
     onCreateAnother: () => void;
     onGoToList: () => void;
 }) {
-    const price = Number(item.unitPrice).toLocaleString("en-US", {
-        style: "currency", currency: "PKR", minimumFractionDigits: 0,
-    });
-
     const handlePrint = () => {
         const styleId = "barcode-success-print-styles";
         if (!document.getElementById(styleId)) {
@@ -164,12 +161,17 @@ function CreatedItemSuccess({
                     body > *:not(#barcode-success-root) { display: none !important; }
                     #barcode-success-root {
                         display: flex !important;
+                        flex-wrap: wrap;
                         align-items: center;
                         justify-content: center;
-                        position: fixed;
+                        gap: 16px;
+                        position: absolute;
                         inset: 0;
                         background: white;
                         z-index: 99999;
+                    }
+                    .barcode-print-item {
+                        page-break-inside: avoid;
                     }
                     @page { margin: 8mm; }
                 }
@@ -182,11 +184,13 @@ function CreatedItemSuccess({
             root.id = "barcode-success-root";
             document.body.appendChild(root);
         }
-        const printEl = document.getElementById("barcode-success-label");
+        const printEl = document.getElementById("barcode-success-labels-container");
         if (printEl) root.innerHTML = printEl.innerHTML;
         window.print();
         setTimeout(() => { if (root) root.innerHTML = ""; }, 1000);
     };
+
+    const hasBarcodes = items.some(item => item.barCode);
 
     return (
         <div className="flex flex-col items-center gap-8 py-10 px-4 text-center">
@@ -196,49 +200,59 @@ function CreatedItemSuccess({
                     <CheckCircle2 className="h-9 w-9 text-green-600" />
                 </div>
                 <div>
-                    <h2 className="text-2xl font-bold">Item Created!</h2>
+                    <h2 className="text-2xl font-bold">Items Created!</h2>
                     <p className="text-muted-foreground text-sm mt-1">
-                        {item.description || item.sku} has been added to the catalog.
+                        {items.length} item variant(s) have been added to the catalog.
                     </p>
                 </div>
             </div>
 
-            {/* Barcode label card */}
-            <div
-                id="barcode-success-label"
-                className="bg-white border-2 border-border rounded-xl shadow-md px-8 py-6 flex flex-col items-center gap-3 min-w-64"
-            >
-                {item.description && (
-                    <div className="text-base font-bold tracking-tight text-center leading-tight max-w-xs">
-                        {item.description}
-                    </div>
-                )}
-                <div className="text-xs text-muted-foreground font-mono">{item.sku}</div>
+            {/* Barcode label cards */}
+            <div id="barcode-success-labels-container" className="flex flex-wrap justify-center gap-4">
+                {items.map((item, idx) => {
+                    const price = Number(item.unitPrice).toLocaleString("en-US", {
+                        style: "currency", currency: "PKR", minimumFractionDigits: 0,
+                    });
+                    
+                    return (
+                        <div
+                            key={idx}
+                            className="barcode-print-item bg-white border-2 border-border rounded-xl shadow-md px-8 py-6 flex flex-col items-center gap-3 min-w-64"
+                        >
+                            {item.description && (
+                                <div className="text-base font-bold tracking-tight text-center leading-tight max-w-xs">
+                                    {item.description}
+                                </div>
+                            )}
+                            <div className="text-xs text-muted-foreground font-mono">{item.sku}</div>
 
-                {item.barCode ? (
-                    <>
-                        <div className="my-1">
-                            <SvgBarcodePreview value={item.barCode} height={56} />
-                        </div>
-                        <div className="text-sm font-mono font-semibold tracking-widest text-foreground">
-                            {item.barCode}
-                        </div>
-                        <div className="mt-1">
-                            <QRCodeSVG value={item.barCode} size={72} level="M" />
-                        </div>
-                    </>
-                ) : (
-                    <div className="text-sm text-muted-foreground italic py-4">No barcode assigned</div>
-                )}
+                            {item.barCode ? (
+                                <>
+                                    <div className="my-1">
+                                        <SvgBarcodePreview value={item.barCode} height={56} />
+                                    </div>
+                                    <div className="text-sm font-mono font-semibold tracking-widest text-foreground">
+                                        {item.barCode}
+                                    </div>
+                                    <div className="mt-1">
+                                        <QRCodeSVG value={item.barCode} size={72} level="M" />
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="text-sm text-muted-foreground italic py-4">No barcode assigned</div>
+                            )}
 
-                <div className="text-xl font-bold mt-1">{price}</div>
+                            <div className="text-xl font-bold mt-1">{price}</div>
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Actions */}
             <div className="flex flex-wrap gap-3 justify-center">
-                {item.barCode && (
+                {hasBarcodes && (
                     <Button variant="outline" onClick={handlePrint} className="gap-2">
-                        <Printer className="h-4 w-4" /> Print Label
+                        <Printer className="h-4 w-4" /> Print Labels
                     </Button>
                 )}
                 <Button variant="outline" onClick={onCreateAnother} className="gap-2">
@@ -291,13 +305,13 @@ export default function ItemCreatePage() {
 
     const [loading, setLoading] = useState(true);
     const [nextItemId, setNextItemId] = useState<string>("");
-    const [createdItem, setCreatedItem] = useState<{
+    const [createdItems, setCreatedItems] = useState<{
         barCode: string;
         sku: string;
         description: string;
         unitPrice: number;
         itemId: string;
-    } | null>(null);
+    }[] | null>(null);
 
     const form = useForm({
         resolver: zodResolver(itemFormSchema),
@@ -481,18 +495,66 @@ export default function ItemCreatePage() {
             return;
         }
         try {
-            const result = await createItem(data);
-            if (result.status) {
-                toast.success("Item created successfully");
-                setCreatedItem({
-                    barCode: data.barCode || "",
-                    sku: data.sku,
-                    description: data.description || "",
-                    unitPrice: data.unitPrice || 0,
-                    itemId: result.data?.itemId || nextItemId,
-                });
+            const sizes = data.sizeIds?.length ? data.sizeIds : [undefined];
+            const colors = data.colorIds?.length ? data.colorIds : [undefined];
+            
+            const results = [];
+            const successfulItems = [];
+            let successCount = 0;
+            
+            for (const colorId of colors) {
+                for (const sizeId of sizes) {
+                    const color = masters.colors.find((c: any) => c.id === colorId);
+                    const size = masters.sizes.find((s: any) => s.id === sizeId);
+                    
+                    const variantSku = data.sku; // SKU remains the same base SKU
+
+                    // Format barcode to be unique if it was provided
+                    let variantBarCode = data.barCode;
+                    if (variantBarCode) {
+                        if (color && size) {
+                            variantBarCode = `${variantBarCode}-${color.name.substring(0,2).toUpperCase()}-${size.name.substring(0,2).toUpperCase()}`;
+                        } else if (color) {
+                            variantBarCode = `${variantBarCode}-${color.name.substring(0,2).toUpperCase()}`;
+                        } else if (size) {
+                            variantBarCode = `${variantBarCode}-${size.name.substring(0,2).toUpperCase()}`;
+                        }
+                    }
+                    
+                    const itemData = {
+                        ...data,
+                        sku: variantSku,
+                        barCode: variantBarCode,
+                        sizeId,
+                        colorId,
+                    };
+                    delete (itemData as any).sizeIds;
+                    delete (itemData as any).colorIds;
+                    
+                    const result = await createItem(itemData);
+                    results.push(result);
+                    if (result.status) {
+                        successCount++;
+                        successfulItems.push({
+                            barCode: variantBarCode || "",
+                            sku: variantSku,
+                            description: data.description || "",
+                            unitPrice: data.unitPrice || 0,
+                            itemId: result.data?.itemId || nextItemId,
+                        });
+                    }
+                }
+            }
+            
+            if (successCount > 0) {
+                toast.success(`${successCount} Item variant(s) created successfully`);
+                setCreatedItems(successfulItems);
             } else {
-                toast.error(result.message || "Failed to create item");
+                toast.error(results[0]?.message || "Failed to create item");
+            }
+            
+            if (successCount < results.length && successCount > 0) {
+                toast.error(`Failed to create ${results.length - successCount} variant(s)`);
             }
         } catch (error) {
             console.error("Error creating item:", error);
@@ -504,7 +566,7 @@ export default function ItemCreatePage() {
         if (watchItemType === "RAW_FABRIC") {
             switch (step) {
                 case 0:
-                    return ["itemType", "brandId", "segmentId", "sku", "barCode", "isActive", "description", "uom", "rollSize", "colorId", "unitCost", "unitPrice"];
+                    return ["itemType", "brandId", "segmentId", "sku", "barCode", "isActive", "description", "uom", "rollSize", "colorIds", "unitCost", "unitPrice"];
                 default:
                     return [];
             }
@@ -517,7 +579,7 @@ export default function ItemCreatePage() {
             case 2:
                 return ["unitPrice", "fob", "unitCost", "taxRate1", "taxRate2", "discountRate", "discountAmount", "discountStartDate", "discountEndDate"];
             case 3:
-                return ["sizeId", "colorId", "silhouetteId", "case", "band", "movementType", "heelHeight", "width"];
+                return ["sizeIds", "colorIds", "silhouetteId", "case", "band", "movementType", "heelHeight", "width"];
             default:
                 return [];
         }
@@ -545,13 +607,13 @@ export default function ItemCreatePage() {
                     <div className="flex items-center justify-center p-20">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                     </div>
-                ) : createdItem ? (
+                ) : createdItems ? (
                     <Card>
                         <CardContent className="pt-6">
                             <CreatedItemSuccess
-                                item={createdItem}
+                                items={createdItems}
                                 onCreateAnother={() => {
-                                    setCreatedItem(null);
+                                    setCreatedItems(null);
                                     form.reset();
                                     setCurrentStep(0);
                                     setImagePreview(null);
@@ -839,13 +901,20 @@ export default function ItemCreatePage() {
                                                     />
                                                     <FormField
                                                         control={form.control}
-                                                        name="colorId"
+                                                        name="colorIds"
                                                         render={({ field }) => (
-                                                            <MasterSelect
-                                                                label="Color"
-                                                                field={field}
-                                                                options={masters.colors}
-                                                            />
+                                                            <FormItem className="flex flex-col">
+                                                                <FormLabel>Color(s)</FormLabel>
+                                                                <FormControl>
+                                                                    <MultiSelect
+                                                                        options={masters.colors.map((c: any) => ({ value: c.id, label: c.name }))}
+                                                                        value={field.value || []}
+                                                                        onValueChange={field.onChange}
+                                                                        placeholder="Select Color(s)"
+                                                                    />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
                                                         )}
                                                     />
                                                     <FormField
@@ -1481,24 +1550,38 @@ export default function ItemCreatePage() {
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                             <FormField
                                                 control={form.control}
-                                                name="sizeId"
+                                                name="sizeIds"
                                                 render={({ field }) => (
-                                                    <MasterSelect
-                                                        label="Size"
-                                                        field={field}
-                                                        options={masters.sizes}
-                                                    />
+                                                    <FormItem className="flex flex-col">
+                                                        <FormLabel>Size(s)</FormLabel>
+                                                        <FormControl>
+                                                            <MultiSelect
+                                                                options={masters.sizes.map((s: any) => ({ value: s.id, label: s.name }))}
+                                                                value={field.value || []}
+                                                                onValueChange={field.onChange}
+                                                                placeholder="Select Size(s)"
+                                                            />
+                                                        </FormControl>
+                                                        <FormMessage />
+                                                    </FormItem>
                                                 )}
                                             />
                                             <FormField
                                                 control={form.control}
-                                                name="colorId"
+                                                name="colorIds"
                                                 render={({ field }) => (
-                                                    <MasterSelect
-                                                        label="Color"
-                                                        field={field}
-                                                        options={masters.colors}
-                                                    />
+                                                    <FormItem className="flex flex-col">
+                                                        <FormLabel>Color(s)</FormLabel>
+                                                        <FormControl>
+                                                            <MultiSelect
+                                                                options={masters.colors.map((c: any) => ({ value: c.id, label: c.name }))}
+                                                                value={field.value || []}
+                                                                onValueChange={field.onChange}
+                                                                placeholder="Select Color(s)"
+                                                            />
+                                                        </FormControl>
+                                                        <FormMessage />
+                                                    </FormItem>
                                                 )}
                                             />
                                             <FormField
@@ -1602,7 +1685,7 @@ export default function ItemCreatePage() {
                                                     <div className="border p-3 rounded-md bg-white">
                                                         <Label className="text-muted-foreground text-xs">Color</Label>
                                                         <div className="font-medium">
-                                                            {(masters.colors.find((c: any) => c.id === form.getValues("colorId")) as any)?.name || "N/A"}
+                                                            {(masters.colors.find((c: any) => c.id === form.getValues("colorIds")?.[0]))?.name || "N/A"}
                                                         </div>
                                                     </div>
                                                 )}
