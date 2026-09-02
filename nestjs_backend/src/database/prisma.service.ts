@@ -28,12 +28,16 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
   private static readonly clientsPool = new Map<string, PrismaClient>();
 
   // AsyncLocalStorage to maintain active tenant context per asynchronous execution branch
-  public static readonly asyncLocalStorage = new AsyncLocalStorage<PrismaServiceContext>();
+  public static readonly asyncLocalStorage =
+    new AsyncLocalStorage<PrismaServiceContext>();
 
   constructor(
     @Optional()
     @Inject('PRISMA_SERVICE_OPTIONS')
-    options?: { tenantId?: string; tenantDbUrl?: string },
+    options?: {
+      tenantId?: string;
+      tenantDbUrl?: string;
+    },
   ) {
     if (options && options.tenantDbUrl) {
       // 1. Manual instantiation for background/export jobs
@@ -111,7 +115,7 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
         const context = PrismaService.asyncLocalStorage.getStore();
         if (!context) {
           throw new Error(
-            `PrismaService context is missing. Ensure the user is authenticated and the TenantMiddleware has set the context before calling database operations (Accessed property: ${String(prop)}).`
+            `PrismaService context is missing. Ensure the user is authenticated and the TenantMiddleware has set the context before calling database operations (Accessed property: ${String(prop)}).`,
           );
         }
 
@@ -222,7 +226,10 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
           await pool.end();
         }
       } catch (error) {
-        console.error(`Error disconnecting client for company ${companyId}:`, error);
+        console.error(
+          `Error disconnecting client for company ${companyId}:`,
+          error,
+        );
       }
     }
     PrismaService.clientsPool.clear();
@@ -240,7 +247,9 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    this.logger.log('Destroying PrismaService singleton - cleaning up all tenant connection pools...');
+    this.logger.log(
+      'Destroying PrismaService singleton - cleaning up all tenant connection pools...',
+    );
     await PrismaService.cleanupAllPools();
     if ((this as any)._noOpPool) {
       try {
