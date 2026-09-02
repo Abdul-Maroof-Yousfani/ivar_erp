@@ -155,7 +155,7 @@ export function MultiSelect({
               })
             ) : (
               <Badge variant="secondary" className="text-xs">
-                {icon || <Users className="h-3 w-3 mr-1" />}
+                {icon && <span className="mr-1">{icon}</span>}
                 {value.length} selected
               </Badge>
             )}
