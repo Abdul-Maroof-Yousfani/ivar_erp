@@ -165,7 +165,7 @@ export default function PosStockLedgerPage() {
                 color: colorStr,
                 warehouseName: entry.warehouse?.name || entry.warehouseId || "",
                 locationName: entry.location?.name || "",
-                referenceIdStr: entry.referenceId || "",
+                referenceIdStr: (entry as any).referenceNumber || entry.referenceId || "",
                 referenceTypeStr: entry.referenceType || "",
                 dateStr,
             };
