@@ -115,12 +115,13 @@ export async function acceptTransferRequest(
     id: string,
     userId?: string,
     receivedItems?: { itemId: string; receivedQty: number }[],
-    notes?: string
+    notes?: string,
+    isFinal?: boolean
 ) {
     try {
         const response = await authFetch(`/transfer-request/${id}/accept`, {
             method: "POST",
-            body: JSON.stringify({ userId, receivedItems, notes }),
+            body: JSON.stringify({ userId, receivedItems, notes, isFinal }),
         });
         revalidatePath("/erp/inventory/transactions/stock-transfer");
         revalidatePath("/pos/inventory/receiving");

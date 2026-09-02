@@ -429,6 +429,14 @@ export default function TransferSlipPage({ params }: { params: Promise<{ id: str
                     </table>
                 </div>
 
+                {/* Receiving Remarks / Notes Section */}
+                {transfer.notes && (
+                    <div className="mb-8 p-4 rounded-lg bg-amber-50/60 border border-amber-200">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 mb-1">Transfer & Receiving Notes / Discrepancy Remarks</h4>
+                        <p className="text-xs font-mono text-gray-800 whitespace-pre-line leading-relaxed">{transfer.notes}</p>
+                    </div>
+                )}
+
                 {/* Signatures Section */}
                 <div className="grid grid-cols-3 gap-8 mt-24 pt-8 border-t border-dashed border-gray-300">
                     {transfer.transferType === 'OUTLET_TO_WAREHOUSE' ? (

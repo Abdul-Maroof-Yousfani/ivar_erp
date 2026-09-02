@@ -91,9 +91,11 @@ export class DirectPiBulkUploadController {
     @ApiOperation({ summary: 'Download Direct PI CSV template' })
     async downloadTemplate(@Res() res: any) {
         const template = [
-            'Invoice Number,Invoice Date,Due Date,Supplier,Warehouse,BarCode,SKU,Quantity,Unit Cost,Tax Rate,Discount Rate,Description,Notes',
-            ',2026-09-01,,SUPPLIER-001,Main Warehouse,889362319896,SKU-001,10,,0,0,Sample Direct Purchase Item,Initial stock purchase',
-            ',2026-09-01,,SUPPLIER-001,Main Warehouse,198634299720,SKU-002,25,,0,0,Sample Finished Goods,Batch line item',
+            'Invoice Number,Invoice Date,Due Date,Supplier,Warehouse,Purchase Type,BarCode,SKU,Quantity,Unit Cost,Tax Rate,Discount Rate,Description,Notes',
+            'PI-001,2026-09-01,,SUPPLIER-001,Main Warehouse,T-SHIRT PURCHASED,889362319896,SKU-001,10,1200,0,0,Sample Direct Item 1 (PI #1),Invoice 1 item',
+            'PI-001,2026-09-01,,SUPPLIER-001,Main Warehouse,T-SHIRT PURCHASED,198634299720,SKU-002,25,850,0,0,Sample Direct Item 2 (PI #1),Invoice 1 item',
+            'PI-002,2026-09-01,,SUPPLIER-002,Main Warehouse,FABRIC PURCHASED,889362319896,SKU-001,50,450,0,0,Sample Direct Item 3 (PI #2),Invoice 2 item',
+            ',2026-09-02,,SUPPLIER-001,Main Warehouse,CMT PURCHASED,198634299720,SKU-002,15,300,0,0,Auto-Generated PI #3,Auto sequence PI',
         ].join('\n');
 
         res.header('Content-Type', 'text/csv');

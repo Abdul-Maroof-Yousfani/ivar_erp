@@ -428,8 +428,8 @@ export class DirectPiUploadProcessor {
 
         // Group records into distinct Direct Invoices
         // Grouping logic:
-        // If row has invoiceNumber -> group by invoiceNumber
-        // If row has no invoiceNumber -> group by supplier + invoiceDate (or metadata)
+        // 1. If row has explicit invoiceNumber -> group by invoiceNumber
+        // 2. If row has no invoiceNumber -> group by (supplier + invoiceDate + purchaseType + warehouse)
         const invoiceGroups = new Map<string, DirectPiParsedRecord[]>();
 
         for (const record of records) {
@@ -437,7 +437,9 @@ export class DirectPiUploadProcessor {
             if (!key) {
                 const sKey = record.data.supplier?.trim() || metadata?.vendorId || 'DEFAULT_SUPPLIER';
                 const dKey = record.data.invoiceDate?.trim() || metadata?.invoiceDate || 'DEFAULT_DATE';
-                key = `AUTO_GROUP_${sKey}_${dKey}`;
+                const ptKey = record.data.purchaseType?.trim() || metadata?.purchaseType || 'DEFAULT_PURCHASE_TYPE';
+                const wKey = record.data.warehouse?.trim() || metadata?.warehouseId || 'DEFAULT_WAREHOUSE';
+                key = `AUTO_GROUP_${sKey}_${dKey}_${ptKey}_${wKey}`;
             }
 
             if (!invoiceGroups.has(key)) {
@@ -603,7 +605,7 @@ export class DirectPiUploadProcessor {
                         supplierId: resolvedSupplierId!,
                         warehouseId: resolvedWarehouseId || null,
                         invoiceType: 'DIRECT',
-                        purchaseType: metadata?.purchaseType || ((firstRecord as any).purchaseType ? (firstRecord as any).purchaseType.trim() : null),
+                        purchaseType: firstRecord.purchaseType?.trim() || metadata?.purchaseType || null,
                         status: 'DRAFT',
                         subtotal: new Decimal(subtotal),
                         taxAmount: new Decimal(totalTaxAmount),

@@ -47,6 +47,7 @@ interface Props {
     onUploadIdChange?: (id: string | null) => void;
     defaultSupplierId?: string;
     defaultWarehouseId?: string;
+    defaultPurchaseType?: string;
     defaultInvoiceDate?: string;
     defaultNotes?: string;
 }
@@ -59,6 +60,7 @@ export function DirectPiBulkUploadModal({
     onUploadIdChange,
     defaultSupplierId,
     defaultWarehouseId,
+    defaultPurchaseType,
     defaultInvoiceDate,
     defaultNotes,
 }: Props) {
@@ -140,6 +142,7 @@ export function DirectPiBulkUploadModal({
         const params = new URLSearchParams();
         if (defaultSupplierId) params.append('vendorId', defaultSupplierId);
         if (defaultWarehouseId) params.append('warehouseId', defaultWarehouseId);
+        if (defaultPurchaseType) params.append('purchaseType', defaultPurchaseType);
         if (defaultInvoiceDate) params.append('invoiceDate', defaultInvoiceDate);
         if (defaultNotes) params.append('notes', defaultNotes);
 
@@ -175,6 +178,7 @@ export function DirectPiBulkUploadModal({
         const params = new URLSearchParams();
         if (defaultSupplierId) params.append('vendorId', defaultSupplierId);
         if (defaultWarehouseId) params.append('warehouseId', defaultWarehouseId);
+        if (defaultPurchaseType) params.append('purchaseType', defaultPurchaseType);
         if (defaultInvoiceDate) params.append('invoiceDate', defaultInvoiceDate);
         if (defaultNotes) params.append('notes', defaultNotes);
 
@@ -357,8 +361,11 @@ export function DirectPiBulkUploadModal({
                                             <Download className="h-6 w-6 text-primary" />
                                         </div>
                                         <div>
-                                            <p className="font-bold text-sm">Download Template</p>
-                                            <p className="text-xs text-muted-foreground">Ensure your data matches the system requirements.</p>
+                                            <div className="flex items-center gap-2">
+                                                <p className="font-bold text-sm">Download Multi-PI Template</p>
+                                                <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/20">Supports Multiple PIs</Badge>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">Pre-formatted CSV with multi-invoice grouping & purchase types.</p>
                                         </div>
                                     </div>
                                     <Button variant="secondary" size="sm" onClick={downloadTemplate} className="font-semibold shadow-sm">
@@ -367,23 +374,32 @@ export function DirectPiBulkUploadModal({
                                 </div>
 
                                 {/* Features List */}
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="flex gap-4 p-4 rounded-xl border bg-card/50 transition-colors hover:bg-card">
-                                        <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
-                                            <CheckCircle2 className="h-5 w-5 text-green-600" />
+                                <div className="grid grid-cols-3 gap-3">
+                                    <div className="flex gap-3 p-3.5 rounded-xl border bg-card/50 transition-colors hover:bg-card">
+                                        <div className="h-9 w-9 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
+                                            <Database className="h-4.5 w-4.5 text-blue-600" />
                                         </div>
-                                        <div className="space-y-1">
-                                            <p className="text-sm font-bold">Smart Validation</p>
-                                            <p className="text-xs text-muted-foreground leading-relaxed">Instantly identifies formatting errors and duplicates before DB entry.</p>
+                                        <div className="space-y-0.5">
+                                            <p className="text-xs font-bold">Multi-PI Generation</p>
+                                            <p className="text-[11px] text-muted-foreground leading-relaxed">Group by invoice # or supplier to create multiple PIs at once.</p>
                                         </div>
                                     </div>
-                                    <div className="flex gap-4 p-4 rounded-xl border bg-card/50 transition-colors hover:bg-card">
-                                        <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center shrink-0">
-                                            <Loader2 className="h-5 w-5 text-amber-600" />
+                                    <div className="flex gap-3 p-3.5 rounded-xl border bg-card/50 transition-colors hover:bg-card">
+                                        <div className="h-9 w-9 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
+                                            <CheckCircle2 className="h-4.5 w-4.5 text-green-600" />
                                         </div>
-                                        <div className="space-y-1">
-                                            <p className="text-sm font-bold">SSE Streaming</p>
-                                            <p className="text-xs text-muted-foreground leading-relaxed">Real-time progress updates with instant feedback on every row.</p>
+                                        <div className="space-y-0.5">
+                                            <p className="text-xs font-bold">Smart Validation</p>
+                                            <p className="text-[11px] text-muted-foreground leading-relaxed">Instantly verifies items, barcodes, prices & vendors.</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 p-3.5 rounded-xl border bg-card/50 transition-colors hover:bg-card">
+                                        <div className="h-9 w-9 rounded-full bg-amber-500/10 flex items-center justify-center shrink-0">
+                                            <Loader2 className="h-4.5 w-4.5 text-amber-600" />
+                                        </div>
+                                        <div className="space-y-0.5">
+                                            <p className="text-xs font-bold">SSE Streaming</p>
+                                            <p className="text-[11px] text-muted-foreground leading-relaxed">Live progress updates & real-time import status.</p>
                                         </div>
                                     </div>
                                 </div>

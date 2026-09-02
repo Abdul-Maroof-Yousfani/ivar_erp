@@ -1390,6 +1390,9 @@ export default function CheckoutPage() {
                         coupon: appliedCoupon ? { code: appliedCoupon.code } : undefined,
                         alliance: selectedAlliance ? { code: selectedAlliance.code } : undefined,
                         cashierName: cashiers.find((c: any) => c.userId === selectedCashierId)?.name || "",
+                        customer: selectedCustomer || undefined,
+                        customerName: selectedCustomer?.name || undefined,
+                        customerPhone: selectedCustomer?.phone || undefined,
                     }}
                     cartItems={cartItems}
                     tenders={tenders.length > 0 ? tenders : [{ method: "cash", amount: grandTotal }]}
@@ -1420,7 +1423,14 @@ export default function CheckoutPage() {
             {/* Sale completed — show receipt */}
             {completedOrder && !showGiftReceiptAfterSales && (
                 <PrintReceipt
-                    order={{ ...completedOrder, fbrPosFee: activeFbrFee, isGiftReceipt: false }}
+                    order={{
+                        ...completedOrder,
+                        fbrPosFee: activeFbrFee,
+                        isGiftReceipt: false,
+                        customer: completedOrder.customer || selectedCustomer || undefined,
+                        customerName: completedOrder.customer?.name || selectedCustomer?.name || undefined,
+                        customerPhone: completedOrder.customer?.phone || selectedCustomer?.phone || undefined,
+                    }}
                     cartItems={cartItems}
                     tenders={tenders}
                     discountMode={discountMode}
@@ -1443,7 +1453,14 @@ export default function CheckoutPage() {
             {/* Gift receipt */}
             {completedOrder && showGiftReceiptAfterSales && (
                 <PrintReceipt
-                    order={{ ...completedOrder, fbrPosFee: activeFbrFee, isGiftReceipt: true }}
+                    order={{
+                        ...completedOrder,
+                        fbrPosFee: activeFbrFee,
+                        isGiftReceipt: true,
+                        customer: completedOrder.customer || selectedCustomer || undefined,
+                        customerName: completedOrder.customer?.name || selectedCustomer?.name || undefined,
+                        customerPhone: completedOrder.customer?.phone || selectedCustomer?.phone || undefined,
+                    }}
                     cartItems={cartItems}
                     tenders={tenders}
                     discountMode={discountMode}

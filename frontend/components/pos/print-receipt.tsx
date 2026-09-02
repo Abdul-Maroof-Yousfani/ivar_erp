@@ -902,10 +902,12 @@ function ReceiptBody({
           />
           {(() => {
             const phone =
+              order?.customer?.contactNo ||
               order?.customer?.phone ||
               order?.customerPhone ||
               order?.customerMobile ||
               order?.customer?.contactNumber ||
+              order?.contactNo ||
               order?.contactNumber ||
               order?.phone;
             if (phone && phone !== "N/A") {
@@ -1246,9 +1248,11 @@ function A4InvoiceBody({
   const customerName =
     order?.customer?.name || order?.customerName || "Walk-in Customer";
   const customerPhone =
+    order?.customer?.contactNo ||
     order?.customer?.phone ||
     order?.customerPhone ||
     order?.customerMobile ||
+    order?.contactNo ||
     "N/A";
   const customerEmail = order?.customer?.email || order?.customerEmail || "";
   const customerAddress =

@@ -6,6 +6,7 @@ import { StockLedgerService } from '../../warehouse/stock-ledger/stock-ledger.se
 import { FinanceAccountConfigService } from '../../finance/finance-account-config/finance-account-config.service';
 import { AccountRoleKey } from '../../finance/finance-account-config/dto/finance-account-config.dto';
 import { MovementType, Prisma } from '@prisma/client';
+import { generateNextJvNumber, generateNextFolioNumber } from '../../common/utils/voucher-number.util';
 
 import { ActivityLogsService } from '../../activity-logs/activity-logs.service';
 import { runInBackground } from '../../common/utils/run-in-background.util';
@@ -741,7 +742,7 @@ export class PurchaseInvoiceService {
       // Fetch supplier with linked payable accounts
       const supplier = await this.prisma.supplier.findUnique({
         where: { id: invoice.supplierId },
-        include: { chartOfAccounts: { select: { id: true } } },
+        include: { chartOfAccounts: { select: { id: true, code: true, name: true, parentId: true } } },
       });
 
       return this.prisma.$transaction(async (tx) => {
@@ -752,56 +753,88 @@ export class PurchaseInvoiceService {
         });
 
         const totalAmount = Number(invoice.totalAmount);
+        const invoiceDate = invoice.invoiceDate ? new Date(invoice.invoiceDate) : new Date();
 
-        // Resolve local purchases account if configured (or specific COA matching purchaseType)
-        let purchasesAccountId: string | null = null;
-        if ((invoice as any).purchaseType) {
-          try {
-            const matchedAccount = await tx.chartOfAccount.findFirst({
-              where: {
-                name: { equals: (invoice as any).purchaseType, mode: 'insensitive' },
-                isActive: true,
+        // ── 1. Resolve Account 50 - Purchases (Debit) and Sub-Account (Purchase Category) ──
+        const purchases = await this.resolvePurchasesAccount(tx, (invoice as any).purchaseType);
+
+        // ── 2. Resolve Account 20 - Payables (Credit) and Sub-Account (Vendor Name) ──
+        const payables = await this.resolvePayablesAccount(tx, invoice.supplierId, supplier);
+
+        let createdJv: any = null;
+
+        if (purchases.accountId && payables.accountId && totalAmount > 0) {
+          const sequentialJvNo = await generateNextJvNumber(tx, invoiceDate);
+          const sequentialFolio = await generateNextFolioNumber(tx, invoiceDate);
+          const jvDescription = `Direct Purchase Invoice: ${invoice.invoiceNumber} - ${supplier?.name || 'Vendor'} (${(invoice as any).purchaseType || 'Purchases'})`;
+
+          // Create Journal Voucher document
+          createdJv = await tx.journalVoucher.create({
+            data: {
+              jvNo: sequentialJvNo,
+              folio: sequentialFolio,
+              jvDate: invoiceDate,
+              description: jvDescription,
+              status: 'approved',
+              details: {
+                create: [
+                  // Debit Line: Account Code 50 - Purchases (Sub Account: Purchase Category)
+                  {
+                    accountId: purchases.accountId,
+                    tagAccountId: purchases.tagAccountId || null,
+                    debit: totalAmount,
+                    credit: 0,
+                    narration: `Purchase: ${(invoice as any).purchaseType || 'General'} (Inv #${invoice.invoiceNumber})`,
+                    refBillNo: invoice.invoiceNumber,
+                    taxType: 'Taxable',
+                  },
+                  // Credit Line: Account Code 20 - Payables (Sub Account: Vendor Name)
+                  {
+                    accountId: payables.accountId,
+                    tagAccountId: payables.tagAccountId || null,
+                    debit: 0,
+                    credit: totalAmount,
+                    narration: `Payable to ${supplier?.name || 'Vendor'} (Inv #${invoice.invoiceNumber})`,
+                    refBillNo: invoice.invoiceNumber,
+                    taxType: 'Taxable',
+                  },
+                ],
               },
-              select: { id: true },
-            });
-            if (matchedAccount) {
-              purchasesAccountId = matchedAccount.id;
-            }
-          } catch (error) {
-            // Gracefully ignore
-          }
-        }
+            },
+            include: { details: true },
+          });
 
-        if (!purchasesAccountId) {
-          try {
-            purchasesAccountId = await this.financeConfig.resolveAccount(
-              AccountRoleKey.PURCHASES_LOCAL,
-            );
-          } catch (error) {
-            // Gracefully ignore if not configured
-          }
-        }
-
-        const payableAccounts = supplier?.chartOfAccounts || [];
-
-        // Build and post journal lines only if finance configuration is present
-        if (purchasesAccountId && payableAccounts.length > 0) {
-          const creditPerAccount = totalAmount / payableAccounts.length;
-          const creditLines = payableAccounts.map(acc => ({
-            accountId: acc.id,
-            debit: 0,
-            credit: creditPerAccount,
-          }));
-
-          const debitLines = [{ accountId: purchasesAccountId, debit: totalAmount, credit: 0 }];
-
-          await this.accounting.postLines([...debitLines, ...creditLines], {
-            sourceType: 'PURCHASE_INVOICE',
-            sourceId: id,
-            sourceRef: invoice.invoiceNumber,
-            description: `Purchase Invoice approved: ${invoice.invoiceNumber}`,
-            transactionDate: new Date(),
-          }, tx);
+          // Post to General Ledger (AccountTransaction)
+          await this.accounting.postLines(
+            [
+              {
+                accountId: purchases.accountId,
+                tagAccountId: purchases.tagAccountId || undefined,
+                debit: totalAmount,
+                credit: 0,
+                narration: `Purchase: ${(invoice as any).purchaseType || 'General'} (Inv #${invoice.invoiceNumber})`,
+                refBillNo: invoice.invoiceNumber,
+                taxType: 'Taxable',
+              },
+              {
+                accountId: payables.accountId,
+                tagAccountId: payables.tagAccountId || undefined,
+                debit: 0,
+                credit: totalAmount,
+                narration: `Payable to ${supplier?.name || 'Vendor'} (Inv #${invoice.invoiceNumber})`,
+                refBillNo: invoice.invoiceNumber,
+                taxType: 'Taxable',
+              },
+            ],
+            {
+              sourceType: 'JOURNAL_VOUCHER',
+              sourceId: createdJv.id,
+              sourceRef: createdJv.jvNo,
+              description: jvDescription,
+              transactionDate: invoiceDate,
+            },
+            tx,
+          );
         }
 
         // ── Write supplier ledger credit entry ───────────────────────────────
@@ -924,54 +957,64 @@ export class PurchaseInvoiceService {
       }
 
       return this.prisma.$transaction(async (tx) => {
-        // If invoice was approved, reverse the journal entries
+        // If invoice was approved, reverse the journal entries and cancel the auto JV
         if (invoice.status === 'APPROVED') {
-          const supplier = await tx.supplier.findUnique({
-            where: { id: invoice.supplierId },
-            include: { chartOfAccounts: { select: { id: true } } },
+          const totalAmount = Number(invoice.totalAmount);
+          const purchases = await this.resolvePurchasesAccount(tx, (invoice as any).purchaseType);
+          const payables = await this.resolvePayablesAccount(tx, invoice.supplierId);
+
+          // 1. Find and cancel linked Journal Voucher if exists
+          const linkedJv = await tx.journalVoucher.findFirst({
+            where: {
+              OR: [
+                { description: { contains: invoice.invoiceNumber } },
+                { details: { some: { refBillNo: invoice.invoiceNumber } } },
+              ],
+              status: 'approved',
+            },
+            include: { details: true },
           });
 
-          let purchasesAccount: string | null = null;
-          if ((invoice as any).purchaseType) {
-            try {
-              const matchedAccount = await tx.chartOfAccount.findFirst({
-                where: {
-                  name: { equals: (invoice as any).purchaseType, mode: 'insensitive' },
-                  isActive: true,
-                },
-                select: { id: true },
-              });
-              if (matchedAccount) {
-                purchasesAccount = matchedAccount.id;
-              }
-            } catch (error) {
-              // Gracefully ignore
-            }
-          }
+          if (linkedJv) {
+            await tx.journalVoucher.update({
+              where: { id: linkedJv.id },
+              data: { status: 'cancelled' },
+            });
 
-          if (!purchasesAccount) {
-            try {
-              purchasesAccount = await this.financeConfig.resolveAccount(
-                AccountRoleKey.PURCHASES_LOCAL,
-              );
-            } catch (error) {
-              // Gracefully ignore if not configured
-            }
-          }
+            const originalLines = linkedJv.details.map((d: any) => ({
+              accountId: d.accountId,
+              tagAccountId: d.tagAccountId || undefined,
+              debit: Number(d.debit),
+              credit: Number(d.credit),
+              narration: d.narration || undefined,
+              refBillNo: d.refBillNo || undefined,
+            }));
 
-          if (purchasesAccount && supplier?.chartOfAccounts?.length) {
-            const totalAmount = Number(invoice.totalAmount);
-            const creditPerAccount = totalAmount / supplier.chartOfAccounts.length;
-
+            await this.accounting.reverseLines(originalLines, {
+              sourceType: 'JOURNAL_VOUCHER',
+              sourceId: linkedJv.id,
+              sourceRef: linkedJv.jvNo,
+              description: `Purchase Invoice cancelled: ${invoice.invoiceNumber}`,
+              transactionDate: new Date(),
+            }, tx);
+          } else if (purchases.accountId && payables.accountId && totalAmount > 0) {
             const originalLines = [
-              { accountId: purchasesAccount, debit: totalAmount, credit: 0 },
-              ...supplier.chartOfAccounts.map(acc => ({
-                accountId: acc.id, debit: 0, credit: creditPerAccount,
-              })),
+              {
+                accountId: purchases.accountId,
+                tagAccountId: purchases.tagAccountId || undefined,
+                debit: totalAmount,
+                credit: 0,
+              },
+              {
+                accountId: payables.accountId,
+                tagAccountId: payables.tagAccountId || undefined,
+                debit: 0,
+                credit: totalAmount,
+              },
             ];
 
             await this.accounting.reverseLines(originalLines, {
-              sourceType: 'PURCHASE_INVOICE',
+              sourceType: 'JOURNAL_VOUCHER',
               sourceId: id,
               sourceRef: invoice.invoiceNumber,
               description: `Purchase Invoice cancelled: ${invoice.invoiceNumber}`,
@@ -1058,5 +1101,168 @@ export class PurchaseInvoiceService {
       );
       throw error;
     }
+  }
+
+  /**
+   * Helper to resolve Account Code 50 - Purchases Control Account and Sub-Account (Purchase Category)
+   */
+  private async resolvePurchasesAccount(
+    tx: any,
+    purchaseType?: string | null,
+  ): Promise<{ accountId: string; tagAccountId?: string | null }> {
+    // 1. Find Purchases control account (Code 50 or matching 'Purchases')
+    let controlAccount: any = await tx.chartOfAccount.findFirst({
+      where: {
+        OR: [
+          { code: '50' },
+          { code: { startsWith: '50' } },
+          { name: { contains: 'Purchases (Cost of Goods)', mode: 'insensitive' } },
+          { name: { equals: 'Purchases', mode: 'insensitive' } },
+        ],
+        isActive: true,
+      },
+      select: { id: true, code: true, name: true },
+    });
+
+    if (!controlAccount) {
+      try {
+        const fallbackId = await this.financeConfig.resolveAccount(AccountRoleKey.PURCHASES_LOCAL);
+        if (fallbackId) {
+          controlAccount = await tx.chartOfAccount.findUnique({
+            where: { id: fallbackId },
+            select: { id: true, code: true, name: true },
+          });
+        }
+      } catch (error) {
+        // Gracefully ignore
+      }
+    }
+
+    // 2. Find Sub Account for purchase category / purchaseType (e.g. 'T-SHIRT PURCHASED', 'CMT PURCHASED', etc.)
+    let categoryAccount: any = null;
+    if (purchaseType) {
+      categoryAccount = await tx.chartOfAccount.findFirst({
+        where: {
+          name: { equals: purchaseType.trim(), mode: 'insensitive' },
+          isActive: true,
+        },
+        select: { id: true, parentId: true, code: true, name: true },
+      });
+    }
+
+    if (controlAccount && categoryAccount) {
+      return {
+        accountId: controlAccount.id,
+        tagAccountId: categoryAccount.id,
+      };
+    } else if (categoryAccount) {
+      return {
+        accountId: categoryAccount.id,
+        tagAccountId: null,
+      };
+    } else if (controlAccount) {
+      return {
+        accountId: controlAccount.id,
+        tagAccountId: null,
+      };
+    }
+
+    const defaultExpense = await tx.chartOfAccount.findFirst({
+      where: { type: 'EXPENSE', isActive: true },
+      select: { id: true },
+    });
+
+    return {
+      accountId: defaultExpense?.id || '',
+      tagAccountId: null,
+    };
+  }
+
+  /**
+   * Helper to resolve Account Code 20 - Payables Control Account and Sub-Account (Vendor Name)
+   */
+  private async resolvePayablesAccount(
+    tx: any,
+    supplierId: string,
+    supplierData?: any,
+  ): Promise<{ accountId: string; tagAccountId?: string | null }> {
+    const supplier = supplierData || await tx.supplier.findUnique({
+      where: { id: supplierId },
+      include: { chartOfAccounts: { select: { id: true, code: true, name: true, parentId: true } } },
+    });
+
+    // 1. Find Payables control account (Code 20 or matching 'Payables (Creditors)')
+    let controlAccount: any = await tx.chartOfAccount.findFirst({
+      where: {
+        OR: [
+          { code: '20' },
+          { code: { startsWith: '20' } },
+          { name: { contains: 'Payables (Creditors)', mode: 'insensitive' } },
+          { name: { equals: 'Payables', mode: 'insensitive' } },
+          { name: { contains: 'BILLS PAYABLE', mode: 'insensitive' } },
+          { name: { contains: 'A/P PARTIES', mode: 'insensitive' } },
+        ],
+        isActive: true,
+      },
+      select: { id: true, code: true, name: true },
+    });
+
+    // 2. Find Sub Account for Vendor
+    let vendorAccount: any = null;
+
+    if (supplier?.chartOfAccounts?.length) {
+      vendorAccount = supplier.chartOfAccounts[0];
+    }
+
+    if (!vendorAccount && supplier && controlAccount) {
+      vendorAccount = await tx.chartOfAccount.findFirst({
+        where: {
+          parentId: controlAccount.id,
+          OR: [
+            { code: supplier.code },
+            { name: { contains: supplier.name, mode: 'insensitive' } },
+          ],
+          isActive: true,
+        },
+        select: { id: true, code: true, name: true, parentId: true },
+      });
+    }
+
+    if (!vendorAccount && supplier) {
+      vendorAccount = await tx.chartOfAccount.findFirst({
+        where: {
+          name: { contains: supplier.name, mode: 'insensitive' },
+          isActive: true,
+        },
+        select: { id: true, code: true, name: true, parentId: true },
+      });
+    }
+
+    if (controlAccount && vendorAccount) {
+      return {
+        accountId: controlAccount.id,
+        tagAccountId: vendorAccount.id,
+      };
+    } else if (vendorAccount) {
+      return {
+        accountId: vendorAccount.id,
+        tagAccountId: null,
+      };
+    } else if (controlAccount) {
+      return {
+        accountId: controlAccount.id,
+        tagAccountId: null,
+      };
+    }
+
+    const defaultLiability = await tx.chartOfAccount.findFirst({
+      where: { type: 'LIABILITY', isActive: true },
+      select: { id: true },
+    });
+
+    return {
+      accountId: defaultLiability?.id || '',
+      tagAccountId: null,
+    };
   }
 }

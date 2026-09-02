@@ -373,6 +373,8 @@ export class TransferRequestService {
               'PENDING_CHECKER',
               'PENDING_AUTHORIZER',
               'SOURCE_APPROVED',
+              'PARTIAL_RECEIVED',
+              'IN_TRANSIT',
             ],
           },
         });
@@ -428,7 +430,14 @@ export class TransferRequestService {
         toLocationId: locationId,
         transferType: 'WAREHOUSE_TO_OUTLET',
         status: {
-          in: ['PENDING', 'APPROVED', 'PENDING_CHECKER', 'PENDING_AUTHORIZER'],
+          in: [
+            'PENDING',
+            'APPROVED',
+            'PENDING_CHECKER',
+            'PENDING_AUTHORIZER',
+            'PARTIAL_RECEIVED',
+            'IN_TRANSIT',
+          ],
         },
       },
       include: {
@@ -909,6 +918,7 @@ export class TransferRequestService {
     data?: {
       receivedItems?: { itemId: string; receivedQty: number }[];
       notes?: string;
+      isFinal?: boolean;
     },
     ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
@@ -953,16 +963,35 @@ export class TransferRequestService {
       }
 
       return this.prisma.$transaction(async (tx) => {
-        // Update fulfilledQty for items
+        let totalOrderedAcrossAll = 0;
+        let totalFulfilledAcrossAll = 0;
+
+        // Calculate and update cumulative fulfilledQty for items
         for (const item of request.items) {
-          const rxQty = receivedMap.has(item.itemId)
+          const orderedQty = Number(item.quantity);
+          const currentFulfilled = Number(item.fulfilledQty || 0);
+          const maxRemaining = Math.max(0, orderedQty - currentFulfilled);
+
+          // If receivedMap has entry for item, that represents the newly received batch qty.
+          // Otherwise, default to the full remaining quantity.
+          let rxBatchQty = receivedMap.has(item.itemId)
             ? Number(receivedMap.get(item.itemId))
-            : Number(item.quantity);
+            : maxRemaining;
+
+          if (isNaN(rxBatchQty) || rxBatchQty < 0) rxBatchQty = 0;
+          if (rxBatchQty > maxRemaining) rxBatchQty = maxRemaining;
+
+          const newFulfilled = currentFulfilled + rxBatchQty;
+          totalOrderedAcrossAll += orderedQty;
+          totalFulfilledAcrossAll += newFulfilled;
+
           await tx.transferRequestItem.update({
             where: { id: item.id },
-            data: { fulfilledQty: new Prisma.Decimal(rxQty) },
+            data: { fulfilledQty: new Prisma.Decimal(newFulfilled) },
           });
         }
+
+        const totalRemainingAcrossAll = Math.max(0, totalOrderedAcrossAll - totalFulfilledAcrossAll);
 
         if (request.transferType === 'WAREHOUSE_TO_OUTLET') {
           // Normal transfer: Warehouse → Outlet
@@ -971,29 +1000,40 @@ export class TransferRequestService {
             'APPROVED',
             'PENDING_CHECKER',
             'PENDING_AUTHORIZER',
+            'PARTIAL_RECEIVED',
+            'IN_TRANSIT',
           ];
           if (!validStatuses.includes(request.status)) {
             throw new BadRequestException(
-              `Request is not in PENDING or APPROVED status (Current: ${request.status})`,
+              `Request is not in a receivable status (Current: ${request.status})`,
             );
           }
 
           for (const item of request.items) {
-            const rxQty = receivedMap.has(item.itemId)
-              ? Number(receivedMap.get(item.itemId))
-              : Number(item.quantity);
+            const orderedQty = Number(item.quantity);
+            const currentFulfilled = Number(item.fulfilledQty || 0);
+            const maxRemaining = Math.max(0, orderedQty - currentFulfilled);
 
-            await this.stockMovementService.executeMovement({
-              itemId: item.itemId,
-              fromWarehouseId: request.fromWarehouseId!,
-              toLocationId: request.toLocationId!,
-              quantity: rxQty,
-              type: 'TRANSFER',
-              referenceType: 'TRANSFER_REQUEST',
-              referenceId: request.id,
-              userId: userId,
-              transaction: tx,
-            });
+            let rxBatchQty = receivedMap.has(item.itemId)
+              ? Number(receivedMap.get(item.itemId))
+              : maxRemaining;
+
+            if (isNaN(rxBatchQty) || rxBatchQty < 0) rxBatchQty = 0;
+            if (rxBatchQty > maxRemaining) rxBatchQty = maxRemaining;
+
+            if (rxBatchQty > 0) {
+              await this.stockMovementService.executeMovement({
+                itemId: item.itemId,
+                fromWarehouseId: request.fromWarehouseId!,
+                toLocationId: request.toLocationId!,
+                quantity: rxBatchQty,
+                type: 'TRANSFER',
+                referenceType: 'TRANSFER_REQUEST',
+                referenceId: request.id,
+                userId: userId,
+                transaction: tx,
+              });
+            }
           }
         } else if (request.transferType === 'OUTLET_TO_WAREHOUSE') {
           // Return transfer: Outlet → Warehouse
@@ -1002,6 +1042,8 @@ export class TransferRequestService {
             'APPROVED',
             'PENDING_CHECKER',
             'PENDING_AUTHORIZER',
+            'PARTIAL_RECEIVED',
+            'IN_TRANSIT',
           ];
           if (!validStatuses.includes(request.status)) {
             throw new BadRequestException(
@@ -1161,20 +1203,46 @@ export class TransferRequestService {
           }
         }
 
-        // Combine existing notes with receiving notes
-        let newNotes = request.notes || '';
-        if (data?.notes) {
-          newNotes = newNotes
-            ? `${newNotes}\n[Receiving Notes]: ${data.notes}`
-            : `[Receiving Notes]: ${data.notes}`;
+        // Determine final or partial status
+        let newStatus = 'COMPLETED';
+        if (request.transferType === 'WAREHOUSE_TO_OUTLET') {
+          if (totalRemainingAcrossAll === 0) {
+            newStatus = 'COMPLETED';
+          } else if (data?.isFinal === true) {
+            // Finalizing with shortage - notes is strictly mandatory
+            if (!data.notes || !data.notes.trim()) {
+              throw new BadRequestException(
+                `Receiving notes are required to explain the missing/shortage quantity (${totalRemainingAcrossAll} items) before completing this transfer.`,
+              );
+            }
+            newStatus = 'COMPLETED';
+          } else {
+            // Partial receipt
+            newStatus = 'PARTIAL_RECEIVED';
+          }
         }
 
-        // Update request status to completed
+        // Combine existing notes with receiving notes
+        let newNotes = request.notes || '';
+        const timestamp = new Date().toLocaleString();
+        if (data?.notes && data.notes.trim()) {
+          const prefix =
+            data?.isFinal && totalRemainingAcrossAll > 0
+              ? `[Receiving Shortage Notes - ${totalRemainingAcrossAll} missing - ${timestamp}]`
+              : newStatus === 'PARTIAL_RECEIVED'
+                ? `[Partial Receiving Notes - ${timestamp}]`
+                : `[Receiving Notes - ${timestamp}]`;
+          newNotes = newNotes
+            ? `${newNotes}\n${prefix}: ${data.notes.trim()}`
+            : `${prefix}: ${data.notes.trim()}`;
+        }
+
+        // Update request status
         const updated = await tx.transferRequest.update({
           where: { id },
           data: {
-            status: 'COMPLETED',
-            approvedById: userId,
+            status: newStatus,
+            approvedById: userId || request.approvedById,
             notes: newNotes,
           },
         });
@@ -1187,8 +1255,8 @@ export class TransferRequestService {
             module: 'transfer-request',
             entity: 'TransferRequest',
             entityId: updated.id,
-            description: `Completed transfer request ${updated.requestNo}`,
-            newValues: JSON.stringify({ status: 'COMPLETED' }),
+            description: `Transfer request ${updated.requestNo} status updated to ${newStatus}`,
+            newValues: JSON.stringify({ status: newStatus }),
             ipAddress: ctx?.ipAddress,
             userAgent: ctx?.userAgent,
             status: 'success',

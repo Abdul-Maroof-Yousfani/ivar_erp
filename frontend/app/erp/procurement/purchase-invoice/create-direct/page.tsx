@@ -1363,6 +1363,7 @@ export default function CreateDirectPurchaseInvoicePage() {
                 onOpenChange={setIsBulkUploadOpen}
                 defaultSupplierId={supplierId}
                 defaultWarehouseId={warehouseId}
+                defaultPurchaseType={purchaseType}
                 defaultInvoiceDate={invoiceDate}
                 defaultNotes={notes}
                 onSuccess={() => {

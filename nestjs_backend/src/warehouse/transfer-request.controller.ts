@@ -134,13 +134,13 @@ export class TransferRequestController {
     @ApiOperation({ summary: 'Accept and execute transfer movement' })
     async accept(
         @Param('id') id: string,
-        @Body() dto: { userId?: string; receivedItems?: { itemId: string; receivedQty: number }[]; notes?: string },
+        @Body() dto: { userId?: string; receivedItems?: { itemId: string; receivedQty: number }[]; notes?: string; isFinal?: boolean },
         @Req() req: any
     ) {
         const data = await this.transferRequestService.acceptRequest(
             id,
             dto.userId,
-            { receivedItems: dto.receivedItems, notes: dto.notes },
+            { receivedItems: dto.receivedItems, notes: dto.notes, isFinal: dto.isFinal },
             {
                 userId: req.user?.id,
                 ipAddress: req.ip,

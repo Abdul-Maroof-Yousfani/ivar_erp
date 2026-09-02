@@ -802,6 +802,16 @@ export class PosSalesService implements OnModuleInit {
                   bankGlCode: true,
                 },
               },
+              customer: {
+                select: {
+                  id: true,
+                  name: true,
+                  contactNo: true,
+                  email: true,
+                  address: true,
+                  code: true,
+                },
+              },
             },
           });
         } else {
@@ -876,6 +886,16 @@ export class PosSalesService implements OnModuleInit {
                   description: true,
                   commissionRate: true,
                   bankGlCode: true,
+                },
+              },
+              customer: {
+                select: {
+                  id: true,
+                  name: true,
+                  contactNo: true,
+                  email: true,
+                  address: true,
+                  code: true,
                 },
               },
             },
