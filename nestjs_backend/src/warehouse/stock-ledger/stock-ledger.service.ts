@@ -713,10 +713,10 @@ export class StockLedgerService {
       const ref = entry.referenceType || '';
       const mov = entry.movementType;
 
-      if (mov === MovementType.ADJUSTMENT || ref === 'STOCK_ADJUSTMENT' || ref === 'ADJUSTMENT') {
+      if (mov === MovementType.ADJUSTMENT || ['STOCK_ADJUSTMENT', 'ADJUSTMENT', 'PHYSICAL_COUNT', 'INVENTORY_ADJUSTMENT'].includes(ref)) {
         m.adj += qty;
       } else if (qty > 0) {
-        if (ref === 'TRANSFER_REQUEST') {
+        if (['TRANSFER_REQUEST', 'WAREHOUSE_TRANSFER_IN'].includes(ref)) {
           m.fromWarehouse += qty;
         } else if (ref === 'OUTLET_TRANSFER_IN') {
           m.fromOutlet += qty;
@@ -726,19 +726,21 @@ export class StockLedgerService {
           m.refund += qty;
         } else if (ref === 'POS_CLAIM_APPROVED') {
           m.claim += qty;
+        } else if (['POS_HOLD_CANCELLED', 'POS_HOLD_EXPIRED'].includes(ref)) {
+          m.sales = Math.max(0, m.sales - qty);
         } else {
-          m.adj += qty;
+          m.fromWarehouse += qty;
         }
       } else if (qty < 0) {
         const absQty = Math.abs(qty);
-        if (['RETURN_REQUEST', 'CLAIM_RETURN', 'CLAIM_TO_PLM', 'CLAIM_RETURN_REQUEST'].includes(ref)) {
+        if (['RETURN_REQUEST', 'CLAIM_RETURN', 'CLAIM_TO_PLM', 'CLAIM_RETURN_REQUEST', 'TRANSFER_REQUEST', 'WAREHOUSE_TRANSFER_OUT'].includes(ref)) {
           m.toWarehouse += absQty;
         } else if (ref === 'OUTLET_TRANSFER_OUT') {
           m.toOutlet += absQty;
-        } else if (['POS_SALE', 'POS_EXCHANGE_OUT'].includes(ref)) {
+        } else if (['POS_SALE', 'POS_EXCHANGE_OUT', 'POS_HOLD'].includes(ref)) {
           m.sales += absQty;
         } else {
-          m.adj += qty;
+          m.sales += absQty;
         }
       }
     }

@@ -29,6 +29,8 @@ export interface BarcodeItem {
     unitPrice: number;
     brand?: { name: string } | null;
     category?: { name: string } | null;
+    size?: { name: string } | null;
+    color?: { name: string } | null;
 }
 
 type LabelSize = "small" | "medium" | "large";
@@ -131,9 +133,13 @@ function ItemLabel({ item, size, type }: Omit<LabelProps, "qty">) {
                         {item.description}
                     </div>
                 )}
-                {item.brand?.name && (
+                {(item.brand?.name || item.size?.name || item.color?.name) && (
                     <div style={{ fontSize: `${cfg.fontSize - 1}px`, color: "#666", lineHeight: 1.1, marginTop: "0.5mm" }}>
-                        {item.brand.name}
+                        {[
+                            item.brand?.name,
+                            item.size?.name ? `Size: ${item.size.name}` : null,
+                            item.color?.name ? `Color: ${item.color.name}` : null,
+                        ].filter(Boolean).join(" • ")}
                     </div>
                 )}
             </div>
@@ -252,7 +258,9 @@ export function BarcodePrintModal({ open, onOpenChange, items }: BarcodePrintMod
             (i.barCode ?? "").toLowerCase().includes(search.toLowerCase()) ||
             i.sku.toLowerCase().includes(search.toLowerCase()) ||
             (i.description ?? "").toLowerCase().includes(search.toLowerCase()) ||
-            (i.brand?.name ?? "").toLowerCase().includes(search.toLowerCase()),
+            (i.brand?.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
+            (i.size?.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
+            (i.color?.name ?? "").toLowerCase().includes(search.toLowerCase()),
         )
         : items;
 
@@ -375,9 +383,15 @@ export function BarcodePrintModal({ open, onOpenChange, items }: BarcodePrintMod
                                                     <div className="text-[10px] text-muted-foreground font-mono truncate">
                                                         {item.barCode ?? item.sku}
                                                     </div>
-                                                    {item.brand?.name && (
-                                                        <div className="text-[10px] text-muted-foreground truncate">{item.brand.name}</div>
-                                                    )}
+                                                    {(item.brand?.name || item.size?.name || item.color?.name) && (
+                                                        <div className="text-[10px] text-muted-foreground truncate">
+                                                            {[
+                                                                item.brand?.name,
+                                                                item.size?.name ? `Size: ${item.size.name}` : null,
+                                                                item.color?.name ? `Color: ${item.color.name}` : null,
+                                                            ].filter(Boolean).join(" • ")}
+                                                        </div>
+                                                    )} 
                                                 </div>
                                                 {/* Qty stepper */}
                                                 {isSelected && (

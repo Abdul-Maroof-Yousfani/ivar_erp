@@ -369,9 +369,11 @@ export default function ERPSalesActivityReportPage() {
                             <ShoppingBag className="h-3.5 w-3.5 text-emerald-600" />
                         </div>
                         <div className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                            Rs. {formatCurrency(summary.totalSalesAmount)}
+                            {formatCurrency(summary.totalSalesAmount)}
                         </div>
-                        <div className="text-[10px] text-muted-foreground truncate">{summary.totalSalesCount} Orders</div>
+                        <div className="text-[10px] text-muted-foreground truncate">
+                            {summary.totalSalesCount} Orders | FBR Fee: {formatCurrency(summary.totalFbrCharges ?? 0)}
+                        </div>
                     </CardContent>
                 </Card>
 
@@ -382,7 +384,7 @@ export default function ERPSalesActivityReportPage() {
                             <RotateCcw className="h-3.5 w-3.5 text-rose-600" />
                         </div>
                         <div className="text-lg font-bold font-mono text-rose-600 dark:text-rose-400">
-                            Rs. {formatCurrency(summary.totalReturnsAmount)}
+                            {formatCurrency(summary.totalReturnsAmount)}
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate">{summary.totalReturnsCount} Return Slips</div>
                     </CardContent>
@@ -395,7 +397,7 @@ export default function ERPSalesActivityReportPage() {
                             <Banknote className="h-3.5 w-3.5 text-purple-600" />
                         </div>
                         <div className="text-lg font-bold font-mono text-purple-600 dark:text-purple-400">
-                            Rs. {formatCurrency(summary.totalRefundsAmount)}
+                            {formatCurrency(summary.totalRefundsAmount)}
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate">{summary.totalRefundsCount} Refund Slips</div>
                     </CardContent>
@@ -408,7 +410,7 @@ export default function ERPSalesActivityReportPage() {
                             <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
                         </div>
                         <div className="text-lg font-bold font-mono text-amber-600 dark:text-amber-400">
-                            Rs. {formatCurrency(summary.totalClaimsAmount)}
+                            {formatCurrency(summary.totalClaimsAmount)}
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate">{summary.totalClaimsCount} Claim Submissions</div>
                     </CardContent>
@@ -421,7 +423,7 @@ export default function ERPSalesActivityReportPage() {
                             <TrendingUp className="h-3.5 w-3.5 text-blue-600" />
                         </div>
                         <div className="text-lg font-bold font-mono text-blue-600 dark:text-blue-400">
-                            Rs. {formatCurrency(summary.totalNetRevenue)}
+                            {formatCurrency(summary.totalNetRevenue)}
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate">Sales - Returns - Refunds</div>
                     </CardContent>
@@ -434,10 +436,10 @@ export default function ERPSalesActivityReportPage() {
                             <Ticket className="h-3.5 w-3.5 text-indigo-600" />
                         </div>
                         <div className="text-lg font-bold font-mono text-indigo-600 dark:text-indigo-400">
-                            Rs. {formatCurrency(summary.totalIssuedVouchersAmount)}
+                            {formatCurrency(summary.totalIssuedVouchersAmount)}
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate">
-                            {summary.totalIssuedVouchersCount} Issued | Comm: Rs.{formatCurrency(summary.totalMerchantCommission)}
+                            {summary.totalIssuedVouchersCount} Issued | Comm:{formatCurrency(summary.totalMerchantCommission)}
                         </div>
                     </CardContent>
                 </Card>
@@ -690,7 +692,7 @@ export default function ERPSalesActivityReportPage() {
                                                 {act.type === "claim" ? "Claim Total" : act.type === "return" ? "Returned Value" : act.type === "refund" ? "Refund Amount" : "Sale Amount"}
                                             </div>
                                             <div className="text-base font-bold text-foreground font-mono">
-                                                Rs. {formatCurrency(act.approvedAmount ?? act.amount)}
+                                                {formatCurrency(act.approvedAmount ?? act.amount)}
                                             </div>
                                         </div>
 
@@ -803,10 +805,10 @@ export default function ERPSalesActivityReportPage() {
                                                                 )}
                                                             </td>
                                                             <td className="p-2 text-right font-mono text-muted-foreground">
-                                                                Rs. {formatCurrency(it.price)}
+                                                                {formatCurrency(it.price)}
                                                             </td>
                                                             <td className="p-2 text-right font-mono font-semibold">
-                                                                Rs. {formatCurrency(act.type === "claim" ? (it.approvedAmount ?? it.lineTotal) : it.lineTotal)}
+                                                                {formatCurrency(act.type === "claim" ? (it.approvedAmount ?? it.lineTotal) : it.lineTotal)}
                                                             </td>
                                                             {act.type === "claim" && (
                                                                 <td className="p-2 text-center">
@@ -954,7 +956,7 @@ export default function ERPSalesActivityReportPage() {
                                                 {act.items?.length || 0}
                                             </td>
                                             <td className="p-3 text-right font-mono font-bold text-foreground">
-                                                Rs. {formatCurrency(act.approvedAmount ?? act.amount)}
+                                                {formatCurrency(act.approvedAmount ?? act.amount)}
                                             </td>
                                             <td className="p-3 text-center">
                                                 {canPrint && (
