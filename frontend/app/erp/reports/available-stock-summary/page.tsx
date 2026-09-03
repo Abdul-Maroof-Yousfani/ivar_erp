@@ -251,6 +251,7 @@ export default function ERPAvailableStockSummaryCostingReportPage() {
                 warehouseId: warehouseParam,
                 asOfDate,
                 format: "xlsx",
+                exportType: "flat",
                 summaryOnly,
                 showBrand: groupingLevels.brand,
                 showDivision: groupingLevels.division,

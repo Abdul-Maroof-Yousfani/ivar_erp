@@ -22,6 +22,7 @@ export interface AvailableStockSummaryExportJobData {
   startDate?: string;
   endDate?: string;
   format: 'xlsx' | 'pdf';
+  exportType?: 'hierarchical' | 'flat';
   summaryOnly?: boolean;
   showBrand?: boolean;
   showDivision?: boolean;
@@ -60,6 +61,25 @@ const COLUMNS = [
   { header: 'Value (Rs.)', key: 'value', width: 18, align: 'right' as const },
 ];
 
+const FLAT_COLUMNS = [
+  { header: 'Brand', key: 'brand', width: 16 },
+  { header: 'Division', key: 'division', width: 14 },
+  { header: 'Category', key: 'category', width: 18 },
+  { header: 'Gender', key: 'gender', width: 12 },
+  { header: 'Silhouette', key: 'silhouette', width: 14 },
+  { header: 'SKU', key: 'sku', width: 16 },
+  { header: 'Article Name', key: 'articleName', width: 28 },
+  { header: 'Color', key: 'color', width: 14 },
+  { header: 'Size', key: 'size', width: 10, align: 'center' as const },
+  { header: 'Barcode', key: 'barcode', width: 18 },
+  { header: 'Quantity', key: 'quantity', width: 14, align: 'right' as const },
+  { header: 'In Transit', key: 'transit', width: 14, align: 'right' as const },
+  { header: 'Stock Reserved', key: 'reserved', width: 16, align: 'right' as const },
+  { header: 'Total', key: 'total', width: 14, align: 'right' as const },
+  { header: 'Selling Price', key: 'unitPrice', width: 16, align: 'right' as const },
+  { header: 'Value (Rs.)', key: 'value', width: 18, align: 'right' as const },
+];
+
 @Processor('available-stock-summary-export')
 export class AvailableStockSummaryExportProcessor {
   private readonly logger = new Logger(
@@ -88,6 +108,7 @@ export class AvailableStockSummaryExportProcessor {
       startDate: startStr,
       endDate: endStr,
       format,
+      exportType,
       summaryOnly,
       showBrand,
       showDivision,
@@ -157,7 +178,7 @@ export class AvailableStockSummaryExportProcessor {
       await job.progress(25);
 
       // Generate structured data using our service core method
-      const { root, grandTotals } =
+      const { root, grandTotals, flatItems } =
         await this.availableStockSummaryService.generateAvailableStockSummaryReportDataInternal(
           prisma,
           {
@@ -248,298 +269,21 @@ export class AvailableStockSummaryExportProcessor {
           await browser.close();
         }
       } else {
-        // XLSX Export using ExcelJS stream WorkbookWriter
-        const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
-          filename: filePath,
-          useStyles: true,
-          useSharedStrings: false,
-        });
-
-        const colsToUse = [...COLUMNS];
-        if (includeCosting) {
-          colsToUse.push(
-            {
-              header: 'Cost Price',
-              key: 'unitCost',
-              width: 14,
-              align: 'right' as const,
-            },
-            {
-              header: 'Total Costing',
-              key: 'costingValue',
-              width: 18,
-              align: 'right' as const,
-            },
+        if (exportType === 'hierarchical') {
+          await this.writeHierarchicalWorkbook(
+            filePath,
+            root,
+            grandTotals,
+            !!includeCosting,
+          );
+        } else {
+          await this.writeFlatWorkbook(
+            filePath,
+            flatItems || [],
+            grandTotals,
+            !!includeCosting,
           );
         }
-
-        const ws = workbook.addWorksheet('Available Stock Summary', {
-          pageSetup: {
-            paperSize: 9,
-            orientation: 'landscape',
-            fitToPage: true,
-            fitToWidth: 1,
-          },
-          views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }],
-        });
-
-        ws.columns = colsToUse.map((c) => ({ key: c.key, width: c.width }));
-
-        // 1. Column headers
-        const headerRow = ws.getRow(1);
-        colsToUse.forEach((col, idx) => {
-          const cell = headerRow.getCell(idx + 1);
-          cell.value = col.header;
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FF334155' },
-          };
-          cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9 };
-          cell.alignment = {
-            horizontal: col.align ?? 'left',
-            vertical: 'middle',
-          };
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-            left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-            bottom: { style: 'medium', color: { argb: 'FF1E293B' } },
-            right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-          };
-        });
-        headerRow.height = 24;
-        headerRow.commit();
-
-        const borderThin = {
-          top: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
-          bottom: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
-          left: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
-          right: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
-        };
-
-        const rightAlign = {
-          horizontal: 'right' as const,
-          vertical: 'middle' as const,
-        };
-        const leftAlign = {
-          horizontal: 'left' as const,
-          vertical: 'middle' as const,
-        };
-        const centerAlign = {
-          horizontal: 'center' as const,
-          vertical: 'middle' as const,
-        };
-
-        const LEVEL_EXCEL_STYLES: Record<
-          string,
-          {
-            bgHex: string;
-            fgHex: string;
-            fontSize: number;
-            bold: boolean;
-            indent: number;
-            prefix: string;
-          }
-        > = {
-          brand: {
-            bgHex: '1E293B',
-            fgHex: 'FFFFFF',
-            fontSize: 10,
-            bold: true,
-            indent: 0,
-            prefix: 'BRAND: ',
-          },
-          division: {
-            bgHex: '334155',
-            fgHex: 'FFFFFF',
-            fontSize: 9.5,
-            bold: true,
-            indent: 2,
-            prefix: 'DIVISION: ',
-          },
-          category: {
-            bgHex: '475569',
-            fgHex: 'FFFFFF',
-            fontSize: 9,
-            bold: true,
-            indent: 4,
-            prefix: 'CATEGORY: ',
-          },
-          gender: {
-            bgHex: '64748B',
-            fgHex: 'FFFFFF',
-            fontSize: 9,
-            bold: true,
-            indent: 6,
-            prefix: 'GENDER: ',
-          },
-          silhouette: {
-            bgHex: '94A3B8',
-            fgHex: 'FFFFFF',
-            fontSize: 9,
-            bold: true,
-            indent: 8,
-            prefix: 'SILHOUETTE: ',
-          },
-          article: {
-            bgHex: 'F1F5F9',
-            fgHex: '1E293B',
-            fontSize: 9,
-            bold: true,
-            indent: 10,
-            prefix: 'SKU: ',
-          },
-          variant: {
-            bgHex: 'FFFFFF',
-            fgHex: '475569',
-            fontSize: 9,
-            bold: false,
-            indent: 12,
-            prefix: '',
-          },
-        };
-
-        const writeNodeToExcel = (node: any) => {
-          const style =
-            LEVEL_EXCEL_STYLES[node.level] || LEVEL_EXCEL_STYLES.brand;
-
-          let label = ' '.repeat(style.indent) + style.prefix;
-          let colorVal = '';
-          let sizeVal = '';
-          let unitPriceVal: any = '';
-          let unitCostVal: any = '';
-          let costingValueVal: any = node.totals.costingValue;
-
-          if (node.level === 'article') {
-            label =
-              ' '.repeat(style.indent) +
-              `SKU: ${node.sku} (${node.articleName})`;
-            unitPriceVal = node.totals.unitPrice;
-            unitCostVal = node.totals.unitCost;
-          } else if (node.level === 'variant') {
-            label = ' '.repeat(style.indent) + 'Variant Item';
-            colorVal = node.color;
-            sizeVal = node.size;
-            unitPriceVal = '';
-            unitCostVal = '';
-          } else {
-            label =
-              ' '.repeat(style.indent) +
-              style.prefix +
-              node.value.toUpperCase();
-          }
-
-          const rowData: any = {
-            sku: label,
-            size: sizeVal,
-            color: colorVal,
-            quantity: node.totals.quantity,
-            transit: node.totals.transit,
-            reserved: node.totals.reserved,
-            total: node.totals.total,
-            unitPrice: unitPriceVal,
-            value: node.totals.value,
-          };
-          if (includeCosting) {
-            rowData.unitCost = unitCostVal;
-            rowData.costingValue = costingValueVal;
-          }
-
-          const row = ws.addRow(rowData);
-
-          const numCols = colsToUse.length;
-          for (let colNum = 1; colNum <= numCols; colNum++) {
-            const cell = row.getCell(colNum);
-            cell.fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: `FF${style.bgHex}` },
-            };
-            cell.font = {
-              bold: style.bold,
-              size: style.fontSize,
-              color: { argb: `FF${style.fgHex}` },
-            };
-            cell.border = borderThin;
-            cell.alignment =
-              colNum === 2 || colNum === 3
-                ? centerAlign
-                : colNum === 1
-                  ? leftAlign
-                  : rightAlign;
-
-            if (
-              (colNum === 8 ||
-                colNum === 9 ||
-                colNum === 10 ||
-                colNum === 11) &&
-              typeof cell.value === 'number'
-            ) {
-              cell.numFmt = '#,##0';
-            } else if (
-              colNum >= 4 &&
-              colNum <= 7 &&
-              typeof cell.value === 'number'
-            ) {
-              cell.numFmt = '#,##0';
-            }
-          }
-          row.height = node.level === 'variant' ? 18 : 20;
-          row.commit();
-
-          if (node.children && node.children.length > 0) {
-            for (const child of node.children) {
-              writeNodeToExcel(child);
-            }
-          }
-        };
-
-        for (const rootNode of root) {
-          writeNodeToExcel(rootNode);
-        }
-
-        // Grand totals row
-        const grandTotalsData: any = {
-          sku: 'GRAND TOTAL',
-          size: '',
-          color: '',
-          quantity: grandTotals.quantity,
-          transit: grandTotals.transit,
-          reserved: grandTotals.reserved,
-          total: grandTotals.total,
-          unitPrice: '',
-          value: grandTotals.value,
-        };
-        if (includeCosting) {
-          grandTotalsData.unitCost = '';
-          grandTotalsData.costingValue = grandTotals.costingValue;
-        }
-
-        const totalRow = ws.addRow(grandTotalsData);
-
-        totalRow.eachCell((cell, colNum) => {
-          cell.font = { bold: true, size: 10, color: { argb: 'FF000000' } };
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FF000000' } },
-            bottom: { style: 'double', color: { argb: 'FF000000' } },
-            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-            right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-          };
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FFE2E8F0' },
-          };
-          cell.alignment = colNum <= 3 ? leftAlign : rightAlign;
-
-          if (colNum >= 4 && typeof cell.value === 'number') {
-            cell.numFmt = '#,##0';
-          }
-        });
-        totalRow.height = 24;
-        totalRow.commit();
-
-        await workbook.commit();
       }
 
       await job.progress(95);
@@ -583,6 +327,510 @@ export class AvailableStockSummaryExportProcessor {
       await this.exportHistoryService.failExport(prisma, jobId);
       throw err;
     }
+  }
+
+  private async writeFlatWorkbook(
+    filePath: string,
+    flatItems: any[],
+    grandTotals: any,
+    includeCosting: boolean,
+  ): Promise<void> {
+    const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
+      filename: filePath,
+      useStyles: true,
+      useSharedStrings: false,
+    });
+
+    const colsToUse = [...FLAT_COLUMNS];
+    if (includeCosting) {
+      colsToUse.push(
+        {
+          header: 'Cost Price',
+          key: 'unitCost',
+          width: 14,
+          align: 'right' as const,
+        },
+        {
+          header: 'Total Costing',
+          key: 'costingValue',
+          width: 18,
+          align: 'right' as const,
+        },
+      );
+    }
+
+    const ws = workbook.addWorksheet('Available Stock Summary', {
+      pageSetup: {
+        paperSize: 9,
+        orientation: 'landscape',
+        fitToPage: true,
+      },
+      views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }],
+    });
+
+    ws.columns = colsToUse.map((c) => ({ key: c.key, width: c.width }));
+
+    // Header Row
+    const headerRow = ws.getRow(1);
+    colsToUse.forEach((col, idx) => {
+      const cell = headerRow.getCell(idx + 1);
+      cell.value = col.header;
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1E293B' },
+      };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9.5 };
+      cell.alignment = {
+        horizontal: col.align ?? 'left',
+        vertical: 'middle',
+      };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      };
+    });
+    headerRow.height = 26;
+    headerRow.commit();
+
+    const borderThin = {
+      top: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
+      bottom: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
+      left: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
+      right: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
+    };
+
+    const rightAlign = {
+      horizontal: 'right' as const,
+      vertical: 'middle' as const,
+    };
+    const leftAlign = {
+      horizontal: 'left' as const,
+      vertical: 'middle' as const,
+    };
+    const centerAlign = {
+      horizontal: 'center' as const,
+      vertical: 'middle' as const,
+    };
+
+    for (const item of flatItems) {
+      const rowData: Record<string, any> = {
+        brand: item.brand,
+        division: item.division,
+        category: item.category,
+        gender: item.gender,
+        silhouette: item.silhouette,
+        sku: item.sku,
+        articleName: item.articleName,
+        color: item.color,
+        size: item.size,
+        barcode: item.barcode,
+        quantity: item.quantity,
+        transit: item.transit,
+        reserved: item.reserved,
+        total: item.total,
+        unitPrice: item.unitPrice,
+        value: item.value,
+      };
+
+      if (includeCosting) {
+        rowData.unitCost = item.unitCost;
+        rowData.costingValue = item.costingValue;
+      }
+
+      const row = ws.addRow(rowData);
+      for (let colNum = 1; colNum <= colsToUse.length; colNum++) {
+        const colDef = colsToUse[colNum - 1];
+        const cell = row.getCell(colNum);
+        cell.font = { size: 9, color: { argb: 'FF1E293B' } };
+        cell.border = borderThin;
+        cell.alignment = colDef.align
+          ? { horizontal: colDef.align, vertical: 'middle' }
+          : leftAlign;
+
+        if (colNum >= 11) {
+          const val = cell.value;
+          if (typeof val === 'number') {
+            if (val === 0) {
+              cell.value = '-';
+              cell.alignment = rightAlign;
+            } else {
+              const isPriceOrValue =
+                colDef.key === 'unitPrice' ||
+                colDef.key === 'value' ||
+                colDef.key === 'unitCost' ||
+                colDef.key === 'costingValue';
+              cell.numFmt = isPriceOrValue ? '#,##0.00' : '#,##0';
+            }
+          }
+        }
+      }
+      row.height = 20;
+      row.commit();
+    }
+
+    // Grand Totals Row
+    if (grandTotals) {
+      const totalData: Record<string, any> = {
+        brand: 'GRAND TOTAL',
+        division: '',
+        category: '',
+        gender: '',
+        silhouette: '',
+        sku: '',
+        articleName: '',
+        color: '',
+        size: '',
+        barcode: '',
+        quantity: grandTotals.quantity,
+        transit: grandTotals.transit,
+        reserved: grandTotals.reserved,
+        total: grandTotals.total,
+        unitPrice: '',
+        value: grandTotals.value,
+      };
+
+      if (includeCosting) {
+        totalData.unitCost = '';
+        totalData.costingValue = grandTotals.costingValue;
+      }
+
+      const totalRow = ws.addRow(totalData);
+      totalRow.eachCell((cell, colNum) => {
+        const colDef = colsToUse[colNum - 1];
+        cell.font = { bold: true, size: 10, color: { argb: 'FF0F172A' } };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF0F172A' } },
+          bottom: { style: 'double', color: { argb: 'FF0F172A' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF1F5F9' },
+        };
+        cell.alignment = colDef?.align
+          ? { horizontal: colDef.align, vertical: 'middle' }
+          : leftAlign;
+
+        if (colNum >= 11) {
+          const val = cell.value;
+          if (typeof val === 'number') {
+            if (val === 0) {
+              cell.value = '-';
+            } else {
+              const isPriceOrValue =
+                colDef?.key === 'value' || colDef?.key === 'costingValue';
+              cell.numFmt = isPriceOrValue ? '#,##0.00' : '#,##0';
+            }
+          }
+        }
+      });
+      totalRow.height = 24;
+      totalRow.commit();
+    }
+
+    await workbook.commit();
+  }
+
+  private async writeHierarchicalWorkbook(
+    filePath: string,
+    root: any[],
+    grandTotals: any,
+    includeCosting: boolean,
+  ): Promise<void> {
+    const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
+      filename: filePath,
+      useStyles: true,
+      useSharedStrings: false,
+    });
+
+    const colsToUse = [...COLUMNS];
+    if (includeCosting) {
+      colsToUse.push(
+        {
+          header: 'Cost Price',
+          key: 'unitCost',
+          width: 14,
+          align: 'right' as const,
+        },
+        {
+          header: 'Total Costing',
+          key: 'costingValue',
+          width: 18,
+          align: 'right' as const,
+        },
+      );
+    }
+
+    const ws = workbook.addWorksheet('Available Stock Summary', {
+      pageSetup: {
+        paperSize: 9,
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+      },
+      views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }],
+    });
+
+    ws.columns = colsToUse.map((c) => ({ key: c.key, width: c.width }));
+
+    // 1. Column headers
+    const headerRow = ws.getRow(1);
+    colsToUse.forEach((col, idx) => {
+      const cell = headerRow.getCell(idx + 1);
+      cell.value = col.header;
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF334155' },
+      };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9 };
+      cell.alignment = {
+        horizontal: col.align ?? 'left',
+        vertical: 'middle',
+      };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        bottom: { style: 'medium', color: { argb: 'FF1E293B' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      };
+    });
+    headerRow.height = 24;
+    headerRow.commit();
+
+    const borderThin = {
+      top: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
+      bottom: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
+      left: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
+      right: { style: 'thin' as const, color: { argb: 'FFE2E8F0' } },
+    };
+
+    const rightAlign = {
+      horizontal: 'right' as const,
+      vertical: 'middle' as const,
+    };
+    const leftAlign = {
+      horizontal: 'left' as const,
+      vertical: 'middle' as const,
+    };
+    const centerAlign = {
+      horizontal: 'center' as const,
+      vertical: 'middle' as const,
+    };
+
+    const LEVEL_EXCEL_STYLES: Record<
+      string,
+      {
+        bgHex: string;
+        fgHex: string;
+        fontSize: number;
+        bold: boolean;
+        indent: number;
+        prefix: string;
+      }
+    > = {
+      brand: {
+        bgHex: '1E293B',
+        fgHex: 'FFFFFF',
+        fontSize: 10,
+        bold: true,
+        indent: 0,
+        prefix: 'BRAND: ',
+      },
+      division: {
+        bgHex: '334155',
+        fgHex: 'FFFFFF',
+        fontSize: 9.5,
+        bold: true,
+        indent: 2,
+        prefix: 'DIVISION: ',
+      },
+      category: {
+        bgHex: '475569',
+        fgHex: 'FFFFFF',
+        fontSize: 9,
+        bold: true,
+        indent: 4,
+        prefix: 'CATEGORY: ',
+      },
+      gender: {
+        bgHex: '64748B',
+        fgHex: 'FFFFFF',
+        fontSize: 9,
+        bold: true,
+        indent: 6,
+        prefix: 'GENDER: ',
+      },
+      silhouette: {
+        bgHex: '94A3B8',
+        fgHex: 'FFFFFF',
+        fontSize: 9,
+        bold: true,
+        indent: 8,
+        prefix: 'SILHOUETTE: ',
+      },
+      article: {
+        bgHex: 'F1F5F9',
+        fgHex: '1E293B',
+        fontSize: 9,
+        bold: true,
+        indent: 10,
+        prefix: 'SKU: ',
+      },
+      variant: {
+        bgHex: 'FFFFFF',
+        fgHex: '475569',
+        fontSize: 9,
+        bold: false,
+        indent: 12,
+        prefix: '',
+      },
+    };
+
+    const writeNode = (node: any) => {
+      const style =
+        LEVEL_EXCEL_STYLES[node.level] ||
+        LEVEL_EXCEL_STYLES.variant || {
+          bgHex: 'FFFFFF',
+          fgHex: '000000',
+          fontSize: 9,
+          bold: false,
+          indent: 0,
+          prefix: '',
+        };
+
+      let label = `${style.prefix}${node.value}`;
+      if (node.level === 'article' && node.articleName) {
+        label = `${style.prefix}${node.sku} - ${node.articleName}`;
+      }
+
+      const rowData: Record<string, any> = {
+        sku: label,
+        size: node.size || '',
+        color: node.color || '',
+        quantity: node.totals.quantity,
+        transit: node.totals.transit,
+        reserved: node.totals.reserved,
+        total: node.totals.total,
+        unitPrice:
+          node.level === 'article' || node.level === 'variant'
+            ? node.totals.unitPrice || 0
+            : '',
+        value: node.totals.value,
+      };
+
+      if (includeCosting) {
+        rowData.unitCost =
+          node.level === 'article' || node.level === 'variant'
+            ? node.totals.unitCost || 0
+            : '';
+        rowData.costingValue = node.totals.costingValue;
+      }
+
+      const row = ws.addRow(rowData);
+      for (let colNum = 1; colNum <= colsToUse.length; colNum++) {
+        const cell = row.getCell(colNum);
+        cell.font = {
+          bold: style.bold,
+          size: style.fontSize,
+          color: { argb: `FF${style.fgHex}` },
+        };
+        cell.border = borderThin;
+        if (colNum === 1) {
+          cell.alignment = {
+            horizontal: 'left',
+            vertical: 'middle',
+            indent: style.indent,
+          };
+        } else if (colNum === 2 || colNum === 3) {
+          cell.alignment = centerAlign;
+        } else {
+          cell.alignment = rightAlign;
+        }
+
+        if (style.bgHex !== 'FFFFFF') {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: `FF${style.bgHex}` },
+          };
+        }
+
+        if (colNum >= 4) {
+          const val = cell.value;
+          if (typeof val === 'number') {
+            if (val === 0) {
+              cell.value = '-';
+              cell.alignment = rightAlign;
+            } else {
+              const isCostOrVal = [8, 9, 10, 11].includes(colNum);
+              cell.numFmt = isCostOrVal ? '#,##0.00' : '#,##0';
+            }
+          }
+        }
+      }
+      row.height = 20;
+      row.commit();
+
+      if (node.children && node.children.length > 0) {
+        for (const child of node.children) {
+          writeNode(child);
+        }
+      }
+    };
+
+    for (const child of root) {
+      writeNode(child);
+    }
+
+    // Grand Totals row at bottom
+    const totalRowData: Record<string, any> = {
+      sku: 'GRAND TOTAL',
+      size: '',
+      color: '',
+      quantity: grandTotals.quantity,
+      transit: grandTotals.transit,
+      reserved: grandTotals.reserved,
+      total: grandTotals.total,
+      unitPrice: '',
+      value: grandTotals.value,
+    };
+
+    if (includeCosting) {
+      totalRowData.unitCost = '';
+      totalRowData.costingValue = grandTotals.costingValue;
+    }
+
+    const totalRow = ws.addRow(totalRowData);
+
+    totalRow.eachCell((cell, colNum) => {
+      cell.font = { bold: true, size: 10, color: { argb: 'FF000000' } };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'double', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE2E8F0' },
+      };
+      cell.alignment = colNum <= 3 ? leftAlign : rightAlign;
+
+      if (colNum >= 4 && typeof cell.value === 'number') {
+        cell.numFmt = '#,##0';
+      }
+    });
+    totalRow.height = 24;
+    totalRow.commit();
+
+    await workbook.commit();
   }
 
   private buildPdfHtml(
