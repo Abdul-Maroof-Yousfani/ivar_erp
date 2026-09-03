@@ -122,7 +122,7 @@ async function bootstrap() {
     const config = new DocumentBuilder()
       .setTitle('Speed Limit API')
       .setDescription('The Speed Limit API description')
-      .setVersion('1.0')git pull origin 
+      .setVersion('1.0')
       .addBearerAuth()
       .build();
     const document = SwaggerModule.createDocument(app, config);
