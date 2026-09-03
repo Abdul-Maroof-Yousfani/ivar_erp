@@ -51,64 +51,64 @@ interface LabelConfig {
 
 const LABEL_CONFIGS: Record<LabelSize, LabelConfig> = {
     small: {
-        name: "Small (38×25mm)",
-        width: 38,
-        height: 25,
-        titleSize: 9.5,
-        subSize: 8,
-        barcodeHeight: 38,
+        name: "Zebra 2-Up Roll (35×25mm)",
+        width: 35,
+        height: 24,
+        titleSize: 8,
+        subSize: 7.5,
+        barcodeHeight: 26,
         barWidth: 1.8,
-        codeSize: 9.5,
-        priceSize: 13,
-        cols: 4,
+        codeSize: 8.5,
+        priceSize: 10.5,
+        cols: 2,
     },
     compact: {
         name: "Compact (50×25mm)",
         width: 50,
-        height: 25,
-        titleSize: 10.5,
-        subSize: 9,
-        barcodeHeight: 38,
-        barWidth: 2.0,
-        codeSize: 10,
-        priceSize: 13.5,
-        cols: 3,
+        height: 24,
+        titleSize: 8.5,
+        subSize: 7.5,
+        barcodeHeight: 24,
+        barWidth: 1.5,
+        codeSize: 8.5,
+        priceSize: 11,
+        cols: 2,
     },
     medium: {
         name: "Medium (50×30mm)",
         width: 50,
-        height: 30,
-        titleSize: 11,
-        subSize: 9.5,
-        barcodeHeight: 48,
-        barWidth: 2.0,
-        codeSize: 10.5,
-        priceSize: 14.5,
-        cols: 3,
+        height: 29,
+        titleSize: 9.5,
+        subSize: 8,
+        barcodeHeight: 32,
+        barWidth: 1.6,
+        codeSize: 9.5,
+        priceSize: 12.5,
+        cols: 2,
     },
     standard: {
         name: "Standard (58×40mm)",
         width: 58,
-        height: 40,
-        titleSize: 12.5,
-        subSize: 10.5,
-        barcodeHeight: 58,
-        barWidth: 2.2,
-        codeSize: 11.5,
-        priceSize: 16,
-        cols: 3,
+        height: 39,
+        titleSize: 11,
+        subSize: 9,
+        barcodeHeight: 44,
+        barWidth: 1.8,
+        codeSize: 10.5,
+        priceSize: 14,
+        cols: 1,
     },
     large: {
         name: "Large (100×60mm)",
         width: 100,
-        height: 60,
-        titleSize: 15,
-        subSize: 12,
-        barcodeHeight: 80,
-        barWidth: 2.5,
-        codeSize: 13.5,
-        priceSize: 20,
-        cols: 2,
+        height: 59,
+        titleSize: 13,
+        subSize: 10.5,
+        barcodeHeight: 60,
+        barWidth: 2.0,
+        codeSize: 12,
+        priceSize: 16.5,
+        cols: 1,
     },
 };
 
@@ -121,7 +121,7 @@ interface SvgBarcodeProps {
     className?: string;
 }
 
-function SvgBarcode({ value, height = 40, barWidth = 1.8, className }: SvgBarcodeProps) {
+function SvgBarcode({ value, height = 22, barWidth = 1.2, className }: SvgBarcodeProps) {
     const svgRef = useRef<SVGSVGElement>(null);
 
     useEffect(() => {
@@ -150,7 +150,14 @@ function SvgBarcode({ value, height = 40, barWidth = 1.8, className }: SvgBarcod
         <svg
             ref={svgRef}
             className={className}
-            style={{ display: "block", maxWidth: "96%", width: "auto", height: "100%", maxHeight: `${height}px` }}
+            style={{
+                display: "block",
+                maxWidth: "88%",
+                width: "auto",
+                height: "100%",
+                maxHeight: `${height}px`,
+                margin: "0 auto",
+            }}
         />
     );
 }
@@ -187,11 +194,11 @@ function ItemLabel({ item, size, type }: Omit<LabelProps, "qty">) {
 
     return (
         <div
-            className="label-cell flex flex-col items-center justify-between bg-white border border-gray-300 overflow-hidden"
+            className="label-cell flex flex-col items-center justify-between bg-white border border-gray-300 overflow-hidden text-center"
             style={{
                 width: `${cfg.width}mm`,
                 height: `${cfg.height}mm`,
-                padding: "0.5mm 0.8mm",
+                padding: "1mm 1.5mm",
                 boxSizing: "border-box",
                 pageBreakInside: "avoid",
                 breakInside: "avoid",
@@ -203,7 +210,7 @@ function ItemLabel({ item, size, type }: Omit<LabelProps, "qty">) {
                 {cleanDescription && (
                     <div style={{
                         fontSize: `${cfg.titleSize}px`,
-                        fontWeight: 800,
+                        fontWeight: 900,
                         lineHeight: 1.1,
                         letterSpacing: "-0.01em",
                         color: "#000000",
@@ -220,15 +227,14 @@ function ItemLabel({ item, size, type }: Omit<LabelProps, "qty">) {
                     <div style={{
                         fontSize: `${cfg.subSize}px`,
                         color: "#000000",
-                        fontWeight: 700,
+                        fontWeight: 900,
                         lineHeight: 1.1,
                         marginTop: "0.3mm",
                         letterSpacing: "0.01em",
                     }}>
                         {[
-                            item.brand?.name,
-                            item.size?.name ? `Size: ${item.size.name}` : null,
-                            item.color?.name ? `Color: ${item.color.name}` : null,
+                            item.size?.name ?? null,
+                            item.color?.name ?? null,
                         ].filter(Boolean).join(" • ")}
                     </div>
                 )}
@@ -271,7 +277,7 @@ function ItemLabel({ item, size, type }: Omit<LabelProps, "qty">) {
                 <div style={{
                     fontSize: `${cfg.codeSize}px`,
                     color: "#000000",
-                    fontWeight: 700,
+                    fontWeight: 900,
                     lineHeight: 1.1,
                     fontFamily: "monospace",
                     letterSpacing: "0.08em",
@@ -329,12 +335,16 @@ function getPrintStyles(columns: number, labelWidthMm: number, hGapMm: number, v
                grid-template-columns: repeat(${columns}, ${labelWidthMm}mm) !important;
                justify-content: start !important;
                column-gap: ${hGapMm}mm !important;
-               row-gap: ${vGapMm}mm !important;`
+               row-gap: ${vGapMm}mm !important;
+               padding-left: 2.5mm !important;
+               padding-top: 1mm !important;`
             : `display: flex !important;
                flex-wrap: wrap !important;
                column-gap: ${hGapMm}mm !important;
                row-gap: ${vGapMm}mm !important;
-               align-content: flex-start !important;`
+               align-content: flex-start !important;
+               padding-left: 2.5mm !important;
+               padding-top: 1mm !important;`
         }
         height: auto !important;
         overflow: visible !important;
@@ -364,19 +374,26 @@ export function BarcodePrintModal({ open, onOpenChange, items }: BarcodePrintMod
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [quantities, setQuantities] = useState<Record<string, number>>({});
     const [labelSize, setLabelSize] = useState<LabelSize>("small");
-    const [columns, setColumns] = useState<number>(LABEL_CONFIGS["small"].cols || 2);
-    const [hGap, setHGap] = useState<number>(2); // 2mm default horizontal gap between stickers
-    const [vGap, setVGap] = useState<number>(3); // 3mm default vertical row gap (Zebra die-cut gap)
+    const [columns, setColumns] = useState<number>(2);
+    const [hGap, setHGap] = useState<number>(2); // 2mm horizontal gap between 2-up stickers
+    const [vGap, setVGap] = useState<number>(3); // 3mm vertical die-cut gap between rows
     const [barcodeType, setBarcodeType] = useState<BarcodeType>("barcode");
+    const [showCustomSettings, setShowCustomSettings] = useState(false);
     const [search, setSearch] = useState("");
     const printRootRef = useRef<HTMLDivElement>(null);
 
-    // Pre-select all items when modal opens
+    // Pre-select all items and ALWAYS reset to user's exact Zebra 2-up default when modal opens
     useEffect(() => {
         if (open) {
             setSelected(new Set(items.map((i) => i.id)));
             setQuantities({});
             setSearch("");
+            setLabelSize("small");
+            setColumns(2);
+            setHGap(2);
+            setVGap(3);
+            setBarcodeType("barcode");
+            setShowCustomSettings(false);
         }
     }, [open, items]);
 
@@ -464,7 +481,7 @@ export function BarcodePrintModal({ open, onOpenChange, items }: BarcodePrintMod
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-5xl! w-full h-[90vh] flex flex-col p-0 gap-0">
+            <DialogContent className="max-w-7xl! w-full h-[90vh] flex flex-col p-0 gap-0">
                 <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
                     <DialogTitle className="flex items-center gap-2 text-lg">
                         <ScanBarcode className="h-5 w-5 text-primary" />
@@ -479,7 +496,7 @@ export function BarcodePrintModal({ open, onOpenChange, items }: BarcodePrintMod
 
                 <div className="flex flex-1 min-h-0">
                     {/* ── Left panel: item selection ── */}
-                    <div className="w-72 shrink-0 border-r flex flex-col">
+                    <div className="shrink-0 border-r flex flex-col" style={{ width: '400px' }}>
                         <div className="px-4 py-3 border-b space-y-2">
                             <div className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -534,15 +551,14 @@ export function BarcodePrintModal({ open, onOpenChange, items }: BarcodePrintMod
                                                     <div className="text-xs font-semibold truncate leading-tight">
                                                         {item.description ?? item.sku}
                                                     </div>
-                                                    <div className="text-[10px] text-muted-foreground font-mono truncate">
+                                                    <div className="text-[12px] text-muted-foreground font-mono truncate">
                                                         {item.barCode ?? item.sku}
                                                     </div>
                                                     {(item.brand?.name || item.size?.name || item.color?.name) && (
-                                                        <div className="text-[10px] text-muted-foreground truncate">
+                                                        <div className="text-[12px] text-muted-foreground truncate">
                                                             {[
-                                                                item.brand?.name,
-                                                                item.size?.name ? `Size: ${item.size.name}` : null,
-                                                                item.color?.name ? `Color: ${item.color.name}` : null,
+                                                                item.size?.name ? `${item.size.name}` : null,
+                                                                item.color?.name ? `${item.color.name}` : null,
                                                             ].filter(Boolean).join(" • ")}
                                                         </div>
                                                     )} 
@@ -584,60 +600,106 @@ export function BarcodePrintModal({ open, onOpenChange, items }: BarcodePrintMod
                     {/* ── Right panel: preview ── */}
                     <div className="flex-1 flex flex-col min-w-0">
                         {/* Toolbar */}
-                        <div className="px-4 py-3 border-b flex items-center gap-3 shrink-0 flex-wrap">
-                            <div className="flex items-center gap-2">
-                                <Label className="text-xs text-muted-foreground whitespace-nowrap">Label size</Label>
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" size="sm" className="h-8 gap-1.5 capitalize">
-                                            {LABEL_CONFIGS[labelSize]?.name ?? labelSize} <ChevronDown className="h-3.5 w-3.5" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="start">
-                                        {(Object.keys(LABEL_CONFIGS) as LabelSize[]).map((s) => (
-                                            <DropdownMenuItem
-                                                key={s}
-                                                onClick={() => {
-                                                    setLabelSize(s);
-                                                    setColumns(LABEL_CONFIGS[s].cols);
-                                                }}
-                                            >
-                                                {LABEL_CONFIGS[s].name}
-                                            </DropdownMenuItem>
-                                        ))}
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
+                        <div className="px-4 py-2.5 border-b flex items-center justify-between shrink-0 bg-background gap-3">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                                {/* Default Status Badge */}
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 border border-primary/20 rounded-md text-xs font-medium text-primary">
+                                    <ScanBarcode className="h-3.5 w-3.5" />
+                                    <span>Zebra GK420t: 2-Up Roll (38×25mm)</span>
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
+                                    <div className="flex rounded-md border overflow-hidden">
+                                        <button
+                                            type="button"
+                                            onClick={() => setBarcodeType("barcode")}
+                                            className={cn(
+                                                "px-2.5 py-1 text-xs flex items-center gap-1 transition-colors",
+                                                barcodeType === "barcode" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
+                                            )}
+                                        >
+                                            Barcode
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setBarcodeType("qr")}
+                                            className={cn(
+                                                "px-2.5 py-1 text-xs flex items-center gap-1 transition-colors border-l",
+                                                barcodeType === "qr" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
+                                            )}
+                                        >
+                                            QR
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Custom settings toggle */}
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setShowCustomSettings(!showCustomSettings)}
+                                    className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1 px-2"
+                                >
+                                    {showCustomSettings ? "Hide Options" : "Adjust Size/Spacing"}
+                                </Button>
                             </div>
 
-                            <Separator orientation="vertical" className="h-5" />
-
-                            <div className="flex items-center gap-2">
-                                <Label className="text-xs text-muted-foreground whitespace-nowrap">Columns</Label>
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" size="sm" className="h-8 gap-1.5 min-w-[78px] justify-between">
-                                            <span>{columns === 0 ? "Auto" : `${columns} Col${columns > 1 ? "s" : ""}`}</span>
-                                            <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="start">
-                                        <DropdownMenuItem onClick={() => setColumns(0)}>
-                                            Auto (Fit page width)
-                                        </DropdownMenuItem>
-                                        {[1, 2, 3, 4, 5, 6].map((c) => (
-                                            <DropdownMenuItem key={c} onClick={() => setColumns(c)}>
-                                                {c} {c === 1 ? "Column (1-up roll)" : c === 2 ? "Columns (2-up roll)" : c === 3 ? "Columns (3-up roll)" : "Columns (Sheet / A4)"}
-                                            </DropdownMenuItem>
-                                        ))}
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
+                            <div className="text-xs text-muted-foreground whitespace-nowrap">
+                                {selectedItems.length} items · {totalLabels} stickers
                             </div>
+                        </div>
 
-                            <Separator orientation="vertical" className="h-5" />
+                        {/* Collapsible custom settings */}
+                        {showCustomSettings && (
+                            <div className="px-4 py-2 border-b bg-muted/20 flex items-center gap-3 shrink-0 flex-wrap text-xs">
+                                <div className="flex items-center gap-1.5">
+                                    <Label className="text-xs text-muted-foreground">Size</Label>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1 capitalize">
+                                                {LABEL_CONFIGS[labelSize]?.name ?? labelSize} <ChevronDown className="h-3 w-3" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="start">
+                                            {(Object.keys(LABEL_CONFIGS) as LabelSize[]).map((s) => (
+                                                <DropdownMenuItem
+                                                    key={s}
+                                                    onClick={() => {
+                                                        setLabelSize(s);
+                                                        setColumns(LABEL_CONFIGS[s].cols);
+                                                    }}
+                                                >
+                                                    {LABEL_CONFIGS[s].name}
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </div>
 
-                            <div className="flex items-center gap-1.5">
-                                <Label className="text-xs text-muted-foreground whitespace-nowrap" title="Horizontal space between sticker columns">Col Gap</Label>
-                                <div className="flex items-center">
+                                <div className="flex items-center gap-1.5">
+                                    <Label className="text-xs text-muted-foreground">Columns</Label>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1 min-w-[70px] justify-between">
+                                                <span>{columns === 0 ? "Auto" : `${columns} Col${columns > 1 ? "s" : ""}`}</span>
+                                                <ChevronDown className="h-3 w-3 opacity-60" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="start">
+                                            <DropdownMenuItem onClick={() => setColumns(0)}>
+                                                Auto (Fit page width)
+                                            </DropdownMenuItem>
+                                            {[1, 2, 3, 4, 5, 6].map((c) => (
+                                                <DropdownMenuItem key={c} onClick={() => setColumns(c)}>
+                                                    {c} {c === 1 ? "Column (1-up roll)" : c === 2 ? "Columns (2-up roll)" : c === 3 ? "Columns (3-up roll)" : "Columns (Sheet / A4)"}
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </div>
+
+                                <div className="flex items-center gap-1">
+                                    <Label className="text-xs text-muted-foreground" title="Horizontal space between sticker columns">Col Gap</Label>
                                     <Input
                                         type="number"
                                         min={0}
@@ -645,15 +707,13 @@ export function BarcodePrintModal({ open, onOpenChange, items }: BarcodePrintMod
                                         step={0.5}
                                         value={hGap}
                                         onChange={(e) => setHGap(Math.max(0, parseFloat(e.target.value) || 0))}
-                                        className="h-8 w-13 px-1.5 text-xs text-center font-mono"
+                                        className="h-7 w-12 px-1 text-xs text-center font-mono"
                                     />
-                                    <span className="text-[11px] text-muted-foreground ml-1">mm</span>
+                                    <span className="text-[10px] text-muted-foreground">mm</span>
                                 </div>
-                            </div>
 
-                            <div className="flex items-center gap-1.5">
-                                <Label className="text-xs text-muted-foreground whitespace-nowrap" title="Vertical space between sticker rows (Zebra web gap)">Row Gap</Label>
-                                <div className="flex items-center">
+                                <div className="flex items-center gap-1">
+                                    <Label className="text-xs text-muted-foreground" title="Vertical space between sticker rows (Zebra web gap)">Row Gap</Label>
                                     <Input
                                         type="number"
                                         min={0}
@@ -661,44 +721,26 @@ export function BarcodePrintModal({ open, onOpenChange, items }: BarcodePrintMod
                                         step={0.5}
                                         value={vGap}
                                         onChange={(e) => setVGap(Math.max(0, parseFloat(e.target.value) || 0))}
-                                        className="h-8 w-13 px-1.5 text-xs text-center font-mono"
+                                        className="h-7 w-12 px-1 text-xs text-center font-mono"
                                     />
-                                    <span className="text-[11px] text-muted-foreground ml-1">mm</span>
+                                    <span className="text-[10px] text-muted-foreground">mm</span>
                                 </div>
-                            </div>
 
-                            <Separator orientation="vertical" className="h-5" />
-
-                            <div className="flex items-center gap-2">
-                                <Label className="text-xs text-muted-foreground whitespace-nowrap">Type</Label>
-                                <div className="flex rounded-md border overflow-hidden">
-                                    <button
-                                        type="button"
-                                        onClick={() => setBarcodeType("barcode")}
-                                        className={cn(
-                                            "px-3 py-1 text-xs flex items-center gap-1.5 transition-colors",
-                                            barcodeType === "barcode" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
-                                        )}
-                                    >
-                                        <ScanBarcode className="h-3.5 w-3.5" /> Barcode
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setBarcodeType("qr")}
-                                        className={cn(
-                                            "px-3 py-1 text-xs flex items-center gap-1.5 transition-colors border-l",
-                                            barcodeType === "qr" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
-                                        )}
-                                    >
-                                        <LayoutGrid className="h-3.5 w-3.5" /> QR Code
-                                    </button>
-                                </div>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                        setLabelSize("small");
+                                        setColumns(2);
+                                        setHGap(2);
+                                        setVGap(3);
+                                    }}
+                                    className="h-7 text-xs text-primary hover:underline ml-auto"
+                                >
+                                    Reset to Zebra Default
+                                </Button>
                             </div>
-
-                            <div className="ml-auto text-xs text-muted-foreground">
-                                {selectedItems.length} item{selectedItems.length !== 1 ? "s" : ""} · {totalLabels} label{totalLabels !== 1 ? "s" : ""}
-                            </div>
-                        </div>
+                        )}
 
                         {/* Preview area */}
                         <ScrollArea className="flex-1 bg-muted/30">
@@ -721,6 +763,8 @@ export function BarcodePrintModal({ open, onOpenChange, items }: BarcodePrintMod
                                                         justifyContent: "start",
                                                         columnGap: `${hGap}mm`,
                                                         rowGap: `${vGap}mm`,
+                                                        paddingLeft: "2.5mm",
+                                                        paddingTop: "1mm",
                                                     }
                                                     : {
                                                         display: "flex",
@@ -728,6 +772,8 @@ export function BarcodePrintModal({ open, onOpenChange, items }: BarcodePrintMod
                                                         columnGap: `${hGap}mm`,
                                                         rowGap: `${vGap}mm`,
                                                         alignContent: "flex-start",
+                                                        paddingLeft: "2.5mm",
+                                                        paddingTop: "1mm",
                                                     }
                                             }
                                         >
