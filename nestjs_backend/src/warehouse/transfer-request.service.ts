@@ -431,10 +431,7 @@ export class TransferRequestService {
         transferType: 'WAREHOUSE_TO_OUTLET',
         status: {
           in: [
-            'PENDING',
             'APPROVED',
-            'PENDING_CHECKER',
-            'PENDING_AUTHORIZER',
             'PARTIAL_RECEIVED',
             'IN_TRANSIT',
           ],
