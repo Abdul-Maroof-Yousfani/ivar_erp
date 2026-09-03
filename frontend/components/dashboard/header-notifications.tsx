@@ -178,6 +178,7 @@ export function HeaderNotifications() {
       // Helper to download binary export file with authentication
       const triggerDownload = async (pathOrUrl: string, defaultFilename: string) => {
         const toastId = toast.loading(`Preparing download for ${defaultFilename}...`);
+        let url = pathOrUrl;
         try {
           const token = await getAccessToken();
           const headers: Record<string, string> = {};
@@ -186,7 +187,6 @@ export function HeaderNotifications() {
           }
 
           const base = getApiBaseUrl();
-          let url = pathOrUrl;
           if (!url.startsWith("http://") && !url.startsWith("https://")) {
             const cleanPath = pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`;
             const apiPath = cleanPath.startsWith("/api/") ? cleanPath : `/api${cleanPath}`;
@@ -238,10 +238,28 @@ export function HeaderNotifications() {
             toast.error(errMessage, { id: toastId });
           }
         } catch (e: any) {
-          console.error("Export download error:", e);
-          toast.error(e?.message || "Failed to download export file", {
-            id: toastId,
-          });
+          console.warn("Direct fetch download encountered an issue, falling back to native download:", e);
+          try {
+            const token = await getAccessToken();
+            const downloadUrl = new URL(url);
+            if (token && !downloadUrl.searchParams.has("token")) {
+              downloadUrl.searchParams.set("token", token);
+            }
+            const anchor = document.createElement("a");
+            anchor.href = downloadUrl.toString();
+            anchor.download = defaultFilename;
+            anchor.target = "_blank";
+            anchor.rel = "noopener noreferrer";
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            toast.success("Download started", { id: toastId });
+          } catch (fallbackErr: any) {
+            console.error("Export download error:", fallbackErr);
+            toast.error(e?.message || "Failed to download export file", {
+              id: toastId,
+            });
+          }
         }
       };
 

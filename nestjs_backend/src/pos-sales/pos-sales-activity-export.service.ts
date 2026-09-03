@@ -106,13 +106,21 @@ export class PosSalesActivityExportService {
       this.logger.warn(`Could not update export download count for job ${jobId}: ${err.message}`);
     }
 
-    if (record.filePath.startsWith('s3://')) {
-      const s3Key = record.filePath.replace('s3://', '');
-      const signedUrl = await this.uploadService.getSignedUrlForDownload(s3Key);
-      return res.redirect(signedUrl, 302);
-    }
+    if (record.filePath.startsWith('s3://') || record.filePath.startsWith('http://') || record.filePath.startsWith('https://')) {
+      const s3Obj = await this.uploadService.getS3ObjectStream(record.filePath);
+      if (s3Obj) {
+        res.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.header('Content-Disposition', `attachment; filename="${record.fileName || `sales-activity-export-${jobId}.xlsx`}"`);
+        if (s3Obj.size) res.header('Content-Length', s3Obj.size);
+        res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
+        return res.send(s3Obj.stream);
+      }
 
-    if (record.filePath.startsWith('http://') || record.filePath.startsWith('https://')) {
+      if (record.filePath.startsWith('s3://')) {
+        const s3Key = record.filePath.replace('s3://', '');
+        const signedUrl = await this.uploadService.getSignedUrlForDownload(s3Key);
+        return res.redirect(signedUrl, 302);
+      }
       return res.redirect(record.filePath, 302);
     }
 
