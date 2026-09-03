@@ -431,6 +431,7 @@ export class TransferRequestService {
         transferType: 'WAREHOUSE_TO_OUTLET',
         status: {
           in: [
+            'PENDING',
             'APPROVED',
             'PARTIAL_RECEIVED',
             'IN_TRANSIT',
