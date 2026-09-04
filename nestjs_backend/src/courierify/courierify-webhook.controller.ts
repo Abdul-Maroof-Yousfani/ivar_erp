@@ -12,6 +12,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { FastifyRequest } from 'fastify';
 import { CourierifyService } from './courierify.service';
 import { CourierifyWebhookEnvelope } from './interfaces/courierify.interface';
+import { PrismaService } from '../database/prisma.service';
 
 @ApiTags('Courierify Webhook')
 @Controller('courierify')
@@ -71,13 +72,31 @@ export class CourierifyWebhookController {
       `[Courierify Webhook Received] Topic: ${eventTopic}, EventId: ${eventId}`,
     );
 
+    // Capture active tenant context from request for background processing
+    const tenantCtx = (req as any).tenantId
+      ? {
+          tenantId: (req as any).tenantId,
+          companyId: (req as any).companyId,
+          dbUrl: (req as any).tenantDbUrl,
+        }
+      : null;
+
     // Process event asynchronously in background so response returns within 10s requirement
     setImmediate(() => {
-      this.courierifyService.handleWebhook(payload).catch((err) => {
-        this.logger.error(
-          `Error executing async webhook processing for event ${eventId}: ${err.message}`,
-        );
-      });
+      const runner = () => {
+        this.courierifyService.handleWebhook(payload).catch((err) => {
+          this.logger.error(
+            `Error executing async webhook processing for event ${eventId}: ${err.message}`,
+            err.stack,
+          );
+        });
+      };
+
+      if (tenantCtx && tenantCtx.dbUrl) {
+        PrismaService.asyncLocalStorage.run(tenantCtx, runner);
+      } else {
+        runner();
+      }
     });
 
     return {

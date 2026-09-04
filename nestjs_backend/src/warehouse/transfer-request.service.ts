@@ -110,36 +110,42 @@ export class TransferRequestService {
         }
       }
 
-      // NOTE: Stock availability validation is bypassed to allow transfers even when system stock is negative.
-      /*
-            for (const item of data.items) {
-                let availableQty = 0;
-                if (transferType === 'WAREHOUSE_TO_OUTLET') {
-                    const stock = await this.prisma.inventoryItem.findFirst({
-                        where: {
-                            warehouseId: data.fromWarehouseId,
-                            locationId: null, // Ensure we check warehouse main stock
-                            itemId: item.itemId,
-                            status: 'AVAILABLE'
-                        }
-                    });
-                    availableQty = stock ? Number(stock.quantity) : 0;
-                } else {
-                    const stock = await this.prisma.inventoryItem.findFirst({
-                        where: {
-                            locationId: data.fromLocationId,
-                            itemId: item.itemId,
-                            status: 'AVAILABLE'
-                        }
-                    });
-                    availableQty = stock ? Number(stock.quantity) : 0;
-                }
+      // On POS level, negative stock is strictly disallowed. Validate available stock for outlet transfers.
+      if (
+        (transferType === 'OUTLET_TO_WAREHOUSE' ||
+          transferType === 'OUTLET_TO_OUTLET') &&
+        data.fromLocationId
+      ) {
+        const itemIds = data.items.map((i) => i.itemId);
+        const stockEntries = await this.prisma.stockLedger.groupBy({
+          by: ['itemId'],
+          where: {
+            itemId: { in: itemIds },
+            locationId: data.fromLocationId,
+          },
+          _sum: { qty: true },
+        });
+        const stockMap = new Map<string, number>();
+        for (const entry of stockEntries) {
+          stockMap.set(entry.itemId, Number(entry._sum.qty || 0));
+        }
 
-                if (availableQty < item.quantity) {
-                    throw new BadRequestException(`Insufficient stock for item ID: ${item.itemId}. Available: ${availableQty}, Requested: ${item.quantity}`);
-                }
-            }
-            */
+        for (const item of data.items) {
+          const availableQty = stockMap.get(item.itemId) || 0;
+          if (availableQty < item.quantity) {
+            const itemObj = await this.prisma.item.findUnique({
+              where: { id: item.itemId },
+              select: { sku: true, description: true },
+            });
+            const itemLabel = itemObj
+              ? `${itemObj.sku}${itemObj.description ? ` (${itemObj.description})` : ''}`
+              : item.itemId;
+            throw new BadRequestException(
+              `Insufficient stock for item ${itemLabel} at this outlet. Available: ${availableQty}, Requested: ${item.quantity}`,
+            );
+          }
+        }
+      }
 
       const created = await this.prisma.transferRequest.create({
         data: {

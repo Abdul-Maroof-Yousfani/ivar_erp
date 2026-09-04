@@ -25,7 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/providers/auth-provider";
-import { getReturnTransferRequests, acceptTransferRequest, createReturnTransferRequest } from "@/lib/actions/transfer-request";
+import { getReturnTransferRequests, acceptTransferRequest, createReturnTransferRequest, updateTransferRequestStatus } from "@/lib/actions/transfer-request";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
@@ -85,6 +85,7 @@ export default function ReturnRequestsPage() {
     const [requests, setRequests] = useState<ReturnRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isAccepting, setIsAccepting] = useState<string | null>(null);
+    const [isRejecting, setIsRejecting] = useState<string | null>(null);
 
     // Create Mode States
     const [isCreating, setIsCreating] = useState(false);
@@ -430,6 +431,27 @@ export default function ReturnRequestsPage() {
             toast.error(err.message || "Failed to approve return");
         } finally {
             setIsAccepting(null);
+        }
+    };
+
+    const handleReject = async (requestId: string) => {
+        if (!confirm("Are you sure you want to cancel / reject this return request?")) {
+            return;
+        }
+        setIsRejecting(requestId);
+        try {
+            const res = await updateTransferRequestStatus(requestId, 'REJECTED');
+            if (res.status) {
+                toast.success("Return request cancelled/rejected.");
+                setRequests(prev => prev.filter(r => r.id !== requestId));
+            } else {
+                toast.error(res.message || "Failed to reject return request");
+            }
+        } catch (error) {
+            const err = error as { message?: string };
+            toast.error(err.message || "Failed to reject return request");
+        } finally {
+            setIsRejecting(null);
         }
     };
 
@@ -870,8 +892,8 @@ export default function ReturnRequestsPage() {
 
                                             <div className="w-full md:w-auto flex flex-col gap-2 flex-none">
                                                 <Button
-                                                    className="w-full md:w-40 h-14 text-lg font-bold gap-2 shadow-lg shadow-orange-100 dark:shadow-none bg-orange-600 hover:bg-orange-700 text-white"
-                                                    disabled={isAccepting === request.id || !hasPermission('pos.inventory.returns.approve')}
+                                                    className="w-full md:w-44 h-14 text-lg font-bold gap-2 shadow-lg shadow-orange-100 dark:shadow-none bg-orange-600 hover:bg-orange-700 text-white"
+                                                    disabled={isAccepting === request.id || isRejecting === request.id || !hasPermission('pos.inventory.returns.approve')}
                                                     onClick={() => handleAccept(request.id)}
                                                 >
                                                     {isAccepting === request.id ? (
@@ -881,11 +903,26 @@ export default function ReturnRequestsPage() {
                                                     )}
                                                     {isAccepting === request.id ? "Approving..." : "Approve Return"}
                                                 </Button>
-                                                <Button variant="outline" className="w-full md:w-40 h-10 font-semibold text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-900 hover:bg-orange-50 dark:hover:bg-orange-950/20" asChild>
-                                                    <Link href={`/erp/inventory/transactions/return-transfer/slip/${request.id}`} target="_blank">
-                                                        <FileText className="h-4 w-4 mr-2" /> View Details
-                                                    </Link>
-                                                </Button>
+                                                <div className="flex gap-2">
+                                                    <Button
+                                                        variant="outline"
+                                                        className="flex-1 h-10 font-semibold text-red-600 dark:text-red-400 border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-950/20"
+                                                        disabled={isRejecting === request.id || isAccepting === request.id}
+                                                        onClick={() => handleReject(request.id)}
+                                                    >
+                                                        {isRejecting === request.id ? (
+                                                            <RefreshCcw className="h-4 w-4 animate-spin mr-1" />
+                                                        ) : (
+                                                            <X className="h-4 w-4 mr-1" />
+                                                        )}
+                                                        Reject
+                                                    </Button>
+                                                    <Button variant="outline" className="flex-1 h-10 font-semibold text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-900 hover:bg-orange-50 dark:hover:bg-orange-950/20" asChild>
+                                                        <Link href={`/erp/inventory/transactions/return-transfer/slip/${request.id}`} target="_blank">
+                                                            <FileText className="h-4 w-4 mr-1" /> Slip
+                                                        </Link>
+                                                    </Button>
+                                                </div>
                                             </div>
                                         </CardContent>
                                     </div>

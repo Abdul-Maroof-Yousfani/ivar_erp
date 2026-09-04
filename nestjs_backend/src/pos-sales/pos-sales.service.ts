@@ -132,7 +132,7 @@ export class PosSalesService implements OnModuleInit {
     return nextNumber;
   }
 
-  private async generateOrderNumber(
+  public async generateOrderNumber(
     locationId: string,
     tx?: Prisma.TransactionClient,
   ): Promise<string> {

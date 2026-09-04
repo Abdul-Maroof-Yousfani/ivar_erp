@@ -115,7 +115,8 @@ export class TransferRequestController {
         'erp.inventory.transfer.check',
         'erp.inventory.transfer.authorize',
         'pos.inventory.transfer.check',
-        'pos.inventory.transfer.authorize'
+        'pos.inventory.transfer.authorize',
+        'pos.inventory.returns.approve'
     )
     @ApiOperation({ summary: 'Update transfer request status' })
     async updateStatus(@Param('id') id: string, @Body() dto: { status: string; approvedById?: string }, @Req() req: any) {

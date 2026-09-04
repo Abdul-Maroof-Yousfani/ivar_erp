@@ -526,8 +526,27 @@ export class StockLedgerService {
           const totalStock = currentStock._sum.qty || new Prisma.Decimal(0);
 
           if (totalStock.plus(quantity).isNegative()) {
+            const item = await transaction.item.findUnique({
+              where: { id: itemId },
+              select: { sku: true, description: true },
+            });
+            const location = locationId
+              ? await transaction.location.findUnique({
+                  where: { id: locationId },
+                  select: { name: true },
+                })
+              : null;
+            const warehouse = !locationId && warehouseId
+              ? await transaction.warehouse.findUnique({
+                  where: { id: warehouseId },
+                  select: { name: true },
+                })
+              : null;
+            const targetName = location?.name || warehouse?.name || locationId || warehouseId;
+            const itemLabel = item ? `${item.sku}${item.description ? ` (${item.description})` : ''}` : itemId;
+
             throw new BadRequestException(
-              `Insufficient stock for item ${itemId}${locationId ? ` in outlet/location ${locationId}` : ` in warehouse ${warehouseId}`}. Current: ${totalStock}, Requested: ${quantity.abs()}`,
+              `Insufficient stock for item ${itemLabel}${locationId ? ` in outlet/location "${targetName}"` : ` in warehouse "${targetName}"`}. Current: ${totalStock}, Requested: ${quantity.abs()}`,
             );
           }
         }

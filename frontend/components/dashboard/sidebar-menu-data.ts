@@ -740,24 +740,33 @@ export const menuData: MenuItem[] = [
       },
       {
         title: "Reports",
+        permissions: ["erp.finance.chart-of-account.read"],
         children: [
           {
             title: "General Ledger",
             href: "/erp/finance/reports/general-ledger",
+            permissions: ["erp.finance.chart-of-account.read"],
           },
           {
             title: "General Ledger Summary",
             href: "/erp/finance/reports/general-ledger-summary",
+            permissions: ["erp.finance.chart-of-account.read"],
           },
           {
             title: "Trial Balance",
             href: "/erp/finance/reports/trial-balance",
+            permissions: ["erp.finance.chart-of-account.read"],
           },
           {
             title: "Balance Sheet",
             href: "/erp/finance/reports/balance-sheet",
+            permissions: ["erp.finance.chart-of-account.read"],
           },
-          { title: "Profit & Loss", href: "/erp/finance/reports/profit-loss" },
+          {
+            title: "Profit & Loss",
+            href: "/erp/finance/reports/profit-loss",
+            permissions: ["erp.finance.chart-of-account.read"],
+          },
         ],
       },
     ],
@@ -1000,7 +1009,10 @@ export const menuData: MenuItem[] = [
         title: "Reports",
         children: [
           { title: "Out-of-Stock Report", href: "/erp/reports/out-of-stock" },
-          { title: "Sales & Stock Activity", href: "/erp/reports/sales-activity" },
+          {
+            title: "Sales & Stock Activity",
+            href: "/erp/reports/sales-activity",
+          },
           { title: "Sales Summary", href: "/erp/sales/reports/summary" },
           {
             title: "Customer Ledger",
@@ -1796,7 +1808,6 @@ export const menuData: MenuItem[] = [
       // },
     ],
   },
-
 
   // ── POS: Terminal ────────────────────────────────────────────────────────────
   {

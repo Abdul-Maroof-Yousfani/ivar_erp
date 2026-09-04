@@ -135,17 +135,17 @@ export class InventoryService {
     let stockMap: Map<string, number>;
 
     if (locationId) {
-      // Outlet stock: use InventoryItem directly
-      const inventoryItems = await this.prisma.inventoryItem.findMany({
+      // Outlet stock: use StockLedger (immutable source of truth)
+      const stockEntries = await this.prisma.stockLedger.groupBy({
+        by: ['itemId'],
         where: {
           itemId: { in: itemIds },
           locationId,
-          status: 'AVAILABLE',
         },
-        select: { itemId: true, quantity: true },
+        _sum: { qty: true },
       });
       stockMap = new Map(
-        inventoryItems.map((inv) => [inv.itemId, Number(inv.quantity)]),
+        stockEntries.map((a) => [a.itemId, Math.max(0, Number(a._sum.qty) || 0)]),
       );
     } else if (warehouseId) {
       // Warehouse stock: use StockLedger

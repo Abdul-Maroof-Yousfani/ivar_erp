@@ -129,7 +129,10 @@ export function GeneralLedgerClient({
   // Contract tree to remove redundant same-named nested group wrappers (matches Chart of Accounts view)
   const contractedAccounts = React.useMemo(() => {
     if (!accounts || accounts.length === 0) return [];
-    const contract = (nodes: ChartOfAccount[], parentName?: string): ChartOfAccount[] => {
+    const contract = (
+      nodes: ChartOfAccount[],
+      parentName?: string,
+    ): ChartOfAccount[] => {
       const result: ChartOfAccount[] = [];
       for (const node of nodes) {
         let currentChildren = node.children;
@@ -140,7 +143,8 @@ export function GeneralLedgerClient({
         if (
           parentName &&
           node.isGroup &&
-          node.name.toLowerCase().replace(/\s+/g, ' ').trim() === parentName.toLowerCase().replace(/\s+/g, ' ').trim()
+          node.name.toLowerCase().replace(/\s+/g, " ").trim() ===
+            parentName.toLowerCase().replace(/\s+/g, " ").trim()
         ) {
           if (currentChildren) {
             result.push(...currentChildren);
@@ -269,7 +273,18 @@ export function GeneralLedgerClient({
       ],
       [],
       headers,
-      ["", "", "Opening Balance", "", "", "", "Balance brought forward", "", "", data.openingBalance.toFixed(2)],
+      [
+        "",
+        "",
+        "Opening Balance",
+        "",
+        "",
+        "",
+        "Balance brought forward",
+        "",
+        "",
+        data.openingBalance.toFixed(2),
+      ],
       ...rows,
       [
         "",
@@ -562,15 +577,21 @@ export function GeneralLedgerClient({
                       label: "Closing Balance",
                       value: data.rangeClosingBalance,
                       desc: `Net ${isDebitNormal ? "Dr" : "Cr"} normal`,
-                      color:
-                        (isDebitNormal ? data.rangeClosingBalance >= 0 : data.rangeClosingBalance <= 0)
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-rose-600 dark:text-rose-400",
+                      color: (
+                        isDebitNormal
+                          ? data.rangeClosingBalance >= 0
+                          : data.rangeClosingBalance <= 0
+                      )
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-rose-600 dark:text-rose-400",
                       badge: data.rangeClosingBalance >= 0 ? "Dr" : "Cr",
-                      gradient:
-                        (isDebitNormal ? data.rangeClosingBalance >= 0 : data.rangeClosingBalance <= 0)
-                          ? "from-emerald-50/70 to-teal-50/50 dark:from-emerald-950/10 dark:to-teal-950/10 border-emerald-100/50 dark:border-emerald-950/20"
-                          : "from-amber-50/70 to-rose-50/50 dark:from-amber-950/10 dark:to-rose-950/10 border-rose-100/50 dark:border-rose-950/20",
+                      gradient: (
+                        isDebitNormal
+                          ? data.rangeClosingBalance >= 0
+                          : data.rangeClosingBalance <= 0
+                      )
+                        ? "from-emerald-50/70 to-teal-50/50 dark:from-emerald-950/10 dark:to-teal-950/10 border-emerald-100/50 dark:border-emerald-950/20"
+                        : "from-amber-50/70 to-rose-50/50 dark:from-amber-950/10 dark:to-rose-950/10 border-rose-100/50 dark:border-rose-950/20",
                     },
                   ].map((c) => (
                     <div
@@ -977,7 +998,7 @@ export function GeneralLedgerClient({
           <div className="flex justify-between mb-3 gap-4 items-start border-b pb-2 border-gray-300">
             <div className="w-[15%] flex flex-col items-start justify-center">
               <img
-                src="/image.png"
+                src="/image1.png"
                 alt="Logo"
                 className="w-20 object-contain"
               />
