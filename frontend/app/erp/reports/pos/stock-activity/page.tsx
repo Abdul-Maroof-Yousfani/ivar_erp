@@ -160,6 +160,7 @@ export default function ErpStockActivityReportPage() {
         startDate: dateRange.from?.toISOString(),
         endDate: dateRange.to?.toISOString(),
         summaryOnly,
+        showOutlet: groupingLevels.outlet,
         showBrand: groupingLevels.brand,
         showDivision: groupingLevels.division,
         showCategory: groupingLevels.category,

@@ -10,10 +10,10 @@ RED='\033[0;31m'
 MAGENTA='\033[0;35m'
 
 # Helper: print themed messages
-info() { echo -e "${CYAN}${BOLD}ℹ$NC $1"; }
-success() { echo -e "${GREEN}${BOLD}✔$NC $1"; }
-warn() { echo -e "${YELLOW}${BOLD}⚠$NC $1"; }
-error() { echo -e "${RED}${BOLD}✖$NC $1"; }
+info() { echo -e "${CYAN}${BOLD}i$NC $1"; }
+success() { echo -e "${GREEN}${BOLD}V$NC $1"; }
+warn() { echo -e "${YELLOW}${BOLD}! $NC $1"; }
+error() { echo -e "${RED}${BOLD}X$NC $1"; }
 header() {
     echo -e "\n${BOLD}${CYAN}========================================"
     echo -e "   $1"
@@ -23,7 +23,7 @@ header() {
 # Store root directory path
 ROOT_DIR=$(pwd)
 
-header "Speed Limit ERP - Build & Update"
+header "Speed Limit ERP - Zero-Downtime Build & Reload"
 
 # Determine target build mode (from argument or interactive prompt)
 TARGET="$1"
@@ -31,8 +31,8 @@ TARGET="$1"
 if [ -z "$TARGET" ]; then
     echo -e "${BOLD}Select what you would like to build & update:${NC}"
     echo -e "  ${BOLD}${GREEN}1)${NC} Both (Backend + Frontend) ${YELLOW}[Default]${NC}"
-    echo -e "  ${BOLD}${CYAN}2)${NC} Backend only (NestJS + Prisma + PM2 backend)"
-    echo -e "  ${BOLD}${MAGENTA}3)${NC} Frontend only (Next.js + PM2 frontend2)"
+    echo -e "  ${BOLD}${CYAN}2)${NC} Backend only (NestJS + Prisma + PM2 backend cluster)"
+    echo -e "  ${BOLD}${MAGENTA}3)${NC} Frontend only (Next.js + PM2 frontend2 cluster)"
     echo -e "  ${BOLD}${RED}4)${NC} Cancel / Exit"
     echo ""
     read -p "Enter choice [1-4, default: 1]: " CHOICE
@@ -87,7 +87,7 @@ else
 fi
 
 # ==========================================
-# BACKEND UPDATE FLOW
+# BACKEND UPDATE FLOW (ZERO DOWNTIME PM2 CLUSTER RELOAD)
 # ==========================================
 if [ "$TARGET" = "both" ] || [ "$TARGET" = "backend" ]; then
     header "Backend Update (nestjs_backend)"
@@ -104,9 +104,14 @@ if [ "$TARGET" = "both" ] || [ "$TARGET" = "backend" ]; then
         info "Building NestJS backend..."
         NODE_OPTIONS="--max-old-space-size=3072" bun run build || { error "Backend build failed!"; exit 1; }
 
-        info "Restarting PM2 backend process..."
-        pm2 restart backend || { error "PM2 restart backend failed!"; exit 1; }
-        success "Backend successfully updated and restarted."
+        info "Reloading PM2 backend process in zero-downtime cluster mode..."
+        if pm2 reload backend --update-env; then
+            success "Backend successfully reloaded with zero downtime (PM2 Cluster)."
+        else
+            warn "PM2 reload failed. Falling back to PM2 restart..."
+            pm2 restart backend || { error "PM2 restart backend failed!"; exit 1; }
+            success "Backend successfully restarted."
+        fi
     else
         error "Backend directory not found at $ROOT_DIR/nestjs_backend"
         exit 1
@@ -114,7 +119,7 @@ if [ "$TARGET" = "both" ] || [ "$TARGET" = "backend" ]; then
 fi
 
 # ==========================================
-# FRONTEND UPDATE FLOW
+# FRONTEND UPDATE FLOW (ZERO DOWNTIME PM2 CLUSTER RELOAD)
 # ==========================================
 if [ "$TARGET" = "both" ] || [ "$TARGET" = "frontend" ]; then
     header "Frontend Update (frontend)"
@@ -133,9 +138,14 @@ if [ "$TARGET" = "both" ] || [ "$TARGET" = "frontend" ]; then
             success "Standalone assets updated."
         fi
 
-        info "Restarting PM2 frontend process (frontend2)..."
-        pm2 restart frontend2 || { error "PM2 restart frontend2 failed!"; exit 1; }
-        success "Frontend successfully updated and restarted."
+        info "Reloading PM2 frontend process in zero-downtime cluster mode (frontend2)..."
+        if pm2 reload frontend2 --update-env; then
+            success "Frontend successfully reloaded with zero downtime (PM2 Cluster)."
+        else
+            warn "PM2 reload failed. Falling back to PM2 restart..."
+            pm2 restart frontend2 || { error "PM2 restart frontend2 failed!"; exit 1; }
+            success "Frontend successfully restarted."
+        fi
     else
         error "Frontend directory not found at $ROOT_DIR/frontend"
         exit 1

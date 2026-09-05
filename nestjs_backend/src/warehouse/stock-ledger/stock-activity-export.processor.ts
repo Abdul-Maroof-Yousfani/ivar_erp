@@ -22,6 +22,7 @@ export interface StockActivityExportJobData {
   endDate?: string;
   format: 'xlsx' | 'pdf';
   summaryOnly?: boolean;
+  showOutlet?: boolean;
   showBrand?: boolean;
   showDivision?: boolean;
   showCategory?: boolean;
@@ -382,6 +383,7 @@ export class StockActivityExportProcessor {
       const sVariant = showVariant !== undefined ? showVariant : !summaryOnly;
 
       const levels: string[] = [];
+      if (showOutlet) levels.push('outlet');
       if (sBrand) levels.push('brand');
       if (sDivision) levels.push('division');
       if (sCategory) levels.push('category');
@@ -457,7 +459,9 @@ export class StockActivityExportProcessor {
           let nodeVal = '';
           let extraFields: any = {};
 
-          if (levelName === 'brand') {
+          if (levelName === 'outlet') {
+            nodeVal = (item as any).locationName || 'POS Outlet';
+          } else if (levelName === 'brand') {
             nodeVal = item.brand?.name || 'No Brand';
           } else if (levelName === 'division') {
             nodeVal = item.division?.name || 'No Division';
@@ -651,6 +655,7 @@ export class StockActivityExportProcessor {
           indent: number;
           prefix: string;
         }> = {
+          outlet: { bgHex: '0F172A', fgHex: 'FFFFFF', fontSize: 10.5, bold: true, indent: 0, prefix: 'STORE / OUTLET: ' },
           brand: { bgHex: '1E293B', fgHex: 'FFFFFF', fontSize: 10, bold: true, indent: 0, prefix: 'BRAND: ' },
           division: { bgHex: '334155', fgHex: 'FFFFFF', fontSize: 9.5, bold: true, indent: 2, prefix: 'DIVISION: ' },
           category: { bgHex: '475569', fgHex: 'FFFFFF', fontSize: 9, bold: true, indent: 4, prefix: 'CATEGORY: ' },

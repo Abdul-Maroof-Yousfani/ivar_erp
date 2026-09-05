@@ -737,6 +737,7 @@ export class StockLedgerService {
       ? { OR: locOrWhFilters }
       : (locOrWhFilters.length === 1 ? locOrWhFilters[0] : {});
 
+    const showOutlet = options.showOutlet !== false;
     const showBrand = options.showBrand !== false;
     const showDivision = options.showDivision !== false;
     const showCategory = options.showCategory !== false;
@@ -746,6 +747,7 @@ export class StockLedgerService {
     const showVariant = options.showVariant !== undefined ? options.showVariant : !options.summaryOnly;
 
     const levels: string[] = [];
+    if (showOutlet) levels.push('outlet');
     if (showBrand) levels.push('brand');
     if (showDivision) levels.push('division');
     if (showCategory) levels.push('category');
@@ -1060,7 +1062,9 @@ export class StockLedgerService {
         let nodeVal = '';
         let extraFields: any = {};
 
-        if (levelName === 'brand') {
+        if (levelName === 'outlet') {
+          nodeVal = (item as any).locationName || 'POS Outlet';
+        } else if (levelName === 'brand') {
           nodeVal = item.brand?.name || 'No Brand';
         } else if (levelName === 'division') {
           nodeVal = item.division?.name || 'No Division';
