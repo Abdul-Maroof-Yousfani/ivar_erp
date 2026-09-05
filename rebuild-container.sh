@@ -23,7 +23,7 @@ header() {
 # Store root directory path
 ROOT_DIR=$(pwd)
 
-header "Speed Limit ERP - Zero-Downtime Build & Reload"
+header "Speed Limit ERP - Atomic Zero-Downtime Build & Reload"
 
 # Determine target build mode (from argument or interactive prompt)
 TARGET="$1"
@@ -87,7 +87,7 @@ else
 fi
 
 # ==========================================
-# BACKEND UPDATE FLOW (ZERO DOWNTIME PM2 CLUSTER RELOAD)
+# BACKEND UPDATE FLOW (ATOMIC STAGING BUILD + PM2 CLUSTER RELOAD)
 # ==========================================
 if [ "$TARGET" = "both" ] || [ "$TARGET" = "backend" ]; then
     header "Backend Update (nestjs_backend)"
@@ -101,8 +101,14 @@ if [ "$TARGET" = "both" ] || [ "$TARGET" = "backend" ]; then
         bun run prisma:tenant:generate || { error "Prisma tenant generate failed!"; exit 1; }
         bun run prisma:tenant:push || { error "Prisma tenant push failed!"; exit 1; }
 
-        info "Building NestJS backend..."
-        NODE_OPTIONS="--max-old-space-size=3072" bun run build || { error "Backend build failed!"; exit 1; }
+        info "Building NestJS backend into staging output (dist_staging)..."
+        NODE_OPTIONS="--max-old-space-size=3072" bun run build -- --outDir dist_staging || { error "Backend build failed!"; exit 1; }
+
+        info "Performing atomic directory swap for backend build artifacts..."
+        rm -rf dist_old
+        [ -d "dist" ] && mv dist dist_old
+        mv dist_staging dist
+        rm -rf dist_old
 
         info "Reloading PM2 backend process in zero-downtime cluster mode..."
         if pm2 reload backend --update-env; then
@@ -119,7 +125,7 @@ if [ "$TARGET" = "both" ] || [ "$TARGET" = "backend" ]; then
 fi
 
 # ==========================================
-# FRONTEND UPDATE FLOW (ZERO DOWNTIME PM2 CLUSTER RELOAD)
+# FRONTEND UPDATE FLOW (ATOMIC STAGING BUILD + PM2 CLUSTER RELOAD)
 # ==========================================
 if [ "$TARGET" = "both" ] || [ "$TARGET" = "frontend" ]; then
     header "Frontend Update (frontend)"
@@ -127,16 +133,23 @@ if [ "$TARGET" = "both" ] || [ "$TARGET" = "frontend" ]; then
         info "Installing frontend dependencies (bun install)..."
         bun install || { error "Frontend dependency installation failed!"; exit 1; }
 
-        info "Building Next.js frontend..."
-        NODE_OPTIONS="--max-old-space-size=3072" bun run build || { error "Frontend build failed!"; exit 1; }
+        info "Building Next.js frontend into staging output (.next_staging)..."
+        NEXT_DIST_DIR=".next_staging" NODE_OPTIONS="--max-old-space-size=3072" bun run build || { error "Frontend build failed!"; exit 1; }
 
         # Check for standalone output and copy static/public directories if needed
-        if [ -d ".next/standalone" ]; then
+        if [ -d ".next_staging/standalone" ]; then
             info "Copying static assets and public files to standalone folder..."
-            cp -rf .next/static .next/standalone/.next/static
-            cp -rf public .next/standalone/public
-            success "Standalone assets updated."
+            mkdir -p .next_staging/standalone/.next_staging
+            cp -rf .next_staging/static .next_staging/standalone/.next_staging/static
+            cp -rf public .next_staging/standalone/public
+            success "Standalone staging assets updated."
         fi
+
+        info "Performing atomic directory swap for frontend build artifacts..."
+        rm -rf .next_old
+        [ -d ".next" ] && mv .next .next_old
+        mv .next_staging .next
+        rm -rf .next_old
 
         info "Reloading PM2 frontend process in zero-downtime cluster mode (frontend2)..."
         if pm2 reload frontend2 --update-env; then
