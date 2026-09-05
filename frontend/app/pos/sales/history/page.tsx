@@ -23,7 +23,7 @@ import {
     Printer, Eye, ShoppingCart, Wallet, Calendar as CalendarIcon,
     PauseCircle, RotateCcw, Clock, Pencil, Plus, Trash2, Loader2,
     Banknote, CreditCard, Building2, Ticket, BookOpen, FileText,
-    CheckCircle2, XCircle, Upload,
+    CheckCircle2, XCircle, Upload, ShieldCheck, RefreshCw,
 } from "lucide-react";
 
 import DataTable from "@/components/common/data-table";
@@ -522,6 +522,8 @@ export default function SalesHistoryPage() {
     const [isRefundPrint, setIsRefundPrint] = useState(false);
     const [showClaimReceipt, setShowClaimReceipt] = useState(false);
     const [selectedClaim, setSelectedClaim] = useState<any>(null);
+    const [retryingFbrId, setRetryingFbrId] = useState<string | null>(null);
+    const [isSyncingAllFbr, setIsSyncingAllFbr] = useState(false);
 
     const fetchOrders = useCallback(async () => {
         setIsLoading(true);
@@ -663,6 +665,50 @@ export default function SalesHistoryPage() {
         }
     }, []);
 
+    const handleRetryFbr = useCallback(async (orderId: string) => {
+        setRetryingFbrId(orderId);
+        try {
+            const res = await authFetch(`/pos-sales/orders/${orderId}/retry-fbr`, {
+                method: "POST"
+            });
+            if (res.ok && res.data?.status && res.data.data?.fbrInvoiceNumber) {
+                toast.success(`FBR Invoice fiscalized: ${res.data.data.fbrInvoiceNumber}`);
+                fetchOrders();
+            } else {
+                toast.error(res.data?.message || "FBR fiscalization failed");
+            }
+        } catch {
+            toast.error("Failed to sync invoice with FBR");
+        } finally {
+            setRetryingFbrId(null);
+        }
+    }, [fetchOrders]);
+
+    const handleSyncAllFbr = useCallback(async () => {
+        setIsSyncingAllFbr(true);
+        try {
+            const res = await authFetch("/pos-sales/fbr/sync-unsynced", {
+                method: "POST",
+                body: JSON.stringify({
+                    locationId: user?.locationId || undefined,
+                    startDate: dateRange.from?.toISOString(),
+                    endDate: dateRange.to?.toISOString(),
+                })
+            });
+            if (res.ok && res.data?.status) {
+                const count = res.data.data?.syncedCount || res.data.data?.length || 0;
+                toast.success(`FBR sync complete! Processed ${count} unposted invoices.`);
+                fetchOrders();
+            } else {
+                toast.error(res.data?.message || "Failed to sync unposted FBR invoices");
+            }
+        } catch {
+            toast.error("Failed to trigger bulk FBR sync");
+        } finally {
+            setIsSyncingAllFbr(false);
+        }
+    }, [user?.locationId, dateRange, fetchOrders]);
+
     const STATUS_BADGE: Record<string, string> = {
         completed: "bg-emerald-500/10 text-emerald-700 border-emerald-300",
         hold: "bg-amber-500/10 text-amber-700 border-amber-300",
@@ -751,6 +797,53 @@ export default function SalesHistoryPage() {
                             {status.replace(/_/g, " ")}
                         </Badge>
                         {claimBadge}
+                    </div>
+                );
+            },
+        },
+        {
+            id: "fbrStatus",
+            header: "FBR Invoice",
+            cell: ({ row }) => {
+                const order = row.original;
+                const isSynced = order.fbrStatus === "SYNCED" && !!order.fbrInvoiceNumber;
+                const isRetrying = retryingFbrId === order.id;
+
+                if (order.status === "hold" || order.status === "hold_expired") {
+                    return <span className="text-xs text-muted-foreground">-</span>;
+                }
+
+                if (isSynced) {
+                    return (
+                        <div className="flex flex-col gap-0.5">
+                            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 border-emerald-300 font-mono text-[10px] px-1.5 py-0 h-5 w-fit">
+                                <CheckCircle2 className="h-2.5 w-2.5 mr-1 text-emerald-600" />
+                                {order.fbrInvoiceNumber}
+                            </Badge>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="bg-amber-500/10 text-amber-700 border-amber-300 text-[10px] px-1.5 py-0 h-5">
+                            Unsynced
+                        </Badge>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isRetrying}
+                            className="h-6 px-2 text-[10px] font-bold border-amber-300 text-amber-800 hover:bg-amber-100 dark:hover:bg-amber-950/40 gap-1 rounded-md"
+                            title="Post this invoice to FBR"
+                            onClick={() => handleRetryFbr(order.id)}
+                        >
+                            {isRetrying ? (
+                                <Loader2 className="h-3 w-3 animate-spin text-amber-600" />
+                            ) : (
+                                <RefreshCw className="h-3 w-3 text-amber-600" />
+                            )}
+                            Sync FBR
+                        </Button>
                     </div>
                 );
             },
@@ -927,6 +1020,7 @@ export default function SalesHistoryPage() {
                             </Button>
                         </div>
                     )}
+                  
                     <Button
                         variant="outline"
                         onClick={() => {

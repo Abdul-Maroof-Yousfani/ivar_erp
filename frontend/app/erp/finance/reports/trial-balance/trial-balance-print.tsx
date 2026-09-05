@@ -37,7 +37,7 @@ export function TrialBalancePrint({
         {/* Company Logo Section */}
         <div className="w-[25%] flex flex-col justify-center">
           <img
-            src="/image1.png"
+            src="/image-v2.png"
             alt="Company Logo"
             className="w-32 object-contain error-fallback"
             onError={(e) => {

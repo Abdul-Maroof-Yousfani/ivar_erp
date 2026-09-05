@@ -337,7 +337,10 @@ export default function ERPAvailableStockSummaryReportPage() {
                 (node.sku && String(node.sku).toLowerCase().includes(query)) ||
                 (node.articleName && String(node.articleName).toLowerCase().includes(query)) ||
                 (node.color && String(node.color).toLowerCase().includes(query)) ||
-                (node.size && String(node.size).toLowerCase().includes(query));
+                (node.size && String(node.size).toLowerCase().includes(query)) ||
+                (node.barcode && String(node.barcode).toLowerCase().includes(query)) ||
+                (node.barCode && String(node.barCode).toLowerCase().includes(query)) ||
+                (Array.isArray(node.barcodes) && node.barcodes.some((b: string) => String(b).toLowerCase().includes(query)));
 
             if (nodeMatches) {
                 return node;
@@ -413,11 +416,14 @@ export default function ERPAvailableStockSummaryReportPage() {
             const currentPath = path ? `${path}-${node.level}-${node.value}` : `${node.level}-${node.value}`;
 
             if (node.level === 'article') {
+                const barcodes: string[] = Array.isArray(node.barcodes) ? node.barcodes : (node.barcode ? [node.barcode] : []);
                 rows.push({
                     id: `art-${node.sku}`,
                     type: 'article',
                     label: node.articleName,
                     sku: node.sku,
+                    barcodes,
+                    barcode: node.barcode || node.barCode || (barcodes.length === 1 ? barcodes[0] : ''),
                     totals: node.totals,
                 });
             } else if (node.level === 'variant') {
@@ -426,6 +432,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                     type: 'variant',
                     color: node.color,
                     size: node.size,
+                    barcode: node.barcode || node.barCode || '',
                     totals: node.totals,
                 });
             } else {
@@ -637,7 +644,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                         </span>
                         <div className="relative">
                             <Input
-                                placeholder="Search by SKU, Product Name, Size, Color, Category..."
+                                placeholder="Search by SKU, Product Name, Barcode, Size, Color, Category..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 className="h-10 pl-9 pr-9 text-sm bg-background border-slate-200"
@@ -786,7 +793,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                         />
                         <label htmlFor="group-variant" className="text-xs font-bold text-slate-700 dark:text-slate-350 cursor-pointer select-none flex items-center gap-1.5">
                             <Printer className="h-3.5 w-3.5 text-fuchsia-500" />
-                            Variant (Sizes)
+                            Variant (Sizes & Barcodes)
                         </label>
                     </div>
                 </div>
@@ -879,21 +886,22 @@ export default function ERPAvailableStockSummaryReportPage() {
                     <table className="w-full text-xs text-left border-collapse min-w-[900px]">
                         <thead className="bg-slate-800 text-slate-100 sticky top-0 z-10 shadow-xs">
                             <tr>
-                                <th className="p-2.5 font-bold uppercase tracking-wider w-[28%]">GPC / Category / Product</th>
-                                <th className="p-2.5 font-bold uppercase tracking-wider text-center w-[7%]">Size</th>
-                                <th className="p-2.5 font-bold uppercase tracking-wider text-center w-[9%]">Color</th>
-                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[10%]">Quantity</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider w-[24%]">GPC / Category / Product</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider text-center w-[6%]">Size</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider text-center w-[8%]">Color</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider text-center w-[11%]">Barcode</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%]">Quantity</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[8%]">In Transit</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%] text-purple-300">Stock Reserved</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%]">Total</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[8%]">Selling Price</th>
-                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[12%]">Value (Rs.)</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[10%]">Value (Rs.)</th>
                             </tr>
                         </thead>
                         <tbody>
                             {isPending ? (
                                 <tr>
-                                    <td colSpan={9} className="p-12 text-center text-muted-foreground">
+                                    <td colSpan={10} className="p-12 text-center text-muted-foreground">
                                         <div className="flex flex-col items-center gap-2">
                                             <Loader2 className="h-6 w-6 animate-spin text-primary" />
                                             <span>Loading Available Stock Summary Report...</span>
@@ -902,7 +910,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                                 </tr>
                             ) : flatRows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={9} className="p-12 text-center text-muted-foreground font-medium">
+                                    <td colSpan={10} className="p-12 text-center text-muted-foreground font-medium">
                                         No available stock records found matching criteria.
                                     </td>
                                 </tr>
@@ -910,7 +918,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                                 <>
                                     {paddingTop > 0 && (
                                         <tr>
-                                            <td colSpan={9} style={{ height: `${paddingTop}px` }} />
+                                            <td colSpan={10} style={{ height: `${paddingTop}px` }} />
                                         </tr>
                                     )}
                                     {virtualItems.map((virtualRow) => {
@@ -920,7 +928,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                                         if (row.type === 'brand') {
                                             return (
                                                 <tr key={virtualRow.key} ref={rowVirtualizer.measureElement} data-index={virtualRow.index} className="bg-slate-900 text-slate-100 font-extrabold text-[12px] border-b border-slate-800">
-                                                    <td colSpan={3} className="p-2.5 pl-3 text-indigo-300">
+                                                    <td colSpan={4} className="p-2.5 pl-3 text-indigo-300">
                                                         BRAND: {row.label}
                                                     </td>
                                                     <td className="p-2.5 text-right">{formatVal(val.quantity)}</td>
@@ -936,7 +944,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                                         if (row.type === 'division') {
                                             return (
                                                 <tr key={virtualRow.key} ref={rowVirtualizer.measureElement} data-index={virtualRow.index} className="bg-slate-800 text-slate-100 font-bold text-[11px] border-b border-slate-700">
-                                                    <td colSpan={3} className="p-2 pl-6 text-blue-300">
+                                                    <td colSpan={4} className="p-2 pl-6 text-blue-300">
                                                         DIVISION: {row.label}
                                                     </td>
                                                     <td className="p-2 text-right">{formatVal(val.quantity)}</td>
@@ -952,7 +960,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                                         if (row.type === 'category') {
                                             return (
                                                 <tr key={virtualRow.key} ref={rowVirtualizer.measureElement} data-index={virtualRow.index} className="bg-slate-700 text-slate-100 font-semibold text-[11px] border-b border-slate-600">
-                                                    <td colSpan={3} className="p-2 pl-9 text-emerald-300">
+                                                    <td colSpan={4} className="p-2 pl-9 text-emerald-300">
                                                         CATEGORY: {row.label}
                                                     </td>
                                                     <td className="p-2 text-right">{formatVal(val.quantity)}</td>
@@ -968,7 +976,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                                         if (row.type === 'gender') {
                                             return (
                                                 <tr key={virtualRow.key} ref={rowVirtualizer.measureElement} data-index={virtualRow.index} className="bg-slate-600 text-slate-100 font-medium text-[11px] border-b border-slate-500">
-                                                    <td colSpan={3} className="p-2 pl-12 text-rose-200">
+                                                    <td colSpan={4} className="p-2 pl-12 text-rose-200">
                                                         GENDER: {row.label}
                                                     </td>
                                                     <td className="p-2 text-right">{formatVal(val.quantity)}</td>
@@ -984,7 +992,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                                         if (row.type === 'silhouette') {
                                             return (
                                                 <tr key={virtualRow.key} ref={rowVirtualizer.measureElement} data-index={virtualRow.index} className="bg-slate-500 text-slate-100 font-medium text-[11px] border-b border-slate-400">
-                                                    <td colSpan={3} className="p-2 pl-16 text-amber-200">
+                                                    <td colSpan={4} className="p-2 pl-16 text-amber-200">
                                                         SILHOUETTE: {row.label}
                                                     </td>
                                                     <td className="p-2 text-right">{formatVal(val.quantity)}</td>
@@ -1005,6 +1013,17 @@ export default function ERPAvailableStockSummaryReportPage() {
                                                     </td>
                                                     <td className="p-2 text-center text-muted-foreground font-normal">ALL SIZES</td>
                                                     <td className="p-2 text-center text-muted-foreground font-normal">ALL COLORS</td>
+                                                    <td className="p-2 text-center font-mono text-[11px]">
+                                                        {row.barcode ? (
+                                                            <span className="text-slate-800 dark:text-slate-200 font-semibold select-all">{row.barcode}</span>
+                                                        ) : row.barcodes && row.barcodes.length > 1 ? (
+                                                            <span className="text-[10px] text-muted-foreground italic font-sans font-medium px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700/70 cursor-help inline-block" title={row.barcodes.join(', ')}>
+                                                                {row.barcodes.length} Barcodes
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-muted-foreground font-mono">-</span>
+                                                        )}
+                                                    </td>
                                                     <td className="p-2 text-right">{formatVal(val.quantity)}</td>
                                                     <td className="p-2 text-right">{formatVal(val.transit)}</td>
                                                     <td className="p-2 text-right text-purple-600 dark:text-purple-400">{formatVal(val.reserved)}</td>
@@ -1023,6 +1042,9 @@ export default function ERPAvailableStockSummaryReportPage() {
                                                     </td>
                                                     <td className="p-2 text-center font-bold text-foreground">{row.size}</td>
                                                     <td className="p-2 text-center font-medium">{row.color}</td>
+                                                    <td className="p-2 text-center font-mono text-[11px] text-slate-700 dark:text-slate-300 font-semibold select-all">
+                                                        {row.barcode || "-"}
+                                                    </td>
                                                     <td className="p-2 text-right text-foreground">{formatVal(val.quantity)}</td>
                                                     <td className="p-2 text-right text-amber-600 dark:text-amber-500 font-medium">{formatVal(val.transit)}</td>
                                                     <td className="p-2 text-right text-purple-600 dark:text-purple-400 font-medium">{formatVal(val.reserved)}</td>
@@ -1037,7 +1059,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                                     })}
                                     {paddingBottom > 0 && (
                                         <tr>
-                                            <td colSpan={9} style={{ height: `${paddingBottom}px` }} />
+                                            <td colSpan={10} style={{ height: `${paddingBottom}px` }} />
                                         </tr>
                                     )}
                                 </>
@@ -1046,7 +1068,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                         {flatRows.length > 0 && (
                             <tfoot className="bg-slate-900 text-slate-100 font-extrabold text-xs sticky bottom-0 z-10 border-t-2 border-slate-900 shadow-md">
                                 <tr>
-                                    <td colSpan={3} className="p-3 pl-4 text-emerald-400 uppercase tracking-wide">GRAND TOTALS</td>
+                                    <td colSpan={4} className="p-3 pl-4 text-emerald-400 uppercase tracking-wide">GRAND TOTALS</td>
                                     <td className="p-3 text-right text-emerald-400 text-sm">{formatVal(grandTotals.quantity)}</td>
                                     <td className="p-3 text-right text-amber-400 text-sm">{formatVal(grandTotals.transit)}</td>
                                     <td className="p-3 text-right text-purple-300 text-sm">{formatVal(grandTotals.reserved)}</td>

@@ -123,7 +123,7 @@ export function JournalVoucherPrint({ voucher }: { voucher: JournalVoucher }) {
         {/* Logo */}
         <div className="w-[20%] flex flex-col items-start justify-center">
           <img
-            src="/image1.png"
+            src="/image-v2.png"
             alt="Logo"
             className="w-14 sm:w-18 print:w-20 object-contain"
           />

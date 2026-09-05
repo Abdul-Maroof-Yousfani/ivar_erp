@@ -998,7 +998,7 @@ export function GeneralLedgerClient({
           <div className="flex justify-between mb-3 gap-4 items-start border-b pb-2 border-gray-300">
             <div className="w-[15%] flex flex-col items-start justify-center">
               <img
-                src="/image1.png"
+                src="/image-v2.png"
                 alt="Logo"
                 className="w-20 object-contain"
               />

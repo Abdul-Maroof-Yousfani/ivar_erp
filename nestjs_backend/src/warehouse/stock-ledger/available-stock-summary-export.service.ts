@@ -521,10 +521,16 @@ export class AvailableStockSummaryExportService {
           nodeVal = item.sku;
           extraFields.sku = item.sku;
           extraFields.articleName = item.description || 'Unknown Article';
+          if (item.barCode) {
+            extraFields.barcode = item.barCode;
+            extraFields.barCode = item.barCode;
+          }
         } else if (levelName === 'variant') {
-          nodeVal = `${item.color?.name || 'Default'}-${item.size?.name || 'Default'}`;
+          nodeVal = `${item.color?.name || 'Default'}-${item.size?.name || 'Default'}${item.barCode ? `-${item.barCode}` : ''}`;
           extraFields.color = item.color?.name || 'Default';
           extraFields.size = item.size?.name || 'Default';
+          extraFields.barcode = item.barCode || '';
+          extraFields.barCode = item.barCode || '';
         }
 
         let existingNode = currentLevelNodes.find(n => n.level === levelName && n.value === nodeVal);
@@ -534,9 +540,19 @@ export class AvailableStockSummaryExportService {
             value: nodeVal,
             totals: this.createEmptyTotals(),
             ...extraFields,
+            ...(levelName === 'article' ? { barcodes: item.barCode ? [item.barCode] : [] } : {}),
             children: [],
           };
           currentLevelNodes.push(existingNode);
+        } else if (levelName === 'article' && item.barCode) {
+          if (!existingNode.barcodes) existingNode.barcodes = [];
+          if (!existingNode.barcodes.includes(item.barCode)) {
+            existingNode.barcodes.push(item.barCode);
+          }
+          if (!existingNode.barcode) {
+            existingNode.barcode = item.barCode;
+            existingNode.barCode = item.barCode;
+          }
         }
 
         // Add to the level node's totals

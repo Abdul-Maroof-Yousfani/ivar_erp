@@ -403,6 +403,8 @@ export async function getStockTransactionDetailReportExportStatus(jobId: string)
 export async function getAvailableStockSummaryReport(filters: {
     locationId?: string;
     warehouseId?: string;
+    asOfDate?: string;
+    date?: string;
     startDate?: string;
     endDate?: string;
     reportType?: "merged" | "separate";
@@ -419,6 +421,8 @@ export async function getAvailableStockSummaryReport(filters: {
         const queryParams = new URLSearchParams();
         if (filters.locationId) queryParams.append("locationId", filters.locationId);
         if (filters.warehouseId) queryParams.append("warehouseId", filters.warehouseId);
+        if (filters.asOfDate) queryParams.append("asOfDate", filters.asOfDate);
+        if (filters.date) queryParams.append("date", filters.date);
         if (filters.startDate) queryParams.append("startDate", filters.startDate);
         if (filters.endDate) queryParams.append("endDate", filters.endDate);
         if (filters.reportType) queryParams.append("reportType", filters.reportType);
@@ -445,6 +449,8 @@ export async function getAvailableStockSummaryReport(filters: {
 export async function queueAvailableStockSummaryPreview(filters: {
     locationId?: string;
     warehouseId?: string;
+    asOfDate?: string;
+    date?: string;
     startDate?: string;
     endDate?: string;
     reportType?: "merged" | "separate";
@@ -484,6 +490,8 @@ export async function getAvailableStockSummaryResult(jobId: string) {
 export async function queueAvailableStockSummaryReportExport(filters: {
     locationId?: string;
     warehouseId?: string;
+    asOfDate?: string;
+    date?: string;
     startDate?: string;
     endDate?: string;
     format: "xlsx" | "pdf";

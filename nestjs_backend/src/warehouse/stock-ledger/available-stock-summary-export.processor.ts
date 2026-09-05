@@ -43,6 +43,7 @@ const COLUMNS = [
   },
   { header: 'Size', key: 'size', width: 10, align: 'center' as const },
   { header: 'Color', key: 'color', width: 14, align: 'center' as const },
+  { header: 'Barcode', key: 'barcode', width: 18, align: 'center' as const },
   { header: 'Quantity', key: 'quantity', width: 14, align: 'right' as const },
   { header: 'In Transit', key: 'transit', width: 12, align: 'right' as const },
   {
@@ -713,6 +714,7 @@ export class AvailableStockSummaryExportProcessor {
         sku: label,
         size: node.size || '',
         color: node.color || '',
+        barcode: node.barcode || node.barCode || '',
         quantity: node.totals.quantity,
         transit: node.totals.transit,
         reserved: node.totals.reserved,
@@ -734,6 +736,7 @@ export class AvailableStockSummaryExportProcessor {
 
       const row = ws.addRow(rowData);
       for (let colNum = 1; colNum <= colsToUse.length; colNum++) {
+        const colDef = colsToUse[colNum - 1];
         const cell = row.getCell(colNum);
         cell.font = {
           bold: style.bold,
@@ -741,13 +744,13 @@ export class AvailableStockSummaryExportProcessor {
           color: { argb: `FF${style.fgHex}` },
         };
         cell.border = borderThin;
-        if (colNum === 1) {
+        if (colDef.key === 'sku') {
           cell.alignment = {
             horizontal: 'left',
             vertical: 'middle',
             indent: style.indent,
           };
-        } else if (colNum === 2 || colNum === 3) {
+        } else if (colDef.key === 'size' || colDef.key === 'color' || colDef.key === 'barcode') {
           cell.alignment = centerAlign;
         } else {
           cell.alignment = rightAlign;
@@ -761,14 +764,29 @@ export class AvailableStockSummaryExportProcessor {
           };
         }
 
-        if (colNum >= 4) {
+        const numericKeys = [
+          'quantity',
+          'transit',
+          'reserved',
+          'total',
+          'unitPrice',
+          'value',
+          'unitCost',
+          'costingValue',
+        ];
+        if (numericKeys.includes(colDef.key)) {
           const val = cell.value;
           if (typeof val === 'number') {
             if (val === 0) {
               cell.value = '-';
               cell.alignment = rightAlign;
             } else {
-              const isCostOrVal = [8, 9, 10, 11].includes(colNum);
+              const isCostOrVal = [
+                'unitPrice',
+                'value',
+                'unitCost',
+                'costingValue',
+              ].includes(colDef.key);
               cell.numFmt = isCostOrVal ? '#,##0.00' : '#,##0';
             }
           }
@@ -793,6 +811,7 @@ export class AvailableStockSummaryExportProcessor {
       sku: 'GRAND TOTAL',
       size: '',
       color: '',
+      barcode: '',
       quantity: grandTotals.quantity,
       transit: grandTotals.transit,
       reserved: grandTotals.reserved,
@@ -809,6 +828,7 @@ export class AvailableStockSummaryExportProcessor {
     const totalRow = ws.addRow(totalRowData);
 
     totalRow.eachCell((cell, colNum) => {
+      const colDef = colsToUse[colNum - 1];
       cell.font = { bold: true, size: 10, color: { argb: 'FF000000' } };
       cell.border = {
         top: { style: 'thin', color: { argb: 'FF000000' } },
@@ -821,10 +841,22 @@ export class AvailableStockSummaryExportProcessor {
         pattern: 'solid',
         fgColor: { argb: 'FFE2E8F0' },
       };
-      cell.alignment = colNum <= 3 ? leftAlign : rightAlign;
+      cell.alignment =
+        colDef?.key === 'sku' ||
+        colDef?.key === 'size' ||
+        colDef?.key === 'color' ||
+        colDef?.key === 'barcode'
+          ? leftAlign
+          : rightAlign;
 
-      if (colNum >= 4 && typeof cell.value === 'number') {
-        cell.numFmt = '#,##0';
+      if (typeof cell.value === 'number') {
+        const isCostOrVal = [
+          'unitPrice',
+          'value',
+          'unitCost',
+          'costingValue',
+        ].includes(colDef?.key);
+        cell.numFmt = isCostOrVal ? '#,##0.00' : '#,##0';
       }
     });
     totalRow.height = 24;
@@ -899,6 +931,7 @@ export class AvailableStockSummaryExportProcessor {
             <td style="${style.indentStyles}">SKU: ${node.sku} (${node.articleName})</td>
             <td class="center">ALL SIZES</td>
             <td class="center">ALL COLORS</td>
+            <td class="center font-mono">-</td>
             <td class="num">${formatVal(val.quantity)}</td>
             <td class="num">${formatVal(val.transit)}</td>
             <td class="num">${formatVal(val.reserved)}</td>
@@ -918,6 +951,7 @@ export class AvailableStockSummaryExportProcessor {
             <td style="${style.indentStyles} color: #64748b; font-style: italic;">&mdash; Variant Item</td>
             <td class="center">${node.size}</td>
             <td class="center">${node.color}</td>
+            <td class="center font-mono">${node.barcode || node.barCode || '-'}</td>
             <td class="num">${formatVal(val.quantity)}</td>
             <td class="num">${formatVal(val.transit)}</td>
             <td class="num">${formatVal(val.reserved)}</td>
@@ -934,7 +968,7 @@ export class AvailableStockSummaryExportProcessor {
           : '';
         rowsHtml += `
           <tr class="${style.className}">
-            <td colspan="3" style="${style.indentStyles}">${style.prefix}${node.value.toUpperCase()}</td>
+            <td colspan="4" style="${style.indentStyles}">${style.prefix}${node.value.toUpperCase()}</td>
             <td class="num">${formatVal(val.quantity)}</td>
             <td class="num">${formatVal(val.transit)}</td>
             <td class="num">${formatVal(val.reserved)}</td>
@@ -1120,15 +1154,16 @@ export class AvailableStockSummaryExportProcessor {
 
         <table>
           <colgroup>
-            <col style="width: ${includeCosting ? '22%' : '28%'};" />
-            <col style="width: ${includeCosting ? '5%' : '8%'};" />
+            <col style="width: ${includeCosting ? '18%' : '24%'};" />
+            <col style="width: ${includeCosting ? '5%' : '7%'};" />
+            <col style="width: ${includeCosting ? '6%' : '8%'};" />
+            <col style="width: ${includeCosting ? '9%' : '11%'};" />
             <col style="width: ${includeCosting ? '7%' : '9%'};" />
-            <col style="width: ${includeCosting ? '8%' : '10%'};" />
-            <col style="width: ${includeCosting ? '7%' : '9%'};" />
-            <col style="width: ${includeCosting ? '8%' : '9%'};" />
-            <col style="width: ${includeCosting ? '8%' : '9%'};" />
-            <col style="width: ${includeCosting ? '8%' : '8%'};" />
-            <col style="width: ${includeCosting ? '10%' : '10%'};" />
+            <col style="width: ${includeCosting ? '6%' : '8%'};" />
+            <col style="width: ${includeCosting ? '7%' : '8%'};" />
+            <col style="width: ${includeCosting ? '7%' : '8%'};" />
+            <col style="width: ${includeCosting ? '7%' : '8%'};" />
+            <col style="width: ${includeCosting ? '9%' : '9%'};" />
             ${includeCosting ? '<col style="width: 8%;" /><col style="width: 11%;" />' : ''}
           </colgroup>
           <thead>
@@ -1136,6 +1171,7 @@ export class AvailableStockSummaryExportProcessor {
               <th>GPC / Category / Product</th>
               <th class="center">Size</th>
               <th class="center">Color</th>
+              <th class="center">Barcode</th>
               <th class="num">Quantity</th>
               <th class="num">In Transit</th>
               <th class="num">Stock Reserved</th>
@@ -1148,7 +1184,7 @@ export class AvailableStockSummaryExportProcessor {
           <tbody>
             ${rowsHtml}
             <tr class="grand-total-row">
-              <td colspan="3">GRAND TOTALS</td>
+              <td colspan="4">GRAND TOTALS</td>
               <td class="num">${formatVal(grandTotals.quantity)}</td>
               <td class="num">${formatVal(grandTotals.transit)}</td>
               <td class="num">${formatVal(grandTotals.reserved)}</td>
