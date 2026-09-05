@@ -17,6 +17,7 @@ import type { Queue } from 'bull';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
+import { generateNextRsrvNumber } from '../common/utils/voucher-number.util';
 @Injectable()
 export class PosSessionService {
   private readonly logger = new Logger(PosSessionService.name);
@@ -28,7 +29,7 @@ export class PosSessionService {
     private readonly journalVoucherService: JournalVoucherService,
     private readonly receiptVoucherService: ReceiptVoucherService,
     @InjectQueue('reconciliation-export') private readonly exportQueue?: Queue,
-  ) { }
+  ) {}
 
   /**
    * Get the active session for the provided terminal (UUID),
@@ -89,11 +90,7 @@ export class PosSessionService {
             });
           }
 
-          const recon = await this.getReconciliationDetails(
-            childActiveSession.id,
-            undefined,
-            true,
-          );
+          const recon = await this.getReconciliationDetails(childActiveSession.id, undefined, true);
 
           return {
             session: childActiveSession,
@@ -123,11 +120,7 @@ export class PosSessionService {
       } as any;
     }
 
-    const recon = await this.getReconciliationDetails(
-      activeSession.id,
-      undefined,
-      true,
-    );
+    const recon = await this.getReconciliationDetails(activeSession.id, undefined, true);
 
     const floatAmount =
       activeSession.openingFloat !== null
@@ -387,13 +380,13 @@ export class PosSessionService {
 
     const cashier = session.userId
       ? await this.prismaMaster.user.findUnique({
-        where: { id: session.userId },
-        select: {
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      })
+          where: { id: session.userId },
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        })
       : null;
 
     const start = session.openedAt;
@@ -443,7 +436,11 @@ export class PosSessionService {
 
       if (
         order.paymentMethod === 'credit_account' ||
-        order.tenderType === 'credit_account'
+        order.tenderType === 'credit_account' ||
+        order.paymentMethod === 'reward_voucher' ||
+        order.tenderType === 'reward_voucher' ||
+        order.paymentMethod === 'split' ||
+        order.tenderType === 'split'
       ) {
         const netCash = Math.max(0, rawCash - Number(order.changeAmount ?? 0));
         const creditAmt = Math.max(
@@ -566,43 +563,12 @@ export class PosSessionService {
     };
   }
 
-  private getDisplayBankName(
-    merchant?: { bankName?: string | null; description?: string | null } | null,
-    paymentMethod?: string | null,
-    tenders?: any[] | null,
-  ): string {
-    const rawBankName = (
-      merchant?.bankName ||
-      merchant?.description ||
-      ''
-    ).trim();
-    const isBankTransfer =
-      paymentMethod === 'bank_transfer' ||
-      (Array.isArray(tenders) &&
-        tenders.some((t: any) => t?.method === 'bank_transfer'));
-
-    if (isBankTransfer) {
-      if (!rawBankName) return 'Bank Transfer';
-      if (rawBankName.toLowerCase().startsWith('bank transfer')) {
-        return rawBankName;
-      }
-      return `Bank Transfer ${rawBankName}`;
-    }
-
-    if (rawBankName) return rawBankName;
-    return 'Other Card / Bank';
-  }
-
   /**
    * Get detailed reconciliation metrics for a specific session ID.
    * Computes all drawer totals, tax/discount and payment method aggregates,
    * and fetches the cashier user profile from the master database.
    */
-  async getReconciliationDetails(
-    sessionId: string,
-    date?: string,
-    skipJvRegen = false,
-  ) {
+  async getReconciliationDetails(sessionId: string, date?: string, skipJvRegen = false) {
     const session = await this.prisma.posSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -621,12 +587,11 @@ export class PosSessionService {
     if (session.status === 'closed' && !skipJvRegen) {
       runInBackground(
         'Regenerate POS RS-RV Voucher on fetch',
-        this.generateReconciliationVoucher(session.id, session.posId).catch(
-          (err) =>
-            this.logger.error(
-              `Failed to regenerate RS-RV for session ${session.id}`,
-              err,
-            ),
+        this.generateReconciliationVoucher(session.id, session.posId).catch((err) =>
+          this.logger.error(
+            `Failed to regenerate RS-RV for session ${session.id}`,
+            err,
+          ),
         ),
       );
     }
@@ -634,13 +599,13 @@ export class PosSessionService {
     // Fetch Cashier Profile from Central/Master DB
     const cashier = session.userId
       ? await this.prismaMaster.user.findUnique({
-        where: { id: session.userId },
-        select: {
-          firstName: true,
-          lastName: true,
-          email: true,
-        },
-      })
+          where: { id: session.userId },
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        })
       : null;
 
     const toLocalDateString = (d: Date) => {
@@ -774,27 +739,28 @@ export class PosSessionService {
       const rawCard = Number(order.cardAmount ?? 0);
       const change = Number(order.changeAmount ?? 0);
 
+      // Determine if voucher redemption is double-counted within card/cash amounts
+      const excess = Math.max(
+        0,
+        rawCash + rawCard + voucherRedemptionsSum - (grandTotal + change),
+      );
+
       let cash = rawCash;
       let card = rawCard;
 
+      // Enforce single tender method if non-split, preventing double-counting from stale DB columns
       if (order.tenderType !== 'split' && order.paymentMethod) {
         if (order.paymentMethod === 'cash') {
-          cash = Math.max(0, grandTotal - voucherRedemptionsSum);
           card = 0;
-        } else if (
-          order.paymentMethod === 'card' ||
-          order.paymentMethod === 'bank_transfer'
-        ) {
+          if (cash === 0) cash = Math.max(0, grandTotal - voucherRedemptionsSum);
+        } else if (order.paymentMethod === 'card' || order.paymentMethod === 'bank_transfer') {
           cash = 0;
-          card = Math.max(0, grandTotal - voucherRedemptionsSum);
+          if (card === 0) card = Math.max(0, grandTotal - voucherRedemptionsSum);
+        } else if (order.paymentMethod === 'voucher') {
+          cash = 0;
+          card = 0;
         }
       } else {
-        if (order.paymentMethod === 'card' || order.paymentMethod === 'bank_transfer') {
-          if (rawCash > 0 && rawCash + rawCard > grandTotal + change) {
-            cash = 0;
-            card = Math.max(0, grandTotal - voucherRedemptionsSum);
-          }
-        }
         const excess = Math.max(
           0,
           cash + card + voucherRedemptionsSum - (grandTotal + change),
@@ -810,6 +776,7 @@ export class PosSessionService {
 
       const voucher = voucherRedemptionsSum;
 
+
       if (cash > 0) {
         cashSalesCount++;
         totalCashReceived += cash;
@@ -819,11 +786,7 @@ export class PosSessionService {
         totalCardReceived += card;
 
         // Group by bank / merchant commission rate
-        const bankName = this.getDisplayBankName(
-          order.merchant,
-          order.paymentMethod,
-          (order as any).tenders,
-        );
+        const bankName = order.merchant?.bankName || 'Unknown Bank';
         const rateDecimal = Number(order.merchant?.commissionRate ?? 0);
         const ratePct = rateDecimal * 100; // formatted in percent (e.g. 1.265 for 0.01265)
 
@@ -833,11 +796,14 @@ export class PosSessionService {
             v.sourceOrderId === order.id &&
             (v.voucherType === 'GIFT' || v.voucherType === 'CORPORATE'),
         );
-        const vouchersValue = orderIssuedVouchers.reduce((sum, v) => {
-          const fVal = Number(v.faceValue);
-          const discAmt = Number(v.discount ?? 0);
-          return sum + (fVal - discAmt);
-        }, 0);
+        const vouchersValue = orderIssuedVouchers.reduce(
+          (sum, v) => {
+            const fVal = Number(v.faceValue);
+            const discAmt = Number(v.discount ?? 0);
+            return sum + (fVal - discAmt);
+          },
+          0,
+        );
 
         const voucherCardAmt = Math.min(card, vouchersValue);
         const regularCardAmt = card - voucherCardAmt;
@@ -912,6 +878,8 @@ export class PosSessionService {
       if (
         order.paymentMethod === 'credit_account' ||
         order.tenderType === 'credit_account' ||
+        order.paymentMethod === 'reward_voucher' ||
+        order.tenderType === 'reward_voucher' ||
         order.paymentMethod === 'split' ||
         order.tenderType === 'split'
       ) {
@@ -1047,10 +1015,7 @@ export class PosSessionService {
             totalCardReceived += netAmount;
             cardSalesCount++;
 
-            const bankName = this.getDisplayBankName(
-              v.merchant,
-              (v as any).paymentMode,
-            );
+            const bankName = v.merchant?.bankName || 'Unknown Bank';
             const rateDecimal = Number(v.merchant?.commissionRate ?? 0);
             const ratePct = rateDecimal * 100;
 
@@ -1110,12 +1075,12 @@ export class PosSessionService {
       { type: 'Cash', amount: cashSaleAmt, from: '-' },
       ...(cashGiftVouchersAmt > 0
         ? [
-          {
-            type: 'Cash - Gift Vouchers Issued',
-            amount: cashGiftVouchersAmt,
-            from: '-',
-          },
-        ]
+            {
+              type: 'Cash - Gift Vouchers Issued',
+              amount: cashGiftVouchersAmt,
+              from: '-',
+            },
+          ]
         : []),
       ...redeemedVouchersList,
     ];
@@ -1158,7 +1123,7 @@ export class PosSessionService {
     const returnAmount =
       exchangeAndClaims.reduce((sum, v) => sum + v.amount, 0) +
       refundVouchers.reduce((sum, v) => sum + v.amount, 0);
-
+      
     const creditVouchersTotal = creditVouchers.reduce(
       (sum, v) => sum + v.amount,
       0,
@@ -1212,8 +1177,7 @@ export class PosSessionService {
       }
     }
 
-    const expectedCash =
-      totalStartingFloat + totalCashReceived - refundVouchersTotal;
+    const expectedCash = totalStartingFloat + totalCashReceived - refundVouchersTotal;
 
     let totalActualCash = 0;
     let anySessionOpen = false;
@@ -1275,10 +1239,7 @@ export class PosSessionService {
         } else {
           sessionStartingCash = Number(s.openingFloat);
         }
-        totalActualCash +=
-          sessionStartingCash +
-          sessionCashSalesOnDay -
-          sessionRefundVouchersTotal;
+        totalActualCash += sessionStartingCash + sessionCashSalesOnDay - sessionRefundVouchersTotal;
       }
     }
 
@@ -1293,7 +1254,7 @@ export class PosSessionService {
         : `${formatDate(startRangeStr)} - ${formatDate(endRangeStr)}`;
 
     return {
-      companyName: 'IVAR',
+      companyName: 'Speed (Private) Limited',
       locationName: session.pos.location?.name ?? 'Nike-Dolmen Clifton',
       reportTitle: 'Sales Reconciliation',
       dateRange: dateRange,
@@ -1320,13 +1281,13 @@ export class PosSessionService {
         },
         cashier: cashier
           ? {
-            fullName: `${cashier.firstName} ${cashier.lastName}`.trim(),
-            email: cashier.email,
-          }
+              fullName: `${cashier.firstName} ${cashier.lastName}`.trim(),
+              email: cashier.email,
+            }
           : {
-            fullName: 'N/A',
-            email: 'N/A',
-          },
+              fullName: 'N/A',
+              email: 'N/A',
+            },
       },
       metrics: {
         grossSales: financials.sale,
@@ -1366,23 +1327,12 @@ export class PosSessionService {
         sale: cardSaleAmt,
         giftVouchers: cardGiftVouchersAmt,
         total: totalCardReceived,
-      },
-    };
-  }
+  }}}
 
   async getDaywiseReconciliation(locationId: string, date: string) {
-    const locIds = locationId
-      ? locationId
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-      : [];
+    const locIds = locationId ? locationId.split(',').map((s) => s.trim()).filter(Boolean) : [];
 
-    const computeSingleReconciliation = async (
-      targetLocWhere: any,
-      displayName: string,
-      targetLocId?: string,
-    ) => {
+    const computeSingleReconciliation = async (targetLocWhere: any, displayName: string, targetLocId?: string) => {
       const startOfDay = new Date(date + 'T00:00:00');
       startOfDay.setHours(0, 0, 0, 0);
 
@@ -1473,27 +1423,27 @@ export class PosSessionService {
         const rawCard = Number(order.cardAmount ?? 0);
         const change = Number(order.changeAmount ?? 0);
 
+        const excess = Math.max(
+          0,
+          rawCash + rawCard + voucherRedemptionsSum - (grandTotal + change),
+        );
+
         let cash = rawCash;
         let card = rawCard;
 
+        // Enforce single tender method if non-split, preventing double-counting from stale DB columns
         if (order.tenderType !== 'split' && order.paymentMethod) {
           if (order.paymentMethod === 'cash') {
-            cash = Math.max(0, grandTotal - voucherRedemptionsSum);
             card = 0;
-          } else if (
-            order.paymentMethod === 'card' ||
-            order.paymentMethod === 'bank_transfer'
-          ) {
+            if (cash === 0) cash = Math.max(0, grandTotal - voucherRedemptionsSum);
+          } else if (order.paymentMethod === 'card' || order.paymentMethod === 'bank_transfer') {
             cash = 0;
-            card = Math.max(0, grandTotal - voucherRedemptionsSum);
+            if (card === 0) card = Math.max(0, grandTotal - voucherRedemptionsSum);
+          } else if (order.paymentMethod === 'voucher') {
+            cash = 0;
+            card = 0;
           }
         } else {
-          if (order.paymentMethod === 'card' || order.paymentMethod === 'bank_transfer') {
-            if (rawCash > 0 && rawCash + rawCard > grandTotal + change) {
-              cash = 0;
-              card = Math.max(0, grandTotal - voucherRedemptionsSum);
-            }
-          }
           const excess = Math.max(
             0,
             cash + card + voucherRedemptionsSum - (grandTotal + change),
@@ -1517,11 +1467,7 @@ export class PosSessionService {
           cardSalesCount++;
           totalCardReceived += card;
 
-          const bankName = this.getDisplayBankName(
-            order.merchant,
-            order.paymentMethod,
-            (order as any).tenders,
-          );
+          const bankName = order.merchant?.bankName || 'Unknown Bank';
           const rateDecimal = Number(order.merchant?.commissionRate ?? 0);
           const ratePct = rateDecimal * 100;
 
@@ -1530,11 +1476,14 @@ export class PosSessionService {
               v.sourceOrderId === order.id &&
               (v.voucherType === 'GIFT' || v.voucherType === 'CORPORATE'),
           );
-          const vouchersValue = orderIssuedVouchers.reduce((sum, v) => {
-            const fVal = Number(v.faceValue);
-            const discAmt = Number(v.discount ?? 0);
-            return sum + (fVal - discAmt);
-          }, 0);
+          const vouchersValue = orderIssuedVouchers.reduce(
+            (sum, v) => {
+              const fVal = Number(v.faceValue);
+              const discAmt = Number(v.discount ?? 0);
+              return sum + (fVal - discAmt);
+            },
+            0,
+          );
 
           const voucherCardAmt = Math.min(card, vouchersValue);
           const regularCardAmt = card - voucherCardAmt;
@@ -1562,8 +1511,7 @@ export class PosSessionService {
               };
             }
             cardVoucherGroup[bankName].amount += voucherCardAmt;
-            cardVoucherGroup[bankName].commission +=
-              voucherCardAmt * rateDecimal;
+            cardVoucherGroup[bankName].commission += voucherCardAmt * rateDecimal;
           }
         }
         if (voucher > 0) {
@@ -1608,6 +1556,8 @@ export class PosSessionService {
         if (
           order.paymentMethod === 'credit_account' ||
           order.tenderType === 'credit_account' ||
+          order.paymentMethod === 'reward_voucher' ||
+          order.tenderType === 'reward_voucher' ||
           order.paymentMethod === 'split' ||
           order.tenderType === 'split'
         ) {
@@ -1736,10 +1686,7 @@ export class PosSessionService {
               totalCardReceived += netAmount;
               cardSalesCount++;
 
-              const bankName = this.getDisplayBankName(
-                v.merchant,
-                (v as any).paymentMode,
-              );
+              const bankName = v.merchant?.bankName || 'Unknown Bank';
               const rateDecimal = Number(v.merchant?.commissionRate ?? 0);
               const ratePct = rateDecimal * 100;
 
@@ -1796,12 +1743,12 @@ export class PosSessionService {
         { type: 'Cash', amount: cashSaleAmt, from: '-' },
         ...(cashGiftVouchersAmt > 0
           ? [
-            {
-              type: 'Cash - Gift Vouchers Issued',
-              amount: cashGiftVouchersAmt,
-              from: '-',
-            },
-          ]
+              {
+                type: 'Cash - Gift Vouchers Issued',
+                amount: cashGiftVouchersAmt,
+                from: '-',
+              },
+            ]
           : []),
         ...redeemedVouchersList,
       ];
@@ -1856,7 +1803,7 @@ export class PosSessionService {
       };
 
       return {
-        companyName: 'IVAR',
+        companyName: 'Speed (Private) Limited',
         locationId: targetLocId || locationId,
         locationName: displayName,
         reportTitle: 'Sales Reconciliation',
@@ -1876,10 +1823,7 @@ export class PosSessionService {
         paymentBreakdown: {
           cash: { count: cashSalesCount, amount: totalCashReceived },
           card: { count: cardSalesCount, amount: totalCardReceived },
-          voucher: {
-            count: voucherSalesCount,
-            amount: totalVouchersReceivedAmt,
-          },
+          voucher: { count: voucherSalesCount, amount: totalVouchersReceivedAmt },
         },
         cardPayments,
         cardGiftVouchers,
@@ -1952,11 +1896,7 @@ export class PosSessionService {
     };
   }
 
-  async exportDaywiseReconciliationExcel(
-    locationId: string,
-    date: string,
-    res: any,
-  ) {
+  async exportDaywiseReconciliationExcel(locationId: string, date: string, res: any) {
     const data = await this.getDaywiseReconciliation(locationId, date);
 
     const workbook = new ExcelJS.Workbook();
@@ -2092,20 +2032,10 @@ export class PosSessionService {
     addTableHeader(['Type', 'Amount', '', '', 'From', '']);
     let receivedSubtotal = 0;
     for (const v of data.receivedVouchers) {
-      sheet.addRow([
-        v.type,
-        formatCurrencyCell(v.amount),
-        '',
-        '',
-        v.from || '-',
-        '',
-      ]);
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '']);
       receivedSubtotal += v.amount;
     }
-    const recSubRow = sheet.addRow([
-      'RECEIVED SUBTOTAL',
-      formatCurrencyCell(receivedSubtotal),
-    ]);
+    const recSubRow = sheet.addRow(['RECEIVED SUBTOTAL', formatCurrencyCell(receivedSubtotal)]);
     recSubRow.font = { bold: true };
     recSubRow.eachCell((cell) => (cell.border = BORDER_THIN));
     sheet.addRow([]);
@@ -2118,10 +2048,7 @@ export class PosSessionService {
       sheet.addRow([r.description, formatCurrencyCell(r.amount)]);
       receivablesSubtotal += r.amount;
     }
-    const receivableSubRow = sheet.addRow([
-      'RECEIVABLE SUBTOTAL',
-      formatCurrencyCell(receivablesSubtotal),
-    ]);
+    const receivableSubRow = sheet.addRow(['RECEIVABLE SUBTOTAL', formatCurrencyCell(receivablesSubtotal)]);
     receivableSubRow.font = { bold: true };
     receivableSubRow.eachCell((cell) => (cell.border = BORDER_THIN));
     sheet.addRow([]);
@@ -2129,80 +2056,29 @@ export class PosSessionService {
     // 5. Issued
     addSectionHeader('ISSUED VOUCHERS');
     addTableHeader(['Voucher Type', 'Amount', '', '', 'From', 'To']);
-    const issuedExchangeSubtotal =
-      data.issuedVouchers.exchangeAndClaims?.reduce(
-        (acc: number, v: any) => acc + v.amount,
-        0,
-      ) || 0;
-    const issuedCreditSubtotal =
-      data.issuedVouchers.creditVouchers?.reduce(
-        (acc: number, v: any) => acc + v.amount,
-        0,
-      ) || 0;
-    const issuedGiftSubtotal =
-      data.issuedVouchers.giftVouchers?.reduce(
-        (acc: number, v: any) => acc + v.amount,
-        0,
-      ) || 0;
-    const issuedRefundSubtotal =
-      data.issuedVouchers.refundVouchers?.reduce(
-        (acc: number, v: any) => acc + v.amount,
-        0,
-      ) || 0;
-    const totalIssuedSubtotal =
-      issuedExchangeSubtotal + issuedGiftSubtotal + issuedRefundSubtotal;
+    const issuedExchangeSubtotal = data.issuedVouchers.exchangeAndClaims?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
+    const issuedCreditSubtotal = data.issuedVouchers.creditVouchers?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
+    const issuedGiftSubtotal = data.issuedVouchers.giftVouchers?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
+    const issuedRefundSubtotal = data.issuedVouchers.refundVouchers?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
+    const totalIssuedSubtotal = issuedExchangeSubtotal + issuedGiftSubtotal + issuedRefundSubtotal;
 
     for (const v of data.issuedVouchers.exchangeAndClaims || []) {
-      sheet.addRow([
-        v.type,
-        formatCurrencyCell(v.amount),
-        '',
-        '',
-        v.from || '-',
-        '',
-      ]);
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '']);
     }
     for (const v of data.issuedVouchers.creditVouchers || []) {
-      sheet.addRow([
-        v.type,
-        formatCurrencyCell(v.amount),
-        '',
-        '',
-        v.from || '-',
-        v.to || '-',
-      ]);
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', v.to || '-']);
     }
     for (const v of data.issuedVouchers.giftVouchers || []) {
-      sheet.addRow([
-        v.type,
-        formatCurrencyCell(v.amount),
-        '',
-        '',
-        v.from || '-',
-        v.to || '-',
-      ]);
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', v.to || '-']);
     }
     if (data.issuedVouchers.totalGiftVoucherDiscount > 0) {
-      sheet.addRow([
-        'Gift Vouchers Discount',
-        formatCurrencyCell(data.issuedVouchers.totalGiftVoucherDiscount),
-      ]);
+      sheet.addRow(['Gift Vouchers Discount', formatCurrencyCell(data.issuedVouchers.totalGiftVoucherDiscount)]);
     }
     for (const v of data.issuedVouchers.refundVouchers || []) {
-      sheet.addRow([
-        v.type,
-        formatCurrencyCell(v.amount),
-        '',
-        '',
-        v.from || '-',
-        '',
-      ]);
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '']);
     }
 
-    const issuedSubRow = sheet.addRow([
-      'TOTAL ISSUED',
-      formatCurrencyCell(totalIssuedSubtotal),
-    ]);
+    const issuedSubRow = sheet.addRow(['TOTAL ISSUED', formatCurrencyCell(totalIssuedSubtotal)]);
     issuedSubRow.font = { bold: true };
     issuedSubRow.eachCell((cell) => (cell.border = BORDER_THIN));
     sheet.addRow([]);
@@ -2215,10 +2091,7 @@ export class PosSessionService {
       sheet.addRow([f.type, formatCurrencyCell(f.amount)]);
       fbrSubtotal += f.amount;
     }
-    const fbrSubRow = sheet.addRow([
-      'FBR SUBTOTAL',
-      formatCurrencyCell(fbrSubtotal),
-    ]);
+    const fbrSubRow = sheet.addRow(['FBR SUBTOTAL', formatCurrencyCell(fbrSubtotal)]);
     fbrSubRow.font = { bold: true };
     fbrSubRow.eachCell((cell) => (cell.border = BORDER_THIN));
     sheet.addRow([]);
@@ -2226,14 +2099,8 @@ export class PosSessionService {
     // 7. Financials
     addSectionHeader('FINANCIALS');
     sheet.addRow(['Sale', formatCurrencyCell(data.financials.sale)]);
-    sheet.addRow([
-      'Sales Return',
-      formatCurrencyCell(data.financials.salesReturn),
-    ]);
-    const netSalesRow = sheet.addRow([
-      'NET SALES',
-      formatCurrencyCell(data.financials.netSales),
-    ]);
+    sheet.addRow(['Sales Return', formatCurrencyCell(data.financials.salesReturn)]);
+    const netSalesRow = sheet.addRow(['NET SALES', formatCurrencyCell(data.financials.netSales)]);
     netSalesRow.font = { bold: true };
     netSalesRow.eachCell((cell) => {
       cell.border = BORDER_THIN;
@@ -2248,38 +2115,17 @@ export class PosSessionService {
     // 8. Flow summaries
     addSectionHeader('FLOW SUMMARIES');
     sheet.addRow(['CASH FLOW DETAILS']);
-    sheet.addRow([
-      '  Net Cash Sales',
-      formatCurrencyCell(data.cashBreakdown.sale),
-    ]);
-    sheet.addRow([
-      '  Cash Gift Vouchers',
-      formatCurrencyCell(data.cashBreakdown.giftVouchers),
-    ]);
-    sheet.addRow([
-      '  Refund Vouchers',
-      formatCurrencyCell(-data.cashBreakdown.refundVouchers),
-    ]);
-    const totalCashRow = sheet.addRow([
-      '  TOTAL CASH FLOW',
-      formatCurrencyCell(data.cashBreakdown.total),
-    ]);
+    sheet.addRow(['  Net Cash Sales', formatCurrencyCell(data.cashBreakdown.sale)]);
+    sheet.addRow(['  Cash Gift Vouchers', formatCurrencyCell(data.cashBreakdown.giftVouchers)]);
+    sheet.addRow(['  Refund Vouchers', formatCurrencyCell(-data.cashBreakdown.refundVouchers)]);
+    const totalCashRow = sheet.addRow(['  TOTAL CASH FLOW', formatCurrencyCell(data.cashBreakdown.total)]);
     totalCashRow.font = { bold: true };
 
     sheet.addRow([]);
     sheet.addRow(['CARD SALES DETAILS']);
-    sheet.addRow([
-      '  Net Card Sales',
-      formatCurrencyCell(data.cardBreakdown.sale),
-    ]);
-    sheet.addRow([
-      '  Card Gift Vouchers',
-      formatCurrencyCell(data.cardBreakdown.giftVouchers),
-    ]);
-    const totalCardRow = sheet.addRow([
-      '  TOTAL CARD PAYMENTS',
-      formatCurrencyCell(data.cardBreakdown.total),
-    ]);
+    sheet.addRow(['  Net Card Sales', formatCurrencyCell(data.cardBreakdown.sale)]);
+    sheet.addRow(['  Card Gift Vouchers', formatCurrencyCell(data.cardBreakdown.giftVouchers)]);
+    const totalCardRow = sheet.addRow(['  TOTAL CARD PAYMENTS', formatCurrencyCell(data.cardBreakdown.total)]);
     totalCardRow.font = { bold: true };
 
     sheet.eachRow((row) => {
@@ -2294,22 +2140,12 @@ export class PosSessionService {
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
-    res.header(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    );
-    res.header(
-      'Content-Disposition',
-      `attachment; filename=reconciliation_${date}.xlsx`,
-    );
+    res.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.header('Content-Disposition', `attachment; filename=reconciliation_${date}.xlsx`);
     res.send(buffer);
   }
 
-  async queueDaywiseReconciliationExcel(
-    userId: string,
-    locationId: string,
-    date: string,
-  ): Promise<{ jobId: string }> {
+  async queueDaywiseReconciliationExcel(userId: string, locationId: string, date: string): Promise<{ jobId: string }> {
     const jobId = uuidv4();
     const tenantId = this.prisma.getTenantId() ?? '';
     const tenantDbUrl = this.prisma.getTenantDbUrl() ?? '';
@@ -2336,41 +2172,26 @@ export class PosSessionService {
       },
     );
 
-    this.logger.log(
-      `[ReconciliationExport] Queued job ${jobId} for user ${userId} on date ${date}`,
-    );
+    this.logger.log(`[ReconciliationExport] Queued job ${jobId} for user ${userId} on date ${date}`);
     return { jobId };
   }
 
-  async getDaywiseReconciliationExportStatus(
-    jobId: string,
-  ): Promise<{ state: string; progress: number }> {
+  async getDaywiseReconciliationExportStatus(jobId: string): Promise<{ state: string; progress: number }> {
     if (!this.exportQueue) {
       throw new Error('Export queue is not initialized');
     }
     const job = await this.exportQueue.getJob(jobId);
     if (!job) throw new NotFoundException(`Export job ${jobId} not found`);
     const state = await job.getState();
-    const progress =
-      typeof job.progress() === 'number' ? (job.progress() as number) : 0;
+    const progress = typeof job.progress() === 'number' ? (job.progress() as number) : 0;
     return { state, progress };
   }
 
-  async streamDaywiseReconciliationExcelFile(
-    jobId: string,
-    res: any,
-  ): Promise<void> {
-    const filePath = path.join(
-      process.cwd(),
-      'uploads',
-      'exports',
-      `export-${jobId}.xlsx`,
-    );
+  async streamDaywiseReconciliationExcelFile(jobId: string, res: any): Promise<void> {
+    const filePath = path.join(process.cwd(), 'uploads', 'exports', `export-${jobId}.xlsx`);
 
     if (!fs.existsSync(filePath)) {
-      throw new NotFoundException(
-        'Export file not found. It may have expired or the job is still running.',
-      );
+      throw new NotFoundException('Export file not found. It may have expired or the job is still running.');
     }
 
     const stat = fs.statSync(filePath);
@@ -2379,19 +2200,15 @@ export class PosSessionService {
     const stream = fs.createReadStream(filePath);
     stream.on('close', () => {
       fs.unlink(filePath, (err) => {
-        if (err)
-          this.logger.warn(`Could not delete export file: ${err.message}`);
-        else this.logger.log(`[ReconciliationExport] Cleaned up ${filePath}`);
+        if (err) this.logger.warn(`Could not delete export file: ${err.message}`);
+        else     this.logger.log(`[ReconciliationExport] Cleaned up ${filePath}`);
       });
     });
     stream.on('error', (err) => {
       this.logger.error(`[ReconciliationExport] Stream error: ${err.message}`);
     });
 
-    res.header(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    );
+    res.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.header('Content-Disposition', `attachment; filename="${filename}"`);
     res.header('Content-Length', stat.size);
     res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -2414,10 +2231,7 @@ export class PosSessionService {
       if (!sessionData) return;
       const session = sessionData;
 
-      const locationShortCode =
-        sessionData?.pos?.location?.shortCode ||
-        sessionData?.pos?.location?.code ||
-        'LOC';
+      const locationShortCode = sessionData?.pos?.location?.shortCode || sessionData?.pos?.location?.code || 'LOC';
 
       // Clean up all existing pending JVs for this session first (both old format and new format)
       const oldSessionPrefix = `RS RV-${sessionId.substring(0, 8).toUpperCase()}`;
@@ -2425,9 +2239,9 @@ export class PosSessionService {
         where: {
           OR: [
             { jvNo: { startsWith: oldSessionPrefix } },
-            { jvNo: oldSessionPrefix },
-          ],
-        },
+            { jvNo: oldSessionPrefix }
+          ]
+        }
       });
 
       for (const existingJv of existingJvs) {
@@ -2452,9 +2266,9 @@ export class PosSessionService {
             { rvNo: { startsWith: oldSessionPrefix } },
             { rvNo: oldSessionPrefix },
             { rvNo: { startsWith: newSessionPrefix } },
-            { rvNo: newSessionPrefix },
-          ],
-        },
+            { rvNo: newSessionPrefix }
+          ]
+        }
       });
 
       for (const existingRv of existingRvs) {
@@ -2492,11 +2306,7 @@ export class PosSessionService {
       }
 
       for (const dateStr of availableDates) {
-        const metrics = await this.getReconciliationDetails(
-          sessionId,
-          dateStr,
-          true,
-        );
+        const metrics = await this.getReconciliationDetails(sessionId, dateStr, true);
         const date = new Date(dateStr + 'T12:00:00');
         const locationCode = metrics.session.terminal.locationCode;
         const jvDateStr = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
@@ -2611,8 +2421,7 @@ export class PosSessionService {
         const cashGl = sessionData?.pos?.location?.cashGLCode || '31090001';
         if (cashGl) {
           // Cash Sales entry
-          const netCashSale =
-            metrics.cashBreakdown.sale - metrics.cashBreakdown.refundVouchers;
+          const netCashSale = metrics.cashBreakdown.sale - metrics.cashBreakdown.refundVouchers;
           await addLine(
             cashGl,
             locationCode,
@@ -2685,9 +2494,7 @@ export class PosSessionService {
               where: { code: v.from },
             });
             if (voucher && voucher.voucherType === 'REFUND') {
-              const refundCode = v.from.startsWith('RF#')
-                ? v.from
-                : `RF#${v.from}`;
+              const refundCode = v.from.startsWith('RF#') ? v.from : `RF#${v.from}`;
               await addLine(
                 '12070015',
                 locationCode,
@@ -2760,8 +2567,7 @@ export class PosSessionService {
         }
 
         // Gift Voucher Discount
-        const giftVoucherDiscountAmt =
-          metrics.issuedVouchers.totalGiftVoucherDiscount || 0;
+        const giftVoucherDiscountAmt = metrics.issuedVouchers.totalGiftVoucherDiscount || 0;
         await addLine(
           '80180012',
           locationCode,
@@ -2770,9 +2576,7 @@ export class PosSessionService {
           `Gift Voucher Discount | ${jvDateStr}`,
         );
         for (const rv of metrics.issuedVouchers.refundVouchers) {
-          const refundCode = rv.from.startsWith('RF#')
-            ? rv.from
-            : `RF#${rv.from}`;
+          const refundCode = rv.from.startsWith('RF#') ? rv.from : `RF#${rv.from}`;
           await addLine(
             '12070015',
             locationCode,
@@ -2812,12 +2616,10 @@ export class PosSessionService {
         );
 
         // Final Calculations
-        const totalReceived =
-          metrics.cashBreakdown.total + metrics.paymentBreakdown.voucher.amount;
+        const totalReceived = metrics.cashBreakdown.total + metrics.paymentBreakdown.voucher.amount;
         const netReceivedCard = metrics.cardBreakdown.total;
 
-        const unusedBalanceVouchersAmt =
-          metrics.issuedVouchers.unusedBalanceVouchersTotal || 0;
+        const unusedBalanceVouchersAmt = metrics.issuedVouchers.unusedBalanceVouchersTotal || 0;
         const cashGiftVouchersAmt = metrics.cashBreakdown.giftVouchers;
         const cardGiftVouchersAmt = metrics.cardBreakdown.giftVouchers;
         const receivablesAmt = metrics.receivables.reduce(
@@ -2919,9 +2721,7 @@ export class PosSessionService {
         });
 
         if (approvedRv) {
-          this.logger.log(
-            `Receipt Voucher ${rvNo} already exists and is not pending. Skipping.`,
-          );
+          this.logger.log(`Receipt Voucher ${rvNo} already exists and is not pending. Skipping.`);
           continue;
         }
 
@@ -2970,70 +2770,246 @@ export class PosSessionService {
     const locationObj = await this.prisma.location.findUnique({
       where: { id: locationId },
     });
-
+    
     const locCode = locationObj?.code || 'POS';
-    const rvNo = `RS-RV-${locCode}-${dateStr}`;
+    const netSale = reconData.financials?.netSales ?? 0;
+    if (netSale <= 0) {
+      this.logger.log(`No net sales for location ${locCode} on ${dateStr}, skipping RSRV creation.`);
+      return;
+    }
 
-    const existingRv = await this.prisma.receiptVoucher.findUnique({
-      where: { rvNo },
+    // Check if RSRV already exists for this date and location
+    const existingRv = await this.prisma.receiptVoucher.findFirst({
+      where: {
+        type: 'rs_rv',
+        rvDate: {
+          gte: new Date(dateStr + 'T00:00:00.000Z'),
+          lte: new Date(dateStr + 'T23:59:59.999Z'),
+        },
+        description: { contains: locCode },
+      },
     });
 
     if (existingRv) {
-      this.logger.log(
-        `Receipt Voucher ${rvNo} already exists for location ${locationId} on ${dateStr}. Skipping.`,
-      );
+      this.logger.log(`Receipt Voucher already exists for location ${locCode} on ${dateStr}: ${existingRv.rvNo}. Skipping.`);
       return;
     }
 
-    const cashAccount = await this.prisma.chartOfAccount.findFirst({
-      where: { code: '11100001' },
+    // Lookup COA accounts dynamically
+    const allAccounts = await this.prisma.chartOfAccount.findMany({
+      select: { id: true, code: true, name: true },
     });
-    const salesAccount = await this.prisma.chartOfAccount.findFirst({
-      where: { code: '41100001' },
-    });
+    const coaByCode = new Map<string, { id: string; name: string }>();
+    allAccounts.forEach((a) => coaByCode.set(a.code, { id: a.id, name: a.name }));
 
-    const fallbackAccount =
-      (await this.prisma.chartOfAccount.findFirst())?.id || 'MISSING';
+    // Fallback account
+    const fallbackId = allAccounts[0]?.id || 'MISSING';
 
-    const netSale = reconData.financials?.netSales ?? 0;
+    // Control Accounts (accountId)
+    const salesControlId = coaByCode.get('4001')?.id || coaByCode.get('40')?.id || fallbackId;
+    const salesReturnControlId = coaByCode.get('5101')?.id || coaByCode.get('51')?.id || fallbackId;
+    const bankControlId = coaByCode.get('3201')?.id || coaByCode.get('32')?.id || fallbackId;
+    const operatingExpControlId = coaByCode.get('5201')?.id || coaByCode.get('52')?.id || fallbackId;
+    const payablesControlId = coaByCode.get('2001')?.id || coaByCode.get('20')?.id || fallbackId;
+
+    // 1. Cash Tag Account: Check location cashGLCode -> UBL '32010002' -> '31090001'
+    let cashTagId = fallbackId;
+    if (locationObj?.cashGLCode && coaByCode.has(locationObj.cashGLCode)) {
+      cashTagId = coaByCode.get(locationObj.cashGLCode)!.id;
+    } else if (coaByCode.has('32010002')) {
+      cashTagId = coaByCode.get('32010002')!.id; // UBL ACC 7741
+    } else if (coaByCode.has('31090001')) {
+      cashTagId = coaByCode.get('31090001')!.id;
+    }
+
+    // 2. Outlet Sales Account mapping (tagAccountId)
+    const outletSalesMap: Record<string, string> = {
+      'ZB1-LHR': '40010013', // IVAR LAHORE SHOP SALE
+      'I81-ISB': '40010015', // IVAR ISLAMABAD SHOP SALE
+      'SFD2-KHI': '40010016', // IVAR SHARFABAD SHOP SALE
+      'BC1-KHI': '40010012', // IVAR BUKHARI SHOP SALE
+    };
+
+    // 3. Outlet Sales Return Account mapping (tagAccountId)
+    const outletSalesReturnMap: Record<string, string> = {
+      'ZB1-LHR': '51010007', // IVAR LAHORE SHOP REFUNDS
+      'I81-ISB': '51010009', // IVAR ISLAMABAD SHOP REFUND
+      'SFD2-KHI': '51010010', // IVAR SHARFABAD SHOP REFUND
+      'BC1-KHI': '51010004', // IVAR BUKHARI SHOP RETURN
+    };
+
+    // 4. Outlet Bank Charges mapping (tagAccountId)
+    const outletBankChargesMap: Record<string, string> = {
+      'ZB1-LHR': '52010034',
+      'I81-ISB': '52010044',
+      'SFD2-KHI': '52010059',
+      'BC1-KHI': '52010017',
+    };
+
+    const details: any[] = [];
+
+    // Tenders: Cash
     const cashAmt = reconData.cashBreakdown?.sale ?? 0;
-
-    if (netSale <= 0) {
-      this.logger.log(
-        `No net sales for location ${locationId} on ${dateStr}, skipping RSRV creation.`,
-      );
-      return;
-    }
-
-    const details = [
-      {
-        accountId: cashAccount?.id || fallbackAccount,
+    if (cashAmt > 0) {
+      details.push({
+        accountId: bankControlId,
+        tagAccountId: cashTagId,
         debit: cashAmt,
         credit: 0,
-        narration: `Cash sales for ${reconData.locationName || locCode} on ${dateStr}`,
-      },
-      {
-        accountId: salesAccount?.id || fallbackAccount,
+        narration: `Cash sales deposited to UBL Bank A/C | ${locCode} | ${dateStr}`,
+      });
+    }
+
+    // Tenders: Cards per Merchant
+    let totalComm = 0;
+    if (reconData.cardPayments) {
+      for (const card of reconData.cardPayments) {
+        const comm = Number((card.commission ?? 0).toFixed(2));
+        totalComm += comm;
+        const netCard = Number(((card.amount ?? 0) - comm).toFixed(2));
+
+        // Find merchant config bank GL
+        const merchant = await this.prisma.merchantConfig.findFirst({
+          where: { bankName: card.bank },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        let cardTagId = fallbackId;
+        if (merchant?.bankGlCode && coaByCode.has(merchant.bankGlCode)) {
+          cardTagId = coaByCode.get(merchant.bankGlCode)!.id;
+        } else if (card.bank?.toLowerCase().includes('meezan') && coaByCode.has('32010001')) {
+          cardTagId = coaByCode.get('32010001')!.id;
+        } else if (coaByCode.has('32010003')) {
+          cardTagId = coaByCode.get('32010003')!.id;
+        }
+
+        if (netCard > 0) {
+          details.push({
+            accountId: bankControlId,
+            tagAccountId: cardTagId,
+            debit: netCard,
+            credit: 0,
+            narration: `Credit Card settlement ${card.bank} | ${locCode} | ${dateStr}`,
+          });
+        }
+      }
+    }
+
+    // Bank Commission
+    if (totalComm > 0) {
+      const commCode = outletBankChargesMap[locCode] || '52010017';
+      const commTagId = coaByCode.has(commCode) ? coaByCode.get(commCode)!.id : fallbackId;
+      details.push({
+        accountId: operatingExpControlId,
+        tagAccountId: commTagId,
+        debit: totalComm,
+        credit: 0,
+        narration: `POS Credit Card merchant commission | ${locCode} | ${dateStr}`,
+      });
+    }
+
+    // Vouchers Redeemed (Tenders: Exchange / Gift / Claim)
+    const voucherAmt = reconData.paymentBreakdown?.voucher?.amount ?? 0;
+    if (voucherAmt > 0) {
+      const vCode = coaByCode.has('20010050') ? '20010050' : '12070010';
+      const vTagId = coaByCode.has(vCode) ? coaByCode.get(vCode)!.id : fallbackId;
+      details.push({
+        accountId: payablesControlId,
+        tagAccountId: vTagId,
+        debit: voucherAmt,
+        credit: 0,
+        narration: `Exchange Vouchers collected/redeemed | ${locCode} | ${dateStr}`,
+      });
+    }
+
+    // Sales Return (Debit)
+    const salesReturnAmt = reconData.financials?.salesReturn ?? 0;
+    if (salesReturnAmt > 0) {
+      const returnCode = outletSalesReturnMap[locCode] || '51010001';
+      const returnTagId = coaByCode.has(returnCode) ? coaByCode.get(returnCode)!.id : fallbackId;
+      details.push({
+        accountId: salesReturnControlId,
+        tagAccountId: returnTagId,
+        debit: salesReturnAmt,
+        credit: 0,
+        narration: `Daily POS Sales Return | ${locCode} | ${dateStr}`,
+      });
+    }
+
+    // FBR POS Service Charges (Credit)
+    const fbrTotal = reconData.fbrCharges?.reduce((sum: number, f: any) => sum + Number(f.amount || 0), 0) ?? 0;
+    if (fbrTotal > 0) {
+      const fbrTagId = coaByCode.get('20010055')?.id || fallbackId;
+      details.push({
+        accountId: payablesControlId,
+        tagAccountId: fbrTagId,
         debit: 0,
-        credit: netSale,
-        narration: `Sales revenue for ${reconData.locationName || locCode} on ${dateStr}`,
-      },
-    ];
+        credit: fbrTotal,
+        narration: `FBR POS Service Charges | ${locCode} | ${dateStr}`,
+      });
+    }
+
+    // Gross Sales Revenue (Credit)
+    const grossSale = reconData.financials?.sale ?? 0;
+    const salesCode = outletSalesMap[locCode];
+    let salesTagId = fallbackId;
+    if (salesCode && coaByCode.has(salesCode)) {
+      salesTagId = coaByCode.get(salesCode)!.id;
+    }
+
+    if (grossSale > 0) {
+      details.push({
+        accountId: salesControlId,
+        tagAccountId: salesTagId,
+        debit: 0,
+        credit: grossSale,
+        narration: `Daily POS Sales Revenue | ${locCode} | ${dateStr}`,
+      });
+    }
+
+    // Auto-balance check
+    let totalDebit = 0;
+    let totalCredit = 0;
+    details.forEach((d) => {
+      totalDebit = Number((totalDebit + d.debit).toFixed(2));
+      totalCredit = Number((totalCredit + d.credit).toFixed(2));
+    });
+
+    const diff = Math.abs(totalDebit - totalCredit);
+    if (diff > 0.001) {
+      if (totalDebit < totalCredit) {
+        const adj = Number((totalCredit - totalDebit).toFixed(2));
+        const firstDebit = details.find((d) => d.debit > 0);
+        if (firstDebit) {
+          firstDebit.debit = Number((firstDebit.debit + adj).toFixed(2));
+          totalDebit = Number((totalDebit + adj).toFixed(2));
+        }
+      } else {
+        const adj = Number((totalDebit - totalCredit).toFixed(2));
+        const salesLine = details.find((d) => d.tagAccountId === salesTagId && d.credit > 0);
+        if (salesLine) {
+          salesLine.credit = Number((salesLine.credit + adj).toFixed(2));
+          totalCredit = Number((totalCredit + adj).toFixed(2));
+        }
+      }
+    }
+
+    const rvNo = await generateNextRsrvNumber(this.prisma, dateStr);
+    const firstDebitLine = details.find((d) => d.debit > 0);
+    const debitAccountId = firstDebitLine ? firstDebitLine.accountId : bankControlId;
 
     await this.receiptVoucherService.create({
       type: 'rs_rv',
       rvNo,
       rvDate: new Date(dateStr),
-      debitAccountId: cashAccount?.id || fallbackAccount,
-      debitAmount: cashAmt,
-      description: `Automated Daily RSRV POS Reconciliation for ${locCode} on ${dateStr}`,
+      debitAccountId,
+      debitAmount: totalDebit,
+      description: `POS Daily Sales Reconciliation for ${reconData.locationName || locCode} (${locCode}) on ${dateStr}`,
       status: 'pending',
       details,
     });
 
-    this.logger.log(
-      `Successfully generated automated daily RSRV voucher ${rvNo}`,
-    );
+    this.logger.log(`Successfully generated automated daily RSRV voucher ${rvNo} for ${locCode}`);
   }
 
   /**
@@ -3058,15 +3034,7 @@ export class PosSessionService {
     } else {
       const now = new Date();
       startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      endDate = new Date(
-        now.getFullYear(),
-        now.getMonth() + 1,
-        0,
-        23,
-        59,
-        59,
-        999,
-      );
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
     }
 
     const whereCondition: any = {
