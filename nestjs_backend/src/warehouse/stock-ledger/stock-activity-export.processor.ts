@@ -631,7 +631,7 @@ export class StockActivityExportProcessor {
         const centerAlign = { horizontal: 'center' as const, vertical: 'middle' as const };
 
         const styleHeaderRow = (row: ExcelJS.Row, bgHex: string, bold: boolean, size = 9, fgHex = '1E293B') => {
-          for (let colNum = 1; colNum <= 18; colNum++) {
+          for (let colNum = 1; colNum <= 20; colNum++) {
             const cell = row.getCell(colNum);
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${bgHex}` } };
             cell.font = { bold, size, color: { argb: `FF${fgHex}` } };
@@ -700,7 +700,7 @@ export class StockActivityExportProcessor {
             balance: node.totals.balance,
           });
 
-          for (let colNum = 1; colNum <= 18; colNum++) {
+          for (let colNum = 1; colNum <= 20; colNum++) {
             const cell = row.getCell(colNum);
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${style.bgHex}` } };
             cell.font = { bold: style.bold, size: style.fontSize, color: { argb: `FF${style.fgHex}` } };

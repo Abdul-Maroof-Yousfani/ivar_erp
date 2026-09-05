@@ -167,6 +167,7 @@ export default function ErpStockActivityReportPage() {
         showSilhouette: groupingLevels.silhouette,
         showArticle: groupingLevels.article,
         showVariant: groupingLevels.variant,
+        posOnly: true,
       });
       if (result && result.status !== false) {
         const raw = result.data ?? result;
@@ -718,7 +719,7 @@ export default function ErpStockActivityReportPage() {
         .map((l) => l.name);
       list.push(`Outlets: ${names.join(", ")}`);
     }
-    return list.length > 0 ? list.join(" | ") : "All Warehouses & Outlets";
+    return list.length > 0 ? list.join(" | ") : "All POS Outlets";
   }, [selectedLocationIds, selectedWarehouseIds, locations, warehouses]);
 
   return (
@@ -839,7 +840,7 @@ export default function ErpStockActivityReportPage() {
               options={locationOptions}
               value={selectedLocationIds}
               onValueChange={setSelectedLocationIds}
-              placeholder="All Outlets"
+              placeholder="All POS Outlets"
               className="bg-background"
             />
           </div>
