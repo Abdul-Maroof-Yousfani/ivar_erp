@@ -149,9 +149,10 @@ export default function CreatePurchaseInvoicePage() {
         console.log("Landed Costs response:", landedCostsData);
       }
 
-      setSuppliers(suppliersData.data || suppliersData || []);
-      setGrns(grnsData || []);
-      setLandedCosts(landedCostsData?.data || landedCostsData || []);
+      const extractArray = (res: any) => Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+      setSuppliers(extractArray(suppliersData));
+      setGrns(extractArray(grnsData));
+      setLandedCosts(extractArray(landedCostsData));
     } catch (error) {
       console.error("Error fetching data:", error);
       console.error("Error details:", (error as any).message);

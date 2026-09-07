@@ -502,6 +502,7 @@ export default function ItemCreatePage() {
             const successfulItems = [];
             let successCount = 0;
             
+            let variantIndex = 1;
             for (const colorId of colors) {
                 for (const sizeId of sizes) {
                     const color = masters.colors.find((c: any) => c.id === colorId);
@@ -509,17 +510,12 @@ export default function ItemCreatePage() {
                     
                     const variantSku = data.sku; // SKU remains the same base SKU
 
-                    // Format barcode to be unique if it was provided
+                    // Append a numeric counter to the base barcode to make it unique without letters/dashes
                     let variantBarCode = data.barCode;
                     if (variantBarCode) {
-                        if (color && size) {
-                            variantBarCode = `${variantBarCode}-${color.name.substring(0,2).toUpperCase()}-${size.name.substring(0,2).toUpperCase()}`;
-                        } else if (color) {
-                            variantBarCode = `${variantBarCode}-${color.name.substring(0,2).toUpperCase()}`;
-                        } else if (size) {
-                            variantBarCode = `${variantBarCode}-${size.name.substring(0,2).toUpperCase()}`;
-                        }
+                        variantBarCode = `${variantBarCode}${variantIndex.toString().padStart(2, '0')}`;
                     }
+                    variantIndex++;
                     
                     const itemData = {
                         ...data,
@@ -799,16 +795,49 @@ export default function ItemCreatePage() {
                                                                                     <Sparkles className="h-4 w-4 text-primary" />
                                                                                 </Button>
                                                                             </DropdownMenuTrigger>
-                                                                            <DropdownMenuContent align="end">
-                                                                                <DropdownMenuItem onClick={() => field.onChange(generateBarcode("ean13", form.getValues("sku")))}>
-                                                                                    Generate EAN-13
-                                                                                </DropdownMenuItem>
-                                                                                <DropdownMenuItem onClick={() => field.onChange(generateBarcode("code128", form.getValues("sku")))}>
-                                                                                    Generate CODE-128
-                                                                                </DropdownMenuItem>
+                                                                            <DropdownMenuContent align="end" className="w-52">
+                                                                                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                                                                                    Generate barcode
+                                                                                </DropdownMenuLabel>
+                                                                                <DropdownMenuSeparator />
+                                                                                {BARCODE_PATTERNS.map((p) => (
+                                                                                    <DropdownMenuItem
+                                                                                        key={p.value}
+                                                                                        onClick={() => field.onChange(generateBarcode(p.value as BarcodePattern, form.getValues("sku")))}
+                                                                                    >
+                                                                                        <div>
+                                                                                            <div className="font-medium text-sm">{p.label}</div>
+                                                                                            <div className="text-xs text-muted-foreground">{p.description}</div>
+                                                                                        </div>
+                                                                                    </DropdownMenuItem>
+                                                                                ))}
+                                                                                {field.value && (
+                                                                                    <>
+                                                                                        <DropdownMenuSeparator />
+                                                                                        <DropdownMenuItem
+                                                                                            onClick={() => {
+                                                                                                const v = field.value as string;
+                                                                                                const pattern: BarcodePattern =
+                                                                                                    /^\d{13}$/.test(v) ? "ean13" :
+                                                                                                    /^\d{12}$/.test(v) ? "upca" :
+                                                                                                    /^[A-Z0-9]{10}$/.test(v) ? "code128" : "sku";
+                                                                                                field.onChange(generateBarcode(pattern, form.getValues("sku")));
+                                                                                            }}
+                                                                                        >
+                                                                                            <RefreshCw className="h-3.5 w-3.5 mr-2" />
+                                                                                            Regenerate
+                                                                                        </DropdownMenuItem>
+                                                                                    </>
+                                                                                )}
                                                                             </DropdownMenuContent>
                                                                         </DropdownMenu>
                                                                     </div>
+                                                                    {field.value && (
+                                                                        <div className="mt-2 flex items-center gap-3 p-2 rounded-md bg-muted/50 border">
+                                                                            <SvgBarcodePreview value={field.value} />
+                                                                            <span className="text-xs font-mono text-muted-foreground break-all">{field.value}</span>
+                                                                        </div>
+                                                                    )}
                                                                     <FormMessage />
                                                                 </FormItem>
                                                             )}
@@ -994,16 +1023,49 @@ export default function ItemCreatePage() {
                                                                                 <Sparkles className="h-4 w-4 text-primary" />
                                                                             </Button>
                                                                         </DropdownMenuTrigger>
-                                                                        <DropdownMenuContent align="end">
-                                                                            <DropdownMenuItem onClick={() => field.onChange(generateBarcode("ean13", form.getValues("sku")))}>
-                                                                                Generate EAN-13
-                                                                            </DropdownMenuItem>
-                                                                            <DropdownMenuItem onClick={() => field.onChange(generateBarcode("code128", form.getValues("sku")))}>
-                                                                                Generate CODE-128
-                                                                            </DropdownMenuItem>
+                                                                        <DropdownMenuContent align="end" className="w-52">
+                                                                            <DropdownMenuLabel className="text-xs text-muted-foreground">
+                                                                                Generate barcode
+                                                                            </DropdownMenuLabel>
+                                                                            <DropdownMenuSeparator />
+                                                                            {BARCODE_PATTERNS.map((p) => (
+                                                                                <DropdownMenuItem
+                                                                                    key={p.value}
+                                                                                    onClick={() => field.onChange(generateBarcode(p.value as BarcodePattern, form.getValues("sku")))}
+                                                                                >
+                                                                                    <div>
+                                                                                        <div className="font-medium text-sm">{p.label}</div>
+                                                                                        <div className="text-xs text-muted-foreground">{p.description}</div>
+                                                                                    </div>
+                                                                                </DropdownMenuItem>
+                                                                            ))}
+                                                                            {field.value && (
+                                                                                <>
+                                                                                    <DropdownMenuSeparator />
+                                                                                    <DropdownMenuItem
+                                                                                        onClick={() => {
+                                                                                            const v = field.value as string;
+                                                                                            const pattern: BarcodePattern =
+                                                                                                /^\d{13}$/.test(v) ? "ean13" :
+                                                                                                /^\d{12}$/.test(v) ? "upca" :
+                                                                                                /^[A-Z0-9]{10}$/.test(v) ? "code128" : "sku";
+                                                                                            field.onChange(generateBarcode(pattern, form.getValues("sku")));
+                                                                                        }}
+                                                                                    >
+                                                                                        <RefreshCw className="h-3.5 w-3.5 mr-2" />
+                                                                                        Regenerate
+                                                                                    </DropdownMenuItem>
+                                                                                </>
+                                                                            )}
                                                                         </DropdownMenuContent>
                                                                     </DropdownMenu>
                                                                 </div>
+                                                                {field.value && (
+                                                                    <div className="mt-2 flex items-center gap-3 p-2 rounded-md bg-muted/50 border">
+                                                                        <SvgBarcodePreview value={field.value} />
+                                                                        <span className="text-xs font-mono text-muted-foreground break-all">{field.value}</span>
+                                                                    </div>
+                                                                )}
                                                                 <FormMessage />
                                                             </FormItem>
                                                         )}

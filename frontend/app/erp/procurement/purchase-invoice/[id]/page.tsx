@@ -582,6 +582,12 @@ export default function PurchaseInvoiceDetailPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex justify-between">
+                    <span className="text-gray-500">Total Quantity</span>
+                    <span className="font-medium">
+                      {invoice.items?.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
                     <span className="text-gray-500">Total Amount</span>
                     <span className="font-medium">
                       {invoice.totalAmount.toLocaleString()}
@@ -746,12 +752,17 @@ export default function PurchaseInvoiceDetailPage() {
 
             {/* Totals Section */}
             <div className="flex border-b border-black pb-2 items-end">
-              <div className="w-[55%] pt-4">
+              <div className="w-[40%] pt-4 pr-2">
                 <div className="flex gap-2 font-bold text-xs sm:text-[13px]">
                   <span className="whitespace-nowrap">In Words</span>
                   <span className="underline decoration-1 underline-offset-2 break-words">
                     {numberToWords(Number(invoice.totalAmount || 0))}
                   </span>
+                </div>
+              </div>
+              <div className="w-[15%] pr-2 text-right">
+                <div className="font-bold tabular-nums text-xs sm:text-[13px] mt-1 whitespace-nowrap">
+                  Total Qty: {invoice.items?.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0).toLocaleString()}
                 </div>
               </div>
               <div className="w-[25%] pr-2 text-right">

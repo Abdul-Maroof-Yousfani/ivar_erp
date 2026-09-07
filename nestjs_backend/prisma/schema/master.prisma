@@ -157,7 +157,7 @@ model AllowanceHead {
   name            String   @unique
   calculationType String   @default("Amount")
   amount          Decimal? @db.Decimal(10, 2)
-  percentage      Decimal? @db.Decimal(5, 2)
+  percentage      Decimal? @db.Decimal(10, 2)
   status          String   @default("active")
   createdById     String?
   createdAt       DateTime @default(now())
@@ -253,7 +253,7 @@ model SalaryBreakup {
   id          String   @id @default(uuid())
   name        String   @unique
   details     String?
-  percentage  Decimal? @db.Decimal(5, 2)
+  percentage  Decimal? @db.Decimal(10, 2)
   status      String   @default("active")
   createdById String?
   createdAt   DateTime @default(now())
@@ -282,7 +282,7 @@ model BonusType {
   name            String   @unique
   calculationType String   @default("Amount")
   amount          Decimal? @db.Decimal(10, 2)
-  percentage      Decimal? @db.Decimal(5, 2)
+  percentage      Decimal? @db.Decimal(10, 2)
   status          String   @default("active")
   createdById     String?
   createdAt       DateTime @default(now())
@@ -475,7 +475,7 @@ model RebateNature {
   type                    String   @default("other")
   category                String?
   status                  String   @default("active")
-  maxInvestmentPercentage Decimal? @db.Decimal(5, 2)
+  maxInvestmentPercentage Decimal? @db.Decimal(10, 2)
   maxInvestmentAmount     Decimal? @db.Decimal(12, 2)
   details                 String?
   underSection            String?
@@ -497,7 +497,7 @@ model SocialSecurityInstitution {
   website               String?
   contactNumber         String?
   address               String?
-  contributionRate      Decimal                              @default(0) @db.Decimal(5, 2)
+  contributionRate      Decimal                              @default(0) @db.Decimal(10, 2)
   createdAt             DateTime                             @default(now())
   updatedAt             DateTime                             @updatedAt
   createdById           String?
@@ -562,7 +562,7 @@ model SocialSecurityEmployeeRegistration {
   registrationDate       DateTime
   expiryDate             DateTime?
   status                 String                             @default("active")
-  contributionRate       Decimal                            @db.Decimal(5, 2)
+  contributionRate       Decimal                            @db.Decimal(10, 2)
   baseSalary             Decimal                            @db.Decimal(10, 2)
   monthlyContribution    Decimal                            @db.Decimal(10, 2)
   isEmployerContribution Boolean                            @default(true)
@@ -605,7 +605,7 @@ model SocialSecurityContribution {
   year                   String
   date                   DateTime
   baseSalary             Decimal                            @db.Decimal(10, 2)
-  contributionRate       Decimal                            @db.Decimal(5, 2)
+  contributionRate       Decimal                            @db.Decimal(10, 2)
   contributionAmount     Decimal                            @db.Decimal(10, 2)
   employeeContribution   Decimal?                           @db.Decimal(10, 2)
   employerContribution   Decimal?                           @db.Decimal(10, 2)
