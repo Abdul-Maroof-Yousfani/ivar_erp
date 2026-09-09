@@ -105,6 +105,7 @@ model SalesOrder {
   isVoucherRestored     Boolean             @default(false) @map("is_voucher_restored")
   claims                PosClaim[]
   voucherRedemptions    VoucherRedemption[]
+  returns               PosReturn[]
 
   @@index([posId])
   @@index([terminalId])
@@ -375,3 +376,70 @@ model OrderSequence {
   @@unique([prefix, fiscalYear, locationId, warehouseId, companyId])
   @@map("order_sequences")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  POS SALES RETURN HIERARCHY
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PosReturn {
+  id                  String          @id @default(uuid())
+  returnNumber        String          @unique @map("return_number")
+  orderId             String          @map("order_id")
+  orderNumber         String          @map("order_number")
+  returnType          String          @default("RETURN") @map("return_type") // RETURN | EXCHANGE | REFUND
+  locationId          String          @map("location_id")
+  originalLocationId  String?         @map("original_location_id")
+  cashierUserId       String?         @map("cashier_user_id")
+  processedById       String?         @map("processed_by_id")
+  subtotal            Decimal         @default(0) @db.Decimal(15, 2) // WOST total (without sales tax)
+  discountAmount      Decimal         @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  taxAmount           Decimal         @default(0) @map("tax_amount") @db.Decimal(15, 2)
+  grandTotal          Decimal         @default(0) @map("grand_total") @db.Decimal(15, 2) // Net refund / credit value
+  refundMode          String?         @map("refund_mode") // VOUCHER | CASH | CARD
+  voucherCode         String?         @map("voucher_code")
+  fbrCreditNoteNumber String?         @map("fbr_credit_note_number")
+  fbrStatus           String          @default("PENDING") @map("fbr_status")
+  reason              String?
+  notes               String?
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  order               SalesOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  location            Location        @relation(fields: [locationId], references: [id])
+  items               PosReturnItem[]
+
+  @@index([orderId])
+  @@index([orderNumber])
+  @@index([returnNumber])
+  @@index([locationId])
+  @@index([returnType])
+  @@map("pos_returns")
+}
+
+model PosReturnItem {
+  id                  String     @id @default(uuid())
+  posReturnId         String     @map("pos_return_id")
+  orderItemId         String?    @map("order_item_id")
+  itemId              String     @map("item_id")
+  quantity            Int        @default(1)
+  unitPrice           Decimal    @map("unit_price") @db.Decimal(15, 2)
+  wostAmount          Decimal    @default(0) @map("wost_amount") @db.Decimal(15, 2)
+  discountPercent     Decimal    @default(0) @map("discount_percent") @db.Decimal(5, 2)
+  discountAmount      Decimal    @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  taxPercent          Decimal    @default(0) @map("tax_percent") @db.Decimal(5, 2)
+  taxAmount           Decimal    @default(0) @map("tax_amount") @db.Decimal(15, 2)
+  couponDeduction     Decimal    @default(0) @map("coupon_deduction") @db.Decimal(15, 2)
+  originalPaidPerUnit Decimal    @default(0) @map("original_paid_per_unit") @db.Decimal(15, 2)
+  refundPerUnit       Decimal    @default(0) @map("refund_per_unit") @db.Decimal(15, 2)
+  netTotal            Decimal    @default(0) @map("net_total") @db.Decimal(15, 2)
+  priceAdjusted       Boolean    @default(false) @map("price_adjusted")
+  createdAt           DateTime   @default(now()) @map("created_at")
+
+  posReturn           PosReturn  @relation(fields: [posReturnId], references: [id], onDelete: Cascade)
+  item                Item       @relation(fields: [itemId], references: [id])
+
+  @@index([posReturnId])
+  @@index([itemId])
+  @@map("pos_return_items")
+}
+
