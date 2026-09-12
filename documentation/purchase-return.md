@@ -1,13 +1,15 @@
 # Purchase Return System Documentation
 
 ## Overview
-Purchase Return system allows returning goods to suppliers after receiving them through GRN or Landed Cost processes. The system handles both inventory and financial impacts based on different scenarios.
+Purchase Return system allows returning goods to suppliers after receiving them through GRN, Landed Cost, or directly against a Purchase Invoice (PI). The system handles both inventory and financial impacts based on different scenarios.
 
 ## Business Flow
 
 ### Purchase Return Process Flow
 ```
-PO → GRN/Landed Cost → [Purchase Invoice] → Purchase Return → Approval → Impact
+1. PO → GRN/Landed Cost → Purchase Return → Approval → Stock Reduction
+2. PO → GRN/Landed Cost → Purchase Invoice → Purchase Return → Approval → Stock Reduction + Debit Note & Invoice Adjustment
+3. Purchase Invoice (Direct or GRN-based) → Purchase Return → Approval → Stock Reduction + Debit Note & Invoice Adjustment
 ```
 
 ## Scenarios
