@@ -707,9 +707,10 @@ export const chartOfAccountApi = {
 export interface PurchaseReturn {
   id: string;
   returnNumber: string;
-  sourceType: 'GRN' | 'LANDED_COST';
+  sourceType: 'GRN' | 'LANDED_COST' | 'PURCHASE_INVOICE';
   grnId?: string;
   landedCostId?: string;
+  purchaseInvoiceId?: string;
   supplierId: string;
   warehouseId: string;
   returnDate: string;
@@ -727,6 +728,7 @@ export interface PurchaseReturn {
   items: PurchaseReturnItem[];
   grn?: any;
   landedCost?: any;
+  purchaseInvoice?: any;
   supplier?: any;
   warehouse?: any;
   debitNote?: DebitNote;
@@ -734,9 +736,10 @@ export interface PurchaseReturn {
 
 export interface PurchaseReturnItem {
   id: string;
-  sourceItemType: 'GRN_ITEM' | 'LANDED_COST_ITEM';
+  sourceItemType: 'GRN_ITEM' | 'LANDED_COST_ITEM' | 'PURCHASE_INVOICE_ITEM';
   grnItemId?: string;
   landedCostItemId?: string;
+  purchaseInvoiceItemId?: string;
   itemId: string;
   description?: string;
   returnQty: number;
@@ -747,18 +750,20 @@ export interface PurchaseReturnItem {
 }
 
 export interface CreatePurchaseReturnDto {
-  sourceType: 'GRN' | 'LANDED_COST';
+  sourceType: 'GRN' | 'LANDED_COST' | 'PURCHASE_INVOICE';
   grnId?: string;
   landedCostId?: string;
+  purchaseInvoiceId?: string;
   supplierId: string;
   warehouseId: string;
   returnType: 'DEFECTIVE' | 'EXCESS' | 'WRONG_ITEM' | 'DAMAGED';
   reason?: string;
   notes?: string;
   items: {
-    sourceItemType: 'GRN_ITEM' | 'LANDED_COST_ITEM';
+    sourceItemType: 'GRN_ITEM' | 'LANDED_COST_ITEM' | 'PURCHASE_INVOICE_ITEM';
     grnItemId?: string;
     landedCostItemId?: string;
+    purchaseInvoiceItemId?: string;
     itemId: string;
     description?: string;
     returnQty: number;
@@ -798,6 +803,8 @@ export const purchaseReturnApi = {
     fetchApi<any[]>('/purchase/purchase-returns/eligible-grns'),
   getEligibleLandedCosts: () =>
     fetchApi<any[]>('/purchase/purchase-returns/eligible-landed-costs'),
+  getEligiblePurchaseInvoices: () =>
+    fetchApi<any[]>('/purchase/purchase-returns/eligible-purchase-invoices'),
 };
 
 export const warehouseApi = {

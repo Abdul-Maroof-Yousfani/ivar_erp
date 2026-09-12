@@ -22,34 +22,36 @@ model PurchaseInvoice {
   createdAt       DateTime                  @default(now()) @map("created_at")
   updatedAt       DateTime                  @updatedAt @map("updated_at")
   items           PurchaseInvoiceItem[]
-  supplier        Supplier                  @relation(fields: [supplierId], references: [id])
-  grn             GoodsReceiptNote?         @relation(fields: [grnId], references: [id])
-  landedCost      LandedCost?               @relation(fields: [landedCostId], references: [id])
-  warehouse       Warehouse?                @relation(fields: [warehouseId], references: [id])
-  paymentVouchers PaymentVoucherToInvoice[]
-  debitNotes      DebitNote[]
+  supplier            Supplier                  @relation(fields: [supplierId], references: [id])
+  grn                 GoodsReceiptNote?         @relation(fields: [grnId], references: [id])
+  landedCost          LandedCost?               @relation(fields: [landedCostId], references: [id])
+  warehouse           Warehouse?                @relation(fields: [warehouseId], references: [id])
+  paymentVouchers     PaymentVoucherToInvoice[]
+  debitNotes          DebitNote[]
+  purchaseReturns     PurchaseReturn[]
 
   @@map("purchase_invoices")
 }
 
 model PurchaseInvoiceItem {
-  id                String                @id @default(uuid())
-  purchaseInvoiceId String                @map("purchase_invoice_id")
-  itemId            String                @map("item_id")
-  grnItemId         String?               @map("grn_item_id")
-  landedCostItemId  String?               @map("landed_cost_item_id")
-  description       String?
-  quantity          Decimal               @db.Decimal(15, 4)
-  unitPrice         Decimal               @map("unit_price") @db.Decimal(15, 2)
-  lineTotal         Decimal               @map("line_total") @db.Decimal(15, 2)
-  taxRate           Decimal               @default(0.0) @map("tax_rate") @db.Decimal(10, 2)
-  taxAmount         Decimal               @default(0.0) @map("tax_amount") @db.Decimal(15, 2)
-  discountRate      Decimal               @default(0.0) @map("discount_rate") @db.Decimal(10, 2)
-  discountAmount    Decimal               @default(0.0) @map("discount_amount") @db.Decimal(15, 2)
-  rollSize          Float?                @map("roll_size")
-  purchaseInvoice   PurchaseInvoice       @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
-  grnItem           GoodsReceiptNoteItem? @relation(fields: [grnItemId], references: [id])
-  item              Item                  @relation(fields: [itemId], references: [id])
+  id                  String                @id @default(uuid())
+  purchaseInvoiceId   String                @map("purchase_invoice_id")
+  itemId              String                @map("item_id")
+  grnItemId           String?               @map("grn_item_id")
+  landedCostItemId    String?               @map("landed_cost_item_id")
+  description         String?
+  quantity            Decimal               @db.Decimal(15, 4)
+  unitPrice           Decimal               @map("unit_price") @db.Decimal(15, 2)
+  lineTotal           Decimal               @map("line_total") @db.Decimal(15, 2)
+  taxRate             Decimal               @default(0.0) @map("tax_rate") @db.Decimal(10, 2)
+  taxAmount           Decimal               @default(0.0) @map("tax_amount") @db.Decimal(15, 2)
+  discountRate        Decimal               @default(0.0) @map("discount_rate") @db.Decimal(10, 2)
+  discountAmount      Decimal               @default(0.0) @map("discount_amount") @db.Decimal(15, 2)
+  rollSize            Float?                @map("roll_size")
+  purchaseInvoice     PurchaseInvoice       @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+  grnItem             GoodsReceiptNoteItem? @relation(fields: [grnItemId], references: [id])
+  item                Item                  @relation(fields: [itemId], references: [id])
+  purchaseReturnItems PurchaseReturnItem[]
 
   @@map("purchase_invoice_items")
 }

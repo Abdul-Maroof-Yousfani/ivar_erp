@@ -19,8 +19,9 @@ interface SourceDocument {
   id: string;
   grnNumber?: string;
   landedCostNumber?: string;
+  invoiceNumber?: string;
   supplier: { id: string; name: string };
-  warehouse: { id: string; name: string };
+  warehouse?: { id: string; name: string };
   items: Array<{
     id: string;
     itemId: string;
@@ -36,7 +37,7 @@ interface SourceDocument {
 export default function CreatePurchaseReturnPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [sourceType, setSourceType] = useState<'GRN' | 'LANDED_COST'>('GRN');
+  const [sourceType, setSourceType] = useState<'GRN' | 'LANDED_COST' | 'PURCHASE_INVOICE'>('GRN');
   const [eligibleDocs, setEligibleDocs] = useState<SourceDocument[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<SourceDocument | null>(null);
   
@@ -59,7 +60,9 @@ export default function CreatePurchaseReturnPage() {
       setLoading(true);
       const data = sourceType === 'GRN' 
         ? await purchaseReturnApi.getEligibleGrns()
-        : await purchaseReturnApi.getEligibleLandedCosts();
+        : sourceType === 'LANDED_COST'
+        ? await purchaseReturnApi.getEligibleLandedCosts()
+        : await purchaseReturnApi.getEligiblePurchaseInvoices();
       setEligibleDocs(data);
     } catch (error) {
       console.error('Error loading eligible documents:', error);
@@ -68,7 +71,7 @@ export default function CreatePurchaseReturnPage() {
     }
   };
 
-  const handleSourceTypeChange = (type: 'GRN' | 'LANDED_COST') => {
+  const handleSourceTypeChange = (type: 'GRN' | 'LANDED_COST' | 'PURCHASE_INVOICE') => {
     setSourceType(type);
     setSelectedDoc(null);
     setFormData({
@@ -76,6 +79,7 @@ export default function CreatePurchaseReturnPage() {
       sourceType: type,
       grnId: undefined,
       landedCostId: undefined,
+      purchaseInvoiceId: undefined,
       supplierId: '',
       warehouseId: '',
       items: [],
@@ -89,17 +93,25 @@ export default function CreatePurchaseReturnPage() {
     setSelectedDoc(doc);
     setFormData({
       ...formData,
-      [sourceType === 'GRN' ? 'grnId' : 'landedCostId']: docId,
+      grnId: sourceType === 'GRN' ? docId : undefined,
+      landedCostId: sourceType === 'LANDED_COST' ? docId : undefined,
+      purchaseInvoiceId: sourceType === 'PURCHASE_INVOICE' ? docId : undefined,
       supplierId: doc.supplier.id,
-      warehouseId: doc.warehouse.id,
+      warehouseId: doc.warehouse?.id || '',
       items: doc.items.map(item => ({
-        sourceItemType: sourceType === 'GRN' ? 'GRN_ITEM' : 'LANDED_COST_ITEM',
-        [sourceType === 'GRN' ? 'grnItemId' : 'landedCostItemId']: item.id,
+        sourceItemType: sourceType === 'GRN' 
+          ? 'GRN_ITEM' 
+          : sourceType === 'LANDED_COST'
+          ? 'LANDED_COST_ITEM'
+          : 'PURCHASE_INVOICE_ITEM',
+        grnItemId: sourceType === 'GRN' ? item.id : undefined,
+        landedCostItemId: sourceType === 'LANDED_COST' ? item.id : undefined,
+        purchaseInvoiceItemId: sourceType === 'PURCHASE_INVOICE' ? item.id : undefined,
         itemId: item.itemId,
         displayCode: (item as any).displayCode || item.itemId,
         description: item.description || '',
         returnQty: 0,
-        unitPrice: sourceType === 'GRN' ? (item.unitPrice || 0) : (item.unitCostPKR || 0),
+        unitPrice: item.unitPrice ?? item.unitCostPKR ?? 0,
         lineTotal: 0,
         reason: '',
       })),
@@ -174,7 +186,7 @@ export default function CreatePurchaseReturnPage() {
               <CardTitle>Return Source</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex gap-4">
+              <div className="flex flex-wrap gap-4">
                 <Button
                   type="button"
                   variant={sourceType === 'GRN' ? 'default' : 'outline'}
@@ -189,19 +201,26 @@ export default function CreatePurchaseReturnPage() {
                 >
                   From Landed Cost (Valued)
                 </Button>
+                <Button
+                  type="button"
+                  variant={sourceType === 'PURCHASE_INVOICE' ? 'default' : 'outline'}
+                  onClick={() => handleSourceTypeChange('PURCHASE_INVOICE')}
+                >
+                  From Purchase Invoice (PI)
+                </Button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label>Select {sourceType === 'GRN' ? 'GRN' : 'Landed Cost'}</Label>
+                  <Label>Select {sourceType === 'GRN' ? 'GRN' : sourceType === 'LANDED_COST' ? 'Landed Cost' : 'Purchase Invoice'}</Label>
                   <Select onValueChange={handleDocumentSelect}>
                     <SelectTrigger>
-                      <SelectValue placeholder={`Select ${sourceType === 'GRN' ? 'GRN' : 'Landed Cost'}`} />
+                      <SelectValue placeholder={`Select ${sourceType === 'GRN' ? 'GRN' : sourceType === 'LANDED_COST' ? 'Landed Cost' : 'Purchase Invoice'}`} />
                     </SelectTrigger>
                     <SelectContent>
                       {eligibleDocs.map((doc) => (
                         <SelectItem key={doc.id} value={doc.id}>
-                          {sourceType === 'GRN' ? doc.grnNumber : doc.landedCostNumber} - {doc.supplier?.name || 'Unknown Supplier'}
+                          {sourceType === 'GRN' ? doc.grnNumber : sourceType === 'LANDED_COST' ? doc.landedCostNumber : doc.invoiceNumber} - {doc.supplier?.name || 'Unknown Supplier'}
                         </SelectItem>
                       ))}
                     </SelectContent>
