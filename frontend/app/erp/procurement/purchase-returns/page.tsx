@@ -143,7 +143,11 @@ export default function PurchaseReturnsPage() {
                         <td className="p-3 font-medium">{returnItem.returnNumber}</td>
                         <td className="p-3">
                           <Badge variant="outline">
-                            {returnItem.sourceType === 'GRN' ? 'GRN' : 'Landed Cost'}
+                            {returnItem.sourceType === 'GRN' 
+                              ? 'GRN' 
+                              : returnItem.sourceType === 'PURCHASE_INVOICE'
+                              ? 'Purchase Invoice'
+                              : 'Landed Cost'}
                           </Badge>
                         </td>
                         <td className="p-3">{returnItem.supplier?.name || 'N/A'}</td>

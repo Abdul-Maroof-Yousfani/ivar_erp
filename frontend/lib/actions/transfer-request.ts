@@ -114,7 +114,7 @@ export async function updateTransferRequestStatus(id: string, status: string) {
 export async function acceptTransferRequest(
     id: string,
     userId?: string,
-    receivedItems?: { itemId: string; receivedQty: number }[],
+    receivedItems?: { id?: string; requestItemId?: string; itemId: string; receivedQty: number }[],
     notes?: string,
     isFinal?: boolean
 ) {

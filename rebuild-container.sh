@@ -101,14 +101,8 @@ if [ "$TARGET" = "both" ] || [ "$TARGET" = "backend" ]; then
         bun run prisma:tenant:generate || { error "Prisma tenant generate failed!"; exit 1; }
         bun run prisma:tenant:push || { error "Prisma tenant push failed!"; exit 1; }
 
-        info "Building NestJS backend into staging output (dist_staging)..."
-        NODE_OPTIONS="--max-old-space-size=3072" bun run build -- --outDir dist_staging || { error "Backend build failed!"; exit 1; }
-
-        info "Performing atomic directory swap for backend build artifacts..."
-        rm -rf dist_old
-        [ -d "dist" ] && mv dist dist_old
-        mv dist_staging dist
-        rm -rf dist_old
+        info "Building NestJS backend..."
+        NODE_OPTIONS="--max-old-space-size=3072" bun run build || { error "Backend build failed!"; exit 1; }
 
         info "Reloading PM2 backend process in zero-downtime cluster mode..."
         if pm2 reload backend --update-env; then

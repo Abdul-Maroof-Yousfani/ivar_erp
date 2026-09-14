@@ -145,6 +145,30 @@ export default function StockReceivingPage() {
             const upc = i.item?.upc?.toLowerCase();
             const ean = i.item?.ean?.toLowerCase();
 
+            const isMatch = (
+                sku === code ||
+                barcode === code ||
+                itemCode === code ||
+                itemId === code ||
+                upc === code ||
+                ean === code ||
+                (sku && code.includes(sku))
+            );
+            if (!isMatch) return false;
+
+            const disp = Number(i.quantity || 0);
+            const ful = Number(i.fulfilledQty || 0);
+            const remaining = Math.max(0, disp - ful);
+            const currentRx = receivedQtyMap[i.id] !== undefined ? Number(receivedQtyMap[i.id]) : remaining;
+            return currentRx < remaining;
+        }) || inspectingRequest.items?.find((i: any) => {
+            const sku = i.item?.sku?.toLowerCase();
+            const barcode = (i.item?.barcode || i.item?.barCode)?.toLowerCase();
+            const itemCode = i.item?.code?.toLowerCase();
+            const itemId = i.itemId?.toLowerCase();
+            const upc = i.item?.upc?.toLowerCase();
+            const ean = i.item?.ean?.toLowerCase();
+
             return (
                 sku === code ||
                 barcode === code ||
@@ -158,16 +182,19 @@ export default function StockReceivingPage() {
 
         if (matchedItem) {
             playScanSuccessBeep();
-            const currentRx = receivedQtyMap[matchedItem.itemId] !== undefined 
-                ? Number(receivedQtyMap[matchedItem.itemId]) 
-                : Number(matchedItem.quantity || 0);
+            const disp = Number(matchedItem.quantity || 0);
+            const ful = Number(matchedItem.fulfilledQty || 0);
+            const remaining = Math.max(0, disp - ful);
+            const currentRx = receivedQtyMap[matchedItem.id] !== undefined 
+                ? Number(receivedQtyMap[matchedItem.id]) 
+                : remaining;
             const newRx = currentRx + 1;
             
             setReceivedQtyMap(prev => ({
                 ...prev,
-                [matchedItem.itemId]: newRx
+                [matchedItem.id]: newRx
             }));
-            setLastScannedItemId(matchedItem.itemId);
+            setLastScannedItemId(matchedItem.id);
             toast.success(`+1 Scanned: ${matchedItem.item?.description || matchedItem.item?.sku || "Item"} (Total Rx: ${newRx})`);
         } else {
             playScanErrorBuzz();
@@ -205,7 +232,7 @@ export default function StockReceivingPage() {
             const dispatched = Number(item.quantity || 0);
             const fulfilled = Number(item.fulfilledQty || 0);
             const remaining = Math.max(0, dispatched - fulfilled);
-            initialMap[item.itemId] = remaining;
+            initialMap[item.id] = remaining;
         });
         setReceivedQtyMap(initialMap);
         setReceivingNotes("");
@@ -222,6 +249,8 @@ export default function StockReceivingPage() {
                 const dispatched = Number(item.quantity || 0);
                 const fulfilled = Number(item.fulfilledQty || 0);
                 return {
+                    id: item.id,
+                    requestItemId: item.id,
                     itemId: item.itemId,
                     receivedQty: Math.max(0, dispatched - fulfilled),
                 };
@@ -251,12 +280,14 @@ export default function StockReceivingPage() {
             const dispatched = Number(item.quantity || 0);
             const fulfilled = Number(item.fulfilledQty || 0);
             const remaining = Math.max(0, dispatched - fulfilled);
-            const rxNow = receivedQtyMap[item.itemId] !== undefined ? Math.max(0, Number(receivedQtyMap[item.itemId])) : remaining;
+            const rxNow = receivedQtyMap[item.id] !== undefined ? Math.max(0, Number(receivedQtyMap[item.id])) : remaining;
             
             totalRemainingInTransit += remaining;
             totalReceivingNow += rxNow;
 
             return {
+                id: item.id,
+                requestItemId: item.id,
                 itemId: item.itemId,
                 receivedQty: rxNow,
             };
@@ -691,7 +722,7 @@ export default function StockReceivingPage() {
                             const dispatched = Number(item.quantity || 0);
                             const fulfilled = Number(item.fulfilledQty || 0);
                             const remaining = Math.max(0, dispatched - fulfilled);
-                            const rxNow = receivedQtyMap[item.itemId] !== undefined ? Math.max(0, Number(receivedQtyMap[item.itemId])) : remaining;
+                            const rxNow = receivedQtyMap[item.id] !== undefined ? Math.max(0, Number(receivedQtyMap[item.id])) : remaining;
                             
                             totalRemainingInTransit += remaining;
                             totalReceivingNow += rxNow;
@@ -766,7 +797,7 @@ export default function StockReceivingPage() {
                                             className="text-[11px] h-8 font-semibold"
                                             onClick={() => {
                                                 const zeroMap: Record<string, number> = {};
-                                                inspectingRequest.items?.forEach((i: any) => { zeroMap[i.itemId] = 0; });
+                                                inspectingRequest.items?.forEach((i: any) => { zeroMap[i.id] = 0; });
                                                 setReceivedQtyMap(zeroMap);
                                                 toast.info("All received quantities set to 0. You can now scan items one by one.");
                                             }}
@@ -783,7 +814,7 @@ export default function StockReceivingPage() {
                                                 inspectingRequest.items?.forEach((i: any) => {
                                                     const disp = Number(i.quantity || 0);
                                                     const ful = Number(i.fulfilledQty || 0);
-                                                    sentMap[i.itemId] = Math.max(0, disp - ful);
+                                                    sentMap[i.id] = Math.max(0, disp - ful);
                                                 });
                                                 setReceivedQtyMap(sentMap);
                                                 toast.info("All received quantities filled with remaining pending quantities.");
@@ -811,9 +842,9 @@ export default function StockReceivingPage() {
                                                 const dispatched = Number(item.quantity || 0);
                                                 const fulfilled = Number(item.fulfilledQty || 0);
                                                 const remaining = Math.max(0, dispatched - fulfilled);
-                                                const rxNow = receivedQtyMap[item.itemId] !== undefined ? receivedQtyMap[item.itemId] : remaining;
+                                                const rxNow = receivedQtyMap[item.id] !== undefined ? receivedQtyMap[item.id] : remaining;
                                                 const diff = rxNow - remaining;
-                                                const isLastScanned = lastScannedItemId === item.itemId;
+                                                const isLastScanned = lastScannedItemId === item.id;
 
                                                 return (
                                                     <tr key={item.id} className={`transition-colors ${isLastScanned ? "bg-primary/10 font-semibold" : "hover:bg-muted/20"}`}>
@@ -841,10 +872,10 @@ export default function StockReceivingPage() {
                                                                 min="0"
                                                                 max={remaining}
                                                                 step="1"
-                                                                value={receivedQtyMap[item.itemId] ?? remaining}
+                                                                value={receivedQtyMap[item.id] ?? remaining}
                                                                 onChange={(e) => {
                                                                     const val = Math.max(0, Math.min(parseFloat(e.target.value) || 0, remaining));
-                                                                    setReceivedQtyMap(prev => ({ ...prev, [item.itemId]: val }));
+                                                                    setReceivedQtyMap(prev => ({ ...prev, [item.id]: val }));
                                                                 }}
                                                                 className="w-24 mx-auto text-center font-bold text-sm h-9 border-primary/40 focus:border-primary"
                                                             />

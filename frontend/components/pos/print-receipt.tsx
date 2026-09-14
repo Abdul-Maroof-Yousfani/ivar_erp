@@ -88,6 +88,7 @@ interface PrintReceiptProps {
     code: string;
     faceValue: number;
     expiresAt: Date | null;
+    voucherType?: string;
   }[];
   onClose: () => void;
 }
@@ -201,6 +202,18 @@ export function PrintReceipt({
   const [layout, setLayout] = useState<"thermal" | "a4">(defaultLayout);
   const [isDownloading, setIsDownloading] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
+
+  // Filter out exchange and refund vouchers (issued on return)
+  // so only sale checkout credit vouchers appear on the sale receipt.
+  const filteredCreditVouchers = creditVouchers?.filter((v: any) => {
+    if (v.voucherType && (v.voucherType === "EXCHANGE" || v.voucherType === "REFUND")) {
+      return false;
+    }
+    if (typeof v.code === "string" && (v.code.startsWith("EXC-") || v.code.startsWith("REF-"))) {
+      return false;
+    }
+    return true;
+  });
 
   useEffect(() => {
     setMounted(true);
@@ -510,7 +523,7 @@ export function PrintReceipt({
     settings,
     suppressItemDiscounts,
     suppressLabel,
-    creditVouchers,
+    creditVouchers: filteredCreditVouchers,
     hasFbrInfo,
   };
 
@@ -752,6 +765,7 @@ interface ReceiptBodyProps {
     code: string;
     faceValue: number;
     expiresAt: Date | null;
+    voucherType?: string;
   }[];
   hasFbrInfo?: boolean;
 }

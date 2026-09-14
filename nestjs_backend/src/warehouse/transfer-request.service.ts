@@ -959,16 +959,25 @@ export class TransferRequestService {
         }
       }
 
-      const receivedMap = new Map<string, number>();
+      const receivedByIdMap = new Map<string, number>();
+      const receivedByItemIdMap = new Map<string, number>();
       if (data?.receivedItems && Array.isArray(data.receivedItems)) {
         for (const item of data.receivedItems) {
-          receivedMap.set(item.itemId, Number(item.receivedQty));
+          const qty = Number(item.receivedQty);
+          const reqItemId = (item as any).id || (item as any).requestItemId;
+          if (reqItemId) {
+            receivedByIdMap.set(reqItemId, qty);
+          }
+          if (item.itemId) {
+            receivedByItemIdMap.set(item.itemId, qty);
+          }
         }
       }
 
       return this.prisma.$transaction(async (tx) => {
         let totalOrderedAcrossAll = 0;
         let totalFulfilledAcrossAll = 0;
+        const itemRxQtyMap = new Map<string, number>();
 
         // Calculate and update cumulative fulfilledQty for items
         for (const item of request.items) {
@@ -976,14 +985,19 @@ export class TransferRequestService {
           const currentFulfilled = Number(item.fulfilledQty || 0);
           const maxRemaining = Math.max(0, orderedQty - currentFulfilled);
 
-          // If receivedMap has entry for item, that represents the newly received batch qty.
-          // Otherwise, default to the full remaining quantity.
-          let rxBatchQty = receivedMap.has(item.itemId)
-            ? Number(receivedMap.get(item.itemId))
-            : maxRemaining;
+          // Priority 1: Match by TransferRequestItem.id
+          // Priority 2: Match by item.itemId
+          // Priority 3: Default to full remaining quantity
+          let rxBatchQty = receivedByIdMap.has(item.id)
+            ? Number(receivedByIdMap.get(item.id))
+            : receivedByItemIdMap.has(item.itemId)
+              ? Number(receivedByItemIdMap.get(item.itemId))
+              : maxRemaining;
 
           if (isNaN(rxBatchQty) || rxBatchQty < 0) rxBatchQty = 0;
           if (rxBatchQty > maxRemaining) rxBatchQty = maxRemaining;
+
+          itemRxQtyMap.set(item.id, rxBatchQty);
 
           const newFulfilled = currentFulfilled + rxBatchQty;
           totalOrderedAcrossAll += orderedQty;
@@ -1014,16 +1028,7 @@ export class TransferRequestService {
           }
 
           for (const item of request.items) {
-            const orderedQty = Number(item.quantity);
-            const currentFulfilled = Number(item.fulfilledQty || 0);
-            const maxRemaining = Math.max(0, orderedQty - currentFulfilled);
-
-            let rxBatchQty = receivedMap.has(item.itemId)
-              ? Number(receivedMap.get(item.itemId))
-              : maxRemaining;
-
-            if (isNaN(rxBatchQty) || rxBatchQty < 0) rxBatchQty = 0;
-            if (rxBatchQty > maxRemaining) rxBatchQty = maxRemaining;
+            const rxBatchQty = itemRxQtyMap.get(item.id) ?? 0;
 
             if (rxBatchQty > 0) {
               await this.stockMovementService.executeMovement({
@@ -1060,9 +1065,13 @@ export class TransferRequestService {
 
           if (isClaimBased) {
             for (const item of request.items) {
-              const rxQty = receivedMap.has(item.itemId)
-                ? Number(receivedMap.get(item.itemId))
-                : Number(item.quantity);
+              const rxQty = itemRxQtyMap.has(item.id)
+                ? itemRxQtyMap.get(item.id)!
+                : receivedByIdMap.has(item.id)
+                  ? Number(receivedByIdMap.get(item.id))
+                  : receivedByItemIdMap.has(item.itemId)
+                    ? Number(receivedByItemIdMap.get(item.itemId))
+                    : Number(item.quantity);
 
               const posStock = await tx.inventoryItem.findFirst({
                 where: {
@@ -1125,9 +1134,13 @@ export class TransferRequestService {
           } else {
             // Normal outlet-to-warehouse transfer (non-claim)
             for (const item of request.items) {
-              const rxQty = receivedMap.has(item.itemId)
-                ? Number(receivedMap.get(item.itemId))
-                : Number(item.quantity);
+              const rxQty = itemRxQtyMap.has(item.id)
+                ? itemRxQtyMap.get(item.id)!
+                : receivedByIdMap.has(item.id)
+                  ? Number(receivedByIdMap.get(item.id))
+                  : receivedByItemIdMap.has(item.itemId)
+                    ? Number(receivedByItemIdMap.get(item.itemId))
+                    : Number(item.quantity);
 
               await this.stockMovementService.executeMovement({
                 itemId: item.itemId,
@@ -1151,9 +1164,13 @@ export class TransferRequestService {
           }
 
           for (const item of request.items) {
-            const rxQty = receivedMap.has(item.itemId)
-              ? Number(receivedMap.get(item.itemId))
-              : Number(item.quantity);
+            const rxQty = itemRxQtyMap.has(item.id)
+              ? itemRxQtyMap.get(item.id)!
+              : receivedByIdMap.has(item.id)
+                ? Number(receivedByIdMap.get(item.id))
+                : receivedByItemIdMap.has(item.itemId)
+                  ? Number(receivedByItemIdMap.get(item.itemId))
+                  : Number(item.quantity);
 
             // Only need to add stock to destination (source already decreased)
             const destItem = await tx.inventoryItem.findFirst({

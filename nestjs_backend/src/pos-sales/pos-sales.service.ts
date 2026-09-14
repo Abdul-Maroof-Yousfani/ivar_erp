@@ -3430,9 +3430,27 @@ export class PosSalesService implements OnModuleInit {
       }
     }
 
-    // Fetch any vouchers issued from this order
+    // Fetch any vouchers issued from this order (only CREDIT / CORPORATE change vouchers issued at sale checkout)
     const creditVouchers = await this.prisma.voucher.findMany({
-      where: { sourceOrderId: id, isDeleted: false },
+      where: {
+        sourceOrderId: id,
+        voucherType: { in: ['CREDIT', 'CORPORATE'] },
+        isDeleted: false,
+      },
+      select: {
+        code: true,
+        faceValue: true,
+        expiresAt: true,
+        voucherType: true,
+      },
+    });
+
+    const exchangeVouchers = await this.prisma.voucher.findMany({
+      where: {
+        sourceOrderId: id,
+        voucherType: 'EXCHANGE',
+        isDeleted: false,
+      },
       select: {
         code: true,
         faceValue: true,
@@ -3449,6 +3467,7 @@ export class PosSalesService implements OnModuleInit {
         tenders,
         creditVouchers,
         issuedVouchers: creditVouchers,
+        exchangeVouchers,
         hasReturn,
         hasRefund,
         cashier,
@@ -7691,7 +7710,7 @@ export class PosSalesService implements OnModuleInit {
         ? await this.prisma.voucher.findMany({
             where: {
               sourceOrderId: { in: orderIds },
-              voucherType: 'CREDIT',
+              voucherType: { in: ['CREDIT', 'CORPORATE'] },
               isDeleted: false,
             },
           })
@@ -8048,13 +8067,9 @@ export class PosSalesService implements OnModuleInit {
         const type = iv.voucherType;
         const faceVal = Number(iv.faceValue || 0);
 
-        if (type === 'GIFT' || type === 'CORPORATE' || type === 'OUTLET_GIFT') {
+        if (type === 'GIFT' || type === 'OUTLET_GIFT') {
           issuedGift += faceVal;
-        } else if (
-          type === 'CREDIT' ||
-          type === 'EXCHANGE' ||
-          type === 'REFUND'
-        ) {
+        } else if (type === 'CREDIT' || type === 'CORPORATE') {
           issuedCredit += faceVal;
         }
       }

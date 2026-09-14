@@ -30,6 +30,7 @@ export class PurchaseReturnService {
           sourceType: createDto.sourceType,
           grnId: createDto.grnId,
           landedCostId: createDto.landedCostId,
+          purchaseInvoiceId: createDto.purchaseInvoiceId,
           supplierId: createDto.supplierId,
           warehouseId: createDto.warehouseId,
           returnType: createDto.returnType,
@@ -43,6 +44,7 @@ export class PurchaseReturnService {
               sourceItemType: item.sourceItemType,
               grnItemId: item.grnItemId,
               landedCostItemId: item.landedCostItemId,
+              purchaseInvoiceItemId: item.purchaseInvoiceItemId,
               itemId: item.itemId,
               description: item.description,
               returnQty: item.returnQty,
@@ -56,6 +58,7 @@ export class PurchaseReturnService {
           items: true,
           grn: true,
           landedCost: true,
+          purchaseInvoice: true,
           supplier: true,
           warehouse: true,
         },
@@ -109,6 +112,7 @@ export class PurchaseReturnService {
         },
         grn: true,
         landedCost: true,
+        purchaseInvoice: true,
         supplier: true,
         warehouse: true,
       },
@@ -124,6 +128,7 @@ export class PurchaseReturnService {
           include: {
             grnItem: true,
             landedCostItem: true,
+            purchaseInvoiceItem: true,
             item: true,
           },
         },
@@ -137,6 +142,7 @@ export class PurchaseReturnService {
             purchaseOrder: true,
           },
         },
+        purchaseInvoice: true,
         debitNote: true,
         supplier: true,
         warehouse: true,
@@ -285,7 +291,11 @@ export class PurchaseReturnService {
     // Find associated Purchase Invoice
     let purchaseInvoice: any = null;
 
-    if (purchaseReturn.sourceType === 'GRN' && purchaseReturn.grnId) {
+    if (purchaseReturn.sourceType === 'PURCHASE_INVOICE' && purchaseReturn.purchaseInvoiceId) {
+      purchaseInvoice = await this.prisma.purchaseInvoice.findUnique({
+        where: { id: purchaseReturn.purchaseInvoiceId },
+      });
+    } else if (purchaseReturn.sourceType === 'GRN' && purchaseReturn.grnId) {
       purchaseInvoice = await this.prisma.purchaseInvoice.findFirst({
         where: { 
           grnId: purchaseReturn.grnId,
@@ -475,6 +485,58 @@ export class PurchaseReturnService {
     }));
   }
 
+  async getEligiblePurchaseInvoices() {
+    const invoices = await this.prisma.purchaseInvoice.findMany({
+      where: {
+        status: 'APPROVED',
+      },
+      include: {
+        supplier: true,
+        warehouse: true,
+        grn: {
+          include: {
+            warehouse: true,
+          },
+        },
+        landedCost: {
+          include: {
+            grn: {
+              include: {
+                warehouse: true,
+              },
+            },
+          },
+        },
+        items: {
+          include: {
+            item: true,
+          },
+        },
+      },
+      orderBy: { invoiceDate: 'desc' },
+    });
+
+    return invoices.map(invoice => {
+      const warehouse = invoice.warehouse || invoice.grn?.warehouse || invoice.landedCost?.grn?.warehouse;
+      return {
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        supplier: invoice.supplier,
+        warehouse: warehouse,
+        items: invoice.items.map(invItem => ({
+          id: invItem.id,
+          itemId: invItem.itemId,
+          description: invItem.item?.description || invItem.description,
+          displayCode: invItem.item?.itemId || invItem.itemId,
+          receivedQty: Number(invItem.quantity),
+          qty: Number(invItem.quantity),
+          unitPrice: Number(invItem.unitPrice),
+          lineTotal: Number(invItem.lineTotal),
+        })),
+      };
+    });
+  }
+
   private async validateSourceDocument(createDto: CreatePurchaseReturnDto) {
     if (createDto.sourceType === ReturnSourceType.GRN) {
       if (!createDto.grnId) {
@@ -508,6 +570,22 @@ export class PurchaseReturnService {
       if (landedCost.status !== 'SUBMITTED') {
         throw new BadRequestException('Only SUBMITTED Landed Costs can be returned');
       }
+    } else if (createDto.sourceType === ReturnSourceType.PURCHASE_INVOICE) {
+      if (!createDto.purchaseInvoiceId) {
+        throw new BadRequestException('Purchase Invoice ID is required for PI-based returns');
+      }
+
+      const invoice = await this.prisma.purchaseInvoice.findUnique({
+        where: { id: createDto.purchaseInvoiceId },
+      });
+
+      if (!invoice) {
+        throw new NotFoundException('Purchase Invoice not found');
+      }
+
+      if (invoice.status !== 'APPROVED') {
+        throw new BadRequestException('Only APPROVED Purchase Invoices can be returned');
+      }
     }
   }
 
@@ -526,6 +604,8 @@ export class PurchaseReturnService {
     for (const item of purchaseReturn.items) {
       const referenceType = purchaseReturn.sourceType === 'GRN' 
         ? 'PURCHASE_RETURN_GRN' 
+        : purchaseReturn.sourceType === 'PURCHASE_INVOICE'
+        ? 'PURCHASE_RETURN_PI'
         : 'PURCHASE_RETURN_LC';
 
       // Debug log to check values
