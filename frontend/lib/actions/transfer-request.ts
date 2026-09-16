@@ -34,6 +34,22 @@ export async function getReturnTransferRequests(locationId: string) {
     }
 }
 
+export async function getReturnTransferById(id: string) {
+    try {
+        const response = await authFetch(`/transfer-request?id=${id}`);
+        // Response is { status: true, data: [...] } — find the matching record
+        const list = response.data?.data ?? response.data ?? [];
+        const record = Array.isArray(list) ? list.find((t: any) => t.id === id) : null;
+        if (record) {
+            return { status: true, data: record };
+        }
+        return { status: false, data: null };
+    } catch (error) {
+        console.error("Get return transfer by ID error:", error);
+        return { status: false, data: null };
+    }
+}
+
 export async function getOutboundTransferRequests(locationId: string, status?: string) {
     try {
         const query = status ? `?locationId=${locationId}&status=${status}` : `?locationId=${locationId}`;
@@ -72,7 +88,7 @@ export async function createTransferRequest(data: any) {
 
 export async function createReturnTransferRequest(data: {
     fromLocationId: string;
-    fromWarehouseId: string;
+    toWarehouseId: string;
     items: { itemId: string; quantity: number }[];
     notes?: string;
     createdById?: string;

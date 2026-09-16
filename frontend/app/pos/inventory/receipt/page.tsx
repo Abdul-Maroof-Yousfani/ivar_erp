@@ -127,8 +127,8 @@ export default function StockReceiptPage() {
             win.document.close();
             win.focus();
             win.print();
-            win.close();
-            setPrintingId(null);
+            win.onafterprint = () => { win.close(); setPrintingId(null); };
+            setTimeout(() => { if (!win.closed) win.close(); setPrintingId(null); }, 60000);
         }, 100);
     };
 

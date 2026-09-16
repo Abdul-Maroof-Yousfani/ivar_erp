@@ -26,6 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getOutboundTransferRequests, approveSourceTransferRequest, updateTransferRequestStatus } from "@/lib/actions/transfer-request";
+import { COMPANY_NAME } from "@/lib/utils";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
@@ -54,7 +55,7 @@ export default function OutboundRequestsPage() {
         }
 
         const dateStr = format(new Date(request.createdAt), "dd MMM yyyy HH:mm");
-        const companyName = "Speed Limit";
+        const companyName = COMPANY_NAME;
         const sourceLoc = user?.terminal?.location?.name || "This Location";
         const destLoc = request.toLocation?.name || "Destination Outlet";
         const refNo = request.requestNo || "N/A";
@@ -182,9 +183,20 @@ export default function OutboundRequestsPage() {
         `);
         win.document.close();
         win.focus();
-        win.print();
-        win.close();
-        setPrintingId(null);
+        // Wait for document to render, then print
+        setTimeout(() => {
+            win.print();
+            // Close after print dialog is dismissed
+            win.onafterprint = () => {
+                win.close();
+                setPrintingId(null);
+            };
+            // Fallback: close after 60s if onafterprint never fires
+            setTimeout(() => {
+                if (!win.closed) win.close();
+                setPrintingId(null);
+            }, 60000);
+        }, 500);
     };
 
     const locationId = user?.terminal?.location?.id || user?.locationId;

@@ -18,14 +18,17 @@ import {
     Building2,
     Scan,
     Barcode,
-    X
+    X,
+    MapPin,
+    ArrowRightLeft
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/providers/auth-provider";
-import { getReturnTransferRequests, acceptTransferRequest, createReturnTransferRequest } from "@/lib/actions/transfer-request";
+import { getReturnTransferRequests, acceptTransferRequest, createReturnTransferRequest, createOutletToOutletTransferRequest, getOutboundTransferRequests } from "@/lib/actions/transfer-request";
+import { getLocations } from "@/lib/actions/location";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
@@ -33,8 +36,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { ChevronsUpDown, Check } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
 import { warehouseApi, inventoryApi } from "@/lib/api";
 
@@ -42,6 +47,12 @@ interface Warehouse {
     id: string;
     name: string;
     isActive: boolean;
+}
+
+interface PosLocation {
+    id: string;
+    name: string;
+    code: string;
 }
 
 interface Item {
@@ -73,9 +84,10 @@ interface ReturnRequest {
     status: string;
     createdAt: string;
     notes?: string;
-    fromWarehouse?: {
-        name: string;
-    };
+    transferType?: string;
+    toWarehouse?: { name: string };
+    toLocation?: { name: string };
+    fromLocation?: { name: string };
     items: RequestItem[];
 }
 
@@ -88,8 +100,13 @@ export default function ReturnRequestsPage() {
 
     // Create Mode States
     const [isCreating, setIsCreating] = useState(false);
+    const [destType, setDestType] = useState<'warehouse' | 'location'>('warehouse');
     const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
     const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
+    const [warehouseOpen, setWarehouseOpen] = useState(false);
+    const [posLocations, setPosLocations] = useState<PosLocation[]>([]);
+    const [selectedLocationId, setSelectedLocationId] = useState<string>('');
+    const [locationOpen, setLocationOpen] = useState(false);
     const [itemQuery, setItemQuery] = useState('');
     const [searchResults, setSearchResults] = useState<Item[]>([]);
     const [isSearching, setIsSearching] = useState(false);
@@ -258,25 +275,44 @@ export default function ReturnRequestsPage() {
         if (!locationId) return;
         setIsLoading(true);
         try {
-            const res = await getReturnTransferRequests(locationId);
-            if (res.status) {
+            // Fetch both: OUTLET_TO_WAREHOUSE (returns) + OUTLET_TO_OUTLET outbound (pos transfers sent by this outlet)
+            const [retRes, outboundRes] = await Promise.all([
+                getReturnTransferRequests(locationId),
+                getOutboundTransferRequests(locationId), // outlet-to-outlet transfers sent FROM this outlet
+            ]);
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const mapReq = (req: any): ReturnRequest => ({
+                id: req.id,
+                requestNo: req.requestNo,
+                status: req.status,
+                createdAt: req.createdAt,
+                notes: req.notes,
+                transferType: req.transferType,
+                toWarehouse: req.toWarehouse ? { name: req.toWarehouse.name } : undefined,
+                toLocation: req.toLocation ? { name: req.toLocation.name } : undefined,
+                fromLocation: req.fromLocation ? { name: req.fromLocation.name } : undefined,
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const mappedRequests = (res.data || []).map((req: any) => ({
-                    id: req.id,
-                    requestNo: req.requestNo,
-                    status: req.status,
-                    createdAt: req.createdAt,
-                    notes: req.notes,
-                    fromWarehouse: req.fromWarehouse ? { name: req.fromWarehouse.name } : undefined,
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    items: (req.items || []).map((it: any) => ({
-                        id: it.id,
-                        quantity: Number(it.quantity || 0),
-                        item: it.item ? { sku: it.item.sku, description: it.item.description } : undefined
-                    }))
-                }));
-                setRequests(mappedRequests);
+                items: (req.items || []).map((it: any) => ({
+                    id: it.id,
+                    quantity: Number(it.quantity || 0),
+                    item: it.item ? { sku: it.item.sku, description: it.item.description } : undefined
+                }))
+            });
+
+            const returnReqs = retRes.status ? (retRes.data || []).map(mapReq) : [];
+            // Outbound outlet-to-outlet requests where THIS location is the SOURCE
+            const outboundReqs = outboundRes.status
+                ? (outboundRes.data || []).map(mapReq)
+                : [];
+
+            // Merge, deduplicate by id
+            const allIds = new Set<string>();
+            const merged: ReturnRequest[] = [];
+            for (const r of [...returnReqs, ...outboundReqs]) {
+                if (!allIds.has(r.id)) { allIds.add(r.id); merged.push(r); }
             }
+            setRequests(merged);
         } catch (error) {
             console.error("Failed to fetch return requests", error);
             toast.error("Failed to load return requests");
@@ -298,6 +334,23 @@ export default function ReturnRequestsPage() {
             toast.error("Failed to load destination warehouses");
         }
     }, []);
+
+    const fetchPosLocations = useCallback(async () => {
+        try {
+            const res = await getLocations();
+            if (res.status && res.data) {
+                // Exclude current location
+                const others = res.data
+                    .filter((l) => l.status === 'active' && l.id !== locationId)
+                    .map((l) => ({ id: l.id, name: l.name, code: l.code }));
+                setPosLocations(others);
+                if (others.length > 0) setSelectedLocationId(others[0].id);
+            }
+        } catch (error) {
+            console.error("Failed to fetch POS locations", error);
+            toast.error("Failed to load POS locations");
+        }
+    }, [locationId]);
 
     const handleSearch = useCallback(async (query: string) => {
         if (!query.trim() || !locationId) {
@@ -332,9 +385,10 @@ export default function ReturnRequestsPage() {
 
     useEffect(() => {
         if (isCreating) {
-            fetchWarehouses();
+            if (destType === 'warehouse') fetchWarehouses();
+            else fetchPosLocations();
         }
-    }, [isCreating, fetchWarehouses]);
+    }, [isCreating, destType, fetchWarehouses, fetchPosLocations]);
 
     useEffect(() => {
         if (isCreating) {
@@ -378,8 +432,12 @@ export default function ReturnRequestsPage() {
             toast.error("Your terminal/outlet location is not configured");
             return;
         }
-        if (!selectedWarehouseId) {
+        if (destType === 'warehouse' && !selectedWarehouseId) {
             toast.error("Please select a destination warehouse");
+            return;
+        }
+        if (destType === 'location' && !selectedLocationId) {
+            toast.error("Please select a destination POS location");
             return;
         }
         if (cart.length === 0) {
@@ -388,28 +446,41 @@ export default function ReturnRequestsPage() {
         }
         setIsSubmitting(true);
         try {
-            const res = await createReturnTransferRequest({
-                fromLocationId: locationId,
-                fromWarehouseId: selectedWarehouseId,
-                items: cart.map(i => ({
-                    itemId: i.item.id,
-                    quantity: i.quantity
-                })),
-                notes: notes,
-                createdById: user?.id
-            });
+            let res;
+            if (destType === 'warehouse') {
+                // OUTLET_TO_WAREHOUSE — return to warehouse
+                res = await createReturnTransferRequest({
+                    fromLocationId: locationId,
+                    toWarehouseId: selectedWarehouseId,
+                    items: cart.map(i => ({ itemId: i.item.id, quantity: i.quantity })),
+                    notes,
+                    createdById: user?.id
+                });
+            } else {
+                // OUTLET_TO_OUTLET — transfer to another POS location
+                res = await createOutletToOutletTransferRequest({
+                    fromLocationId: locationId,
+                    toLocationId: selectedLocationId,
+                    items: cart.map(i => ({ itemId: i.item.id, quantity: i.quantity })),
+                    notes,
+                    createdById: user?.id
+                });
+            }
             if (res.status) {
-                toast.success("Return request submitted successfully! Awaiting approval.");
+                const msg = destType === 'warehouse'
+                    ? "Return request submitted! Awaiting warehouse approval."
+                    : "Transfer request submitted! Destination outlet can view it in Inbound after source approval.";
+                toast.success(msg);
                 setIsCreating(false);
                 setCart([]);
                 setNotes('');
                 fetchRequests();
             } else {
-                toast.error(res.message || "Failed to submit return request");
+                toast.error(res.message || "Failed to submit request");
             }
         } catch (error) {
             const err = error as { message?: string };
-            toast.error(err.message || "Failed to submit return request");
+            toast.error(err.message || "Failed to submit request");
         } finally {
             setIsSubmitting(false);
         }
@@ -505,31 +576,149 @@ export default function ReturnRequestsPage() {
                         </Card>
 
                         <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-                        {/* Left Column: Warehouse Selection & Item Search */}
+                        {/* Left Column: Destination & Item Search */}
                         <div className="md:col-span-2 space-y-6">
-                            {/* Warehouse Selection Card */}
+                            {/* Destination Type Card */}
                             <Card className="border-border/50 shadow-sm">
-                                <CardHeader className="pb-4">
+                                <CardHeader className="pb-3">
                                     <CardTitle className="text-md font-bold flex items-center gap-2 text-foreground">
-                                        <Building2 className="h-5 w-5 text-orange-600" />
-                                        Destination Warehouse
+                                        <ArrowRightLeft className="h-5 w-5 text-orange-600" />
+                                        Destination
                                     </CardTitle>
-                                    <CardDescription className="text-xs">Select the warehouse to return stock to.</CardDescription>
+                                    <CardDescription className="text-xs">Return to warehouse or transfer to another POS outlet.</CardDescription>
                                 </CardHeader>
-                                <CardContent>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="warehouse-select" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Warehouse</Label>
-                                        <Select value={selectedWarehouseId} onValueChange={setSelectedWarehouseId}>
-                                            <SelectTrigger id="warehouse-select" className="h-11 bg-muted/30">
-                                                <SelectValue placeholder="Select Destination Warehouse" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {warehouses.map(w => (
-                                                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                <CardContent className="space-y-4">
+                                    {/* Toggle */}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setDestType('warehouse')}
+                                            className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 text-sm font-bold transition-all ${
+                                                destType === 'warehouse'
+                                                    ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300'
+                                                    : 'border-border/50 bg-muted/20 text-muted-foreground hover:border-orange-200'
+                                            }`}
+                                        >
+                                            <Building2 className="h-4 w-4" />
+                                            Warehouse
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setDestType('location')}
+                                            className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 text-sm font-bold transition-all ${
+                                                destType === 'location'
+                                                    ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300'
+                                                    : 'border-border/50 bg-muted/20 text-muted-foreground hover:border-orange-200'
+                                            }`}
+                                        >
+                                            <MapPin className="h-4 w-4" />
+                                            POS Location
+                                        </button>
                                     </div>
+
+                                    {/* Warehouse Combobox */}
+                                    {destType === 'warehouse' && (
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Warehouse</Label>
+                                            <Popover open={warehouseOpen} onOpenChange={setWarehouseOpen}>
+                                                <PopoverTrigger asChild>
+                                                    <button
+                                                        type="button"
+                                                        role="combobox"
+                                                        aria-expanded={warehouseOpen}
+                                                        className="w-full h-11 flex items-center justify-between px-3 rounded-md border border-input bg-muted/30 text-sm hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1 transition-colors"
+                                                    >
+                                                        <span className={selectedWarehouseId ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+                                                            {selectedWarehouseId
+                                                                ? warehouses.find(w => w.id === selectedWarehouseId)?.name
+                                                                : 'Select destination warehouse...'}
+                                                        </span>
+                                                        <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                                    </button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" side="bottom" align="start" sideOffset={4}>
+                                                    <Command>
+                                                        <CommandInput placeholder="Search warehouse..." className="h-9" />
+                                                        <CommandList>
+                                                            <CommandEmpty>No warehouse found.</CommandEmpty>
+                                                            <CommandGroup>
+                                                                {warehouses.map(w => (
+                                                                    <CommandItem
+                                                                        key={w.id}
+                                                                        value={w.name}
+                                                                        onSelect={() => {
+                                                                            setSelectedWarehouseId(w.id);
+                                                                            setWarehouseOpen(false);
+                                                                        }}
+                                                                        className="flex items-center justify-between gap-2 cursor-pointer"
+                                                                    >
+                                                                        <span>{w.name}</span>
+                                                                        {selectedWarehouseId === w.id && <Check className="h-4 w-4 text-orange-600 shrink-0" />}
+                                                                    </CommandItem>
+                                                                ))}
+                                                            </CommandGroup>
+                                                        </CommandList>
+                                                    </Command>
+                                                </PopoverContent>
+                                            </Popover>
+                                        </div>
+                                    )}
+
+                                    {/* POS Location Combobox */}
+                                    {destType === 'location' && (
+                                        <div className="space-y-2">
+                                            <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">POS Outlet</Label>
+                                            <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+                                                <PopoverTrigger asChild>
+                                                    <button
+                                                        type="button"
+                                                        role="combobox"
+                                                        aria-expanded={locationOpen}
+                                                        className="w-full h-11 flex items-center justify-between px-3 rounded-md border border-input bg-muted/30 text-sm hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1 transition-colors"
+                                                    >
+                                                        <span className={selectedLocationId ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+                                                            {selectedLocationId
+                                                                ? posLocations.find(l => l.id === selectedLocationId)?.name
+                                                                : 'Select destination outlet...'}
+                                                        </span>
+                                                        <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                                    </button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" side="bottom" align="start" sideOffset={4}>
+                                                    <Command>
+                                                        <CommandInput placeholder="Search outlet by name or code..." className="h-9" />
+                                                        <CommandList>
+                                                            <CommandEmpty>No outlet found.</CommandEmpty>
+                                                            <CommandGroup>
+                                                                {posLocations.map(l => (
+                                                                    <CommandItem
+                                                                        key={l.id}
+                                                                        value={`${l.name} ${l.code}`}
+                                                                        onSelect={() => {
+                                                                            setSelectedLocationId(l.id);
+                                                                            setLocationOpen(false);
+                                                                        }}
+                                                                        className="flex items-center justify-between gap-2 cursor-pointer"
+                                                                    >
+                                                                        <div className="min-w-0">
+                                                                            <span className="font-medium block truncate">{l.name}</span>
+                                                                            <span className="text-[10px] text-muted-foreground font-mono">{l.code}</span>
+                                                                        </div>
+                                                                        {selectedLocationId === l.id && <Check className="h-4 w-4 text-orange-600 shrink-0" />}
+                                                                    </CommandItem>
+                                                                ))}
+                                                            </CommandGroup>
+                                                        </CommandList>
+                                                    </Command>
+                                                </PopoverContent>
+                                            </Popover>
+                                            {selectedLocationId && (
+                                                <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                                                    ⚠ Destination outlet must approve from their <strong>Outbound</strong> page, then accept from <strong>Inbound</strong>.
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
                                 </CardContent>
                             </Card>
 
@@ -696,8 +885,17 @@ export default function ReturnRequestsPage() {
                                         )}
                                     </ScrollArea>
 
-                                    {/* Footer & Notes */}
+                                     {/* Footer & Notes */}
                                     <div className="p-4 md:p-6 border-t border-border/50 bg-muted/5 space-y-4">
+                                        {/* Total Qty Summary */}
+                                        {cart.length > 0 && (
+                                            <div className="flex items-center justify-between bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900 rounded-lg px-4 py-2.5">
+                                                <span className="text-xs font-bold uppercase tracking-wider text-orange-700 dark:text-orange-400">Total Return Qty</span>
+                                                <span className="text-2xl font-black text-orange-600 dark:text-orange-400">
+                                                    {cart.reduce((sum, i) => sum + i.quantity, 0)}
+                                                </span>
+                                            </div>
+                                        )}
                                         <div className="space-y-2">
                                             <Label htmlFor="return-notes" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Return Reason / Notes</Label>
                                             <Textarea
@@ -742,9 +940,9 @@ export default function ReturnRequestsPage() {
                         <ArrowLeft className="h-5 w-5" />
                     </Button>
                     <div className="flex-1">
-                        <h1 className="text-2xl font-bold tracking-tight">Return Requests</h1>
+                        <h1 className="text-2xl font-bold tracking-tight">Return &amp; Transfer Requests</h1>
                         <div className="text-sm text-muted-foreground flex items-center gap-1.5 font-medium mt-0.5">
-                            Approve return requests to send items back to warehouse from
+                            Returns to warehouse or transfers to another outlet from
                             <Badge variant="outline" className="ml-1 font-bold text-orange-600 border-orange-200 bg-orange-50">
                                 {user?.terminal?.location?.name || "This Location"}
                             </Badge>
@@ -851,7 +1049,14 @@ export default function ReturnRequestsPage() {
                                                     <div className="h-10 w-px bg-border hidden sm:block" />
                                                     <div className="flex flex-col">
                                                         <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Destination</span>
-                                                        <span className="text-sm font-semibold">{request.fromWarehouse?.name || "Main Warehouse"}</span>
+                                                        <span className="text-sm font-semibold">
+                                                            {request.toWarehouse?.name || request.toLocation?.name || "Main Warehouse"}
+                                                        </span>
+                                                        {request.transferType === 'OUTLET_TO_OUTLET' && (
+                                                            <Badge variant="outline" className="mt-1 text-[9px] px-1 py-0 w-fit border-blue-300 text-blue-600 bg-blue-50 dark:bg-blue-950/20 dark:text-blue-300">
+                                                                POS Transfer
+                                                            </Badge>
+                                                        )}
                                                     </div>
                                                     <div className="h-10 w-px bg-border hidden sm:block" />
                                                     <div className="flex flex-col">
@@ -882,7 +1087,7 @@ export default function ReturnRequestsPage() {
                                                     {isAccepting === request.id ? "Approving..." : "Approve Return"}
                                                 </Button>
                                                 <Button variant="outline" className="w-full md:w-40 h-10 font-semibold text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-900 hover:bg-orange-50 dark:hover:bg-orange-950/20" asChild>
-                                                    <Link href={`/erp/inventory/transactions/return-transfer/slip/${request.id}`} target="_blank">
+                                                    <Link href={`/pos/inventory/returns/slip/${request.id}`} target="_blank">
                                                         <FileText className="h-4 w-4 mr-2" /> View Details
                                                     </Link>
                                                 </Button>

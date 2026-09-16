@@ -45,6 +45,7 @@ export class TransferRequestService {
   async createRequest(
     data: {
       fromWarehouseId?: string; // Optional for outlet-to-warehouse
+      toWarehouseId?: string; // Destination warehouse for outlet-to-warehouse
       fromLocationId?: string; // Source outlet for returns and outlet-to-outlet
       toLocationId?: string; // Destination outlet (null for warehouse)
       transferType?:
@@ -69,9 +70,9 @@ export class TransferRequestService {
           );
         }
       } else if (transferType === 'OUTLET_TO_WAREHOUSE') {
-        if (!data.fromLocationId || !data.fromWarehouseId) {
+        if (!data.fromLocationId || !data.toWarehouseId) {
           throw new BadRequestException(
-            'fromLocationId and fromWarehouseId required for outlet-to-warehouse transfers',
+            'fromLocationId and toWarehouseId required for outlet-to-warehouse transfers',
           );
         }
       } else if (transferType === 'OUTLET_TO_OUTLET') {
@@ -145,6 +146,7 @@ export class TransferRequestService {
         data: {
           requestNo,
           fromWarehouseId: data.fromWarehouseId,
+          toWarehouseId: data.toWarehouseId,
           fromLocationId: data.fromLocationId,
           toLocationId: data.toLocationId,
           transferType,
@@ -362,7 +364,12 @@ export class TransferRequestService {
       andClauses.push({ id });
     }
     if (warehouseId && warehouseId !== 'all') {
-      andClauses.push({ fromWarehouseId: warehouseId });
+      andClauses.push({
+        OR: [
+          { fromWarehouseId: warehouseId },
+          { toWarehouseId: warehouseId },
+        ],
+      });
     }
     if (status && status !== 'all') {
       if (status === 'PENDING') {

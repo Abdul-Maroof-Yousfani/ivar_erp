@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getInboundTransferRequests, acceptTransferRequest } from "@/lib/actions/transfer-request";
+import { COMPANY_NAME } from "@/lib/utils";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
@@ -41,7 +42,7 @@ export default function InboundRequestsPage() {
         }
 
         const dateStr = format(new Date(request.createdAt), "dd MMM yyyy HH:mm");
-        const companyName = "Speed Limit";
+        const companyName = COMPANY_NAME;
         const sourceLoc = request.fromLocation?.name || "Source Outlet";
         const destLoc = user?.terminal?.location?.name || "This Location";
         const refNo = request.requestNo || "N/A";
@@ -169,9 +170,11 @@ export default function InboundRequestsPage() {
         `);
         win.document.close();
         win.focus();
-        win.print();
-        win.close();
-        setPrintingId(null);
+        setTimeout(() => {
+            win.print();
+            win.onafterprint = () => { win.close(); setPrintingId(null); };
+            setTimeout(() => { if (!win.closed) win.close(); setPrintingId(null); }, 60000);
+        }, 500);
     };
 
     const locationId = user?.terminal?.location?.id || user?.locationId;
