@@ -857,6 +857,14 @@ export const menuData: MenuItem[] = [
             ],
           },
           {
+            title: "Return Transfer",
+            href: "/erp/inventory/transactions/return-transfer",
+            permissions: [
+              "erp.inventory.claims.acknowledge",
+              "erp.inventory.warehouse.view",
+            ],
+          },
+          {
             title: "PLM Claims",
             href: "/erp/inventory/transactions/plm-claims",
             permissions: [

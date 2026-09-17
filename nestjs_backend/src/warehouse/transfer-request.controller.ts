@@ -36,6 +36,7 @@ export class TransferRequestController {
     @ApiOperation({ summary: 'Create a new transfer request' })
     async create(@Body() dto: {
         fromWarehouseId?: string;
+        toWarehouseId?: string;
         fromLocationId?: string;
         toLocationId?: string;
         transferType?: 'WAREHOUSE_TO_OUTLET' | 'OUTLET_TO_WAREHOUSE';
