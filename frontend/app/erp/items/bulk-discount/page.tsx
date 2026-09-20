@@ -1343,7 +1343,7 @@ export default function BulkDiscountPage() {
                                                 <Badge variant="secondary" className="font-normal text-xs">Optional</Badge>
                                             </CardTitle>
                                             <p className="text-xs text-muted-foreground mt-1">
-                                                Tag which outlets or counters this campaign applies to. This is informational — the discount is applied at item level regardless.
+                                                Select which outlets or counters this campaign applies to. If no locations are selected, the discount applies globally to all locations.
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-2">

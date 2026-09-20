@@ -3622,6 +3622,14 @@ export class PosSalesService implements OnModuleInit {
           });
         }
 
+        // ── Fetch active campaign discounts scoped to this order's location ──
+        const returnItemIds = items.map((i) => i.itemId);
+        const campaignDiscounts = await this.getActiveCampaignDiscounts(
+          returnItemIds,
+          order.locationId,
+          tx,
+        );
+
         // ── Validate and process return items ──
         for (const returnItem of items) {
           const orderItem = order.items.find(
@@ -3673,33 +3681,46 @@ export class PosSalesService implements OnModuleInit {
             ? Number(currentItem.unitPrice)
             : originalPaidPerUnit;
 
-          const now = new Date();
-          const startDate = currentItem?.discountStartDate
-            ? new Date(currentItem.discountStartDate)
-            : null;
-          const endDate = currentItem?.discountEndDate
-            ? new Date(currentItem.discountEndDate)
-            : null;
-          const discountActive =
-            currentItem &&
-            (!startDate || startDate <= now) &&
-            (!endDate || endDate >= now);
-
-          const discountRate = discountActive
-            ? Number(currentItem.discountRate || 0)
-            : 0;
-          const discountAmount = discountActive
-            ? Number(currentItem.discountAmount || 0)
-            : 0;
+          const campaignDisc = campaignDiscounts.get(returnItem.itemId);
 
           let effectiveDiscountPercent = 0;
-          if (discountRate > 0) {
-            effectiveDiscountPercent = discountRate;
-          } else if (discountAmount > 0 && latestPrice > 0) {
-            effectiveDiscountPercent = Math.min(
-              100,
-              (discountAmount / latestPrice) * 100,
-            );
+          if (campaignDisc) {
+            if (campaignDisc.discountRate > 0) {
+              effectiveDiscountPercent = campaignDisc.discountRate;
+            } else if (campaignDisc.discountAmount > 0 && latestPrice > 0) {
+              effectiveDiscountPercent = Math.min(
+                100,
+                (campaignDisc.discountAmount / latestPrice) * 100,
+              );
+            }
+          } else {
+            const now = new Date();
+            const startDate = currentItem?.discountStartDate
+              ? new Date(currentItem.discountStartDate)
+              : null;
+            const endDate = currentItem?.discountEndDate
+              ? new Date(currentItem.discountEndDate)
+              : null;
+            const discountActive =
+              currentItem &&
+              (!startDate || startDate <= now) &&
+              (!endDate || endDate >= now);
+
+            const discountRate = discountActive
+              ? Number(currentItem.discountRate || 0)
+              : 0;
+            const discountAmount = discountActive
+              ? Number(currentItem.discountAmount || 0)
+              : 0;
+
+            if (discountRate > 0) {
+              effectiveDiscountPercent = discountRate;
+            } else if (discountAmount > 0 && latestPrice > 0) {
+              effectiveDiscountPercent = Math.min(
+                100,
+                (discountAmount / latestPrice) * 100,
+              );
+            }
           }
 
           // Current price is already tax-inclusive (retail price)
@@ -4281,47 +4302,67 @@ export class PosSalesService implements OnModuleInit {
       const grandTotal = Number(order.grandTotal);
 
       // Build details for RETURNED items only
-      const enrichedItems = order.items
-        .filter((oi) => returnedQtyMap.has(oi.itemId)) // Only items that were returned
-        .map((oi) => {
-          const returnedQty = returnedQtyMap.get(oi.itemId) || 0;
-          const orderedQty = Number(oi.quantity);
+      const returnedItemsList = order.items.filter((oi) =>
+        returnedQtyMap.has(oi.itemId),
+      );
+      const returnedItemIds = returnedItemsList.map((oi) => oi.itemId);
+      const campaignDiscounts = await this.getActiveCampaignDiscounts(
+        returnedItemIds,
+        order.locationId,
+      );
 
-          // Proportional scaling factor based on returned quantity
-          const scaleFactor = returnedQty / orderedQty;
+      const enrichedItems = returnedItemsList.map((oi) => {
+        const returnedQty = returnedQtyMap.get(oi.itemId) || 0;
+        const orderedQty = Number(oi.quantity);
 
-          const unitPrice = Number(oi.unitPrice);
-          const discountAmount = Number(oi.discountAmount || 0) * scaleFactor;
-          const discountPercent = Number(oi.discountPercent || 0);
-          const taxAmount = Number(oi.taxAmount || 0) * scaleFactor;
-          const taxPercent = Number(oi.taxPercent || 0);
-          const lineTotal = Number(oi.lineTotal) * scaleFactor;
+        // Proportional scaling factor based on returned quantity
+        const scaleFactor = returnedQty / orderedQty;
 
-          // Proportional coupon deduction
-          const isAllianceOrNoGlobalDisc =
-            Math.abs(lineTotalsSum - grandTotal) <= 5;
-          const couponDeduction =
-            isAllianceOrNoGlobalDisc || lineTotalsSum <= 0
-              ? 0
-              : (lineTotal / lineTotalsSum) * globalDiscAmt;
+        const unitPrice = Number(oi.unitPrice);
+        const discountAmount = Number(oi.discountAmount || 0) * scaleFactor;
+        const discountPercent = Number(oi.discountPercent || 0);
+        const taxAmount = Number(oi.taxAmount || 0) * scaleFactor;
+        const taxPercent = Number(oi.taxPercent || 0);
+        const lineTotal = Number(oi.lineTotal) * scaleFactor;
 
-          // Original paid per unit (after all discounts including coupon)
-          let originalPaidPerUnit = 0;
-          if (isAllianceOrNoGlobalDisc) {
-            originalPaidPerUnit = lineTotal / returnedQty;
-          } else {
-            originalPaidPerUnit =
-              lineTotalsSum > 0
-                ? ((lineTotal / lineTotalsSum) * grandTotal) / returnedQty
-                : lineTotal / returnedQty;
+        // Proportional coupon deduction
+        const isAllianceOrNoGlobalDisc =
+          Math.abs(lineTotalsSum - grandTotal) <= 5;
+        const couponDeduction =
+          isAllianceOrNoGlobalDisc || lineTotalsSum <= 0
+            ? 0
+            : (lineTotal / lineTotalsSum) * globalDiscAmt;
+
+        // Original paid per unit (after all discounts including coupon)
+        let originalPaidPerUnit = 0;
+        if (isAllianceOrNoGlobalDisc) {
+          originalPaidPerUnit = lineTotal / returnedQty;
+        } else {
+          originalPaidPerUnit =
+            lineTotalsSum > 0
+              ? ((lineTotal / lineTotalsSum) * grandTotal) / returnedQty
+              : lineTotal / returnedQty;
+        }
+
+        // Current price is already tax-inclusive (retail price)
+        const currentItem = oi.item;
+        const latestPrice = currentItem
+          ? Number((currentItem as any).unitPrice || 0)
+          : originalPaidPerUnit;
+
+        const campaignDisc = campaignDiscounts.get(oi.itemId);
+
+        let effectiveDiscountPercent = 0;
+        if (campaignDisc) {
+          if (campaignDisc.discountRate > 0) {
+            effectiveDiscountPercent = campaignDisc.discountRate;
+          } else if (campaignDisc.discountAmount > 0 && latestPrice > 0) {
+            effectiveDiscountPercent = Math.min(
+              100,
+              (campaignDisc.discountAmount / latestPrice) * 100,
+            );
           }
-
-          // Current price is already tax-inclusive (retail price)
-          const currentItem = oi.item;
-          const latestPrice = currentItem
-            ? Number((currentItem as any).unitPrice || 0)
-            : originalPaidPerUnit;
-
+        } else {
           const now = new Date();
           const startDate = (currentItem as any)?.discountStartDate
             ? new Date((currentItem as any).discountStartDate)
@@ -4341,7 +4382,6 @@ export class PosSalesService implements OnModuleInit {
             ? Number((currentItem as any).discountAmount || 0)
             : 0;
 
-          let effectiveDiscountPercent = 0;
           if (discountRate > 0) {
             effectiveDiscountPercent = discountRate;
           } else if (activeDiscountAmount > 0 && latestPrice > 0) {
@@ -4350,6 +4390,7 @@ export class PosSalesService implements OnModuleInit {
               (activeDiscountAmount / latestPrice) * 100,
             );
           }
+        }
 
           // Current price is already tax-inclusive (retail price)
           const currentPriceWithTax =
@@ -5756,6 +5797,126 @@ export class PosSalesService implements OnModuleInit {
     return { status: true, cleared: expiredOrders.length };
   }
 
+  // ─── Resolve active campaign discounts scoped to location or global ───
+  private async getActiveCampaignDiscounts(
+    itemIds: string[],
+    locationId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<
+    Map<
+      string,
+      {
+        discountRate: number;
+        discountAmount: number;
+        startDate: Date | null;
+        endDate: Date | null;
+      }
+    >
+  > {
+    if (!itemIds.length) return new Map();
+
+    const client = tx || this.prisma;
+    const now = new Date();
+
+    const campaignItems = await client.discountCampaignItem.findMany({
+      where: {
+        itemId: { in: itemIds },
+        campaign: {
+          AND: [
+            {
+              OR: [
+                { startDate: null },
+                { startDate: { lte: now } },
+              ],
+            },
+            {
+              OR: [
+                { endDate: null },
+                { endDate: { gte: now } },
+              ],
+            },
+          ],
+        },
+      },
+      include: {
+        campaign: {
+          include: {
+            locations: {
+              select: { locationId: true },
+            },
+          },
+        },
+      },
+      orderBy: {
+        campaign: {
+          createdAt: 'desc',
+        },
+      },
+    });
+
+    const discountMap = new Map<
+      string,
+      {
+        discountRate: number;
+        discountAmount: number;
+        startDate: Date | null;
+        endDate: Date | null;
+      }
+    >();
+
+    // For each itemId, resolve the highest-priority campaign:
+    // Priority 1: Campaign explicitly scoped to this locationId
+    // Priority 2: Global campaign (locations.length === 0)
+    for (const itemId of itemIds) {
+      const itemsForThisItem = campaignItems.filter(
+        (ci) => ci.itemId === itemId,
+      );
+      if (!itemsForThisItem.length) continue;
+
+      // 1. Check for location-specific campaign
+      const locationSpecific = itemsForThisItem.find((ci) =>
+        ci.campaign.locations.some((l) => l.locationId === locationId),
+      );
+
+      // 2. Check for global campaign (no location restrictions)
+      const globalCampaign = itemsForThisItem.find(
+        (ci) => ci.campaign.locations.length === 0,
+      );
+
+      const matched = locationSpecific || globalCampaign;
+      if (matched) {
+        if (matched.campaign.clearMode) {
+          // Explicit clear mode for this location/item
+          discountMap.set(itemId, {
+            discountRate: 0,
+            discountAmount: 0,
+            startDate: null,
+            endDate: null,
+          });
+        } else {
+          const discountRate =
+            matched.overrideRate !== null && matched.overrideRate !== undefined
+              ? Number(matched.overrideRate)
+              : Number(matched.campaign.discountRate || 0);
+          const discountAmount =
+            matched.overrideAmount !== null &&
+            matched.overrideAmount !== undefined
+              ? Number(matched.overrideAmount)
+              : Number(matched.campaign.discountAmount || 0);
+
+          discountMap.set(itemId, {
+            discountRate,
+            discountAmount,
+            startDate: matched.campaign.startDate,
+            endDate: matched.campaign.endDate,
+          });
+        }
+      }
+    }
+
+    return discountMap;
+  }
+
   // ─── Enrich items with master data + stock for POS display ────────
   private async enrichForPos(items: any[], locationId: string) {
     if (!items.length) return [];
@@ -5795,6 +5956,12 @@ export class PosSalesService implements OnModuleInit {
       }
     }
 
+    // ── Fetch active campaign discounts scoped to this location ───────
+    const campaignDiscounts = await this.getActiveCampaignDiscounts(
+      itemIds,
+      locationId,
+    );
+
     const now = new Date();
 
     return items.map((item) => {
@@ -5802,23 +5969,33 @@ export class PosSalesService implements OnModuleInit {
       // Use unitPrice from item setup, not unitCost
       const latestPrice = Number(item.unitPrice || 0);
 
-      // ── Resolve effective discount respecting date validity ──────────
-      // A discount is active if:
-      //   - discountStartDate is null OR discountStartDate <= now
-      //   - discountEndDate is null OR discountEndDate >= now
-      const startDate = item.discountStartDate
-        ? new Date(item.discountStartDate)
-        : null;
-      const endDate = item.discountEndDate
-        ? new Date(item.discountEndDate)
-        : null;
-      const discountActive =
-        (!startDate || startDate <= now) && (!endDate || endDate >= now);
+      // ── Resolve effective discount respecting location campaigns & dates ──
+      const campaignDiscount = campaignDiscounts.get(item.id);
 
-      const discountRate = discountActive ? Number(item.discountRate || 0) : 0;
-      const discountAmount = discountActive
-        ? Number(item.discountAmount || 0)
-        : 0;
+      let discountRate = 0;
+      let discountAmount = 0;
+      let startDate: Date | null = null;
+      let endDate: Date | null = null;
+
+      if (campaignDiscount) {
+        discountRate = campaignDiscount.discountRate;
+        discountAmount = campaignDiscount.discountAmount;
+        startDate = campaignDiscount.startDate;
+        endDate = campaignDiscount.endDate;
+      } else {
+        // Fall back to baseline Item discount if active
+        startDate = item.discountStartDate
+          ? new Date(item.discountStartDate)
+          : null;
+        endDate = item.discountEndDate
+          ? new Date(item.discountEndDate)
+          : null;
+        const discountActive =
+          (!startDate || startDate <= now) && (!endDate || endDate >= now);
+
+        discountRate = discountActive ? Number(item.discountRate || 0) : 0;
+        discountAmount = discountActive ? Number(item.discountAmount || 0) : 0;
+      }
 
       // Effective discount percent for the cart:
       // If discountRate (%) is set, use it directly.
@@ -5845,8 +6022,12 @@ export class PosSalesService implements OnModuleInit {
         // Raw discount fields
         discountRate,
         discountAmount,
-        discountStartDate: item.discountStartDate ?? null,
-        discountEndDate: item.discountEndDate ?? null,
+        discountStartDate: startDate
+          ? startDate.toISOString()
+          : item.discountStartDate ?? null,
+        discountEndDate: endDate
+          ? endDate.toISOString()
+          : item.discountEndDate ?? null,
         // Computed effective discount percent (ready for cart)
         effectiveDiscountPercent:
           Math.round(effectiveDiscountPercent * 100) / 100,
