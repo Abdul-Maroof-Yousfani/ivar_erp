@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, Filter, Eye, Edit, Trash2, Upload, Loader2 } from "lucide-react";
+import { Plus, Search, Filter, Eye, Edit, Trash2, Upload, Loader2, ChevronFirstIcon, ChevronLastIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -17,6 +17,11 @@ import { PermissionGuard } from "@/components/auth/permission-guard";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import { DirectPiBulkUploadModal } from "@/components/purchase-invoice/direct-pi-bulk-upload-modal";
 import { useUploadProgress } from "@/hooks/use-upload-progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Pagination, PaginationContent, PaginationItem } from "@/components/ui/pagination";
+import { getPageNumbers, PageJumpDropdown } from "@/components/common/data-table";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface PurchaseInvoice {
   id: string;
@@ -38,9 +43,13 @@ export default function PurchaseInvoiceListPage() {
   const router = useRouter();
   const [invoices, setInvoices] = useState<PurchaseInvoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isFetching, setIsFetching] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(25);
+  const [pagination, setPagination] = useState<{total: number; page: number; limit: number; totalPages: number} | null>(null);
 
   // Bulk Upload states
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
@@ -82,23 +91,35 @@ export default function PurchaseInvoiceListPage() {
   ];
 
   useEffect(() => {
+    setPage(1);
+  }, [searchTerm, statusFilter, paymentStatusFilter, limit]);
+
+  useEffect(() => {
     fetchInvoices();
-  }, [searchTerm, statusFilter, paymentStatusFilter]);
+  }, [searchTerm, statusFilter, paymentStatusFilter, page, limit]);
 
   const fetchInvoices = async () => {
     try {
-      setLoading(true);
+      setIsFetching(true);
       const params = {
+        page,
+        limit,
         ...(statusFilter && { status: statusFilter }),
         ...(paymentStatusFilter && { paymentStatus: paymentStatusFilter }),
+        ...(searchTerm && { search: searchTerm }),
       };
 
       const response = await getPurchaseInvoices(params);
       setInvoices(response.data || []);
+      if (response.pagination) {
+        setPagination(response.pagination);
+      }
     } catch (error) {
       console.error("Error fetching invoices:", error);
+      toast.error("Failed to load invoices");
     } finally {
       setLoading(false);
+      setIsFetching(false);
     }
   };
 
@@ -127,12 +148,6 @@ export default function PurchaseInvoiceListPage() {
       "bg-gray-100 text-gray-800"
     );
   };
-
-  const filteredInvoices = invoices.filter(
-    (invoice) =>
-      invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.supplier.name.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
 
   return (
     <PermissionGuard permissions="erp.procurement.pi.read">
@@ -264,10 +279,7 @@ export default function PurchaseInvoiceListPage() {
             <CardTitle>Invoice List</CardTitle>
           </CardHeader>
           <CardContent>
-            {loading ? (
-              <div className="text-center py-8">Loading...</div>
-            ) : (
-              <div className="overflow-x-auto">
+            <div className={`overflow-x-auto transition-opacity duration-200 ${isFetching && !loading ? 'opacity-60' : 'opacity-100'}`}>
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
@@ -283,7 +295,22 @@ export default function PurchaseInvoiceListPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredInvoices.map((invoice) => (
+                    {loading ? (
+                      Array.from({ length: Math.min(limit, 10) }).map((_, index) => (
+                        <tr key={`skeleton-${index}`} className="border-b">
+                          <td className="p-3"><Skeleton className="h-6 w-full" /></td>
+                          <td className="p-3"><Skeleton className="h-6 w-full" /></td>
+                          <td className="p-3"><Skeleton className="h-6 w-full" /></td>
+                          <td className="p-3"><Skeleton className="h-6 w-full" /></td>
+                          <td className="p-3"><Skeleton className="h-6 w-full" /></td>
+                          <td className="p-3"><Skeleton className="h-6 w-full" /></td>
+                          <td className="p-3"><Skeleton className="h-6 w-full" /></td>
+                          <td className="p-3"><Skeleton className="h-6 w-full" /></td>
+                          <td className="p-3"><Skeleton className="h-6 w-full" /></td>
+                        </tr>
+                      ))
+                    ) : (
+                      invoices.map((invoice) => (
                       <tr
                         key={invoice.id}
                         className="border-b hover:bg-background/80"
@@ -395,14 +422,133 @@ export default function PurchaseInvoiceListPage() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    ))
+                  )}
                   </tbody>
                 </table>
-                {filteredInvoices.length === 0 && (
+                {!loading && invoices.length === 0 && (
                   <div className="text-center py-8 text-gray-500">
                     No invoices found
                   </div>
                 )}
+              </div>
+            
+            {/* Pagination Controls */}
+            {pagination && pagination.totalPages > 0 && (
+              <div className="flex items-center justify-between gap-8 md:flex-row flex-col mt-4 border-t pt-4">
+                {/* Rows per page dropdown */}
+                <div className="flex items-center gap-2 order-3 md:order-1">
+                  <Label htmlFor="pageSize">Rows per page</Label>
+                  <Select
+                    value={limit.toString()}
+                    onValueChange={(value) => setLimit(Number(value))}
+                  >
+                    <SelectTrigger className="w-[80px]">
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[10, 25, 50, 100, 250, 500, 1000].map((size) => (
+                        <SelectItem key={size} value={size.toString()}>
+                          {size}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Page numbers with animation */}
+                <div className="flex items-center gap-1 order-1 md:order-2">
+                  {getPageNumbers({
+                    currentPage: page - 1,
+                    totalPages: pagination.totalPages,
+                  }).map((p, idx) =>
+                    p === "..." ? (
+                      <PageJumpDropdown
+                        key={idx}
+                        totalPages={pagination.totalPages}
+                        onSelect={(p) => setPage(p)}
+                      />
+                    ) : (
+                      <Button
+                        key={idx}
+                        size="sm"
+                        variant={p === page ? "default" : "ghost"}
+                        onClick={() => setPage(p as number)}
+                      >
+                        {p}
+                      </Button>
+                    ),
+                  )}
+                </div>
+
+                <div className="items-center gap-2 order-2 md:order-3">
+                  {/* Page number range info */}
+                  <div className="text-muted-foreground flex grow justify-end text-sm whitespace-nowrap mb-2">
+                    <p className="text-muted-foreground text-sm whitespace-nowrap" aria-live="polite">
+                      <span className="text-foreground">
+                        {(pagination.page - 1) * pagination.limit + 1}
+                        -
+                        {Math.min(pagination.page * pagination.limit, pagination.total)}
+                      </span>{" "}
+                      of{" "}
+                      <span className="text-foreground">
+                        {pagination.total.toString()}
+                      </span>
+                    </p>
+                  </div>
+
+                  {/* Navigation arrows */}
+                  <div>
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            onClick={() => setPage(1)}
+                            disabled={page === 1 || loading || isFetching}
+                            aria-label="Go to first page"
+                          >
+                            <ChevronFirstIcon size={16} />
+                          </Button>
+                        </PaginationItem>
+                        <PaginationItem>
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                            disabled={page === 1 || loading || isFetching}
+                            aria-label="Go to previous page"
+                          >
+                            <ChevronLeftIcon size={16} />
+                          </Button>
+                        </PaginationItem>
+                        <PaginationItem>
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+                            disabled={page === pagination.totalPages || loading || isFetching}
+                            aria-label="Go to next page"
+                          >
+                            <ChevronRightIcon size={16} />
+                          </Button>
+                        </PaginationItem>
+                        <PaginationItem>
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            onClick={() => setPage(pagination.totalPages)}
+                            disabled={page === pagination.totalPages || loading || isFetching}
+                            aria-label="Go to last page"
+                          >
+                            <ChevronLastIcon size={16} />
+                          </Button>
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                </div>
               </div>
             )}
           </CardContent>

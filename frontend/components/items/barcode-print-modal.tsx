@@ -124,12 +124,15 @@ interface SvgBarcodeProps {
 function SvgBarcode({ value, height = 22, barWidth = 1.2, className }: SvgBarcodeProps) {
     const svgRef = useRef<SVGSVGElement>(null);
 
+    // Dynamically reduce bar width for longer alphanumeric barcodes to prevent excessive scaling
+    const dynamicBarWidth = value.length > 10 ? 1 : value.length > 7 ? 1.2 : barWidth;
+
     useEffect(() => {
         if (svgRef.current && value) {
             try {
                 JsBarcode(svgRef.current, value, {
                     format: "CODE128",
-                    width: barWidth,
+                    width: dynamicBarWidth,
                     height: height,
                     displayValue: false,
                     margin: 0,
@@ -144,19 +147,21 @@ function SvgBarcode({ value, height = 22, barWidth = 1.2, className }: SvgBarcod
                 console.error("Barcode generation error:", e);
             }
         }
-    }, [value, height, barWidth]);
+    }, [value, height, dynamicBarWidth]);
 
     return (
         <svg
             ref={svgRef}
             className={className}
+            shapeRendering="crispEdges"
             style={{
                 display: "block",
-                maxWidth: "88%",
+                maxWidth: "96%",
                 width: "auto",
                 height: "100%",
                 maxHeight: `${height}px`,
                 margin: "0 auto",
+                shapeRendering: "crispEdges",
             }}
         />
     );

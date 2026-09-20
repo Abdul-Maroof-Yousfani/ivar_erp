@@ -88,7 +88,7 @@ const TYPE_CONFIG: Record<string, { label: string; className: string }> = {
     ASSET:     { label: "Asset",     className: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
     LIABILITY: { label: "Liability", className: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" },
     EQUITY:    { label: "Equity",    className: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300" },
-    REVENUE:   { label: "Revenue",   className: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" },
+    INCOME:    { label: "Income",    className: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" },
     EXPENSE:   { label: "Expense",   className: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
 };
 

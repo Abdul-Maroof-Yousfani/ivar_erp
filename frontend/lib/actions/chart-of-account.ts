@@ -5,7 +5,7 @@ export interface ChartOfAccount {
   id: string;
   code: string;
   name: string;
-  type: string; // ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
+  type: string; // ASSET, LIABILITY, EQUITY, INCOME, EXPENSE
   parentId?: string | null;
   parent?: ChartOfAccount | null;
   children?: ChartOfAccount[];

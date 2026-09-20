@@ -1122,7 +1122,7 @@ export default function DataTable<TData extends DataTableRow>({
   );
 }
 
-function getPageNumbers({
+export function getPageNumbers({
   currentPage,
   totalPages,
 }: {
