@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaMasterService } from '../database/prisma-master.service';
 import {
   CreatePosSalesOrderDto,
@@ -33,6 +34,7 @@ export class PosSalesService implements OnModuleInit {
     private voucherService: VoucherService,
     private notificationsService: NotificationsService,
     private stockMovementService: StockMovementService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   // ─── Schedule midnight hold-clear ─────────────────────────────────
@@ -651,7 +653,7 @@ export class PosSalesService implements OnModuleInit {
         const totalDiscount = finalLineItemDiscount + globalDiscAmt;
         const location = await tx.location.findUnique({
           where: { id: locationId },
-          select: { fbrEnabled: true, fbrNtn: true },
+          select: { fbrEnabled: true, fbrNtn: true, name: true },
         });
         const fbrPosFee = location?.fbrEnabled && location?.fbrNtn ? 1 : 0;
         const grandTotal = Math.max(
@@ -1013,6 +1015,7 @@ export class PosSalesService implements OnModuleInit {
               creditVouchers.length > 0 ? creditVouchers : undefined,
             fbrSynced: fbrResult.success,
             fbrError: fbrResult.error,
+            locationName: location?.name,
           },
           message:
             creditVouchers.length > 0
@@ -1036,6 +1039,14 @@ export class PosSalesService implements OnModuleInit {
           status: 'success',
         }),
       );
+
+      // Emit event for Mergn integration
+      this.eventEmitter.emit('pos.order.created', {
+        order: result.data,
+        customer: result.data.customer,
+        items: result.data.items,
+        location: { name: result.data.locationName },
+      });
 
       return result;
     } catch (error: any) {
@@ -1164,10 +1175,10 @@ export class PosSalesService implements OnModuleInit {
       >(itemRecords.map((r: any) => [r.id, r]));
 
       // Customer details if available
-      const buyerName = order.customerName || 'Guest';
-      const buyerNtn = order.customerNtn || null;
-      const buyerCnic = order.customerCnic || null;
-      const buyerPhone = order.customerPhone || null;
+      const buyerName = order.customerName || order.customer?.name || 'Guest';
+      const buyerNtn = order.customerNtn || order.customer?.ntn || null;
+      const buyerCnic = order.customerCnic || order.customer?.cnic || null;
+      const buyerPhone = order.customerPhone || order.customer?.contactNo || order.customer?.phone || null;
 
       // Map payment mode (1: Cash, 2: Card, 3: Voucher, 4: Loyalty, 5: Mixed, 6: Cheque)
       let paymentMode = 1;
