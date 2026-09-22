@@ -83,7 +83,7 @@ export class MergnService {
       const errText = await response.text();
       this.logger.error(`Mergn recordEvent failed: ${response.status} - ${errText}`);
     } else {
-      this.logger.log(`Mergn recordEvent successful for phone ${phone}`);
+      this.logger.log(`Mergn recordEvent successful (Status: ${response.status}) for phone ${phone}`);
     }
   }
 
@@ -126,7 +126,7 @@ export class MergnService {
       const errText = await response.text();
       this.logger.error(`Mergn recordBulkAttribute failed: ${response.status} - ${errText}`);
     } else {
-      this.logger.log(`Mergn recordBulkAttribute successful for phone ${phone}`);
+      this.logger.log(`Mergn recordBulkAttribute successful (Status: ${response.status}) for phone ${phone}`);
     }
   }
 }

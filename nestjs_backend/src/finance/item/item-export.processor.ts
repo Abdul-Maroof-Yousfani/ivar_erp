@@ -270,7 +270,7 @@ export class ItemExportProcessor {
             discountAmount:    item.discountAmount ?? 0,
             discountStartDate: item.discountStartDate ? new Date(item.discountStartDate) : null,
             discountEndDate:   item.discountEndDate   ? new Date(item.discountEndDate)   : null,
-            hsCode:            (item as any).hsCode?.code ?? item.hsCodeStr ?? '',
+            hsCode:            (item as any).hsCode?.hsCode ?? item.hsCodeStr ?? '',
             uom:               item.uom ?? '',
             currency:          item.currency ?? '',
             case:              item.case ?? '',
