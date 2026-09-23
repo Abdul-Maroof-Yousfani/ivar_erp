@@ -36,6 +36,18 @@ export class ItemService {
 
   async create(createItemDto: CreateItemDto) {
     try {
+      if (createItemDto.barCode) {
+        const existingBarcode = await this.prisma.item.findFirst({
+          where: { barCode: createItemDto.barCode },
+        });
+        if (existingBarcode) {
+          return {
+            status: false,
+            message: `Item with barcode ${createItemDto.barCode} already exists`,
+          };
+        }
+      }
+
       const nextId = await this.generateNextItemId();
       const data = await this.prisma.item.create({
         data: {
@@ -210,6 +222,21 @@ export class ItemService {
       const findResult = await this.prisma.item.findUnique({ where: { id } });
       if (!findResult)
         return { status: false, message: `Item with ID ${id} not found` };
+
+      if (
+        updateItemDto.barCode &&
+        updateItemDto.barCode !== findResult.barCode
+      ) {
+        const existingBarcode = await this.prisma.item.findFirst({
+          where: { barCode: updateItemDto.barCode },
+        });
+        if (existingBarcode) {
+          return {
+            status: false,
+            message: `Item with barcode ${updateItemDto.barCode} already exists`,
+          };
+        }
+      }
 
       const data = await this.prisma.item.update({
         where: { id },
