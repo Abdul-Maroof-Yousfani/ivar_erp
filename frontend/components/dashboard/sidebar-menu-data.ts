@@ -384,7 +384,7 @@ export const masterMenuData: MenuItem[] = [
     module: "HR",
     permissions: ["master.location.read", "master.location.create"],
     children: [
-      { title: "Add", href: "/master/location/add" },
+      // { title: "Add", href: "/master/location/add" },
       { title: "View", href: "/master/location/list" },
     ],
   },
