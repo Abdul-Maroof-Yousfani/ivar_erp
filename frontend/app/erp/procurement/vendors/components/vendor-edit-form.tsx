@@ -1,7 +1,6 @@
 "use client";
 
 import { updateVendor } from "@/lib/actions/procurement";
-import { getChartOfAccounts, ChartOfAccount } from "@/lib/actions/chart-of-account";
 import { useState, useEffect, startTransition, addTransitionType } from "react";
 import { useForm, SubmitHandler, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -22,15 +21,12 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Autocomplete } from "@/components/ui/autocomplete";
-import { MultiSelect } from "@/components/ui/multi-select";
 
 interface VendorEditFormProps {
     vendor: any;
-    accounts: ChartOfAccount[];
 }
 
-export function VendorEditForm({ vendor, accounts }: VendorEditFormProps) {
+export function VendorEditForm({ vendor }: VendorEditFormProps) {
     const router = useRouter();
     const [isPending, setIsPending] = useState(false);
 
@@ -50,7 +46,6 @@ export function VendorEditForm({ vendor, accounts }: VendorEditFormProps) {
             pra: vendor.praNo || "",
             ict: vendor.ictNo || "",
             brand: vendor.brand || "",
-            chartOfAccountIds: vendor.chartOfAccounts ? vendor.chartOfAccounts.map((acc: any) => acc.id) : (vendor.chartOfAccountId ? [vendor.chartOfAccountId] : []),
         },
     });
 
@@ -137,29 +132,6 @@ export function VendorEditForm({ vendor, accounts }: VendorEditFormProps) {
                             </div>
                         </div>
 
-                        <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground uppercase font-semibold">Chart of Account <span className="text-destructive">*</span></Label>
-                            <Controller
-                                control={form.control}
-                                name="chartOfAccountIds"
-                                render={({ field }) => (
-                                    <MultiSelect
-                                        options={accounts.map((acc) => ({
-                                            value: acc.id,
-                                            label: `${acc.code} - ${acc.name}`,
-                                        }))}
-                                        value={field.value}
-                                        onValueChange={field.onChange}
-                                        placeholder="Select Accounts"
-                                        searchPlaceholder="Search accounts..."
-                                    />
-                                )}
-                            />
-                            {form.formState.errors.chartOfAccountIds && (
-                                <p className="text-xs text-destructive">{form.formState.errors.chartOfAccountIds.message}</p>
-                            )}
-                        </div>
-
                         {/* Tax & Registration Details - Common for Both */}
                         <div className="space-y-6 border-t pt-6">
                             <h3 className="text-lg font-semibold">Tax & Registration Details</h3>
@@ -207,8 +179,13 @@ export function VendorEditForm({ vendor, accounts }: VendorEditFormProps) {
                                                         <SelectValue placeholder="Select Nature" />
                                                     </SelectTrigger>
                                                     <SelectContent>
+                                                        <SelectItem value="FABRIC">Fabric</SelectItem>
                                                         <SelectItem value="GOODS">Goods</SelectItem>
                                                         <SelectItem value="SERVICES">Services</SelectItem>
+                                                        <SelectItem value="ACCESSORIES">Accessories</SelectItem>
+                                                        <SelectItem value="CMT SERVICES">CMT Services</SelectItem>
+                                                        <SelectItem value="FINISHED GOODS">Finished Goods</SelectItem>
+                                                        <SelectItem value="FRAGNANCE">Fragrance</SelectItem>
                                                     </SelectContent>
                                                 </Select>
                                             )}

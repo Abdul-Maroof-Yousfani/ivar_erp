@@ -17,7 +17,7 @@ export const vendorSchema = z.object({
     ict: z.string().optional(),
 
     // Financial Linking
-    chartOfAccountIds: z.array(z.string()).min(1, "At least one Chart of Account is required"),
+    chartOfAccountIds: z.array(z.string()).optional().default([]),
 
     // Import Supplier Specific
     brand: z.string().optional(),

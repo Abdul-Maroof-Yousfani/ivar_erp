@@ -27,6 +27,11 @@ export class SupplierController {
     return this.supplierService.findAll();
   }
 
+  @Get('next-code')
+  getNextCode() {
+    return this.supplierService.getNextCode();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.supplierService.findOne(id);

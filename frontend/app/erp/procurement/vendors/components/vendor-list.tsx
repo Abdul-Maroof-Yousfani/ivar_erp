@@ -35,7 +35,20 @@ export function VendorList({ initialVendors }: VendorListProps) {
               label: "Type",
               options: [
                 { label: "Local", value: "LOCAL" },
-                { label: "Import", value: "INTERNATIONAL" },
+                { label: "Import", value: "IMPORT" },
+              ],
+            },
+            {
+              key: "nature",
+              label: "Nature",
+              options: [
+                { label: "Fabric", value: "FABRIC" },
+                { label: "Goods", value: "GOODS" },
+                { label: "Services", value: "SERVICES" },
+                { label: "Accessories", value: "ACCESSORIES" },
+                { label: "CMT Services", value: "CMT SERVICES" },
+                { label: "Finished Goods", value: "FINISHED GOODS" },
+                { label: "Fragrance", value: "FRAGNANCE" },
               ],
             },
           ]}

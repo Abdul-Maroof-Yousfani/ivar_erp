@@ -1,3 +1,14 @@
+
+
+
+
+
+
+
+
+
+
+
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEnum,
@@ -8,13 +19,13 @@ import {
   IsEmail,
   IsArray,
 } from 'class-validator';
-import { SupplierNature, SupplierType } from '@prisma/client';
+import { SupplierType } from '@prisma/client';
 
 export class CreateSupplierDto {
-  @ApiProperty()
+  @ApiPropertyOptional()
   @IsString()
-  @IsNotEmpty()
-  code: string;
+  @IsOptional()
+  code?: string;
 
   @ApiProperty()
   @IsString()
@@ -26,10 +37,10 @@ export class CreateSupplierDto {
   @IsOptional()
   type?: SupplierType;
 
-  @ApiPropertyOptional({ enum: SupplierNature })
-  @IsEnum(SupplierNature)
+  @ApiPropertyOptional({ description: 'Nature of supplier (e.g. FABRIC, GOODS, SERVICES, ACCESSORIES)' })
+  @IsString()
   @IsOptional()
-  nature?: SupplierNature;
+  nature?: string;
 
   @ApiPropertyOptional()
   @IsString()
@@ -97,9 +108,9 @@ export class CreateSupplierDto {
   @IsOptional()
   ictNo?: string;
 
-  @ApiProperty({ type: [String] })
+  @ApiPropertyOptional({ type: [String] })
   @IsArray()
   @IsString({ each: true })
-  @IsNotEmpty()
-  chartOfAccountIds: string[];
+  @IsOptional()
+  chartOfAccountIds?: string[];
 }
