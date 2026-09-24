@@ -144,9 +144,11 @@ export class InventoryService {
         },
         select: { itemId: true, quantity: true },
       });
-      stockMap = new Map(
-        inventoryItems.map((inv) => [inv.itemId, Number(inv.quantity)]),
-      );
+      const outletMap = new Map<string, number>();
+      for (const inv of inventoryItems) {
+        outletMap.set(inv.itemId, (outletMap.get(inv.itemId) || 0) + Number(inv.quantity));
+      }
+      stockMap = outletMap;
     } else if (warehouseId) {
       // Warehouse stock: use StockLedger
       const stockEntries = await this.prisma.stockLedger.groupBy({

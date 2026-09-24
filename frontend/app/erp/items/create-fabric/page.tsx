@@ -26,6 +26,8 @@ import { cn } from "@/lib/utils";
 import { getBrands } from "@/lib/actions/brand";
 import { getColors } from "@/lib/actions/color";
 import { getSegments } from "@/lib/actions/segment";
+import { getDivisions } from "@/lib/actions/division";
+import { getCategories } from "@/lib/actions/category";
 import { createItem, getNextItemId } from "@/lib/actions/items";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -40,11 +42,13 @@ import JsBarcode from "jsbarcode";
 
 // --- Validation Schema ---
 const fabricFormSchema = z.object({
-    itemType: z.literal("RAW_FABRIC"),
+    itemType: z.enum(["RAW_FABRIC"]),
     uom: z.string().min(1, "UOM is required"),
     rollSize: z.coerce.number().min(0).optional(),
     brandId: z.string().min(1, "Brand is required"),
     segmentId: z.string().optional(),
+    divisionId: z.string().optional(),
+    categoryId: z.string().optional(),
     sku: z.string().min(1, "Fabric Code / SKU is required"),
     barCode: z.string().optional(),
     isActive: z.boolean(),
@@ -54,7 +58,22 @@ const fabricFormSchema = z.object({
     unitPrice: z.coerce.number().min(0),
 });
 
-type FabricFormValues = z.infer<typeof fabricFormSchema>;
+type FabricFormValues = {
+    itemType: "RAW_FABRIC";
+    uom: string;
+    rollSize?: number;
+    brandId: string;
+    segmentId?: string;
+    divisionId?: string;
+    categoryId?: string;
+    sku: string;
+    barCode?: string;
+    isActive: boolean;
+    description?: string;
+    colorId?: string;
+    unitCost?: number;
+    unitPrice: number;
+};
 
 const STEPS = ["Fabric Details", "Review"];
 
@@ -200,10 +219,14 @@ export default function CreateProductionFabricPage() {
         brands: any[];
         colors: any[];
         segments: any[];
+        divisions: any[];
+        categories: any[];
     }>({
         brands: [],
         colors: [],
         segments: [],
+        divisions: [],
+        categories: [],
     });
 
     const [loading, setLoading] = useState(true);
@@ -217,13 +240,15 @@ export default function CreateProductionFabricPage() {
     } | null>(null);
 
     const form = useForm<FabricFormValues>({
-        resolver: zodResolver(fabricFormSchema),
+        resolver: zodResolver(fabricFormSchema) as any,
         defaultValues: {
             itemType: "RAW_FABRIC",
             uom: "Meter",
             rollSize: undefined,
             brandId: "",
             segmentId: "",
+            divisionId: "",
+            categoryId: "",
             description: "",
             sku: "",
             barCode: "",
@@ -239,10 +264,12 @@ export default function CreateProductionFabricPage() {
         const fetchMasters = async () => {
             setLoading(true);
             try {
-                const [brands, colors, segments, nextIdResp] = await Promise.all([
+                const [brands, colors, segments, divisions, categories, nextIdResp] = await Promise.all([
                     getBrands(),
                     getColors(),
                     getSegments(),
+                    getDivisions(),
+                    getCategories(),
                     getNextItemId(),
                 ]);
 
@@ -250,6 +277,8 @@ export default function CreateProductionFabricPage() {
                     brands: brands.data || [],
                     colors: colors.data || [],
                     segments: segments.data || [],
+                    divisions: divisions.data || [],
+                    categories: categories.data || [],
                 });
 
                 if (nextIdResp?.status && nextIdResp?.data?.nextId) {
@@ -279,6 +308,8 @@ export default function CreateProductionFabricPage() {
             "description",
             "isActive",
             "segmentId",
+            "divisionId",
+            "categoryId",
         ];
         const isValid = await form.trigger(fieldsToValidate);
         if (isValid) {
@@ -329,7 +360,7 @@ export default function CreateProductionFabricPage() {
                     </Link>
                 </div>
 
-                <Steps steps={STEPS} currentStep={currentStep} className="text-blue-600" />
+                <Steps steps={STEPS} currentStep={currentStep} />
 
                 <div className="mt-8">
                     {loading ? (
@@ -359,9 +390,9 @@ export default function CreateProductionFabricPage() {
                         </Card>
                     ) : (
                         <Form {...form}>
-                            <form onSubmit={form.handleSubmit(onSubmit)}>
+                            <form onSubmit={form.handleSubmit(onSubmit as any)}>
                                 <Card className="border-blue-100 shadow-xl shadow-blue-50">
-                                    <CardHeader className="bg-gradient-to-r from-blue-50/50 to-indigo-50/10 border-b border-blue-100/50">
+                                    <CardHeader className="bg-linear-to-r from-blue-50/50 to-indigo-50/10 border-b border-blue-100/50">
                                         <CardTitle className="text-xl text-blue-900">{STEPS[currentStep]}</CardTitle>
                                         <CardDescription>
                                             Enter the specifications for the new fabric item.
@@ -380,6 +411,28 @@ export default function CreateProductionFabricPage() {
                                                             label="Segment"
                                                             field={field}
                                                             options={masters.segments}
+                                                        />
+                                                    )}
+                                                />
+                                                <FormField
+                                                    control={form.control}
+                                                    name="divisionId"
+                                                    render={({ field }) => (
+                                                        <MasterSelect
+                                                            label="Division"
+                                                            field={field}
+                                                            options={masters.divisions}
+                                                        />
+                                                    )}
+                                                />
+                                                <FormField
+                                                    control={form.control}
+                                                    name="categoryId"
+                                                    render={({ field }) => (
+                                                        <MasterSelect
+                                                            label="Category"
+                                                            field={field}
+                                                            options={masters.categories}
                                                         />
                                                     )}
                                                 />
@@ -630,6 +683,22 @@ export default function CreateProductionFabricPage() {
                                                             <Label className="text-muted-foreground text-xs font-medium">Segment</Label>
                                                             <div className="font-semibold text-blue-900 mt-0.5">
                                                                 {masters.segments.find((s: any) => s.id === form.getValues("segmentId"))?.name || "N/A"}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {form.getValues("divisionId") && (
+                                                        <div className="border border-blue-50 p-4 rounded-xl bg-slate-50/50">
+                                                            <Label className="text-muted-foreground text-xs font-medium">Division</Label>
+                                                            <div className="font-semibold text-blue-900 mt-0.5">
+                                                                {masters.divisions.find((d: any) => d.id === form.getValues("divisionId"))?.name || "N/A"}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {form.getValues("categoryId") && (
+                                                        <div className="border border-blue-50 p-4 rounded-xl bg-slate-50/50">
+                                                            <Label className="text-muted-foreground text-xs font-medium">Category</Label>
+                                                            <div className="font-semibold text-blue-900 mt-0.5">
+                                                                {masters.categories.find((c: any) => c.id === form.getValues("categoryId"))?.name || "N/A"}
                                                             </div>
                                                         </div>
                                                     )}
