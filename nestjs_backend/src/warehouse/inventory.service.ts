@@ -159,7 +159,7 @@ export class InventoryService {
         _sum: { qty: true },
       });
       stockMap = new Map(
-        stockEntries.map((a) => [a.itemId, Number(a._sum.qty) || 0]),
+        stockEntries.map((a) => [a.itemId, Math.max(0, Number(a._sum.qty) || 0)]),
       );
     } else {
       // Global search (no warehouse/location filter) — sum all available inventory
