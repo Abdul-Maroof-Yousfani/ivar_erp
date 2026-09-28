@@ -684,14 +684,14 @@ export class PosSalesController {
 
     // ─── Retry FBR Sync ──────────────────────────────────────────────
     @Post('orders/:id/retry-fbr')
-    @Permissions('pos.orders.create')
+    @Permissions('pos.sale.create', 'pos.sales.history.view')
     @ApiOperation({ summary: 'Retry FBR fiscalization for a sales order' })
     async retryFbr(@Param('id') id: string) {
         return this.posSalesService.retryFbrSync(id);
     }
 
     @Get('fbr/unsynced')
-    @Permissions('pos.orders.create')
+    @Permissions('pos.sale.create', 'pos.sales.history.view')
     @ApiOperation({ summary: 'Get all sales orders not submitted to FBR' })
     async getUnsyncedFbrInvoices(
         @Query('locationId') locationId?: string,
@@ -708,7 +708,7 @@ export class PosSalesController {
     }
 
     @Post('fbr/sync-unsynced')
-    @Permissions('pos.orders.create')
+    @Permissions('pos.sale.create', 'pos.sales.history.view')
     @ApiOperation({ summary: 'Bulk sync all sales orders not submitted to FBR' })
     async syncUnsyncedFbrInvoices(
         @Body() body?: { locationId?: string; limit?: number; startDate?: string; endDate?: string },

@@ -98,7 +98,7 @@ export class FbrService {
                 method: 'POST',
                 headers,
                 body: JSON.stringify(payload),
-                signal: AbortSignal.timeout(10000),
+                signal: AbortSignal.timeout(20000),
             };
 
             if (isHttps && (url.includes('esp.fbr.gov.pk') || url.includes('fbr.gov.pk'))) {

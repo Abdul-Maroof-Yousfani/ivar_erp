@@ -69,7 +69,8 @@ interface LoadedOrder { id: string; orderNumber: string; grandTotal: number; cre
 
 export default function ReturnsPage() {
     const router = useRouter();
-    const { hasPermission } = useAuth();
+    const { hasPermission, user } = useAuth();
+    const currentLocationId = user?.locationId || undefined;
     const canReturn = hasPermission('pos.return.create');
     const canExchange = hasPermission('pos.exchange.create');
     const canClaim = hasPermission('pos.claim.create');
@@ -308,6 +309,7 @@ export default function ReturnsPage() {
                         body: {
                             items: selectedLines.map(l => ({ orderItemId: l.orderItemId, itemId: l.itemId, quantity: l.returnQty })),
                             reason: notes || undefined,
+                            returnLocationId: currentLocationId,
                         },
                     });
                 } else {
@@ -322,6 +324,7 @@ export default function ReturnsPage() {
                             body: {
                                 items: orderLines.map(l => ({ orderItemId: l.orderItemId, itemId: l.itemId, quantity: l.returnQty })),
                                 reason: notes || undefined,
+                                returnLocationId: currentLocationId,
                             },
                         });
                         if (r.ok && r.data?.status) { totalRefund += r.data.refundAmount ?? 0; }
@@ -345,6 +348,7 @@ export default function ReturnsPage() {
                                     : l.unitPrice,
                             })),
                             reason: notes || undefined,
+                            returnLocationId: currentLocationId,
                         },
                     });
                 } else {
@@ -359,6 +363,7 @@ export default function ReturnsPage() {
                                     : l.unitPrice,
                             })),
                             reason: notes || undefined,
+                            returnLocationId: currentLocationId,
                         },
                     });
                 }
@@ -377,6 +382,7 @@ export default function ReturnsPage() {
                             items,
                             reason: notes || undefined,
                             managerUserId,
+                            returnLocationId: currentLocationId,
                         },
                     });
                 } else {
@@ -396,6 +402,7 @@ export default function ReturnsPage() {
                                 items,
                                 reason: notes || undefined,
                                 managerUserId,
+                                returnLocationId: currentLocationId,
                             },
                         });
                         if (r.ok && r.data?.status) { totalRefund += refundAmount; }
