@@ -117,6 +117,7 @@ import { TaskModule } from './task/task.module';
 import { TaskReportsModule } from './task-reports/task-reports.module';
 import { PayeeModule } from './master/payee/payee.module';
 import { FabricVendorTrackerModule } from './fabric-vendor-tracker/fabric-vendor-tracker.module';
+import { CourierifyModule } from './courierify/courierify.module';
 
 @Module({
   imports: [
@@ -258,6 +259,7 @@ import { FabricVendorTrackerModule } from './fabric-vendor-tracker/fabric-vendor
     TaskReportsModule,
     PayeeModule,
     FabricVendorTrackerModule,
+    CourierifyModule,
   ],
   controllers: [AppController],
   providers: [AppService],
