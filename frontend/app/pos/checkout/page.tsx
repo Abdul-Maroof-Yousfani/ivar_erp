@@ -1392,7 +1392,7 @@ export default function CheckoutPage() {
                         cashierName: cashiers.find((c: any) => c.userId === selectedCashierId)?.name || "",
                         customer: selectedCustomer || undefined,
                         customerName: selectedCustomer?.name || undefined,
-                        customerPhone: selectedCustomer?.phone || undefined,
+                        customerPhone: (selectedCustomer as any)?.phone || undefined,
                     }}
                     cartItems={cartItems}
                     tenders={tenders.length > 0 ? tenders : [{ method: "cash", amount: grandTotal }]}
@@ -1429,7 +1429,7 @@ export default function CheckoutPage() {
                         isGiftReceipt: false,
                         customer: completedOrder.customer || selectedCustomer || undefined,
                         customerName: completedOrder.customer?.name || selectedCustomer?.name || undefined,
-                        customerPhone: completedOrder.customer?.phone || selectedCustomer?.phone || undefined,
+                        customerPhone: (completedOrder.customer as any)?.phone || (selectedCustomer as any)?.phone || undefined,
                     }}
                     cartItems={cartItems}
                     tenders={tenders}
@@ -1459,7 +1459,7 @@ export default function CheckoutPage() {
                         isGiftReceipt: true,
                         customer: completedOrder.customer || selectedCustomer || undefined,
                         customerName: completedOrder.customer?.name || selectedCustomer?.name || undefined,
-                        customerPhone: completedOrder.customer?.phone || selectedCustomer?.phone || undefined,
+                        customerPhone: (completedOrder.customer as any)?.phone || (selectedCustomer as any)?.phone || undefined,
                     }}
                     cartItems={cartItems}
                     tenders={tenders}

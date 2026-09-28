@@ -569,6 +569,8 @@ export class PosSessionService {
    * and fetches the cashier user profile from the master database.
    */
   async getReconciliationDetails(sessionId: string, date?: string, skipJvRegen = false) {
+    const allLocations = await this.prisma.location.findMany();
+    const locationMap = new Map(allLocations.map((l) => [l.id, l.code || l.name]));
     const session = await this.prisma.posSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -713,6 +715,8 @@ export class PosSessionService {
       type: string;
       amount: number;
       from: string;
+      createdBranch?: string;
+      redeemedBranch?: string;
     }> = [];
 
     // Receivables On Credit
@@ -901,23 +905,31 @@ export class PosSessionService {
       type: string;
       amount: number;
       from: string;
+      createdBranch?: string;
+      redeemedBranch?: string;
     }> = [];
     const creditVouchers: Array<{
       type: string;
       amount: number;
       from: string;
       to: string;
+      createdBranch?: string;
+      redeemedBranch?: string;
     }> = [];
     const giftVouchers: Array<{
       type: string;
       amount: number;
       from: string;
       to: string;
+      createdBranch?: string;
+      redeemedBranch?: string;
     }> = [];
     const refundVouchers: Array<{
       type: string;
       amount: number;
       from: string;
+      createdBranch?: string;
+      redeemedBranch?: string;
     }> = [];
 
     // Track how much of cash/card was for gift vouchers issued
@@ -1046,6 +1058,8 @@ export class PosSessionService {
           amount: faceValue,
           from: fromDetail,
           to: v.code,
+          createdBranch: locationMap.get(v.issuedByLocationId || '') || '-',
+          redeemedBranch: '-',
         });
       }
     }
@@ -1254,7 +1268,7 @@ export class PosSessionService {
         : `${formatDate(startRangeStr)} - ${formatDate(endRangeStr)}`;
 
     return {
-      companyName: 'Speed (Private) Limited',
+      companyName: 'IVAR',
       locationName: session.pos.location?.name ?? 'Nike-Dolmen Clifton',
       reportTitle: 'Sales Reconciliation',
       dateRange: dateRange,
@@ -1331,6 +1345,8 @@ export class PosSessionService {
 
   async getDaywiseReconciliation(locationId: string, date: string) {
     const locIds = locationId ? locationId.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    const allLocations = await this.prisma.location.findMany();
+    const locationMap = new Map(allLocations.map((l) => [l.id, l.code || l.name]));
 
     const computeSingleReconciliation = async (targetLocWhere: any, displayName: string, targetLocId?: string) => {
       const startOfDay = new Date(date + 'T00:00:00');
@@ -1398,6 +1414,8 @@ export class PosSessionService {
         type: string;
         amount: number;
         from: string;
+        createdBranch?: string;
+        redeemedBranch?: string;
       }> = [];
 
       let totalCreditAmount = 0;
@@ -1549,6 +1567,8 @@ export class PosSessionService {
               type,
               amount: amountToUse,
               from: v.code,
+              createdBranch: locationMap.get(v.issuedByLocationId || '') || '-',
+              redeemedBranch: locationMap.get(order.locationId || '') || '-',
             });
           }
         }
@@ -1578,23 +1598,31 @@ export class PosSessionService {
         type: string;
         amount: number;
         from: string;
+        createdBranch?: string;
+        redeemedBranch?: string;
       }> = [];
       const creditVouchers: Array<{
         type: string;
         amount: number;
         from: string;
         to: string;
+        createdBranch?: string;
+        redeemedBranch?: string;
       }> = [];
       const giftVouchers: Array<{
         type: string;
         amount: number;
         from: string;
         to: string;
+        createdBranch?: string;
+        redeemedBranch?: string;
       }> = [];
       const refundVouchers: Array<{
         type: string;
         amount: number;
         from: string;
+        createdBranch?: string;
+        redeemedBranch?: string;
       }> = [];
 
       let cashGiftVouchersAmt = 0;
@@ -1618,6 +1646,8 @@ export class PosSessionService {
             type,
             amount: faceValue,
             from: v.code,
+            createdBranch: locationMap.get(v.issuedByLocationId || '') || '-',
+            redeemedBranch: '-',
           });
         } else if (v.voucherType === 'CREDIT') {
           let fromCode = '-';
@@ -1630,12 +1660,16 @@ export class PosSessionService {
             amount: faceValue,
             from: fromCode,
             to: v.code,
+            createdBranch: locationMap.get(v.issuedByLocationId || '') || '-',
+            redeemedBranch: '-',
           });
         } else if (v.voucherType === 'REFUND') {
           refundVouchers.push({
             type: 'Refund Vouchers',
             amount: faceValue,
             from: v.code,
+            createdBranch: locationMap.get(v.issuedByLocationId || '') || '-',
+            redeemedBranch: '-',
           });
         } else if (v.voucherType === 'GIFT' || v.voucherType === 'CORPORATE') {
           const type =
@@ -1717,6 +1751,8 @@ export class PosSessionService {
             amount: faceValue,
             from: fromDetail,
             to: v.code,
+            createdBranch: locationMap.get(v.issuedByLocationId || '') || '-',
+            redeemedBranch: '-',
           });
         }
       }
@@ -1803,7 +1839,7 @@ export class PosSessionService {
       };
 
       return {
-        companyName: 'Speed (Private) Limited',
+        companyName: 'IVAR',
         locationId: targetLocId || locationId,
         locationName: displayName,
         reportTitle: 'Sales Reconciliation',

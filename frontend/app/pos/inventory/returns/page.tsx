@@ -20,14 +20,25 @@ import {
     Barcode,
     X,
     MapPin,
-    ArrowRightLeft
+    ArrowRightLeft,
+    Printer
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { COMPANY_NAME } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/providers/auth-provider";
-import { getReturnTransferRequests, acceptTransferRequest, createReturnTransferRequest, updateTransferRequestStatus } from "@/lib/actions/transfer-request";
+import { getReturnTransferRequests, acceptTransferRequest, createReturnTransferRequest, updateTransferRequestStatus, getOutboundTransferRequests, createOutletToOutletTransferRequest } from "@/lib/actions/transfer-request";
+import { getLocations } from "@/lib/actions/location";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
@@ -97,6 +108,158 @@ export default function ReturnRequestsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isAccepting, setIsAccepting] = useState<string | null>(null);
     const [isRejecting, setIsRejecting] = useState<string | null>(null);
+    const [printingId, setPrintingId] = useState<string | null>(null);
+    const [rejectModalOpen, setRejectModalOpen] = useState<string | null>(null);
+
+    const handlePrint = (request: any) => {
+        setPrintingId(request.id);
+        const win = window.open("", "_blank");
+        if (!win) {
+            toast.error("Allow popups to print");
+            setPrintingId(null);
+            return;
+        }
+
+        const dateStr = format(new Date(request.createdAt), "dd MMM yyyy HH:mm");
+        const companyName = COMPANY_NAME;
+        const sourceLoc = user?.terminal?.location?.name || request.fromLocation?.name || "This Location";
+        const destLoc = request.toWarehouse?.name || request.toLocation?.name || "Main Warehouse";
+        const refNo = request.requestNo || "N/A";
+        const notes = request.notes || "";
+
+        // Status styling and text
+        let statusText = "PENDING APPROVAL";
+        let statusClass = "status-pending";
+        if (request.status === "APPROVED" || request.status === "COMPLETED") {
+            statusText = "APPROVED / RETURNED";
+            statusClass = "status-approved";
+        } else if (request.status === "REJECTED") {
+            statusText = "REJECTED";
+            statusClass = "status-rejected";
+        }
+
+        win.document.write(`
+            <html><head><title>Return Request - ${refNo}</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { font-family: 'Segoe UI', Arial, sans-serif; color: #333; line-height: 1.4; padding: 40px; }
+                .header-container { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #ea580c; padding-bottom: 16px; margin-bottom: 20px; }
+                .company-name { font-size: 24px; font-weight: 800; color: #9a3412; letter-spacing: 1px; }
+                .document-title { font-size: 14px; font-weight: 600; color: #4b5563; text-transform: uppercase; margin-top: 4px; }
+                .status-badge { padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; border: 1px solid; display: inline-block; }
+                .status-pending { background-color: #fef3c7; color: #d97706; border-color: #f59e0b; }
+                .status-approved { background-color: #dcfce7; color: #15803d; border-color: #22c55e; }
+                .status-rejected { background-color: #fee2e2; color: #b91c1c; border-color: #ef4444; }
+                
+                .meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 30px; background-color: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; }
+                .meta-item { display: flex; flex-direction: column; }
+                .meta-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px; }
+                .meta-value { font-size: 13px; font-weight: 600; color: #1e293b; }
+                
+                table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                th { background-color: #f1f5f9; color: #475569; font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 10px 12px; border-bottom: 2px solid #cbd5e1; text-align: left; }
+                td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; color: #334155; }
+                .text-right { text-align: right; }
+                .font-bold { font-weight: 700; }
+                
+                .notes-section { background-color: #f8fafc; border-left: 4px solid #ea580c; padding: 12px 16px; margin-bottom: 40px; border-radius: 0 8px 8px 0; }
+                .notes-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; margin-bottom: 4px; }
+                .notes-content { font-size: 12px; color: #334155; }
+                
+                .signature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; margin-top: 60px; }
+                .signature-box { border-top: 1px solid #94a3b8; text-align: center; padding-top: 8px; font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; }
+                
+                @media print {
+                    body { padding: 0; }
+                    .meta-grid { background-color: #fff !important; border: 1px solid #cbd5e1; }
+                    th { background-color: #e2e8f0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                }
+            </style></head><body>
+                <div class="header-container">
+                    <div>
+                        <div class="company-name">${companyName}</div>
+                        <div class="document-title">RETURN / TRANSFER SLIP</div>
+                    </div>
+                    <div>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
+                    </div>
+                </div>
+                
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Reference No</span>
+                        <span class="meta-value">${refNo}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Request Date</span>
+                        <span class="meta-value">${dateStr}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Return From</span>
+                        <span class="meta-value">${sourceLoc}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Destination</span>
+                        <span class="meta-value">${destLoc}</span>
+                    </div>
+                </div>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 60px;">S.No</th>
+                            <th>SKU Code</th>
+                            <th>Item Description</th>
+                            <th>Size</th>
+                            <th>Color</th>
+                            <th class="text-right" style="width: 100px;">Quantity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${request.items.map((item: any, idx: number) => `
+                            <tr>
+                                <td>${idx + 1}</td>
+                                <td class="font-bold">${item.item?.sku || "—"}</td>
+                                <td>${item.item?.description || "Item"}</td>
+                                <td>${item.item?.size?.name || item.item?.size || "—"}</td>
+                                <td>${item.item?.color?.name || item.item?.color || "—"}</td>
+                                <td class="text-right font-bold">${Number(item.quantity)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                
+                ${notes ? `
+                    <div class="notes-section">
+                        <div class="notes-title">Return Reason / Notes</div>
+                        <div class="notes-content">${notes}</div>
+                    </div>
+                ` : ''}
+                
+                <div class="signature-grid">
+                    <div class="signature-box">Prepared By</div>
+                    <div class="signature-box">Authorized By</div>
+                    <div class="signature-box">Received By</div>
+                </div>
+            </body></html>
+        `);
+        win.document.close();
+        win.focus();
+        // Wait for document to render, then print
+        setTimeout(() => {
+            win.print();
+            // Close after print dialog is dismissed
+            win.onafterprint = () => {
+                win.close();
+                setPrintingId(null);
+            };
+            // Fallback: close after 60s if onafterprint never fires
+            setTimeout(() => {
+                if (!win.closed) win.close();
+                setPrintingId(null);
+            }, 60000);
+        }, 500);
+    };
 
     // Create Mode States
     const [isCreating, setIsCreating] = useState(false);
@@ -489,10 +652,10 @@ export default function ReturnRequestsPage() {
     const handleAccept = async (requestId: string) => {
         setIsAccepting(requestId);
         try {
-            const res = await acceptTransferRequest(requestId, user?.id);
+            const res = await updateTransferRequestStatus(requestId, 'APPROVED');
             if (res.status) {
-                toast.success("Return request approved! Items returned to warehouse.");
-                setRequests(prev => prev.filter(r => r.id !== requestId));
+                toast.success("Return request approved and dispatched to warehouse!");
+                setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'APPROVED' } : r));
             } else {
                 toast.error(res.message || "Failed to approve return");
             }
@@ -505,15 +668,18 @@ export default function ReturnRequestsPage() {
     };
 
     const handleReject = async (requestId: string) => {
-        if (!confirm("Are you sure you want to cancel / reject this return request?")) {
-            return;
-        }
-        setIsRejecting(requestId);
+        setRejectModalOpen(requestId);
+    };
+
+    const confirmReject = async () => {
+        if (!rejectModalOpen) return;
+        setIsRejecting(rejectModalOpen);
         try {
-            const res = await updateTransferRequestStatus(requestId, 'REJECTED');
+            const res = await updateTransferRequestStatus(rejectModalOpen, 'REJECTED');
             if (res.status) {
                 toast.success("Return request cancelled/rejected.");
-                setRequests(prev => prev.filter(r => r.id !== requestId));
+                setRequests(prev => prev.filter(r => r.id !== rejectModalOpen));
+                setRejectModalOpen(null);
             } else {
                 toast.error(res.message || "Failed to reject return request");
             }
@@ -1093,36 +1259,43 @@ export default function ReturnRequestsPage() {
                                             </div>
 
                                             <div className="w-full md:w-auto flex flex-col gap-2 flex-none">
-                                                <Button
-                                                    className="w-full md:w-44 h-14 text-lg font-bold gap-2 shadow-lg shadow-orange-100 dark:shadow-none bg-orange-600 hover:bg-orange-700 text-white"
-                                                    disabled={isAccepting === request.id || isRejecting === request.id || !hasPermission('pos.inventory.returns.approve')}
-                                                    onClick={() => handleAccept(request.id)}
-                                                >
-                                                    {isAccepting === request.id ? (
-                                                        <RefreshCcw className="h-5 w-5 animate-spin" />
-                                                    ) : (
-                                                        <CheckCircle2 className="h-5 w-5" />
-                                                    )}
-                                                    {isAccepting === request.id ? "Approving..." : "Approve Return"}
-                                                </Button>
+                                                {request.status === 'PENDING_CHECKER' && (
+                                                    <Button
+                                                        className="w-full md:w-44 h-14 text-lg font-bold gap-2 shadow-lg shadow-orange-100 dark:shadow-none bg-orange-600 hover:bg-orange-700 text-white"
+                                                        disabled={isAccepting === request.id || isRejecting === request.id || !hasPermission('pos.inventory.returns.approve')}
+                                                        onClick={() => handleAccept(request.id)}
+                                                    >
+                                                        {isAccepting === request.id ? (
+                                                            <RefreshCcw className="h-5 w-5 animate-spin" />
+                                                        ) : (
+                                                            <CheckCircle2 className="h-5 w-5" />
+                                                        )}
+                                                        {isAccepting === request.id ? "Approving..." : "Approve Return"}
+                                                    </Button>
+                                                )}
                                                 <div className="flex gap-2">
+                                                    {request.status === 'PENDING_CHECKER' && (
+                                                        <Button
+                                                            variant="outline"
+                                                            className="flex-1 h-10 font-semibold text-red-600 dark:text-red-400 border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-950/20"
+                                                            disabled={isRejecting === request.id || isAccepting === request.id}
+                                                            onClick={() => handleReject(request.id)}
+                                                        >
+                                                            {isRejecting === request.id ? (
+                                                                <RefreshCcw className="h-4 w-4 animate-spin mr-1" />
+                                                            ) : (
+                                                                <X className="h-4 w-4 mr-1" />
+                                                            )}
+                                                            Reject
+                                                        </Button>
+                                                    )}
                                                     <Button
                                                         variant="outline"
-                                                        className="flex-1 h-10 font-semibold text-red-600 dark:text-red-400 border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-950/20"
-                                                        disabled={isRejecting === request.id || isAccepting === request.id}
-                                                        onClick={() => handleReject(request.id)}
+                                                        className="flex-1 h-10 font-semibold text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-900 hover:bg-orange-50 dark:hover:bg-orange-950/20"
+                                                        disabled={printingId === request.id}
+                                                        onClick={() => handlePrint(request)}
                                                     >
-                                                        {isRejecting === request.id ? (
-                                                            <RefreshCcw className="h-4 w-4 animate-spin mr-1" />
-                                                        ) : (
-                                                            <X className="h-4 w-4 mr-1" />
-                                                        )}
-                                                        Reject
-                                                    </Button>
-                                                    <Button variant="outline" className="flex-1 h-10 font-semibold text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-900 hover:bg-orange-50 dark:hover:bg-orange-950/20" asChild>
-                                                        <Link href={`/erp/inventory/transactions/return-transfer/slip/${request.id}`} target="_blank">
-                                                            <FileText className="h-4 w-4 mr-1" /> Slip
-                                                        </Link>
+                                                        <Printer className="h-4 w-4 mr-1" /> Slip
                                                     </Button>
                                                 </div>
                                             </div>
@@ -1134,6 +1307,27 @@ export default function ReturnRequestsPage() {
                     )}
                 </div>
             </main>
+
+            {/* Reject Confirmation Dialog */}
+            <Dialog open={!!rejectModalOpen} onOpenChange={(open) => !open && setRejectModalOpen(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Reject Return Request</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to cancel / reject this return request? This action cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="mt-4 gap-2 sm:gap-0">
+                        <Button variant="outline" onClick={() => setRejectModalOpen(null)} disabled={!!isRejecting}>
+                            Cancel
+                        </Button>
+                        <Button variant="destructive" onClick={confirmReject} disabled={!!isRejecting}>
+                            {isRejecting ? <RefreshCcw className="h-4 w-4 animate-spin mr-2" /> : null}
+                            Reject Request
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
