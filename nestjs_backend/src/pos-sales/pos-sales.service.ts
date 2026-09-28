@@ -116,11 +116,39 @@ export class PosSalesService implements OnModuleInit {
       }
     }
 
+    if (fieldName === 'returnNumber') {
+      const lastPosReturn = await prismaClient.posReturn.findFirst({
+        where: {
+          locationId,
+          createdAt: { gte: fiscalYearStartDate },
+          returnNumber: { startsWith: matchPrefix },
+        },
+        orderBy: { returnNumber: 'desc' },
+        select: { returnNumber: true },
+      });
+      if (lastPosReturn?.returnNumber) {
+        const parts = lastPosReturn.returnNumber.split('-');
+        const lastPart = parts[parts.length - 1];
+        if (/^\d+$/.test(lastPart)) {
+          const prSeq = parseInt(lastPart, 10) + 1;
+          if (prSeq > seq) {
+            seq = prSeq;
+          }
+        }
+      }
+    }
+
     let nextNumber = `${matchPrefix}${String(seq).padStart(5, '0')}`;
-    let exists = await prismaClient.salesOrder.findUnique({
+    let exists: any = await prismaClient.salesOrder.findUnique({
       where: { [fieldName]: nextNumber } as any,
       select: { id: true },
     });
+    if (!exists && fieldName === 'returnNumber') {
+      exists = await prismaClient.posReturn.findUnique({
+        where: { returnNumber: nextNumber },
+        select: { id: true },
+      });
+    }
 
     while (exists) {
       seq++;
@@ -129,6 +157,12 @@ export class PosSalesService implements OnModuleInit {
         where: { [fieldName]: nextNumber } as any,
         select: { id: true },
       });
+      if (!exists && fieldName === 'returnNumber') {
+        exists = await prismaClient.posReturn.findUnique({
+          where: { returnNumber: nextNumber },
+          select: { id: true },
+        });
+      }
     }
 
     return nextNumber;
@@ -991,20 +1025,6 @@ export class PosSalesService implements OnModuleInit {
           );
         }
 
-        // ── FBR Sync (Attempt once — non-blocking if FBR fails) ──
-        const fbrResult = await this.syncWithFbr(order, itemsData, tx);
-        if (fbrResult.fbrInvoiceNumber) {
-          order.fbrInvoiceNumber = fbrResult.fbrInvoiceNumber;
-          order.fbrQrCode = fbrResult.fbrQrCode;
-          order.fbrStatus = fbrResult.fbrStatus;
-        } else if (fbrResult.fbrStatus === 'FAILED') {
-          order.fbrStatus = 'FAILED';
-          await tx.salesOrder.update({
-            where: { id: order.id },
-            data: { fbrStatus: 'FAILED' },
-          });
-        }
-
         return {
           status: true,
           data: {
@@ -1013,8 +1033,7 @@ export class PosSalesService implements OnModuleInit {
             changeAmount,
             creditVouchers:
               creditVouchers.length > 0 ? creditVouchers : undefined,
-            fbrSynced: fbrResult.success,
-            fbrError: fbrResult.error,
+            fbrSynced: false,
             locationName: location?.name,
           },
           message:
@@ -1022,7 +1041,34 @@ export class PosSalesService implements OnModuleInit {
               ? `Order ${orderNumber} created successfully. Credit voucher(s) issued: ${creditVouchers.map((v) => v.code).join(', ')}`
               : `Order ${orderNumber} created successfully`,
         };
+      }, {
+        maxWait: 10000,
+        timeout: 30000,
       });
+
+      // ── FBR Sync (Attempt once outside transaction — non-blocking so slow FBR does not fail the sale) ──
+      try {
+        const fbrResult = await this.syncWithFbr(result.data, itemsData);
+        if (fbrResult.fbrInvoiceNumber) {
+          result.data.fbrInvoiceNumber = fbrResult.fbrInvoiceNumber;
+          result.data.fbrQrCode = fbrResult.fbrQrCode;
+          result.data.fbrStatus = fbrResult.fbrStatus;
+        } else if (fbrResult.fbrStatus === 'FAILED') {
+          result.data.fbrStatus = 'FAILED';
+          await this.prisma.salesOrder.update({
+            where: { id: result.data.id },
+            data: { fbrStatus: 'FAILED' },
+          });
+        }
+        result.data.fbrSynced = fbrResult.success;
+        result.data.fbrError = fbrResult.error;
+      } catch (fbrErr: any) {
+        this.logger.error(
+          `[FBR Sync] Order #${result.data?.orderNumber} post-transaction FBR sync error: ${fbrErr?.message}`,
+        );
+        result.data.fbrSynced = false;
+        result.data.fbrError = fbrErr?.message;
+      }
 
       runInBackground(
         'Create POS Order',
@@ -3512,14 +3558,11 @@ export class PosSalesService implements OnModuleInit {
         // Determine effective location for return (where stock goes back)
         const effectiveLocationId = returnLocationId || order.locationId;
 
-        // Generate sequential return number if not set
-        let returnNumber = (order as any).returnNumber;
-        if (!returnNumber) {
-          returnNumber = await this.generateReturnNumber(
-            effectiveLocationId || '',
-            tx,
-          );
-        }
+        // Generate sequential return number
+        const returnNumber = await this.generateReturnNumber(
+          effectiveLocationId || '',
+          tx,
+        );
 
         // ── Fetch already-returned quantities BEFORE creating new entries ──
         const existingReturnEntries = await tx.stockLedger.findMany({
@@ -3637,7 +3680,7 @@ export class PosSalesService implements OnModuleInit {
         const returnItemIds = items.map((i) => i.itemId);
         const campaignDiscounts = await this.getActiveCampaignDiscounts(
           returnItemIds,
-          order.locationId,
+          effectiveLocationId || order.locationId,
           tx,
         );
 
@@ -4052,6 +4095,9 @@ export class PosSalesService implements OnModuleInit {
             ? `Return processed (${newStatus}), inventory restored, and exchange voucher ${exchangeVoucher.code} issued for Rs.${Math.round(totalRefundAmount * 100) / 100}`
             : `Return processed (${newStatus}) and inventory restored`,
         };
+      }, {
+        maxWait: 10000,
+        timeout: 30000,
       });
 
       if (result.status) {
@@ -4683,13 +4729,10 @@ export class PosSalesService implements OnModuleInit {
         );
 
         // ── Sequential Return Number for exchange return hierarchy ──
-        let returnNumber = (order as any).returnNumber;
-        if (!returnNumber) {
-          returnNumber = await this.generateReturnNumber(
-            effectiveLocationId || '',
-            tx,
-          );
-        }
+        const returnNumber = await this.generateReturnNumber(
+          effectiveLocationId || '',
+          tx,
+        );
 
         // ── Auto-create STN (TransferRequest) if exchange is at a different outlet ──
         let crossLocationStn: any = null;
@@ -5091,6 +5134,9 @@ export class PosSalesService implements OnModuleInit {
           exchangeLocationName,
           orderNumber: order.orderNumber,
         };
+      }, {
+        maxWait: 10000,
+        timeout: 30000,
       });
 
       if (
@@ -5200,14 +5246,11 @@ export class PosSalesService implements OnModuleInit {
 
         const effectiveLocationId = order.locationId;
 
-        // Generate sequential refund number if not set
-        let refundNumber = (order as any).refundNumber;
-        if (!refundNumber) {
-          refundNumber = await this.generateRefundNumber(
-            effectiveLocationId || '',
-            tx,
-          );
-        }
+        // Generate sequential refund number
+        const refundNumber = await this.generateRefundNumber(
+          effectiveLocationId || '',
+          tx,
+        );
 
         // Fetch ALREADY-RETURNED quantities from stock ledger (to determine status later)
         const previousReturns = await tx.stockLedger.findMany({
@@ -5811,7 +5854,7 @@ export class PosSalesService implements OnModuleInit {
   // ─── Resolve active campaign discounts scoped to location or global ───
   private async getActiveCampaignDiscounts(
     itemIds: string[],
-    locationId: string,
+    locationId?: string | null,
     tx?: Prisma.TransactionClient,
   ): Promise<
     Map<
@@ -5885,9 +5928,11 @@ export class PosSalesService implements OnModuleInit {
       if (!itemsForThisItem.length) continue;
 
       // 1. Check for location-specific campaign
-      const locationSpecific = itemsForThisItem.find((ci) =>
-        ci.campaign.locations.some((l) => l.locationId === locationId),
-      );
+      const locationSpecific = locationId
+        ? itemsForThisItem.find((ci) =>
+            ci.campaign.locations.some((l) => l.locationId === locationId),
+          )
+        : null;
 
       // 2. Check for global campaign (no location restrictions)
       const globalCampaign = itemsForThisItem.find(
