@@ -385,6 +385,7 @@ export class TransferRequestService {
               'PENDING',
               'PENDING_CHECKER',
               'PENDING_AUTHORIZER',
+              'APPROVED',
               'SOURCE_APPROVED',
               'PARTIAL_RECEIVED',
               'IN_TRANSIT',
@@ -504,18 +505,30 @@ export class TransferRequestService {
     return Promise.all(requests.map((req) => this.enrichRequest(req)));
   }
 
-  async getOutboundRequests(locationId: string) {
+  async getOutboundRequests(locationId: string, statusType?: string) {
+    const isHistory = statusType?.toUpperCase() === 'HISTORY';
+    
+    let whereClause: any = {
+      fromLocationId: locationId,
+      transferType: 'OUTLET_TO_OUTLET',
+    };
+
+    if (isHistory) {
+      whereClause.OR = [
+        { status: { in: ['COMPLETED', 'REJECTED', 'SOURCE_APPROVED', 'PARTIAL_RECEIVED', 'IN_TRANSIT'] } },
+        { sourceApprovedById: { not: null } }
+      ];
+    } else {
+      whereClause.status = {
+        in: ['PENDING', 'APPROVED', 'PENDING_CHECKER', 'PENDING_AUTHORIZER'],
+      };
+      whereClause.requiresSourceApproval = true;
+      whereClause.sourceApprovedById = null;
+    }
+
     // Get outlet-to-outlet requests where this location is the source
     const requests = await this.prisma.transferRequest.findMany({
-      where: {
-        fromLocationId: locationId,
-        transferType: 'OUTLET_TO_OUTLET',
-        status: {
-          in: ['PENDING', 'APPROVED', 'PENDING_CHECKER', 'PENDING_AUTHORIZER'],
-        },
-        requiresSourceApproval: true,
-        sourceApprovedById: null,
-      },
+      where: whereClause,
       include: {
         items: {
           include: {
@@ -538,14 +551,23 @@ export class TransferRequestService {
     return Promise.all(requests.map((req) => this.enrichRequest(req)));
   }
 
-  async getInboundRequests(locationId: string) {
+  async getInboundRequests(locationId: string, statusType?: string) {
+    const isHistory = statusType?.toUpperCase() === 'HISTORY';
+    
+    let whereClause: any = {
+      toLocationId: locationId,
+      transferType: 'OUTLET_TO_OUTLET',
+    };
+
+    if (isHistory) {
+      whereClause.status = { in: ['COMPLETED', 'PARTIAL_RECEIVED', 'REJECTED'] };
+    } else {
+      whereClause.status = { in: ['SOURCE_APPROVED', 'IN_TRANSIT'] };
+    }
+
     // Get outlet-to-outlet requests where this location is the destination
     const requests = await this.prisma.transferRequest.findMany({
-      where: {
-        toLocationId: locationId,
-        transferType: 'OUTLET_TO_OUTLET',
-        status: 'SOURCE_APPROVED', // Only show after source approval
-      },
+      where: whereClause,
       include: {
         items: {
           include: {
@@ -655,7 +677,13 @@ export class TransferRequestService {
 
       // Enforce hierarchical approvals for Maker-Checker-Authorizer
       if (request.status === 'PENDING_CHECKER') {
-        if (status !== 'PENDING_AUTHORIZER' && status !== 'REJECTED') {
+        const isBypassAllowed = request.transferType === 'OUTLET_TO_WAREHOUSE' && (status === 'APPROVED' || status === 'PENDING');
+
+        if (
+          status !== 'PENDING_AUTHORIZER' &&
+          status !== 'REJECTED' &&
+          !isBypassAllowed
+        ) {
           throw new BadRequestException(
             `Invalid status transition from PENDING_CHECKER to ${status}.`,
           );
@@ -672,6 +700,13 @@ export class TransferRequestService {
 
         updateData.checkedById = ctx?.userId || null;
         updateData.checkedAt = new Date();
+
+        // If directly approving/pending, also set authorized
+        if (isBypassAllowed) {
+          updateData.authorizedById = ctx?.userId || null;
+          updateData.authorizedAt = new Date();
+          updateData.status = 'PENDING'; // Enter active flow
+        }
       } else if (request.status === 'PENDING_AUTHORIZER') {
         if (
           status !== 'PENDING' &&
@@ -1129,7 +1164,7 @@ export class TransferRequestService {
               await this.stockMovementService.executeMovement({
                 itemId: item.itemId,
                 fromLocationId: request.fromLocationId!,
-                toWarehouseId: request.fromWarehouseId!,
+                toWarehouseId: request.toWarehouseId!,
                 quantity: rxQty,
                 type: 'RETURN_TRANSFER',
                 referenceType: 'CLAIM_RETURN_REQUEST',
@@ -1152,7 +1187,7 @@ export class TransferRequestService {
               await this.stockMovementService.executeMovement({
                 itemId: item.itemId,
                 fromLocationId: request.fromLocationId!,
-                toWarehouseId: request.fromWarehouseId!,
+                toWarehouseId: request.toWarehouseId!,
                 quantity: rxQty,
                 type: 'RETURN_TRANSFER',
                 referenceType: 'RETURN_REQUEST',

@@ -96,16 +96,16 @@ export class TransferRequestController {
     @Get('outbound-requests')
     @Permissions('pos.inventory.outbound.view')
     @ApiOperation({ summary: 'Get outbound requests for source approval (outlet to outlet)' })
-    async getOutboundRequests(@Query('locationId') locationId: string) {
-        const data = await this.transferRequestService.getOutboundRequests(locationId);
+    async getOutboundRequests(@Query('locationId') locationId: string, @Query('status') status?: string) {
+        const data = await this.transferRequestService.getOutboundRequests(locationId, status);
         return { status: true, data };
     }
 
     @Get('inbound-requests')
     @Permissions('pos.inventory.inbound.view')
     @ApiOperation({ summary: 'Get inbound requests for destination acceptance (outlet to outlet)' })
-    async getInboundRequests(@Query('locationId') locationId: string) {
-        const data = await this.transferRequestService.getInboundRequests(locationId);
+    async getInboundRequests(@Query('locationId') locationId: string, @Query('status') status?: string) {
+        const data = await this.transferRequestService.getInboundRequests(locationId, status);
         return { status: true, data };
     }
 
