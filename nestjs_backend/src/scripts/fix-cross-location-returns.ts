@@ -80,20 +80,100 @@ async function fixTenantReturns(
   console.log(` Company: ${companyName} (${companyId})`);
   console.log(`${'═'.repeat(60)}`);
 
-  // Find all cross-location PosReturn records
-  const allPosReturns = await tenantPrisma.posReturn.findMany({
-    where: { originalLocationId: { not: null } },
-    include: { items: true },
+  // Fetch all locations for readable logs
+  const locations = await tenantPrisma.location.findMany({
+    select: { id: true, name: true, code: true, shortCode: true },
   });
+  const locMap = new Map(locations.map((l) => [l.id, l.name]));
 
-  const trulyCrossLocation = allPosReturns.filter(
-    (r) => r.originalLocationId && r.locationId && r.originalLocationId !== r.locationId,
+  // Fetch employees to map cashier/user -> their assigned store location
+  const employees = await tenantPrisma.employee.findMany({
+    where: { userId: { not: null } },
+    select: { userId: true, locationId: true, employeeName: true },
+  });
+  const userLocMap = new Map(
+    employees.map((e) => [e.userId!, e.locationId]),
+  );
+  const userNameMap = new Map(
+    employees.map((e) => [e.userId!, e.employeeName]),
   );
 
-  console.log(`Found ${trulyCrossLocation.length} cross-location returns out of ${allPosReturns.length} total.`);
+  console.log(`Loaded ${locations.length} location(s), ${employees.length} employee(s).`);
 
-  if (trulyCrossLocation.length === 0) {
-    console.log('  ✅ Nothing to fix.');
+  // Find all PosReturn records
+  const allPosReturns = await tenantPrisma.posReturn.findMany({
+    include: {
+      items: true,
+      order: { select: { id: true, locationId: true, orderNumber: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  // Identify cross-location returns:
+  // 1. Explicit cross-location (originalLocationId !== locationId)
+  // 2. Inferred cross-location: cashier's assigned location !== order location
+  type DetectedReturn = {
+    posReturn: typeof allPosReturns[0];
+    originalLocId: string;
+    actualReturnLocId: string;
+    detectionMethod: string;
+  };
+
+  const detectedCrossReturns: DetectedReturn[] = [];
+
+  for (const r of allPosReturns) {
+    const orderLocId = r.originalLocationId || r.order?.locationId;
+    if (!orderLocId) continue;
+
+    // Method 1: Explicitly saved as different
+    if (r.locationId && r.locationId !== orderLocId) {
+      detectedCrossReturns.push({
+        posReturn: r,
+        originalLocId: orderLocId,
+        actualReturnLocId: r.locationId,
+        detectionMethod: 'EXPLICIT (locationId != originalLocationId)',
+      });
+      continue;
+    }
+
+    // Method 2: Cashier who processed the return belongs to a different location
+    const cashierUser = r.processedById || r.cashierUserId;
+    if (cashierUser) {
+      const cashierLocId = userLocMap.get(cashierUser);
+      if (cashierLocId && cashierLocId !== orderLocId) {
+        detectedCrossReturns.push({
+          posReturn: r,
+          originalLocId: orderLocId,
+          actualReturnLocId: cashierLocId,
+          detectionMethod: `CASHIER LOCATION (${userNameMap.get(cashierUser) || cashierUser})`,
+        });
+        continue;
+      }
+    }
+
+    // Method 3: Check notes for any cross-location keyword or location mention
+    if (r.notes && /cross[- ]location/i.test(r.notes)) {
+      // Notes contain cross-location
+      console.log(`  [Note match] ${r.returnNumber}: ${r.notes}`);
+    }
+  }
+
+  console.log(`\nAnalysis Results:`);
+  console.log(`  Total PosReturn records: ${allPosReturns.length}`);
+  console.log(`  Detected Cross-Location Returns: ${detectedCrossReturns.length}`);
+
+  if (detectedCrossReturns.length === 0) {
+    console.log('\n  Detailed diagnosis of first 5 returns:');
+    for (const r of allPosReturns.slice(0, 5)) {
+      const cashier = r.processedById || r.cashierUserId;
+      const cashierLoc = cashier ? userLocMap.get(cashier) : null;
+      console.log(`    - Return: ${r.returnNumber} | Order: ${r.orderNumber}`);
+      console.log(`      Return locId: ${r.locationId} (${locMap.get(r.locationId) || '?'})`);
+      console.log(`      Original locId: ${r.originalLocationId} (${locMap.get(r.originalLocationId || '') || '?'})`);
+      console.log(`      Order locId: ${r.order?.locationId} (${locMap.get(r.order?.locationId || '') || '?'})`);
+      console.log(`      Cashier user: ${cashier} | Cashier loc: ${cashierLoc} (${locMap.get(cashierLoc || '') || '?'})`);
+    }
+    console.log('\n  ✅ Nothing to fix.');
     return;
   }
 
@@ -101,38 +181,43 @@ async function fixTenantReturns(
   let skipped = 0;
   let stnsCreated = 0;
 
-  for (const posReturn of trulyCrossLocation) {
+  for (const { posReturn, originalLocId, actualReturnLocId, detectionMethod } of detectedCrossReturns) {
+    const origLocName = locMap.get(originalLocId) || originalLocId;
+    const retLocName = locMap.get(actualReturnLocId) || actualReturnLocId;
+
     console.log(`\n  ▸ ${posReturn.returnNumber} (Order: ${posReturn.orderNumber})`);
-    console.log(`    Original loc: ${posReturn.originalLocationId}`);
-    console.log(`    Return  loc:  ${posReturn.locationId}`);
+    console.log(`    Detection:    ${detectionMethod}`);
+    console.log(`    Original loc: ${origLocName} (${originalLocId})`);
+    console.log(`    Return loc:   ${retLocName} (${actualReturnLocId})`);
 
     // Check StockLedger — where did inbound stock go?
     const ledgerEntries = await tenantPrisma.stockLedger.findMany({
       where: {
-        referenceType: 'POS_RETURN',
-        referenceId: posReturn.orderId,
+        referenceType: { in: ['POS_RETURN', 'POS_EXCHANGE', 'POS_REFUND'] },
+        referenceId: { in: [posReturn.orderId, posReturn.id, posReturn.returnNumber, posReturn.orderNumber] },
         movementType: 'INBOUND',
       },
       select: { itemId: true, qty: true, locationId: true },
     });
 
-    if (ledgerEntries.length === 0) {
-      console.log(`    ⚠️  SKIP — no INBOUND ledger entries found`);
-      skipped++;
-      continue;
-    }
+    let misrouted: { itemId: string; qty: number }[] = [];
 
-    const misrouted: { itemId: string; qty: number }[] = [];
-    for (const e of ledgerEntries) {
-      const qty = Math.abs(Number(e.qty));
-      if (e.locationId === posReturn.originalLocationId) {
-        misrouted.push({ itemId: e.itemId, qty });
-        console.log(`    🔴 Misrouted — item ${e.itemId} qty=${qty} at ORIGINAL loc`);
-      } else if (e.locationId === posReturn.locationId) {
-        console.log(`    ✅ Correct  — item ${e.itemId} qty=${qty} already at RETURN loc`);
-      } else {
-        console.log(`    ⚠️  Unknown  — item ${e.itemId} qty=${qty} at ${e.locationId}`);
+    if (ledgerEntries.length > 0) {
+      for (const e of ledgerEntries) {
+        const qty = Math.abs(Number(e.qty));
+        if (e.locationId === originalLocId) {
+          misrouted.push({ itemId: e.itemId, qty });
+          console.log(`    🔴 Misrouted — item ${e.itemId} qty=${qty} at ORIGINAL loc (${origLocName})`);
+        } else if (e.locationId === actualReturnLocId) {
+          console.log(`    ✅ Correct  — item ${e.itemId} qty=${qty} already at RETURN loc (${retLocName})`);
+        } else {
+          console.log(`    ⚠️  Other    — item ${e.itemId} qty=${qty} at ${e.locationId}`);
+        }
       }
+    } else {
+      // Fallback: use items from PosReturn record directly
+      console.log(`    ℹ️  No explicit ledger entries found — using ${posReturn.items.length} items from PosReturn`);
+      misrouted = posReturn.items.map((i) => ({ itemId: i.itemId, qty: i.quantity }));
     }
 
     if (misrouted.length === 0) {
@@ -142,7 +227,7 @@ async function fixTenantReturns(
     }
 
     if (DRY_RUN) {
-      console.log(`    🔵 DRY RUN — would move ${misrouted.length} item(s) to return branch`);
+      console.log(`    🔵 DRY RUN — would move ${misrouted.length} item(s) from ${origLocName} to ${retLocName}`);
       fixed++;
       stnsCreated++;
       continue;
@@ -159,7 +244,7 @@ async function fixTenantReturns(
         for (const { itemId, qty } of misrouted) {
           // Deduct from original (wrong) location
           const origInv = await tx.inventoryItem.findFirst({
-            where: { itemId, locationId: posReturn.originalLocationId!, status: 'AVAILABLE' },
+            where: { itemId, locationId: originalLocId, status: 'AVAILABLE' },
           });
           if (origInv) {
             await tx.inventoryItem.update({
@@ -171,7 +256,7 @@ async function fixTenantReturns(
             await tx.inventoryItem.create({
               data: {
                 itemId,
-                locationId: posReturn.originalLocationId!,
+                locationId: originalLocId,
                 warehouseId: warehouse.id,
                 quantity: -qty,
                 status: 'AVAILABLE',
@@ -181,7 +266,7 @@ async function fixTenantReturns(
 
           // Add to return (correct) location
           const retInv = await tx.inventoryItem.findFirst({
-            where: { itemId, locationId: posReturn.locationId, status: 'AVAILABLE' },
+            where: { itemId, locationId: actualReturnLocId, status: 'AVAILABLE' },
           });
           if (retInv) {
             await tx.inventoryItem.update({
@@ -192,7 +277,7 @@ async function fixTenantReturns(
             await tx.inventoryItem.create({
               data: {
                 itemId,
-                locationId: posReturn.locationId,
+                locationId: actualReturnLocId,
                 warehouseId: warehouse.id,
                 quantity: qty,
                 status: 'AVAILABLE',
@@ -206,7 +291,7 @@ async function fixTenantReturns(
               {
                 itemId,
                 warehouseId: warehouse.id,
-                locationId: posReturn.originalLocationId!,
+                locationId: originalLocId,
                 qty: -qty,
                 movementType: 'OUTBOUND',
                 referenceType: 'CROSS_LOCATION_CORRECTION',
@@ -215,7 +300,7 @@ async function fixTenantReturns(
               {
                 itemId,
                 warehouseId: warehouse.id,
-                locationId: posReturn.locationId,
+                locationId: actualReturnLocId,
                 qty: qty,
                 movementType: 'INBOUND',
                 referenceType: 'CROSS_LOCATION_CORRECTION',
@@ -225,11 +310,20 @@ async function fixTenantReturns(
           });
         }
 
+        // Update PosReturn record with correct locationId
+        await tx.posReturn.update({
+          where: { id: posReturn.id },
+          data: {
+            locationId: actualReturnLocId,
+            originalLocationId: originalLocId,
+          },
+        });
+
         // Create missing STN if not already present
         const existingSTN = await tx.transferRequest.findFirst({
           where: {
-            fromLocationId: posReturn.originalLocationId!,
-            toLocationId: posReturn.locationId,
+            fromLocationId: originalLocId,
+            toLocationId: actualReturnLocId,
             notes: { contains: posReturn.returnNumber },
           },
         });
@@ -248,19 +342,19 @@ async function fixTenantReturns(
           const requestNo = `STN-${currentYear}-${nextNum.toString().padStart(4, '0')}`;
 
           const origLoc = await tx.location.findUnique({
-            where: { id: posReturn.originalLocationId! },
+            where: { id: originalLocId },
             select: { warehouseId: true, name: true },
           });
           const retLoc = await tx.location.findUnique({
-            where: { id: posReturn.locationId },
+            where: { id: actualReturnLocId },
             select: { warehouseId: true, name: true },
           });
 
           await (tx as any).transferRequest.create({
             data: {
               requestNo,
-              fromLocationId: posReturn.originalLocationId!,
-              toLocationId: posReturn.locationId,
+              fromLocationId: originalLocId,
+              toLocationId: actualReturnLocId,
               fromWarehouseId: origLoc?.warehouseId || warehouse.id,
               toWarehouseId: retLoc?.warehouseId || warehouse.id,
               transferType: 'OUTLET_TO_OUTLET',
@@ -270,7 +364,7 @@ async function fixTenantReturns(
               checkedAt: posReturn.createdAt,
               authorizedAt: posReturn.createdAt,
               approvedAt: posReturn.createdAt,
-              notes: `[RETROACTIVE] Corrective STN for SR#${posReturn.returnNumber} (Order#${posReturn.orderNumber}). Stock at ${retLoc?.name || posReturn.locationId}. Script-generated.`,
+              notes: `[RETROACTIVE] Corrective STN for SR#${posReturn.returnNumber} (Order#${posReturn.orderNumber}). Stock at ${retLoc?.name || actualReturnLocId}. Script-generated.`,
               items: {
                 create: misrouted.map(({ itemId, qty }) => ({
                   itemId,
@@ -293,7 +387,7 @@ async function fixTenantReturns(
   }
 
   console.log(`\n  Summary for ${companyName}:`);
-  console.log(`    Total cross-location:  ${trulyCrossLocation.length}`);
+  console.log(`    Total cross-location:  ${detectedCrossReturns.length}`);
   console.log(`    ${DRY_RUN ? 'Would fix' : 'Fixed'}:               ${fixed}`);
   console.log(`    Skipped:               ${skipped}`);
   console.log(`    STNs ${DRY_RUN ? 'to create' : 'created'}:        ${stnsCreated}`);
