@@ -21,7 +21,7 @@ async function fixZeroTaxOrdersInChunk(chunk: string[], fbrService: any, prisma:
     try {
       const order = await prisma.salesOrder.findUnique({
         where: { orderNumber },
-        include: { items: { include: { item: true } }, customer: true, location: true },
+        include: { items: { include: { item: true } }, customer: true },
       });
 
       if (!order) {
@@ -34,7 +34,9 @@ async function fixZeroTaxOrdersInChunk(chunk: string[], fbrService: any, prisma:
          continue;
       }
 
-      const location = order.location;
+      const location = await prisma.location.findUnique({
+        where: { id: order.locationId }
+      });
       if (!location?.fbrEnabled || !location.fbrBposId || !location.fbrBearerToken) {
          results.push({ orderNumber, success: false, error: 'Location FBR config missing' });
          continue;
