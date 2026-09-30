@@ -1,9 +1,5 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './src/app.module';
-import { FbrService } from './src/fbr/fbr.service';
-import { PrismaService } from './src/prisma/prisma.service'; // Adjust path if PrismaService is somewhere else.
-// In many projects it is: import { PrismaService } from 'nestjs-prisma';
-// Let's rely on standard DI to fetch it.
 import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from '@nestjs/common';
@@ -18,7 +14,7 @@ function isNonZeroHsCode(code: string | null | undefined): boolean {
 
 async function fixZeroTaxOrdersInChunk(chunk: string[], fbrService: any, prisma: any, correctTaxPercent: number = 18) {
   const taxDivisor = 1 + correctTaxPercent / 100;
-  const results = [];
+  const results: any[] = [];
 
   for (const orderNumber of chunk) {
     logger.log(`Processing order: ${orderNumber}`);
@@ -220,16 +216,21 @@ async function fixZeroTaxOrdersInChunk(chunk: string[], fbrService: any, prisma:
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(AppModule);
   
-  // Try to get PrismaService explicitly by class or generic approach
   let prisma;
   try {
     const { PrismaService } = require('./src/prisma/prisma.service');
     prisma = app.get(PrismaService);
   } catch (e) {
-    prisma = app.get('PrismaService'); // fallback if token is string
+    prisma = app.get('PrismaService');
   }
 
-  const fbrService = app.get(FbrService);
+  let fbrService;
+  try {
+    const { FbrService } = require('./src/fbr/fbr.service');
+    fbrService = app.get(FbrService);
+  } catch (e) {
+    fbrService = app.get('FbrService');
+  }
 
   const mdPath = path.join(__dirname, 'sales_orders_with_0_taxrate.md');
   if (!fs.existsSync(mdPath)) {
@@ -240,7 +241,7 @@ async function bootstrap() {
   
   const content = fs.readFileSync(mdPath, 'utf8');
   const lines = content.split('\n');
-  const orderNumbers = [];
+  const orderNumbers: string[] = [];
   
   for (const line of lines) {
     if (line.trim().startsWith('| SI-')) {
