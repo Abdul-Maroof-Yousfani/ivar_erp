@@ -216,20 +216,24 @@ async function fixZeroTaxOrdersInChunk(chunk: string[], fbrService: any, prisma:
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(AppModule);
   
-  let prisma;
+  let prisma: any;
+  let fbrService: any;
   try {
-    const { PrismaService } = require('./src/prisma/prisma.service');
-    prisma = app.get(PrismaService);
-  } catch (e) {
-    prisma = app.get('PrismaService');
-  }
-
-  let fbrService;
-  try {
-    const { FbrService } = require('./src/fbr/fbr.service');
-    fbrService = app.get(FbrService);
-  } catch (e) {
-    fbrService = app.get('FbrService');
+    const { PosSalesService } = require('./src/pos-sales/pos-sales.service');
+    const posSalesService = app.get(PosSalesService);
+    
+    // Extract injected dependencies directly from the service at runtime
+    // (Bypasses TypeScript private modifier and NestJS module encapsulation)
+    prisma = posSalesService['prisma'] || posSalesService['prismaService'];
+    fbrService = posSalesService['fbrService'];
+    
+    if (!prisma) throw new Error("Could not extract PrismaService");
+    if (!fbrService) throw new Error("Could not extract FbrService");
+    
+  } catch (err: any) {
+    logger.error('Error extracting services: ' + err.message);
+    await app.close();
+    return;
   }
 
   const mdPath = path.join(__dirname, 'sales_orders_with_0_taxrate.md');
