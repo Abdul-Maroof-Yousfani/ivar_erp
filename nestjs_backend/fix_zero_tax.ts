@@ -218,12 +218,21 @@ async function bootstrap() {
   
   let prisma: any;
   let fbrService: any;
+  let prismaMaster: any;
+  let encryptionService: any;
+  let PrismaServiceClass: any;
+
   try {
     const { PosSalesService } = require('./src/pos-sales/pos-sales.service');
+    const { PrismaMasterService } = require('./src/database/prisma-master.service');
+    const { EncryptionService } = require('./src/common/utils/encryption.service');
+    const { PrismaService } = require('./src/database/prisma.service');
+
+    PrismaServiceClass = PrismaService;
     const posSalesService = app.get(PosSalesService);
+    prismaMaster = app.get(PrismaMasterService);
+    encryptionService = app.get(EncryptionService);
     
-    // Extract injected dependencies directly from the service at runtime
-    // (Bypasses TypeScript private modifier and NestJS module encapsulation)
     prisma = posSalesService['prisma'] || posSalesService['prismaService'];
     fbrService = posSalesService['fbrService'];
     
@@ -259,12 +268,56 @@ async function bootstrap() {
 
   logger.log(`Found ${orderNumbers.length} unique orders to fix.`);
 
-  const chunkSize = 20;
-  for (let i = 0; i < orderNumbers.length; i += chunkSize) {
-    const chunk = orderNumbers.slice(i, i + chunkSize);
-    logger.log(`Processing chunk ${Math.floor(i / chunkSize) + 1} / ${Math.ceil(orderNumbers.length / chunkSize)}`);
-    const results = await fixZeroTaxOrdersInChunk(chunk, fbrService, prisma, 18);
-    console.log(results);
+  const companies = await prismaMaster.company.findMany({
+    where: { tenant: { isActive: true } },
+    include: { tenant: true }
+  });
+
+  logger.log(`Found ${companies.length} active companies.`);
+
+  for (const company of companies) {
+    let dbUrl = company.dbUrl;
+    if (company.dbPassword) {
+      try {
+        const plainPassword = encryptionService.decrypt(company.dbPassword);
+        const encodedPassword = encodeURIComponent(String(plainPassword));
+        const port = company.dbPort || 5432;
+        const encodedUser = encodeURIComponent(company.dbUser);
+        const encodedHost = company.dbHost;
+        const encodedDbName = encodeURIComponent(company.dbName);
+        dbUrl = `postgresql://${encodedUser}:${encodedPassword}@${encodedHost}:${port}/${encodedDbName}?schema=public&connection_limit=3&pool_timeout=15`;
+      } catch (err: any) {
+        logger.error(`Failed to decrypt DB password for company ${company.id}: ${err.message}`);
+        continue;
+      }
+    }
+
+    if (!dbUrl) continue;
+
+    logger.log(`\n===========================================`);
+    logger.log(`🚀 Starting processing for Company: ${company.name} (${company.id})`);
+    logger.log(`===========================================\n`);
+
+    const context = {
+      tenantId: company.tenantId,
+      companyId: company.id,
+      dbUrl
+    };
+
+    await PrismaServiceClass.asyncLocalStorage.run(context, async () => {
+      const chunkSize = 20;
+      for (let i = 0; i < orderNumbers.length; i += chunkSize) {
+        const chunk = orderNumbers.slice(i, i + chunkSize);
+        logger.log(`Processing chunk ${Math.floor(i / chunkSize) + 1} / ${Math.ceil(orderNumbers.length / chunkSize)} in company ${company.name}`);
+        const results = await fixZeroTaxOrdersInChunk(chunk, fbrService, prisma, 18);
+        
+        // Filter out "Order not found" to avoid spamming the console for other companies
+        const realResults = results.filter((r: any) => r.error !== 'Order not found');
+        if (realResults.length > 0) {
+          console.log(realResults);
+        }
+      }
+    });
   }
 
   await app.close();
