@@ -3,11 +3,14 @@ import { CourierifyService } from './courierify.service';
 import { CourierifyController } from './courierify.controller';
 import { CourierifyWebhookController } from './courierify-webhook.controller';
 import { DatabaseModule } from '../database/database.module';
+import { PosSalesModule } from '../pos-sales/pos-sales.module';
+import { WarehouseModule } from '../warehouse/warehouse.module';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, PosSalesModule, WarehouseModule],
   controllers: [CourierifyController, CourierifyWebhookController],
   providers: [CourierifyService],
   exports: [CourierifyService],
 })
 export class CourierifyModule {}
+

@@ -900,6 +900,19 @@ function ReceiptBody({
             }
             bold
           />
+          {order?.referenceNumber && order?.notes?.includes("Source: Courierify") && (
+            <Row label="Ref No." value={order.referenceNumber.replace("#", "")} />
+          )}
+          {order?.notes?.includes("Source: Courierify") && order.notes.match(/Tracking:\s*([^\s|,]+)/i) && (
+            <Row label="Tracking" value={order.notes.match(/Tracking:\s*([^\s|,]+)/i)![1]} />
+          )}
+          {order?.notes?.includes("Source: Courierify") && (
+            <Row 
+              label="Pay Mode" 
+              value={(order.paymentMethod || tenders[0]?.method || 'Unknown').replace(/_/g, " ").toUpperCase()} 
+              bold 
+            />
+          )}
           {(() => {
             const phone =
               order?.customer?.phone ||
@@ -1335,6 +1348,15 @@ function A4InvoiceBody({
             )}
             {customerEmail && (
               <p className="text-zinc-655">Email: {customerEmail}</p>
+            )}
+            {order?.referenceNumber && order?.notes?.includes("Source: Courierify") && (
+              <p className="text-zinc-650 mt-1 font-semibold">Ref No: <span className="font-mono">{order.referenceNumber.replace("#", "")}</span></p>
+            )}
+            {order?.notes?.includes("Source: Courierify") && order.notes.match(/Tracking:\s*([^\s|,]+)/i) && (
+              <p className="text-zinc-650 font-semibold">Tracking: <span className="font-mono">{order.notes.match(/Tracking:\s*([^\s|,]+)/i)![1]}</span></p>
+            )}
+            {order?.notes?.includes("Source: Courierify") && (
+              <p className="text-zinc-650 font-bold uppercase mt-1">Pay Mode: <span className="text-primary">{(order.paymentMethod || tenders[0]?.method || 'Unknown').replace(/_/g, " ")}</span></p>
             )}
           </div>
           {customerAddress && (

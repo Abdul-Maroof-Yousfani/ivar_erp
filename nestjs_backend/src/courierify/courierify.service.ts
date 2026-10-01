@@ -33,14 +33,16 @@ import {
   ReceiveReturnSingleDto,
   SettlementsQueryDto,
 } from './dto/courierify.dto';
+import { PosSalesService } from '../pos-sales/pos-sales.service';
+import { TransferRequestService } from '../warehouse/transfer-request.service';
+import { runInBackground } from '../common/utils/run-in-background.util';
 
 @Injectable()
 export class CourierifyService {
   private readonly logger = new Logger(CourierifyService.name);
 
   private readonly baseUrl =
-    process.env.COURIERIFY_BASE_URL ||
-    'https://courierify.growzar.com/api/external';
+    process.env.COURIERIFY_BASE_URL;
 
   private readonly apiKey = process.env.COURIERIFY_API_KEY || '';
   private readonly webhookSecret = process.env.COURIERIFY_WEBHOOK_SECRET || '';
@@ -48,7 +50,11 @@ export class CourierifyService {
   // In-memory LRU-like set for deduplicating webhook events (up to 10,000 recent event IDs)
   private readonly processedEvents = new Set<string>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly posSalesService: PosSalesService,
+    private readonly transferRequestService: TransferRequestService,
+  ) {}
 
   /**
    * Helper method to execute authenticated HTTP requests to Courierify API
@@ -586,6 +592,10 @@ export class CourierifyService {
     this.logger.log(
       `[Shipment Booked] Order: ${orderName || orderId}, Tracking: ${trackingNumber}, Courier: ${courier}`,
     );
+    this.logger.log(`[Shipment Booked] orderId="${orderId}", lineItems=${lineItems?.length ?? 0} item(s)`);
+    if (payload.manualReason || payload.isManual) {
+      this.logger.log(`[Shipment Booked] Manual order → isManual=${payload.isManual}, reason="${payload.manualReason}"`);
+    }
 
     if (orderName || orderId) {
       const existingOrder = await this.prisma.salesOrder.findFirst({
@@ -620,21 +630,36 @@ export class CourierifyService {
   }
 
   private async createOrderFromShipmentPayload(shipment: any): Promise<void> {
-    const { orderName, orderId, trackingNumber, courier, customer, cod, courierOrderRef } = shipment;
-    const orderNoStr = `CRF-${orderName || orderId}`;
-
+    const { orderName, orderId, trackingNumber, courier, customer, cod, courierOrderRef, manualReason, isManual } = shipment;
     try {
-      // Check if already exists
-      const existingOrder = await this.prisma.eRPSalesOrder.findFirst({
-        where: { orderNo: orderNoStr },
+      // Check if already exists in POS SalesOrders using referenceNumber or the old orderNumber
+      const refString = orderName || orderId;
+      const existingOrder = await this.prisma.salesOrder.findFirst({
+        where: {
+          OR: [
+            { referenceNumber: refString },
+            { orderNumber: `CRF-${refString}` },
+            { orderNumber: refString }
+          ]
+        },
       });
 
       if (existingOrder) {
-        this.logger.log(`[Courierify] Order ${orderNoStr} already exists, skipping creation.`);
+        this.logger.log(`[Courierify] Order for ${refString} already exists, skipping creation.`);
         return;
       }
 
-      const codAmount = cod?.amount ?? 0;
+      const money = shipment.money || {};
+      const codAmount = cod?.amount ?? money.codToCollect ?? money.total ?? 0;
+      const discountTotal = parseFloat(money.discountTotal?.toString()) || 0;
+      const subtotalAmount = parseFloat(money.subtotal?.toString()) || codAmount;
+      const grandTotal = parseFloat(money.total?.toString()) || codAmount;
+
+      // Voucher / discount codes
+      const discountCodes: string[] = shipment.discounts?.codes || [];
+      const discountNote = discountCodes.length
+        ? ` | Discount: PKR ${discountTotal} (Codes: ${discountCodes.join(', ')})`
+        : discountTotal > 0 ? ` | Discount: PKR ${discountTotal}` : '';
 
       // Find or create customer
       let customerId: string | null = null;
@@ -662,30 +687,325 @@ export class CourierifyService {
               contactNo: customer?.phone || null,
               email: customer?.email || null,
               address: customer?.address || null,
-              customerType: 'ERP',
+              customerType: 'POS',
             },
           });
-          this.logger.log(`[Courierify] Created customer: ${customerName}`);
+          this.logger.log(`[Courierify] Created customer: ${customerName} (Type: POS)`);
         }
         customerId = defaultCustomer.id;
       }
 
-      // Create the ERP Sales Order (shown in ERP Sales Orders page)
-      const salesOrder = await this.prisma.eRPSalesOrder.create({
+      // Find location by code (OMS-IV or OMS-VI)
+      let locationId: string | null = null;
+      const targetLocation = await this.prisma.location.findFirst({
+        where: { 
+          OR: [
+            { code: { equals: 'OMS-VI', mode: 'insensitive' } },
+            { code: { equals: 'OMS-IV', mode: 'insensitive' } }
+          ]
+        },
+      });
+      if (targetLocation) {
+        locationId = targetLocation.id;
+      } else {
+        this.logger.warn(`[Courierify] Location 'OMS-IV / OMS-VI' not found, order will be created without locationId`);
+      }
+
+      // Generate standard order number
+      let orderNoStr = `CRF-${orderName || orderId}`;
+      if (locationId) {
+        try {
+          orderNoStr = await this.posSalesService.generateSequentialNumber('SI', 'orderNumber', locationId);
+        } catch (e) {
+          this.logger.warn(`[Courierify] Failed to generate sequential order number, falling back to CRF format: ${e.message}`);
+        }
+      }
+
+      // ── Match Courierify items to ERP items by SKU ──────────────────────────
+      // Confirmed by Courierify team:
+      //   shipment.lineItems = actual items array [ { sku, title, variantTitle, quantity } ]
+      //   shipment.items     = just the COUNT (number) — NOT the items array
+      // lineItems is present for BOTH manual and Shopify orders in shipment.booked webhook
+      const lineItems = shipment.lineItems;
+      const shipmentItems: { sku: string; quantity: number; title?: string }[] =
+        Array.isArray(lineItems) ? lineItems : [];
+
+      this.logger.log(
+        `[Courierify] Order ${orderName || orderId} has ${shipmentItems.length} lineItem(s) in webhook`,
+      );
+      if (shipmentItems.length === 0) {
+        this.logger.warn(
+          `[Courierify] ⚠️  No lineItems found for order ${orderName || orderId}. Check webhook payload.`,
+        );
+      }
+
+
+      const matchedOrderItems: {
+        itemId: string;
+        quantity: number;
+        unitPrice: number;
+        discountPercent: number;
+        discountAmount: number;
+        taxPercent: number;
+        taxAmount: number;
+        lineTotal: number;
+      }[] = [];
+
+      // Divide COD amount proportionally across items (or equally if only one)
+      const totalQty = shipmentItems.reduce((s, i) => s + (Number(i.quantity) || 1), 0);
+
+      for (const si of shipmentItems) {
+        // Courierify lineItems[].sku = Shopify SKU = ERP itemId (not ERP sku field)
+        // Match priority: itemId → sku → barCode
+        let erpItem = await this.prisma.item.findFirst({
+          where: { itemId: { equals: si.sku, mode: 'insensitive' } },
+          select: { id: true, itemId: true, sku: true, barCode: true, unitPrice: true },
+        });
+
+        if (!erpItem && si.sku) {
+          // Fallback: match by ERP sku field
+          erpItem = await this.prisma.item.findFirst({
+            where: { sku: { equals: si.sku, mode: 'insensitive' } },
+            select: { id: true, itemId: true, sku: true, barCode: true, unitPrice: true },
+          });
+        }
+
+        if (!erpItem && si.sku) {
+          // Fallback: match by barCode
+          erpItem = await this.prisma.item.findFirst({
+            where: { barCode: { equals: si.sku, mode: 'insensitive' } },
+            select: { id: true, itemId: true, sku: true, barCode: true, unitPrice: true },
+          });
+          if (erpItem) {
+            this.logger.log(
+              `[Courierify] "${si.sku}" matched via barCode → ERP itemId: ${erpItem.itemId}`,
+            );
+          }
+        }
+
+        if (erpItem) {
+          const qty = Number(si.quantity) || 1;
+          // Use ERP unit price; if not available fallback to proportional COD split
+          const unitPrice = Number(erpItem.unitPrice) > 0
+            ? Number(erpItem.unitPrice)
+            : totalQty > 0 ? (codAmount / totalQty) : 0;
+          const lineTotal = unitPrice * qty;
+
+          matchedOrderItems.push({
+            itemId: erpItem.id,
+            quantity: qty,
+            unitPrice,
+            discountPercent: 0,
+            discountAmount: 0,
+            taxPercent: 0,
+            taxAmount: 0,
+            lineTotal,
+          });
+          this.logger.log(`[Courierify] Matched "${si.sku}" → ERP item ${erpItem.id}`);
+        } else {
+          this.logger.warn(
+            `[Courierify] SKU/Barcode "${si.sku}" not found in ERP — item skipped`,
+          );
+        }
+      }
+
+      // Create the POS Sales Order (shown in POS Sales page)
+      const salesOrder = await this.prisma.salesOrder.create({
         data: {
-          orderNo: orderNoStr,
+          orderNumber: orderNoStr,
+          referenceNumber: orderName || orderId || courierOrderRef || null,
+          status: shipment.status || 'booked',
+          grandTotal: grandTotal,
+          subtotal: subtotalAmount,
+          discountAmount: discountTotal,
+          paymentMethod: 'COD',
+          paymentStatus: grandTotal > 0 ? 'unpaid' : 'paid',
           customerId: customerId,
-          status: 'CONFIRMED',
-          subtotal: codAmount,
-          grandTotal: codAmount,
-          createdBy: 'courierify-webhook',
+          locationId: locationId,
+          notes: `Source: Courierify${isManual ? ' (Manual)' : ''} | Customer: ${customer?.name || 'N/A'} | Courier: ${courier || 'N/A'}, Tracking: ${trackingNumber || 'N/A'}${manualReason ? ` | Reason: ${manualReason}` : ''}${discountNote}`,
+          // Create linked order items if we matched any ERP items
+          ...(matchedOrderItems.length > 0 && {
+            items: {
+              create: matchedOrderItems,
+            },
+          }),
         },
       });
 
-      this.logger.log(`[Courierify] Created ERPSalesOrder ${orderNoStr} (id: ${salesOrder.id})`);
+      this.logger.log(`[Courierify] Created POS SalesOrder ${orderNoStr} (id: ${salesOrder.id}) with ${matchedOrderItems.length} item(s)`);
+
+      // Auto-transfer stock from Warehouse → OMS (non-blocking)
+      if (locationId && shipmentItems.length) {
+        runInBackground(
+          'OMS Auto Transfer Stock',
+          this.autoTransferToOms({
+            salesOrderId: salesOrder.id,
+            locationId,
+            shipmentItems,
+            orderNumber: orderNoStr,
+          }),
+        );
+      }
+
       this.logger.log(`[Courierify] Successfully created SalesOrder ${orderNoStr}`);
     } catch (err: any) {
       this.logger.error(`[Courierify] Failed to create order from shipment: ${err.message}`, err.stack);
+    }
+  }
+
+  /**
+   * Automatically transfer stock from the default Warehouse → OMS POS
+   * when a Courierify order is booked. Bypasses manual approval chain.
+   * Items are matched by SKU from the Courierify shipment payload.
+   */
+  private async autoTransferToOms(data: {
+    salesOrderId: string;
+    locationId: string;
+    shipmentItems: { sku: string; quantity: number; title?: string }[];
+    orderNumber: string;
+  }): Promise<void> {
+    try {
+      this.logger.log(`[OMS Auto-Transfer] Starting for order ${data.orderNumber}`);
+
+      // Get location to find its associated warehouse
+      const location = await this.prisma.location.findUnique({
+        where: { id: data.locationId },
+        select: { warehouseId: true },
+      });
+
+      // Find warehouse associated with location, or fallback to first warehouse
+      const warehouse = location?.warehouseId
+        ? await this.prisma.warehouse.findUnique({ where: { id: location.warehouseId } })
+        : await this.prisma.warehouse.findFirst({ orderBy: { createdAt: 'asc' } });
+
+      if (!warehouse) {
+        this.logger.warn(`[OMS Auto-Transfer] No warehouse found (and no default exists), skipping auto-transfer for ${data.orderNumber}`);
+        return;
+      }
+
+      // Match Courierify SKUs to ERP items
+      // Priority: itemId (Shopify SKU = ERP itemId) → sku → barCode
+      const matchedItems: { itemId: string; quantity: number }[] = [];
+      for (const si of data.shipmentItems) {
+        let item = await this.prisma.item.findFirst({
+          where: { itemId: { equals: si.sku, mode: 'insensitive' } },
+          select: { id: true, itemId: true, sku: true },
+        });
+
+        if (!item && si.sku) {
+          item = await this.prisma.item.findFirst({
+            where: { sku: { equals: si.sku, mode: 'insensitive' } },
+            select: { id: true, itemId: true, sku: true },
+          });
+        }
+
+        if (!item && si.sku) {
+          item = await this.prisma.item.findFirst({
+            where: { barCode: { equals: si.sku, mode: 'insensitive' } },
+            select: { id: true, itemId: true, sku: true },
+          });
+          if (item) {
+            this.logger.log(`[OMS Auto-Transfer] "${si.sku}" matched via barCode (ERP itemId: ${item.itemId})`);
+          }
+        }
+
+        if (item) {
+          matchedItems.push({ itemId: item.id, quantity: Number(si.quantity) });
+          this.logger.log(`[OMS Auto-Transfer] Matched "${si.sku}" → ERP itemId: ${item.itemId}`);
+        } else {
+          this.logger.warn(`[OMS Auto-Transfer] "${si.sku}" not found in ERP (tried itemId/sku/barCode), skipping`);
+        }
+      }
+
+      if (matchedItems.length === 0) {
+        this.logger.warn(`[OMS Auto-Transfer] No matching ERP items found for order ${data.orderNumber}, skipping transfer`);
+        return;
+      }
+
+      // Create transfer request (Warehouse → OMS)
+      const transfer = await this.transferRequestService.createRequest(
+        {
+          fromWarehouseId: warehouse.id,
+          toLocationId: data.locationId,
+          transferType: 'WAREHOUSE_TO_OUTLET',
+          items: matchedItems,
+          notes: `[AUTO-OMS] Courierify order ${data.orderNumber} | salesOrderId: ${data.salesOrderId}`,
+        },
+      );
+
+      this.logger.log(`[OMS Auto-Transfer] Created transfer ${transfer.requestNo} for order ${data.orderNumber}`);
+
+      // Auto-approve and accept immediately (bypasses Maker-Checker)
+      await this.transferRequestService.autoAcceptForOms(transfer.id, data.salesOrderId);
+
+      this.logger.log(`[OMS Auto-Transfer] Auto-approved transfer ${transfer.requestNo} for order ${data.orderNumber}`);
+    } catch (error: any) {
+      this.logger.error(`[OMS Auto-Transfer] Failed for order ${data.orderNumber}: ${error.message}`, error.stack);
+    }
+  }
+
+  /**
+   * Automatically return stock from OMS POS → Warehouse
+   * when a courier marks a parcel as returned (customer refused delivery).
+   * Bypasses manual approval chain.
+   */
+  private async autoReturnToWarehouse(data: {
+    salesOrderId: string;
+    locationId: string;
+    orderNumber: string;
+  }): Promise<void> {
+    try {
+      this.logger.log(`[OMS Auto-Return] Starting for order ${data.orderNumber}`);
+
+      // Get items from the original sales order
+      const orderItems = await this.prisma.salesOrderItem.findMany({
+        where: { salesOrderId: data.salesOrderId },
+        select: { itemId: true, quantity: true },
+      });
+
+      if (!orderItems.length) {
+        this.logger.warn(`[OMS Auto-Return] No items found for order ${data.orderNumber}, skipping return transfer`);
+        return;
+      }
+
+      // Get location to find its associated warehouse
+      const location = await this.prisma.location.findUnique({
+        where: { id: data.locationId },
+        select: { warehouseId: true },
+      });
+
+      // Find warehouse associated with location, or fallback to first warehouse
+      const warehouse = location?.warehouseId
+        ? await this.prisma.warehouse.findUnique({ where: { id: location.warehouseId } })
+        : await this.prisma.warehouse.findFirst({ orderBy: { createdAt: 'asc' } });
+
+      if (!warehouse) {
+        this.logger.warn(`[OMS Auto-Return] No warehouse found (and no default exists), skipping return transfer for ${data.orderNumber}`);
+        return;
+      }
+
+      // Create return transfer (OMS → Warehouse)
+      const transfer = await this.transferRequestService.createRequest(
+        {
+          fromLocationId: data.locationId,
+          toWarehouseId: warehouse.id,
+          transferType: 'OUTLET_TO_WAREHOUSE',
+          items: orderItems.map(i => ({
+            itemId: i.itemId,
+            quantity: Number(i.quantity),
+          })),
+          notes: `[AUTO-RETURN] Courier return for order ${data.orderNumber} | salesOrderId: ${data.salesOrderId}`,
+        },
+      );
+
+      this.logger.log(`[OMS Auto-Return] Created return transfer ${transfer.requestNo} for order ${data.orderNumber}`);
+
+      // Auto-approve and accept immediately
+      await this.transferRequestService.autoAcceptForOms(transfer.id, data.salesOrderId);
+
+      this.logger.log(`[OMS Auto-Return] Auto-approved return transfer ${transfer.requestNo} for order ${data.orderNumber}`);
+    } catch (error: any) {
+      this.logger.error(`[OMS Auto-Return] Failed for order ${data.orderNumber}: ${error.message}`, error.stack);
     }
   }
 
@@ -703,18 +1023,32 @@ export class CourierifyService {
           OR: [
             { orderNumber: orderName },
             { orderNumber: `CRF-${orderName}` },
+            { referenceNumber: orderName },
           ],
         },
+        select: { id: true, orderNumber: true, locationId: true, status: true },
       });
 
       if (existingOrder) {
+        const newStatus = status?.toLowerCase() || existingOrder.status;
         await this.prisma.salesOrder.update({
           where: { id: existingOrder.id },
-          data: {
-            status: status?.toLowerCase() || existingOrder.status,
-          },
+          data: { status: newStatus },
         });
-        this.logger.log(`[Courierify] Updated order #${existingOrder.orderNumber} status to: ${status}`);
+        this.logger.log(`[Courierify] Updated order #${existingOrder.orderNumber} status to: ${newStatus}`);
+
+        // Cancelled shipment → auto return stock OMS → Warehouse
+        if (newStatus === 'cancelled' && existingOrder.locationId) {
+          this.logger.log(`[Courierify] Shipment cancelled for ${existingOrder.orderNumber} — triggering auto return to warehouse`);
+          runInBackground(
+            'OMS Auto Return Stock (Cancelled)',
+            this.autoReturnToWarehouse({
+              salesOrderId: existingOrder.id,
+              locationId: existingOrder.locationId,
+              orderNumber: existingOrder.orderNumber,
+            }),
+          );
+        }
       } else {
         // Order not in ERP yet - create it from this payload
         this.logger.log(`[Courierify] Order ${orderName} not found locally. Creating from status_changed payload...`);
@@ -737,6 +1071,7 @@ export class CourierifyService {
           OR: [
             { orderNumber: orderName },
             { orderNumber: `CRF-${orderName}` },
+            { referenceNumber: orderName },
           ],
         },
       });
@@ -769,7 +1104,14 @@ export class CourierifyService {
 
     if (orderName) {
       const existingOrder = await this.prisma.salesOrder.findFirst({
-        where: { orderNumber: orderName },
+        where: {
+          OR: [
+            { orderNumber: orderName },
+            { orderNumber: `CRF-${orderName}` },
+            { referenceNumber: orderName },
+          ],
+        },
+        select: { id: true, orderNumber: true, locationId: true },
       });
 
       if (existingOrder) {
@@ -777,11 +1119,24 @@ export class CourierifyService {
           where: { id: existingOrder.id },
           data: {
             status: 'returned',
+            paymentStatus: 'unpaid',
           },
         });
         this.logger.log(
           `[Courierify] Marked order #${existingOrder.orderNumber} as returned`,
         );
+
+        // Auto-return stock from OMS → Warehouse (non-blocking)
+        if (existingOrder.locationId) {
+          runInBackground(
+            'OMS Auto Return Stock',
+            this.autoReturnToWarehouse({
+              salesOrderId: existingOrder.id,
+              locationId: existingOrder.locationId,
+              orderNumber: existingOrder.orderNumber,
+            }),
+          );
+        }
       }
     }
   }

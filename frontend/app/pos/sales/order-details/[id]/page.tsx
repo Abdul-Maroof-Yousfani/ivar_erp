@@ -21,6 +21,7 @@ import { PrintReturnReceipt } from "@/components/pos/print-return-receipt";
 import { PrintClaimReceipt } from "@/components/pos/print-claim-receipt";
 import { cn } from "@/lib/utils";
 import { authFetch } from "@/lib/auth";
+import { useAuth } from "@/components/providers/auth-provider";
 
 import { formatCurrency } from "@/lib/utils";
 
@@ -57,9 +58,22 @@ export default function OrderDetailsPage() {
     const [showGiftPrint, setShowGiftPrint] = useState(false);
     const [showReturnPrint, setShowReturnPrint] = useState(false);
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
-    const [isRefundPrint, setIsRefundPrint] = useState(false);
     const [showClaimReceipt, setShowClaimReceipt] = useState(false);
     const [selectedClaim, setSelectedClaim] = useState<any>(null);
+    const [isRefundPrint, setIsRefundPrint] = useState(false);
+    const [transfers, setTransfers] = useState<any[]>([]);
+
+    const { user } = useAuth();
+
+    // Only show Courierify integration details if it's a courierify order AND the terminal location is OMS-related
+    const isOmsLocation = user?.terminal?.location?.code === 'OMS-IV' || user?.terminal?.location?.code === 'OMS-VI' || user?.terminal?.location?.name?.includes('ORDER MANAGEMENT SYSTEM');
+    const isCourierifyOrder = isOmsLocation && order?.referenceNumber && order.notes?.includes('Source: Courierify');
+    
+    const trackingMatch = order?.notes?.match(/Tracking:\s*([^\s|,]+)/i);
+    const trackingNumber = trackingMatch ? trackingMatch[1] : null;
+
+    const courierMatch = order?.notes?.match(/Courier:\s*([^,]+)/i);
+    const courierName = courierMatch ? courierMatch[1].trim() : null;
 
     useEffect(() => {
         if (orderId) fetchOrder();
@@ -70,7 +84,19 @@ export default function OrderDetailsPage() {
         try {
             const res = await authFetch(`/pos-sales/orders/${orderId}`);
             if (res.ok && res.data?.status) {
-                setOrder(res.data.data);
+                const orderData = res.data.data;
+                setOrder(orderData);
+                // Fetch linked transfer requests for OMS Courierify orders
+                if (orderData?.notes?.includes('Source: Courierify') && orderData?.id) {
+                    try {
+                        const trRes = await authFetch(`/api/transfer-request?search=${encodeURIComponent(orderData.id)}`);
+                        if (trRes.ok && trRes.data?.data) {
+                            setTransfers(Array.isArray(trRes.data.data) ? trRes.data.data : []);
+                        }
+                    } catch {
+                        // Transfer history is non-critical, ignore errors
+                    }
+                }
             } else {
                 toast.error("Failed to load order");
                 startTransition(() => {
@@ -138,7 +164,16 @@ export default function OrderDetailsPage() {
 
     if (!order) return null;
 
-    const totalPaid = order.tenders?.reduce((s: number, t: any) => s + Number(t.amount), 0) || 0;
+    const isCourierify = order.notes?.includes("Source: Courierify");
+    const totalPaid = order.tenders?.reduce((s: number, t: any) => {
+        if (t.method?.toLowerCase() === 'cod' || t.method?.toLowerCase() === 'cash_on_delivery') {
+            if (isCourierify && order.status !== 'delivered' && order.status !== 'completed' && order.paymentStatus !== 'paid' && order.paymentStatus !== 'collected_pending_settlement') {
+                return s; // Don't count COD as paid until delivered for Courierify
+            }
+        }
+        return s + Number(t.amount);
+    }, 0) || 0;
+    
     const balanceDue = Math.max(0, Number(order.grandTotal) - totalPaid);
     const isHold = order.status === "hold";
     const isToday = isSameDay(new Date(order.createdAt));
@@ -170,7 +205,7 @@ export default function OrderDetailsPage() {
                             {!isHold && (
                                 <Badge variant={balanceDue > 0 ? "outline" : "default"}
                                     className={cn("uppercase text-xs px-2", balanceDue > 0 ? "border-orange-500 text-orange-500" : "bg-emerald-600")}>
-                                    {balanceDue > 0 ? "Partial" : "Fully Paid"}
+                                    {balanceDue === Number(order.grandTotal) && balanceDue > 0 ? "Unpaid" : balanceDue > 0 ? "Partial" : "Fully Paid"}
                                 </Badge>
                             )}
                             <Badge variant={order.status === "completed" ? "default" : "secondary"}
@@ -628,9 +663,66 @@ export default function OrderDetailsPage() {
                                                 "{order.notes}"
                                             </div>
                                         )}
+
+                                        {isCourierifyOrder && (
+                                            <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-3 mt-3 space-y-1.5">
+                                                <div className="flex items-center gap-2 text-[10px] font-bold text-blue-700 uppercase tracking-wider mb-1">
+                                                    Courierify Integration
+                                                </div>
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-muted-foreground">Ref No:</span>
+                                                    <span className="font-mono font-semibold">{order.referenceNumber.replace("#", "")}</span>
+                                                </div>
+                                                {trackingNumber && (
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-muted-foreground">Tracking No:</span>
+                                                        <span className="font-mono font-semibold">{trackingNumber}</span>
+                                                    </div>
+                                                )}
+                                                {courierName && (
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-muted-foreground">Courier:</span>
+                                                        <span className="font-semibold uppercase text-blue-700">{courierName}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })()}
+
+                            {/* OMS Transfer History - only for Courierify orders */}
+                            {isCourierifyOrder && (
+                                <div className="bg-card border border-border/60 rounded-2xl p-4 shadow-sm space-y-3">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs font-bold uppercase tracking-wider">
+                                        <ShoppingCart className="h-4 w-4 text-indigo-500" /> Stock Transfers
+                                    </div>
+                                    {transfers.length === 0 ? (
+                                        <p className="text-xs text-muted-foreground italic">No linked transfers found.</p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {transfers.map((tr: any) => {
+                                                const isAutoOms = tr.notes?.includes('[AUTO-OMS]');
+                                                const isAutoReturn = tr.notes?.includes('[AUTO-RETURN]');
+                                                const statusColor = tr.status === 'COMPLETED' ? 'text-emerald-700 bg-emerald-500/10 border-emerald-300' : tr.status === 'REJECTED' ? 'text-red-700 bg-red-500/10 border-red-300' : 'text-amber-700 bg-amber-500/10 border-amber-300';
+                                                return (
+                                                    <div key={tr.id} className="flex items-center justify-between px-3 py-2 rounded-xl bg-muted/30 border border-border/40 text-xs">
+                                                        <div className="space-y-0.5">
+                                                            <p className="font-mono font-bold text-foreground">{tr.requestNo}</p>
+                                                            <p className="text-muted-foreground">
+                                                                {isAutoOms ? '🏭 Warehouse → OMS' : isAutoReturn ? '↩️ OMS → Warehouse' : tr.transferType?.replace(/_/g, ' ')}
+                                                            </p>
+                                                        </div>
+                                                        <Badge variant="outline" className={`text-[9px] px-2 py-0.5 ${statusColor}`}>
+                                                            {tr.status}
+                                                        </Badge>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {order.fbrInvoiceNumber && (
                                 <div className="bg-card border border-border/60 rounded-2xl p-4 shadow-sm space-y-3">

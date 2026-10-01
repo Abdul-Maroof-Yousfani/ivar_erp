@@ -495,6 +495,12 @@ export default function SalesHistoryPage() {
     const canResumeHold = hasPermission('pos.hold.resume');
     const canImport = hasPermission('pos.sales.history.import');
 
+    // OMS POS location detection — show Ref # search only for Order Management System terminals
+    const isOmsLocation = !!(
+        user?.terminal?.location?.name?.toLowerCase().includes('order management') ||
+        user?.terminal?.location?.code?.toLowerCase().includes('oms')
+    );
+
     // ── Bulk-upload state ──────────────────────────────────────────────
     const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
     const [isOnlineSalesUploadOpen, setIsOnlineSalesUploadOpen] = useState(false);
@@ -677,9 +683,20 @@ export default function SalesHistoryPage() {
         {
             accessorKey: "orderNumber",
             header: "Order #",
-            cell: ({ row }) => (
-                <span className="font-mono font-bold text-primary">{row.getValue("orderNumber")}</span>
-            ),
+            cell: ({ row }) => {
+                const order = row.original;
+                const isCourierify = order.referenceNumber && order.notes?.includes("Source: Courierify");
+                return (
+                    <div className="flex flex-col">
+                        <span className="font-mono font-bold text-primary">{row.getValue("orderNumber")}</span>
+                        {isCourierify && (
+                            <span className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                                Ref No: {order.referenceNumber.replace("#", "")}
+                            </span>
+                        )}
+                    </div>
+                );
+            },
         },
         {
             accessorKey: "createdAt",
@@ -964,10 +981,14 @@ export default function SalesHistoryPage() {
                         data={orders}
                         isLoading={isLoading}
                         manualPagination={true}
+                        manualFiltering={true}
                         rowCount={rowCount}
                         pageCount={pageCount}
                         onPaginationChange={setPagination}
-                        searchFields={[{ key: "orderNumber", label: "Order #" }]}
+                        searchFields={[
+                            { key: "orderNumber", label: "Order #" },
+                            ...(isOmsLocation ? [{ key: "referenceNumber", label: "Ref #" }] : []),
+                        ]}
                         onSearchChange={setSearch}
                         tableId="pos-sales-history"
                     />
