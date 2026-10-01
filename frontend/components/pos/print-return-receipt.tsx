@@ -823,6 +823,9 @@ function ReturnBody({
       <div className="text-center text-[9px] pt-1 pb-1 space-y-0">
         <p>{settings.receiptFooter || "*** THANK YOU ***"}</p>
         <p className="tracking-widest font-bold">{returnRef}</p>
+        <p className="text-[9px] mt-1 font-bold">INPL POS</p>
+        <p className="text-[8px] font-normal">Powered by Innovative Network (Pvt.) Ltd.</p>
+        <p className="text-[8px] font-normal">+92(21)34303051-3 | innovative-net.com</p>
       </div>
     </div>
   );

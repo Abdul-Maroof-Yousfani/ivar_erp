@@ -373,18 +373,20 @@ const ReconciliationSheet = ({
                 <table className="w-full text-[10.5px] leading-tight border-collapse">
                     <thead>
                         <tr className="border-b-2 border-black font-extrabold text-gray-800">
-                            <th className="py-2 px-1 text-left w-[35%]">Description</th>
-                            <th className="py-2 px-1 text-right w-[15%]">Amount (Rs.)</th>
-                            <th className="py-2 px-1 text-right w-[12%]">Rate %</th>
-                            <th className="py-2 px-1 text-right w-[15%]">Bank Comm.</th>
-                            <th className="py-2 px-1 text-center w-[13%]">From</th>
-                            <th className="py-2 px-1 text-center w-[10%]">To</th>
+                            <th className="py-2 px-1 text-left w-[22%]">Description</th>
+                            <th className="py-2 px-1 text-right w-[12%]">Amount (Rs.)</th>
+                            <th className="py-2 px-1 text-right w-[9%]">Rate %</th>
+                            <th className="py-2 px-1 text-right w-[12%]">Bank Comm.</th>
+                            <th className="py-2 px-1 text-center w-[12%]">From</th>
+                            <th className="py-2 px-1 text-center w-[11%]">To</th>
+                            <th className="py-2 px-1 text-center w-[11%]">Issue from</th>
+                            <th className="py-2 px-1 text-center w-[11%]">Redeemed at</th>
                         </tr>
                     </thead>
                     <tbody>
                         {/* Section: Credit | Debit Cards */}
                         <tr className="font-extrabold text-black bg-gray-100/60 border-b border-black/40">
-                            <td className="py-1.5 px-1 text-left" colSpan={6}>Credit | Debit Cards</td>
+                            <td className="py-1.5 px-1 text-left" colSpan={8}>Credit | Debit Cards</td>
                         </tr>
                         {activeReport.cardPayments?.map((p: any, i: number) => (
                             <tr key={`card-${i}`} className="border-b border-gray-100 text-gray-700 hover:bg-gray-50/50">
@@ -392,6 +394,8 @@ const ReconciliationSheet = ({
                                 <td className="py-1 px-1 text-right">{formatVal(p.amount)}</td>
                                 <td className="py-1 px-1 text-right">{formatVal(p.rate, true)}</td>
                                 <td className="py-1 px-1 text-right">{formatVal(p.commission)}</td>
+                                <td className="py-1 px-1 text-center">-</td>
+                                <td className="py-1 px-1 text-center">-</td>
                                 <td className="py-1 px-1 text-center">-</td>
                                 <td className="py-1 px-1 text-center">-</td>
                             </tr>
@@ -403,11 +407,13 @@ const ReconciliationSheet = ({
                             <td className="py-1 px-1 text-right border-t border-dashed border-black/60">{formatVal(cardPaymentsCommSum)}</td>
                             <td className="py-1 px-1 text-center"></td>
                             <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
                         </tr>
 
                         {/* Section: Cards - Gift Vouchers */}
                         <tr className="font-extrabold text-black bg-gray-100/60 border-b border-black/40">
-                            <td className="py-1.5 px-1 text-left" colSpan={6}>Credit Card - Gift Vouchers Issued</td>
+                            <td className="py-1.5 px-1 text-left" colSpan={8}>Credit Card - Gift Vouchers Issued</td>
                         </tr>
                         {activeReport.cardGiftVouchers && activeReport.cardGiftVouchers.length > 0 ? (
                             activeReport.cardGiftVouchers.map((p: any, i: number) => (
@@ -421,7 +427,7 @@ const ReconciliationSheet = ({
                                 </tr>
                             ))
                         ) : (
-                            <tr className="text-gray-400 italic"><td colSpan={6} className="py-1 px-4">No vouchers issued on card payments on this date</td></tr>
+                            <tr className="text-gray-400 italic"><td colSpan={8} className="py-1 px-4">No vouchers issued on card payments on this date</td></tr>
                         )}
                         {activeReport.cardGiftVouchers && activeReport.cardGiftVouchers.length > 0 && (
                             <tr className="font-bold border-b border-gray-200">
@@ -448,7 +454,7 @@ const ReconciliationSheet = ({
 
                         {/* Section: Received */}
                         <tr className="font-extrabold text-black bg-gray-100/60 border-b border-black/40">
-                            <td className="py-1.5 px-1 text-left" colSpan={6}>Received</td>
+                            <td className="py-1.5 px-1 text-left" colSpan={8}>Received</td>
                         </tr>
                         {activeReport.receivedVouchers?.map((v: any, i: number) => (
                             <tr key={`rec-${i}`} className="border-b border-gray-100 text-gray-700 hover:bg-gray-50/50">
@@ -458,6 +464,8 @@ const ReconciliationSheet = ({
                                 <td className="py-1 px-1 text-right">-</td>
                                 <td className="py-1 px-1 text-center font-mono">{v.from && v.from !== "-" ? v.from : "-"}</td>
                                 <td className="py-1 px-1 text-center">-</td>
+                                <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.createdBranch || "-"}>{v.createdBranch || "-"}</td>
+                                <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.redeemedBranch || "-"}>{v.redeemedBranch || "-"}</td>
                             </tr>
                         ))}
                         <tr className="font-bold border-b border-gray-200">
@@ -467,13 +475,15 @@ const ReconciliationSheet = ({
                             <td className="py-1 px-1 text-right"></td>
                             <td className="py-1 px-1 text-center"></td>
                             <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
                         </tr>
 
                         <tr className="h-2"></tr>
 
                         {/* Section: Receivable */}
                         <tr className="font-extrabold text-black bg-gray-100/60 border-b border-black/40">
-                            <td className="py-1.5 px-1 text-left" colSpan={6}>Receivable</td>
+                            <td className="py-1.5 px-1 text-left" colSpan={8}>Receivable</td>
                         </tr>
                         {activeReport.receivables?.map((r: any, i: number) => (
                             <tr key={`receivable-${i}`} className="border-b border-gray-100 text-gray-700 hover:bg-gray-50/50">
@@ -481,6 +491,8 @@ const ReconciliationSheet = ({
                                 <td className="py-1 px-1 text-right">{formatVal(r.amount)}</td>
                                 <td className="py-1 px-1 text-right">-</td>
                                 <td className="py-1 px-1 text-right">-</td>
+                                <td className="py-1 px-1 text-center">-</td>
+                                <td className="py-1 px-1 text-center">-</td>
                                 <td className="py-1 px-1 text-center">-</td>
                                 <td className="py-1 px-1 text-center">-</td>
                             </tr>
@@ -492,13 +504,15 @@ const ReconciliationSheet = ({
                             <td className="py-1 px-1 text-right"></td>
                             <td className="py-1 px-1 text-center"></td>
                             <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
                         </tr>
 
                         <tr className="h-2"></tr>
 
                         {/* Section: Issued */}
                         <tr className="font-extrabold text-black bg-gray-100/60 border-b border-black/40">
-                            <td className="py-1.5 px-1 text-left" colSpan={6}>Issued</td>
+                            <td className="py-1.5 px-1 text-left" colSpan={8}>Issued</td>
                         </tr>
                         {activeReport.issuedVouchers?.exchangeAndClaims?.map((v: any, i: number) => (
                             <tr key={`iss-ec-${i}`} className="border-b border-gray-100 text-gray-700 hover:bg-gray-50/50">
@@ -508,6 +522,8 @@ const ReconciliationSheet = ({
                                 <td className="py-1 px-1 text-right">-</td>
                                 <td className="py-1 px-1 text-center font-mono">{v.from || "-"}</td>
                                 <td className="py-1 px-1 text-center">-</td>
+                                <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.createdBranch || "-"}>{v.createdBranch || "-"}</td>
+                                <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.redeemedBranch || "-"}>{v.redeemedBranch || "-"}</td>
                             </tr>
                         ))}
                         {activeReport.issuedVouchers?.creditVouchers?.map((v: any, i: number) => (
@@ -518,6 +534,8 @@ const ReconciliationSheet = ({
                                 <td className="py-1 px-1 text-right">-</td>
                                 <td className="py-1 px-1 text-center font-mono">{v.from || "-"}</td>
                                 <td className="py-1 px-1 text-center font-mono">{v.to || "-"}</td>
+                                <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.createdBranch || "-"}>{v.createdBranch || "-"}</td>
+                                <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.redeemedBranch || "-"}>{v.redeemedBranch || "-"}</td>
                             </tr>
                         ))}
                         {activeReport.issuedVouchers?.creditVouchers?.length > 0 && (
@@ -538,6 +556,8 @@ const ReconciliationSheet = ({
                                 <td className="py-1 px-1 text-right">-</td>
                                 <td className="py-1 px-1 text-center font-mono">{v.from || "-"}</td>
                                 <td className="py-1 px-1 text-center font-mono">{v.to || "-"}</td>
+                                <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.createdBranch || "-"}>{v.createdBranch || "-"}</td>
+                                <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.redeemedBranch || "-"}>{v.redeemedBranch || "-"}</td>
                             </tr>
                         ))}
                         {totalGiftVoucherDiscount > 0 && (
@@ -568,6 +588,8 @@ const ReconciliationSheet = ({
                                 <td className="py-1 px-1 text-right">-</td>
                                 <td className="py-1 px-1 text-center font-mono">{v.from || "-"}</td>
                                 <td className="py-1 px-1 text-center">-</td>
+                                <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.createdBranch || "-"}>{v.createdBranch || "-"}</td>
+                                <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.redeemedBranch || "-"}>{v.redeemedBranch || "-"}</td>
                             </tr>
                         ))}
 
@@ -585,7 +607,7 @@ const ReconciliationSheet = ({
 
                         {/* Section: FBR POS Charges */}
                         <tr className="font-extrabold text-black bg-gray-100/60 border-b border-black/40">
-                            <td className="py-1.5 px-1 text-left" colSpan={6}>FBR POS Service Charges</td>
+                            <td className="py-1.5 px-1 text-left" colSpan={8}>FBR POS Service Charges</td>
                         </tr>
                         {activeReport.fbrCharges?.map((f: any, i: number) => (
                             <tr key={`fbr-${i}`} className="border-b border-gray-100 text-gray-700 hover:bg-gray-50/50">
@@ -595,6 +617,8 @@ const ReconciliationSheet = ({
                                 <td className="py-1 px-1 text-right">-</td>
                                 <td className="py-1 px-1 text-center">-</td>
                                 <td className="py-1 px-1 text-center">-</td>
+                                <td className="py-1 px-1 text-center">-</td>
+                                <td className="py-1 px-1 text-center">-</td>
                             </tr>
                         ))}
                         <tr className="font-bold border-b border-gray-200">
@@ -602,6 +626,8 @@ const ReconciliationSheet = ({
                             <td className="py-1 px-1 text-right border-t border-dashed border-black/60">{formatVal(fbrSubtotal)}</td>
                             <td className="py-1 px-1 text-right"></td>
                             <td className="py-1 px-1 text-right"></td>
+                            <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
                             <td className="py-1 px-1 text-center"></td>
                             <td className="py-1 px-1 text-center"></td>
                         </tr>
@@ -616,12 +642,16 @@ const ReconciliationSheet = ({
                             <td className="py-1 px-1 text-right">-</td>
                             <td className="py-1 px-1 text-center"></td>
                             <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
                         </tr>
                         <tr className="font-semibold text-gray-900">
                             <td className="py-1 px-1 text-left">Sales Return</td>
                             <td className="py-1 px-1 text-right text-red-600 font-bold">({formatVal(activeReport.financials?.salesReturn)})</td>
                             <td className="py-1 px-1 text-right">-</td>
                             <td className="py-1 px-1 text-right">-</td>
+                            <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
                             <td className="py-1 px-1 text-center"></td>
                             <td className="py-1 px-1 text-center"></td>
                         </tr>
@@ -638,7 +668,7 @@ const ReconciliationSheet = ({
 
                         {/* Cash Breakdown */}
                         <tr className="font-extrabold text-black bg-gray-100/60 border-b border-black/40">
-                            <td className="py-1.5 px-1 text-left" colSpan={6}>Cash</td>
+                            <td className="py-1.5 px-1 text-left" colSpan={8}>Cash</td>
                         </tr>
                         <tr className="border-b border-gray-100 text-gray-700 hover:bg-gray-50/50">
                             <td className="py-1 px-1 text-left pl-4 font-medium">Sale</td>
@@ -671,13 +701,15 @@ const ReconciliationSheet = ({
                             <td className="py-1 px-1 text-right"></td>
                             <td className="py-1 px-1 text-center"></td>
                             <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
                         </tr>
 
                         <tr className="h-2"></tr>
 
                         {/* Card Breakdown */}
                         <tr className="font-extrabold text-black bg-gray-100/60 border-b border-black/40">
-                            <td className="py-1.5 px-1 text-left" colSpan={6}>Card(s)</td>
+                            <td className="py-1.5 px-1 text-left" colSpan={8}>Card(s)</td>
                         </tr>
                         <tr className="border-b border-gray-100 text-gray-700 hover:bg-gray-50/50">
                             <td className="py-1 px-1 text-left pl-4 font-medium">Sale</td>
