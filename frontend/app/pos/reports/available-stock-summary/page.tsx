@@ -31,20 +31,21 @@ import {
     Search,
     X,
     SlidersHorizontal,
-    Package,
-    MapPin
+    Package
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { cn, getApiBaseUrl, formatCurrency } from "@/lib/utils";
 
-export default function ERPAvailableStockSummaryReportPage() {
-    const [locations, setLocations] = useState<Location[]>([]);
-    const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
-    const [isLoadingLocations, setIsLoadingLocations] = useState<boolean>(true);
+import { useAuth } from "@/components/providers/auth-provider";
 
-    const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-    const [selectedWarehouseIds, setSelectedWarehouseIds] = useState<string[]>([]);
+export default function POSAvailableStockSummaryReportPage() {
+    const { user } = useAuth();
+    
+    
+
+    
+    
 
     const [asOfDate, setAsOfDate] = useState<string>(new Date().toISOString().split("T")[0]);
 
@@ -73,72 +74,14 @@ export default function ERPAvailableStockSummaryReportPage() {
     const [pdfExportState, setPdfExportState] = useState<"idle" | "queueing" | "processing" | "completed" | "failed">("idle");
     const [pdfExportProgress, setPdfExportProgress] = useState<number>(0);
 
-    // By-Location Export State
-    const [byLocExportState, setByLocExportState] = useState<"idle" | "loading">("idle");
-
     const summaryOnly = !groupingLevels.variant;
 
-    // Fetch Outlets/Locations on mount
-    useEffect(() => {
-        async function fetchLocationsList() {
-            setIsLoadingLocations(true);
-            try {
-                const res = await getLocations();
-                if (res && res.status && Array.isArray(res.data)) {
-                    setLocations(res.data);
-                }
-            } catch (err) {
-                console.error("Error fetching locations:", err);
-                toast.error("Failed to load locations list");
-            } finally {
-                setIsLoadingLocations(false);
-            }
-        }
-        fetchLocationsList();
-    }, []);
-
-    // Fetch Warehouses on mount
-    useEffect(() => {
-        async function fetchWarehousesList() {
-            try {
-                const data = await getWarehouses();
-                if (Array.isArray(data)) {
-                    setWarehouses(data);
-                }
-            } catch (err) {
-                console.error("Error fetching warehouses:", err);
-            }
-        }
-        fetchWarehousesList();
-    }, []);
-
-    // Format location options for MultiSelect
-    const locationOptions: MultiSelectOption[] = useMemo(() => {
-        return locations.map((loc) => ({
-            value: loc.id,
-            label: loc.name,
-            description: loc.code ? `Code: ${loc.code}` : undefined,
-        }));
-    }, [locations]);
-
-    // Format warehouse options for MultiSelect
-    const warehouseOptions: MultiSelectOption[] = useMemo(() => {
-        return warehouses.map((wh) => ({
-            value: wh.id,
-            label: wh.name,
-            description: wh.code ? `Code: ${wh.code}` : undefined,
-        }));
-    }, [warehouses]);
-
-    const locationParam = useMemo(() => {
-        return selectedLocationIds.length > 0 ? selectedLocationIds.join(",") : undefined;
-    }, [selectedLocationIds]);
-
-    const warehouseParam = useMemo(() => {
-        return selectedWarehouseIds.length > 0 ? selectedWarehouseIds.join(",") : undefined;
-    }, [selectedWarehouseIds]);
+    const locationParam = (user as any)?.terminal?.location?.id || (user as any)?.locationId;
+    const locationName = (user as any)?.terminal?.location?.name || "Store";
+    const warehouseParam = undefined;
 
     const fetchReport = useCallback(() => {
+        if (!locationParam) return;
         startTransition(async () => {
             const result = await getAvailableStockSummaryReport({
                 locationId: locationParam,
@@ -279,25 +222,6 @@ export default function ERPAvailableStockSummaryReportPage() {
             setExportState("failed");
             console.error(err);
             toast.error("Failed to queue export job.");
-        }
-    };
-
-    const handleExportByLocationClick = async () => {
-        setByLocExportState("loading");
-        try {
-            const base = getApiBaseUrl();
-            const params = new URLSearchParams();
-            if (locationParam) params.set("locationId", locationParam);
-            if (warehouseParam) params.set("warehouseId", warehouseParam);
-            if (asOfDate) params.set("asOfDate", asOfDate);
-            const url = `${base}/stock-ledger/available-stock-summary/export-by-location?${params.toString()}`;
-            window.open(url, "_blank");
-            toast.success("Export by Location started — check your downloads.");
-        } catch (err) {
-            console.error(err);
-            toast.error("Failed to export by location.");
-        } finally {
-            setByLocExportState("idle");
         }
     };
 
@@ -534,20 +458,7 @@ export default function ERPAvailableStockSummaryReportPage() {
     const formatPriceVal = (val: number) => val === 0 ? "-" : formatCurrency(val);
 
     const getSelectedLocationText = () => {
-        const parts: string[] = [];
-        if (selectedWarehouseIds.length === 1) {
-            const match = warehouses.find(w => w.id === selectedWarehouseIds[0]);
-            parts.push(match ? match.name : "1 Warehouse");
-        } else if (selectedWarehouseIds.length > 1) {
-            parts.push(`${selectedWarehouseIds.length} Warehouses`);
-        }
-        if (selectedLocationIds.length === 1) {
-            const match = locations.find(l => l.id === selectedLocationIds[0]);
-            parts.push(match ? match.name : "1 Outlet");
-        } else if (selectedLocationIds.length > 1) {
-            parts.push(`${selectedLocationIds.length} Outlets`);
-        }
-        return parts.length > 0 ? parts.join(" | ") : "All Warehouses & Outlets";
+        return locationName;
     };
 
     return (
@@ -557,7 +468,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                 <div>
                     <h1 className="text-3xl font-extrabold tracking-tight flex items-center gap-2 text-slate-800 dark:text-slate-100">
                         <TrendingUp className="h-8 w-8 text-primary" />
-                        ERP Available Stock Summary
+                        Available Stock Summary
                     </h1>
                     <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5 font-medium">
                         <Store className="h-4 w-4 text-primary/70" />
@@ -601,22 +512,6 @@ export default function ERPAvailableStockSummaryReportPage() {
                         )}
                         {getExportButtonText()}
                     </Button>
-                    <Button
-                        variant="outline"
-                        onClick={handleExportByLocationClick}
-                        disabled={byLocExportState === "loading" || reportData.length === 0}
-                        className={cn(
-                            "gap-2 font-semibold transition-all",
-                            "border-violet-500/40 text-violet-700 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/30"
-                        )}
-                    >
-                        {byLocExportState === "loading" ? (
-                            <Loader2 className="h-4 w-4 animate-spin text-violet-600" />
-                        ) : (
-                            <MapPin className="h-4 w-4" />
-                        )}
-                        {byLocExportState === "loading" ? "Generating..." : "Export by Location"}
-                    </Button>
                 </div>
             </div>
 
@@ -632,36 +527,6 @@ export default function ERPAvailableStockSummaryReportPage() {
             {/* Filters Row */}
             <div className="flex flex-wrap items-end justify-between gap-4 bg-slate-50 dark:bg-slate-900/40 border p-4 rounded-xl shadow-sm no-print">
                 <div className="flex flex-wrap items-end gap-4 flex-1">
-                    {/* Warehouse selector (MultiSelect in ERP) */}
-                    <div className="flex flex-col gap-1.5 min-w-[240px]">
-                        <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 leading-none">
-                            <Package className="h-3.5 w-3.5 text-primary" />
-                            Select Warehouses
-                        </span>
-                        <MultiSelect
-                            options={warehouseOptions}
-                            value={selectedWarehouseIds}
-                            onValueChange={setSelectedWarehouseIds}
-                            placeholder="All Warehouses"
-                            className="bg-background"
-                        />
-                    </div>
-
-                    {/* Location selector (MultiSelect in ERP) */}
-                    <div className="flex flex-col gap-1.5 min-w-[240px]">
-                        <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 leading-none">
-                            <Store className="h-3.5 w-3.5 text-primary" />
-                            Select Outlets / Stores
-                        </span>
-                        <MultiSelect
-                            options={locationOptions}
-                            value={selectedLocationIds}
-                            onValueChange={setSelectedLocationIds}
-                            placeholder="All Outlets"
-                            className="bg-background"
-                        />
-                    </div>
-
                     {/* Date picker */}
                     <div className="flex flex-col gap-1.5">
                         <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 leading-none">
@@ -1123,3 +988,4 @@ export default function ERPAvailableStockSummaryReportPage() {
         </div>
     );
 }
+

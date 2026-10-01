@@ -1220,6 +1220,9 @@ function ReceiptBody({
       <div className="text-center text-[9px] pt-1 pb-1 space-y-0">
         <p>{settings.receiptFooter || "*** THANK YOU FOR SHOPPING ***"}</p>
         <p className="tracking-widest font-bold">{order?.orderNumber}</p>
+        <p className="text-[9px] mt-1 font-bold">INPL POS</p>
+        <p className="text-[8px] font-normal">Powered by Innovative Network (Pvt.) Ltd.</p>
+        <p className="text-[8px] font-normal">+92(21)34303051-3 | innovative-net.com</p>
       </div>
     </div>
   );
@@ -1699,8 +1702,14 @@ function A4InvoiceBody({
             <p className="text-[9px] text-zinc-400 font-mono mt-0.5">
               Invoice Ref: {order?.orderNumber}
             </p>
-            <p className="text-[9px] text-zinc-400 pt-0.5">
-              Software by Innovative Network (Pvt) Ltd
+            <p className="text-[10px] text-zinc-500 font-bold mt-1">
+              INPL POS
+            </p>
+            <p className="text-[9px] text-zinc-400">
+              Powered by Innovative Network (Pvt.) Ltd.
+            </p>
+            <p className="text-[9px] text-zinc-400">
+              +92(21)34303051-3 | innovative-net.com
             </p>
           </div>
         </div>
