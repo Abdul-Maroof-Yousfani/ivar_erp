@@ -107,18 +107,65 @@ export class AccountingService {
 
     /**
      * Reverse previously posted lines (cancellation / reversal).
-     * Creates new AccountTransaction rows with swapped debit/credit.
+     * Deletes the original AccountTransaction rows and reverts ChartOfAccount balances.
      */
     async reverseLines(lines: JournalLine[], options: PostOptions, tx?: any): Promise<void> {
-        const reversed = lines.map(l => ({
-            accountId: l.accountId,
-            debit: l.credit,
-            credit: l.debit,
-        }));
-        return this.postLines(reversed, {
-            ...options,
-            description: `REVERSAL: ${options.description ?? options.sourceRef}`,
-        }, tx);
+        const client = tx ?? this.prisma;
+
+        // Find all transactions that were posted for this source
+        const transactions = await client.accountTransaction.findMany({
+            where: {
+                sourceType: options.sourceType,
+                sourceId: options.sourceId,
+            },
+        });
+
+        if (transactions.length === 0) {
+            this.logger.warn(`No transactions found to reverse for ${options.sourceType} ${options.sourceId}`);
+            return;
+        }
+
+        // Group the deltas by account
+        const accountDeltas = new Map<string, number>();
+        const accountIds = [...new Set(transactions.map((t: any) => t.accountId))];
+
+        const accounts = await client.chartOfAccount.findMany({
+            where: { id: { in: accountIds } },
+            select: { id: true, type: true },
+        });
+        const accountTypes = new Map<string, AccountType>(accounts.map((a: any) => [a.id, a.type]));
+
+        for (const t of transactions) {
+            const type = accountTypes.get(t.accountId);
+            if (!type) {
+                this.logger.warn(`Account type not found for account ${t.accountId} during reversal`);
+                continue;
+            }
+
+            // Calculate the original delta that was applied to the balance
+            const originalDelta = this.calculateDelta(type, Number(t.debit), Number(t.credit));
+            
+            // To reverse it, we subtract the original delta
+            const currentDelta = accountDeltas.get(t.accountId) || 0;
+            accountDeltas.set(t.accountId, currentDelta - originalDelta);
+        }
+
+        // Apply the reversed deltas
+        for (const [accountId, reversalDelta] of accountDeltas.entries()) {
+            if (reversalDelta === 0) continue;
+            await client.chartOfAccount.update({
+                where: { id: accountId },
+                data: { balance: { increment: reversalDelta } },
+            });
+        }
+
+        // Delete the transaction records
+        await client.accountTransaction.deleteMany({
+            where: {
+                sourceType: options.sourceType,
+                sourceId: options.sourceId,
+            },
+        });
     }
 
     private calculateDelta(type: AccountType, debit: number, credit: number): number {

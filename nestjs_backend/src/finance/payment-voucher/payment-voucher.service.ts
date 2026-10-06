@@ -279,8 +279,12 @@ export class PaymentVoucherService {
     const { details, ...data } = updatePaymentVoucherDto;
 
     const existing = await this.findOne(id);
+    // Allow status change
     if (existing.status !== 'pending') {
-      throw new BadRequestException('Payment Voucher can only be edited when it is in pending status');
+      const isOnlyStatusUpdate = Object.keys(updatePaymentVoucherDto).every(k => k === 'status');
+      if (!isOnlyStatusUpdate) {
+        throw new BadRequestException('Payment Voucher can only be edited when it is in pending status');
+      }
     }
 
     if (details) {
@@ -577,6 +581,166 @@ export class PaymentVoucherService {
     }
   }
 
+  private async reversePaymentVoucherLedger(voucherId: string, prisma: any) {
+    const voucher = await prisma.paymentVoucher.findUnique({
+      where: { id: voucherId },
+      include: {
+        details: true,
+      },
+    });
+    if (!voucher) return;
+
+    const details = voucher.details;
+    const totalDebit = details.reduce((sum, item) => sum + Number(item.debit || 0), 0);
+
+    const invoices = await prisma.paymentVoucherToInvoice.findMany({
+      where: { paymentVoucherId: voucherId }
+    });
+
+    const advanceApplications = await prisma.advanceApplication.findMany({
+      where: { appliedInVoucherId: voucherId }
+    });
+
+    const totalAdvanceApplied = advanceApplications.reduce((s, a) => s + Number(a.appliedAmount), 0);
+
+    // ── Reverse invoice payment statuses ─────────────────────────────────
+    if (invoices && invoices.length > 0) {
+      for (const invoicePayment of invoices) {
+        const invoice = await prisma.purchaseInvoice.findUnique({
+          where: { id: invoicePayment.purchaseInvoiceId }
+        });
+        if (invoice) {
+          const newPaidAmount = Number(invoice.paidAmount) - Number(invoicePayment.paidAmount);
+          const newRemainingAmount = Number(invoice.totalAmount) - newPaidAmount - Number(invoice.returnAmount || 0);
+          let paymentStatus = 'UNPAID';
+          if (newRemainingAmount <= 0.01) paymentStatus = 'FULLY_PAID';
+          else if (newPaidAmount > 0) paymentStatus = 'PARTIALLY_PAID';
+
+          await prisma.purchaseInvoice.update({
+            where: { id: invoicePayment.purchaseInvoiceId },
+            data: {
+              paidAmount: newPaidAmount,
+              remainingAmount: Math.max(0, newRemainingAmount),
+              paymentStatus: paymentStatus as any,
+            }
+          });
+        }
+      }
+    }
+
+    // ── Reverse apply advances ──────────────────────────────────────────
+    const advanceAccountId = totalAdvanceApplied > 0
+      ? await this.financeConfig.resolveAccount(AccountRoleKey.ADVANCE_TO_SUPPLIERS)
+      : null;
+
+    if (advanceApplications && advanceApplications.length > 0 && advanceAccountId) {
+      for (const app of advanceApplications) {
+        // Reverse advanceApplied on the source advance PV
+        await prisma.paymentVoucher.update({
+          where: { id: app.sourceAdvanceId },
+          data: { advanceApplied: { decrement: app.appliedAmount } },
+        });
+
+        // Reverse Journal: Dr A/P PARTIES (supplier payable) / Cr ADVANCE TO SUPPLIERS
+        const apParties = details.find(d => Number(d.debit) > 0);
+        const apPartiesAccountId = apParties?.accountId ?? voucher.creditAccountId;
+        let apPartiesTagAccountId = apParties?.tagAccountId;
+
+        if (!apPartiesTagAccountId && voucher.supplierId) {
+          const supplier = await prisma.supplier.findUnique({
+            where: { id: voucher.supplierId },
+            select: { code: true },
+          });
+          if (supplier) {
+            const tagAccount = await prisma.chartOfAccount.findFirst({
+              where: {
+                parentId: apPartiesAccountId,
+                code: supplier.code,
+              },
+              select: { id: true },
+            });
+            if (tagAccount) {
+              apPartiesTagAccountId = tagAccount.id;
+            }
+          }
+        }
+
+        await this.accounting.reverseLines([
+          { accountId: apPartiesAccountId, tagAccountId: apPartiesTagAccountId ?? undefined, debit: Number(app.appliedAmount), credit: 0 },
+          { accountId: advanceAccountId, debit: 0, credit: Number(app.appliedAmount) },
+        ], {
+          sourceType: 'ADVANCE_APPLICATION',
+          sourceId: voucher.id,
+          sourceRef: `${voucher.pvNo}-ADV-REV`,
+          description: `Reversal of advance applied from advance voucher`,
+          transactionDate: new Date(),
+        }, prisma);
+      }
+    }
+
+    // ── Reverse main journal lines ───────────────────────────────────────────
+    if (totalDebit > 0) {
+      const allLines = details
+        .filter(d => Number(d.debit) > 0 || Number(d.credit) > 0)
+        .map(d => ({
+          accountId:       d.accountId,
+          tagAccountId:    d.tagAccountId?.trim() || undefined,
+          debit:           Number(d.debit)  || 0,
+          credit:          Number(d.credit) || 0,
+          narration:       d.narration  || voucher.description || undefined,
+          refBillNo:       d.refBillNo  || voucher.refBillNo   || undefined,
+          refBillNo2:      d.refBillNo2 || undefined,
+          taxType:         d.taxType ?? voucher.taxType ?? 'Taxable',
+          sourceDetailId:  d.id,
+          cprNo:           d.cprNo || undefined,
+        }));
+      await this.accounting.reverseLines(allLines, {
+        sourceType: 'PAYMENT_VOUCHER',
+        sourceId: voucher.id,
+        sourceRef: `${voucher.pvNo}-REV`,
+        description: `Reversal of Payment Voucher: ${voucher.pvNo}`,
+        transactionDate: new Date(),
+      }, prisma);
+    }
+
+    // ── Reverse supplier ledger entries ────────────────────────────────────
+    if (voucher.supplierId) {
+      const supplier = await prisma.supplier.findUnique({
+        where: { id: voucher.supplierId },
+        select: { currentBalance: true, advanceBalance: true },
+      });
+      if (supplier) {
+        let runningBalance = Number(supplier.currentBalance);
+        let runningAdvance = Number(supplier.advanceBalance);
+
+        if (voucher.isAdvance) {
+          runningAdvance -= totalDebit;
+        } else {
+          runningBalance += totalDebit;
+          for (const app of advanceApplications) {
+            runningBalance += Number(app.appliedAmount);
+            runningAdvance += Number(app.appliedAmount);
+          }
+        }
+
+        // Delete the supplierLedger entries associated with this voucher
+        await prisma.supplierLedger.deleteMany({
+          where: {
+            sourceId: voucher.id,
+          },
+        });
+
+        await prisma.supplier.update({
+          where: { id: voucher.supplierId },
+          data: {
+            currentBalance: runningBalance,
+            advanceBalance: runningAdvance,
+          },
+        });
+      }
+    }
+  }
+
   async getNextPvNumber(type: string): Promise<{ nextPvNumber: string }> {
     const nextPvNumber = await generateNextPvNumber(this.prisma, type, new Date());
     return { nextPvNumber };
@@ -735,11 +899,16 @@ export class PaymentVoucherService {
       throw new BadRequestException('Invalid status. Must be pending, approved, or rejected');
     }
 
-    if (existing.status !== 'pending') {
-      throw new BadRequestException('Payment Voucher status can only be changed when it is in pending status');
-    }
+    // if (existing.status !== 'pending') {
+    //   throw new BadRequestException('Payment Voucher status can only be changed when it is in pending status');
+    // }
 
     return this.prisma.$transaction(async (prisma) => {
+      if (existing.status === 'approved' && status !== 'approved') {
+        // Reversing
+        await this.reversePaymentVoucherLedger(id, prisma);
+      }
+
       const updated = await prisma.paymentVoucher.update({
         where: { id },
         data: {
@@ -757,7 +926,7 @@ export class PaymentVoucherService {
         },
       });
 
-      if (status === 'approved') {
+      if (existing.status !== 'approved' && status === 'approved') {
         await this.postPaymentVoucherToLedger(id, prisma);
       }
 

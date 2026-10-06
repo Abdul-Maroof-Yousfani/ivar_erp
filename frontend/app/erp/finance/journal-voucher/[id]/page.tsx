@@ -248,6 +248,17 @@ export default function JournalVoucherDetailPage({
                 </Button>
               </>
             )}
+            {voucher.status === "approved" && (
+              <Button
+                onClick={() => handleUpdateStatus("pending")}
+                size="sm"
+                variant="destructive"
+                disabled={actionPending}
+              >
+                <Clock className="h-4 w-4 mr-2" />
+                Un-approve
+              </Button>
+            )}
           </div>
         </div>
 

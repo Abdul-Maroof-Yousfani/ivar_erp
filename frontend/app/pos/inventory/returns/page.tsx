@@ -21,7 +21,8 @@ import {
     X,
     MapPin,
     ArrowRightLeft,
-    Printer
+    Printer,
+    Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { COMPANY_NAME } from "@/lib/utils";
@@ -52,6 +53,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { ChevronsUpDown, Check } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
 import { warehouseApi, inventoryApi } from "@/lib/api";
+import * as XLSX from "xlsx";
 
 interface Warehouse {
     id: string;
@@ -85,6 +87,8 @@ interface RequestItem {
     item?: {
         sku: string;
         description: string;
+        size?: any;
+        color?: any;
     };
 }
 
@@ -259,6 +263,36 @@ export default function ReturnRequestsPage() {
                 setPrintingId(null);
             }, 60000);
         }, 500);
+    };
+
+    const handleExportCSV = (request: ReturnRequest) => {
+        try {
+            const data = request.items.map((item, idx) => ({
+                "S.No": idx + 1,
+                "Request No": request.requestNo || "N/A",
+                "Request Date": format(new Date(request.createdAt), "dd MMM yyyy HH:mm"),
+                "Return From": user?.terminal?.location?.name || request.fromLocation?.name || "This Location",
+                "Destination": request.toWarehouse?.name || request.toLocation?.name || "Main Warehouse",
+                "Status": request.status,
+                "Reason / Notes": request.notes || "-",
+                "SKU": item.item?.sku || "-",
+                "Description": item.item?.description || "-",
+                "Size": (item.item as any)?.size?.name || (item.item as any)?.size || "-",
+                "Color": (item.item as any)?.color?.name || (item.item as any)?.color || "-",
+                "Quantity": Number(item.quantity)
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Return Slip");
+            
+            const fileName = `Return_Slip_${request.requestNo || request.id.substring(0, 8)}.xlsx`;
+            XLSX.writeFile(workbook, fileName);
+            toast.success("Return slip exported successfully");
+        } catch (error) {
+            console.error("Error exporting return slip:", error);
+            toast.error("Failed to export return slip");
+        }
     };
 
     // Create Mode States
@@ -459,7 +493,12 @@ export default function ReturnRequestsPage() {
                 items: (req.items || []).map((it: any) => ({
                     id: it.id,
                     quantity: Number(it.quantity || 0),
-                    item: it.item ? { sku: it.item.sku, description: it.item.description } : undefined
+                    item: it.item ? { 
+                        sku: it.item.sku, 
+                        description: it.item.description,
+                        size: it.item.size,
+                        color: it.item.color
+                    } : undefined
                 }))
             });
 
@@ -1296,6 +1335,13 @@ export default function ReturnRequestsPage() {
                                                         onClick={() => handlePrint(request)}
                                                     >
                                                         <Printer className="h-4 w-4 mr-1" /> Slip
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        className="flex-1 h-10 font-semibold text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+                                                        onClick={() => handleExportCSV(request)}
+                                                    >
+                                                        <Download className="h-4 w-4 mr-1" /> CSV
                                                     </Button>
                                                 </div>
                                             </div>

@@ -156,8 +156,12 @@ export class ReceiptVoucherService {
     const { details, invoices: _invoices, ...data } = dto as any;
     const existing = await this.findOne(id);
 
+    // Allow status updates even if not pending
     if (existing.status !== 'pending') {
-      throw new BadRequestException('Receipt Voucher can only be edited when it is in pending status');
+      const isOnlyStatusUpdate = Object.keys(data).every(k => k === 'status');
+      if (!isOnlyStatusUpdate) {
+        throw new BadRequestException('Receipt Voucher can only be edited when it is in pending status');
+      }
     }
 
     // Only scalar fields that Prisma accepts on update
@@ -228,11 +232,16 @@ export class ReceiptVoucherService {
       throw new BadRequestException('Invalid status. Must be pending, approved, or rejected');
     }
 
-    if (existing.status !== 'pending') {
-      throw new BadRequestException('Receipt Voucher status can only be changed when it is in pending status');
-    }
+    // if (existing.status !== 'pending') {
+    //   throw new BadRequestException('Receipt Voucher status can only be changed when it is in pending status');
+    // }
 
     return this.prisma.$transaction(async (prisma) => {
+      if (existing.status === 'approved' && status !== 'approved') {
+        // Reversing
+        await this.reverseReceiptVoucherLedger(id, prisma);
+      }
+
       const updated = await prisma.receiptVoucher.update({
         where: { id },
         data: {
@@ -250,7 +259,7 @@ export class ReceiptVoucherService {
         },
       });
 
-      if (status === 'approved') {
+      if (existing.status !== 'approved' && status === 'approved') {
         await this.postReceiptVoucherToLedger(id, prisma);
       }
 
@@ -321,6 +330,73 @@ export class ReceiptVoucherService {
         sourceRef: voucher.rvNo,
         description: voucher.description || `Receipt Voucher: ${voucher.rvNo}`,
         transactionDate: new Date(voucher.rvDate),
+      }, prisma);
+    }
+  }
+
+  private async reverseReceiptVoucherLedger(voucherId: string, prisma: any) {
+    const voucher = await prisma.receiptVoucher.findUnique({
+      where: { id: voucherId },
+      include: {
+        details: true,
+      },
+    });
+    if (!voucher) return;
+
+    const details = voucher.details;
+    const totalDebit = details.reduce((sum, item) => sum + Number(item.debit || 0), 0);
+
+    const invoices = await prisma.receiptVoucherToInvoice.findMany({
+      where: { receiptVoucherId: voucherId },
+    });
+
+    // ── Reverse sales invoice payment statuses ────────────────────────────
+    if (invoices && invoices.length > 0) {
+      for (const inv of invoices) {
+        const si = await prisma.eRPSalesInvoice.findUnique({ where: { id: inv.salesInvoiceId } });
+        if (si) {
+          const newPaid = Number(si.paidAmount) - Number(inv.receivedAmount);
+          const newBalance = Number(si.grandTotal) - newPaid;
+          let paymentStatus = 'UNPAID';
+          if (newBalance <= 0.01) paymentStatus = 'FULLY_PAID';
+          else if (newPaid > 0) paymentStatus = 'PARTIALLY_PAID';
+
+          const invoiceStatus = newBalance <= 0.01 ? 'PAID' : newPaid > 0 ? 'PARTIAL' : 'PENDING';
+
+          await prisma.eRPSalesInvoice.update({
+            where: { id: inv.salesInvoiceId },
+            data: {
+              paidAmount: newPaid,
+              balanceAmount: Math.max(0, newBalance),
+              paymentStatus,
+              status: invoiceStatus as any,
+            },
+          });
+        }
+      }
+    }
+
+    // ── Reverse journal lines ───────────────────────────────────────────────
+    if (totalDebit > 0) {
+      const allLines = details
+        .filter(d => Number(d.debit) > 0 || Number(d.credit) > 0)
+        .map(d => ({
+          accountId:       d.accountId,
+          tagAccountId:    d.tagAccountId?.trim() || undefined,
+          debit:           Number(d.debit) || 0,
+          credit:          Number(d.credit) || 0,
+          narration:       d.narration || voucher.description || undefined,
+          refBillNo:       d.refBillNo || voucher.refBillNo || undefined,
+          refBillNo2:      d.refBillNo2 || undefined,
+          taxType: d.taxType ?? 'Taxable',
+        }));
+
+      await this.accounting.reverseLines(allLines, {
+        sourceType: 'RECEIPT_VOUCHER',
+        sourceId: voucher.id,
+        sourceRef: `${voucher.rvNo}-REV`,
+        description: `Reversal of Receipt Voucher: ${voucher.rvNo}`,
+        transactionDate: new Date(),
       }, prisma);
     }
   }

@@ -152,8 +152,12 @@ export class JournalVoucherService {
       const { details, ...data } = updateJournalVoucherDto;
       const existing = await this.findOne(id);
 
+      // Allow un-approving or status updates even if not pending
       if (existing.status !== 'pending') {
-        throw new BadRequestException('Journal Voucher can only be edited when it is in pending status');
+        const isOnlyStatusUpdate = Object.keys(updateJournalVoucherDto).every(k => k === 'status');
+        if (!isOnlyStatusUpdate) {
+          throw new BadRequestException('Journal Voucher can only be edited when it is in pending status');
+        }
       }
 
       let updated: any;

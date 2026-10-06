@@ -1939,12 +1939,14 @@ export class PosSessionService {
     const sheet = workbook.addWorksheet('Sales Reconciliation');
 
     sheet.columns = [
-      { key: 'colA', width: 35 },
-      { key: 'colB', width: 18 },
-      { key: 'colC', width: 12 },
-      { key: 'colD', width: 18 },
-      { key: 'colE', width: 15 },
-      { key: 'colF', width: 15 },
+      { key: 'colA', width: 25 },
+      { key: 'colB', width: 15 },
+      { key: 'colC', width: 10 },
+      { key: 'colD', width: 15 },
+      { key: 'colE', width: 12 },
+      { key: 'colF', width: 12 },
+      { key: 'colG', width: 15 },
+      { key: 'colH', width: 15 },
     ];
 
     const BORDER_THIN: Partial<ExcelJS.Borders> = {
@@ -1971,7 +1973,7 @@ export class PosSessionService {
           fgColor: { argb: 'FF1E3A5F' },
         };
       });
-      sheet.mergeCells(row.number, 1, row.number, 6);
+      sheet.mergeCells(row.number, 1, row.number, 8);
     };
 
     const addTableHeader = (headers: string[]) => {
@@ -1993,7 +1995,7 @@ export class PosSessionService {
 
     // 1. Cards
     addSectionHeader('CREDIT | DEBIT CARDS');
-    addTableHeader(['Bank', 'Amount', 'Rate %', 'Bank Comm.', '', '']);
+    addTableHeader(['Bank', 'Amount', 'Rate %', 'Bank Comm.', '', '', 'Issue from', 'Redeemed at']);
     let cardPaymentsAmountSum = 0;
     let cardPaymentsCommSum = 0;
     for (const card of data.cardPayments) {
@@ -2018,7 +2020,7 @@ export class PosSessionService {
 
     // 2. Gift Cards
     addSectionHeader('CREDIT CARD - GIFT VOUCHERS ISSUED');
-    addTableHeader(['Bank', 'Amount', 'Rate %', 'Bank Comm.', '', '']);
+    addTableHeader(['Bank', 'Amount', 'Rate %', 'Bank Comm.', '', '', 'Issue from', 'Redeemed at']);
     let cardGiftVouchersAmountSum = 0;
     let cardGiftVouchersCommSum = 0;
     if (data.cardGiftVouchers && data.cardGiftVouchers.length > 0) {
@@ -2065,10 +2067,10 @@ export class PosSessionService {
 
     // 3. Received
     addSectionHeader('RECEIVED');
-    addTableHeader(['Type', 'Amount', '', '', 'From', '']);
+    addTableHeader(['Type', 'Amount', '', '', 'From', '', 'Issue from', 'Redeemed at']);
     let receivedSubtotal = 0;
     for (const v of data.receivedVouchers) {
-      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '']);
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '', v.createdBranch || '-', v.redeemedBranch || '-']);
       receivedSubtotal += v.amount;
     }
     const recSubRow = sheet.addRow(['RECEIVED SUBTOTAL', formatCurrencyCell(receivedSubtotal)]);
@@ -2078,7 +2080,7 @@ export class PosSessionService {
 
     // 4. Receivable
     addSectionHeader('RECEIVABLE');
-    addTableHeader(['Description', 'Amount', '', '', '', '']);
+    addTableHeader(['Description', 'Amount', '', '', '', '', 'Issue from', 'Redeemed at']);
     let receivablesSubtotal = 0;
     for (const r of data.receivables) {
       sheet.addRow([r.description, formatCurrencyCell(r.amount)]);
@@ -2091,7 +2093,7 @@ export class PosSessionService {
 
     // 5. Issued
     addSectionHeader('ISSUED VOUCHERS');
-    addTableHeader(['Voucher Type', 'Amount', '', '', 'From', 'To']);
+    addTableHeader(['Voucher Type', 'Amount', '', '', 'From', 'To', 'Issue from', 'Redeemed at']);
     const issuedExchangeSubtotal = data.issuedVouchers.exchangeAndClaims?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
     const issuedCreditSubtotal = data.issuedVouchers.creditVouchers?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
     const issuedGiftSubtotal = data.issuedVouchers.giftVouchers?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
@@ -2099,19 +2101,19 @@ export class PosSessionService {
     const totalIssuedSubtotal = issuedExchangeSubtotal + issuedGiftSubtotal + issuedRefundSubtotal;
 
     for (const v of data.issuedVouchers.exchangeAndClaims || []) {
-      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '']);
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '', v.createdBranch || '-', v.redeemedBranch || '-']);
     }
     for (const v of data.issuedVouchers.creditVouchers || []) {
-      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', v.to || '-']);
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', v.to || '-', v.createdBranch || '-', v.redeemedBranch || '-']);
     }
     for (const v of data.issuedVouchers.giftVouchers || []) {
-      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', v.to || '-']);
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', v.to || '-', v.createdBranch || '-', v.redeemedBranch || '-']);
     }
     if (data.issuedVouchers.totalGiftVoucherDiscount > 0) {
       sheet.addRow(['Gift Vouchers Discount', formatCurrencyCell(data.issuedVouchers.totalGiftVoucherDiscount)]);
     }
     for (const v of data.issuedVouchers.refundVouchers || []) {
-      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '']);
+      sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '', v.createdBranch || '-', v.redeemedBranch || '-']);
     }
 
     const issuedSubRow = sheet.addRow(['TOTAL ISSUED', formatCurrencyCell(totalIssuedSubtotal)]);
@@ -2121,7 +2123,7 @@ export class PosSessionService {
 
     // 6. FBR Charges
     addSectionHeader('FBR POS SERVICE CHARGES');
-    addTableHeader(['Type', 'Amount', '', '', '', '']);
+    addTableHeader(['Type', 'Amount', '', '', '', '', 'Issue from', 'Redeemed at']);
     let fbrSubtotal = 0;
     for (const f of data.fbrCharges) {
       sheet.addRow([f.type, formatCurrencyCell(f.amount)]);
