@@ -493,7 +493,12 @@ export default function ReturnRequestsPage() {
                 items: (req.items || []).map((it: any) => ({
                     id: it.id,
                     quantity: Number(it.quantity || 0),
-                    item: it.item ? { sku: it.item.sku, description: it.item.description } : undefined
+                    item: it.item ? { 
+                        sku: it.item.sku, 
+                        description: it.item.description,
+                        size: it.item.size,
+                        color: it.item.color
+                    } : undefined
                 }))
             });
 
