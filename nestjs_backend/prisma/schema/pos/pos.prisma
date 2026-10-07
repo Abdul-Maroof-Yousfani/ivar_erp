@@ -308,6 +308,7 @@ model Voucher {
   transactions VoucherTransaction[]
   redemptions  VoucherRedemption[]
   claims       PosClaim[] // Claims that generated this voucher
+  shopifyItems ShopifyVoucherDetailTemp[]
 
   @@index([code])
   @@index([customerId])
@@ -315,6 +316,24 @@ model Voucher {
   @@index([voucherType])
   @@index([merchantId])
   @@map("pos_vouchers")
+}
+
+model ShopifyVoucherDetailTemp {
+  id         String   @id @default(uuid())
+  voucherId  String   @map("voucher_id")
+  orderId    String   @map("order_id")
+  itemName   String   @map("item_name")
+  barcode    String?
+  sku        String?
+  quantity   Int
+  price      Decimal  @db.Decimal(15, 2)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  voucher    Voucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+
+  @@index([voucherId])
+  @@index([orderId])
+  @@map("shopify_voucher_detail_temp")
 }
 
 // Which locations can redeem this voucher

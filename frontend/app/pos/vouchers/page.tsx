@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,7 @@ import { Separator } from "@/components/ui/separator";
 import {
     Gift, RefreshCw, CreditCard, Building2, MapPin,
     Plus, Copy, XCircle, CheckCircle2, Ticket, Layers,
-    Download, ChevronDown, Printer,
+    Download, ChevronDown, Printer, Store,
 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -50,6 +50,7 @@ const VOUCHER_TYPES: { value: VoucherType; label: string; icon: React.ElementTyp
     { value: "CORPORATE",   label: "Corporate",   icon: Building2, color: "text-amber-600"   },
     { value: "OUTLET_GIFT", label: "Outlet Gift", icon: MapPin,    color: "text-rose-600"    },
     { value: "REFUND",      label: "Refund",      icon: Ticket,    color: "text-red-600"     },
+    { value: "SHOPIFY",     label: "Shopify",     icon: Store,     color: "text-green-600"   },
 ];
 
 // Types available for manual issuance (EXCHANGE and REFUND are system-only)
@@ -108,12 +109,23 @@ export default function PosVouchersPage() {
     const [singleAmount, setSingleAmount] = useState<number | "">("");
     const [singleDiscount, setSingleDiscount] = useState<number | "">("");
     const [singleDesc,   setSingleDesc]   = useState("");
+    const [singleOrderId,setSingleOrderId]= useState("");
+    const [singleShopifyItems, setSingleShopifyItems] = useState<{itemName: string, barcode?: string, sku?: string, quantity: number, price: number}[]>([]);
+    const [scanBarcodeQuery, setScanBarcodeQuery] = useState("");
+    const [isScanning, setIsScanning] = useState(false);
+    const [searchShopifyResults, setSearchShopifyResults] = useState<any[]>([]);
+    const [isSearchingShopify, setIsSearchingShopify] = useState(false);
+    const [activeShopifyIndex, setActiveShopifyIndex] = useState(-1);
+    const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const lastKeyTimeRef = useRef<number>(0);
+    const fastKeyCountRef = useRef<number>(0);
     const [singleCo,     setSingleCo]     = useState("");
     const [singleCoGl,   setSingleCoGl]   = useState("");
     const [singleExp,    setSingleExp]    = useState("");
     const [singleLocationIds, setSingleLocationIds] = useState<string[]>([]);
     const [issuingSingle, setIssuingSingle] = useState(false);
     const [issuedVoucher, setIssuedVoucher] = useState<Voucher | null>(null);
+    const [isFixedType,   setIsFixedType]   = useState(false);
 
     // ── Bulk issue modal ─────────────────────────────────────────
     const [showBulk,    setShowBulk]    = useState(false);
@@ -198,11 +210,151 @@ export default function PosVouchersPage() {
             return v.voucherType === activeTab;
         });
 
+    useEffect(() => {
+        setActiveShopifyIndex(-1);
+    }, [searchShopifyResults, scanBarcodeQuery]);
+
+    useEffect(() => {
+        if (singleType === "SHOPIFY") {
+            const total = singleShopifyItems.reduce((acc, item) => acc + (Number(item.price || 0) * Number(item.quantity || 1)), 0);
+            if (total > 0) {
+                setSingleAmount(total);
+            } else if (singleShopifyItems.length === 0) {
+                setSingleAmount("");
+            }
+        }
+    }, [singleShopifyItems, singleType]);
+
+    useEffect(() => {
+        const timer = setTimeout(async () => {
+            if (scanBarcodeQuery.trim().length >= 2) {
+                setIsSearchingShopify(true);
+                try {
+                    const res = await authFetch(`/pos-sales/lookup`, { params: { q: scanBarcodeQuery.trim() } });
+                    if (res.ok && res.data?.status && res.data.data) {
+                        setSearchShopifyResults(res.data.data);
+                    } else {
+                        setSearchShopifyResults([]);
+                    }
+                } catch {
+                    setSearchShopifyResults([]);
+                } finally {
+                    setIsSearchingShopify(false);
+                }
+            } else {
+                setSearchShopifyResults([]);
+            }
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [scanBarcodeQuery]);
+
     // ── Handlers ─────────────────────────────────────────────────
+    const addProductToShopifyItems = (product: any) => {
+        const itemName = product.description || product.sku || "Unknown Item";
+        const barcode = product.barCode || "";
+        const sku = product.sku || "";
+        const existingIndex = singleShopifyItems.findIndex(i => i.itemName === itemName && i.barcode === barcode && i.sku === sku);
+        if (existingIndex > -1) {
+            const newItems = [...singleShopifyItems];
+            newItems[existingIndex].quantity += 1;
+            setSingleShopifyItems(newItems);
+            toast.success(`+1 Scanned: ${itemName}`);
+        } else {
+            setSingleShopifyItems([...singleShopifyItems, { itemName, barcode, sku, quantity: 1, price: Number(product.unitPrice) || 0 }]);
+            toast.success(`Added: ${itemName}`);
+        }
+        setScanBarcodeQuery("");
+        setSearchShopifyResults([]);
+        setActiveShopifyIndex(-1);
+    };
+
+    useEffect(() => {
+        return () => {
+            if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+        };
+    }, []);
+
+    const executeScan = async (query: string) => {
+        if (!query.trim()) return;
+        setIsScanning(true);
+        try {
+            const res = await authFetch(`/pos-sales/scan`, { params: { barcode: query.trim() } });
+            if (res.ok && res.data?.status && res.data.data) {
+                addProductToShopifyItems(res.data.data);
+            } else {
+                toast.error(res.data?.message || "Item not found");
+            }
+        } catch {
+            toast.error("Failed to scan item");
+        } finally {
+            setScanBarcodeQuery("");
+            setSearchShopifyResults([]);
+            setActiveShopifyIndex(-1);
+            setIsScanning(false);
+        }
+    };
+
+    const handleScanBarcodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = e.target.value;
+        const now = Date.now();
+        const timeDiff = now - lastKeyTimeRef.current;
+        lastKeyTimeRef.current = now;
+
+        if (timeDiff < 55) {
+            fastKeyCountRef.current += 1;
+        } else {
+            fastKeyCountRef.current = 1;
+        }
+
+        setScanBarcodeQuery(val);
+
+        if (scanTimeoutRef.current) {
+            clearTimeout(scanTimeoutRef.current);
+        }
+
+        if (fastKeyCountRef.current >= 3 && val.trim().length >= 3) {
+            scanTimeoutRef.current = setTimeout(() => {
+                executeScan(val.trim());
+                fastKeyCountRef.current = 0;
+            }, 80);
+        }
+    };
+
+    const handleScanBarcodeKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActiveShopifyIndex(prev => (prev + 1) % searchShopifyResults.length);
+            return;
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActiveShopifyIndex(prev => (prev - 1 + searchShopifyResults.length) % searchShopifyResults.length);
+            return;
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setSearchShopifyResults([]);
+            setActiveShopifyIndex(-1);
+            return;
+        }
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+            if (activeShopifyIndex >= 0 && activeShopifyIndex < searchShopifyResults.length) {
+                addProductToShopifyItems(searchShopifyResults[activeShopifyIndex]);
+            } else if (scanBarcodeQuery.trim()) {
+                executeScan(scanBarcodeQuery.trim());
+            }
+            return;
+        }
+    };
+
     const handleSingleIssue = async () => {
         if (!singleAmount || Number(singleAmount) <= 0) { toast.error("Enter a valid amount"); return; }
         if (singleDiscount && (Number(singleDiscount) < 0 || Number(singleDiscount) > 100)) {
             toast.error("Discount percentage must be between 0 and 100");
+            return;
+        }
+        if (singleType === "SHOPIFY" && !singleOrderId.trim()) {
+            toast.error("Order ID is required for Shopify vouchers");
             return;
         }
         if (singleType === "GIFT" && singlePaymentMode === "CARD") {
@@ -224,6 +376,8 @@ export default function PosVouchersPage() {
             const res = await authFetch("/pos-config/vouchers", {
                 method: "POST",
                 body: {
+                    sourceOrderId: singleType === "SHOPIFY" ? singleOrderId.trim() : undefined,
+                    shopifyItems: singleType === "SHOPIFY" ? singleShopifyItems : undefined,
                     voucherType: singleType,
                     faceValue: Number(singleAmount),
                     discount: singleDiscount ? Number((Number(singleAmount) * (Number(singleDiscount) / 100)).toFixed(2)) : 0,
@@ -242,7 +396,7 @@ export default function PosVouchersPage() {
             if (res.ok && res.data?.status) {
                 setIssuedVoucher(res.data.data);
                 setShowSingle(false);
-                setSingleAmount(""); setSingleDiscount(""); setSingleDesc(""); setSingleCo(""); setSingleCoGl(""); setSingleExp(""); setSingleLocationIds(currentLocationId ? [currentLocationId] : []);
+                setSingleAmount(""); setSingleDiscount(""); setSingleDesc(""); setSingleOrderId(""); setSingleShopifyItems([]); setSingleCo(""); setSingleCoGl(""); setSingleExp(""); setSingleLocationIds(currentLocationId ? [currentLocationId] : []);
                 setSinglePaymentMode("CASH"); setSingleMerchantId(""); setSingleCardholder(""); setSingleCardLast4(""); setSingleSlipNo("");
                 fetchVouchers();
             } else {
@@ -414,6 +568,70 @@ export default function PosVouchersPage() {
         ? Number((Number(bulkAmount) * (Number(bulkDiscount) / 100)).toFixed(2))
         : 0;
 
+    const handleExportCSV = () => {
+        const currentLocation = locations.find(l => l.id === currentLocationId);
+        const locName = currentLocation ? currentLocation.name : "All Locations";
+        const locCode = currentLocation ? currentLocation.code : "";
+        const now = new Date();
+        const dateTimeStr = now.toLocaleDateString("en-GB") + " " + now.toLocaleTimeString("en-US");
+
+        const metaHeader = [
+            `"COMPANY: IVAR"`,
+            `"POS LOCATION: ${locName} ${locCode ? `(${locCode})` : ""}"`,
+            `"DATE & TIME: ${dateTimeStr}"`,
+            `"REPORT: VOUCHERS (${activeTab})"`
+        ].join("\n");
+
+        let headers = ["Code", "Type", "Description", "Value", "Discount", "Expires", "Issued", "Status"];
+        if (activeTab === "SHOPIFY") {
+            headers = ["Code", "Type", "Description", "Value", "Discount", "Expires", "Issued", "Status", "Order ID", "Item Name", "SKU", "Barcode", "Item Qty", "Item Price"];
+        }
+
+        const rows: any[] = [];
+        filtered.forEach(v => {
+            const baseRow = [
+                v.code,
+                v.voucherType,
+                v.description || "-",
+                v.faceValue.toString(),
+                (v.discount || 0).toString(),
+                v.expiresAt ? new Date(v.expiresAt).toLocaleDateString("en-GB") : "No expiry",
+                new Date(v.createdAt).toLocaleDateString("en-GB"),
+                v.isDeleted ? "Voided" : v.isRedeemed ? "Redeemed" : "Active"
+            ];
+            const emptyBaseRow = ["", "", "", "", "", "", "", ""];
+
+            if (activeTab === "SHOPIFY") {
+                if (v.shopifyItems && v.shopifyItems.length > 0) {
+                    v.shopifyItems.forEach((item: any, index: number) => {
+                        const rowPrefix = index === 0 ? baseRow : emptyBaseRow;
+                        rows.push([...rowPrefix, item.orderId, item.itemName, item.sku || "-", item.barcode || "-", item.quantity, item.price]);
+                    });
+                } else {
+                    rows.push([...baseRow, "-", "-", "-", "-", "-", "-"]);
+                }
+            } else {
+                rows.push(baseRow);
+            }
+        });
+
+        const csvContent = [
+            metaHeader,
+            "",
+            headers.join(","),
+            ...rows.map(row => row.map((c: any) => `"${(c || "").toString().replace(/"/g, '""')}"`).join(","))
+        ].join("\n");
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Vouchers_${activeTab}_${new Date().getTime()}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     // ── Render ────────────────────────────────────────────────────
     return (
         <div className="p-6 space-y-5">
@@ -425,13 +643,31 @@ export default function PosVouchersPage() {
                 </div>
                 {canCreate && (
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" size="icon" onClick={fetchVouchers} className="rounded-full">
+                        <Button variant="outline" size="icon" onClick={handleExportCSV} className="rounded-full" title="Export CSV">
+                            <Download className="w-4 h-4" />
+                        </Button>
+                        <Button variant="outline" size="icon" onClick={fetchVouchers} className="rounded-full" title="Refresh">
                             <RefreshCw className="w-4 h-4" />
                         </Button>
                         <Button variant="outline" onClick={() => setShowBulk(true)} className="gap-2">
                             <Layers className="w-4 h-4" /> Bulk Issue
                         </Button>
-                        <Button onClick={() => setShowSingle(true)} className="gap-2">
+                        <Button onClick={() => {
+                            setSingleType("SHOPIFY");
+                            setIsFixedType(true);
+                            const shopifyCodes = ["BC1-KHI", "ZB1-LHR", "SFD2-KHI", "I81-ISB", "FSD-IV"];
+                            const shopifyLocIds = locations.filter(l => shopifyCodes.includes(l.code)).map(l => l.id);
+                            setSingleLocationIds(shopifyLocIds);
+                            setShowSingle(true);
+                        }} className="gap-2 bg-[#96bf48] hover:bg-[#86ab40] text-white">
+                            <Store className="w-4 h-4" /> Shopify Voucher
+                        </Button>
+                        <Button onClick={() => {
+                            setSingleType("GIFT");
+                            setIsFixedType(false);
+                            setSingleLocationIds(currentLocationId ? [currentLocationId] : []);
+                            setShowSingle(true);
+                        }} className="gap-2">
                             <Plus className="w-4 h-4" /> Issue Voucher
                         </Button>
                     </div>
@@ -592,13 +828,15 @@ export default function PosVouchersPage() {
             </Tabs>
 
             {/* ── Single Issue Modal ──────────────────────────────────── */}
-            <Dialog open={showSingle} onOpenChange={open => { setShowSingle(open); if (!open) setSingleLocationIds(currentLocationId ? [currentLocationId] : []); }}>
+            <Dialog open={showSingle} onOpenChange={open => { setShowSingle(open); if (!open) { setSingleLocationIds(currentLocationId ? [currentLocationId] : []); setIsFixedType(false); } }}>
                 <DialogContent className="sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <Ticket className="w-5 h-5 text-primary" /> Issue Voucher
                         </DialogTitle>
-                        <DialogDescription>A unique code will be generated automatically.</DialogDescription>
+                        <DialogDescription>
+                            {singleType === "SHOPIFY" ? "Enter the Shopify Order ID and add items." : "A unique code will be generated automatically."}
+                        </DialogDescription>
                     </DialogHeader>
                     <div className="flex gap-5 py-2">
                         {/* Left — form fields */}
@@ -606,7 +844,16 @@ export default function PosVouchersPage() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <Label>Type</Label>
-                                    <Select value={singleType} onValueChange={v => setSingleType(v as VoucherType)}>
+                                    <Select disabled={isFixedType} value={singleType} onValueChange={v => {
+                                        setSingleType(v as VoucherType);
+                                        if (v === "SHOPIFY") {
+                                            const shopifyCodes = ["BC1-KHI", "ZB1-LHR", "SFD2-KHI", "I81-ISB", "FSD-IV"];
+                                            const shopifyLocIds = locations.filter(l => shopifyCodes.includes(l.code)).map(l => l.id);
+                                            setSingleLocationIds(shopifyLocIds);
+                                        } else {
+                                            setSingleLocationIds(currentLocationId ? [currentLocationId] : []);
+                                        }
+                                    }}>
                                         <SelectTrigger><SelectValue /></SelectTrigger>
                                         <SelectContent>
                                             {ISSUABLE_TYPES.map(({ value, label, icon: Icon }) => (
@@ -624,6 +871,116 @@ export default function PosVouchersPage() {
                                         placeholder="e.g. 1000" autoFocus />
                                 </div>
                             </div>
+                            {singleType === "SHOPIFY" && (
+                                <div className="space-y-4 rounded-lg border p-3 bg-muted/20 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    <div className="space-y-2">
+                                        <Label>Order ID <span className="text-destructive">*</span></Label>
+                                        <Input value={singleOrderId} onChange={e => setSingleOrderId(e.target.value)} placeholder="e.g. #1001" autoFocus={singleType === "SHOPIFY"} />
+                                    </div>
+                                    <div className="space-y-2 pt-2 border-t mt-2">
+                                        <Label>Scan Item</Label>
+                                        <div className="flex gap-2">
+                                            <div className="relative flex-1">
+                                                <Input
+                                                    value={scanBarcodeQuery}
+                                                    onChange={handleScanBarcodeChange}
+                                                    onKeyDown={handleScanBarcodeKeyDown}
+                                                    placeholder="Scan barcode or type and press Enter..."
+                                                    disabled={isScanning}
+                                                    autoComplete="off"
+                                                />
+                                                {scanBarcodeQuery.trim().length > 0 && (searchShopifyResults.length > 0 || isSearchingShopify) && (
+                                                    <div className="absolute left-0 right-0 top-12 bg-popover border border-border shadow-md rounded-md overflow-hidden z-[500] max-h-64 overflow-y-auto">
+                                                        {isSearchingShopify ? (
+                                                            <div className="p-3 text-sm text-muted-foreground flex items-center justify-center">
+                                                                Searching...
+                                                            </div>
+                                                        ) : (
+                                                            <ul className="flex flex-col">
+                                                                {searchShopifyResults.map((product, idx) => (
+                                                                    <li
+                                                                        key={product.id}
+                                                                        className={cn(
+                                                                            "px-4 py-2 hover:bg-muted cursor-pointer flex items-center justify-between border-b border-border/50 last:border-0 transition-colors",
+                                                                            idx === activeShopifyIndex && "bg-primary/10 border-l-4 border-l-primary"
+                                                                        )}
+                                                                        onClick={() => addProductToShopifyItems(product)}
+                                                                    >
+                                                                        <div className="flex flex-col">
+                                                                            <span className="text-sm font-semibold">
+                                                                                {product.description || 'Unknown Product'}
+                                                                            </span>
+                                                                            <span className="text-xs text-muted-foreground">SKU: {product.sku || product.barCode || '-'}</span>
+                                                                        </div>
+                                                                        <div className="flex flex-col items-end gap-1">
+                                                                            <span className="text-sm font-bold">{formatCurrency(product.unitPrice || 0)}</span>
+                                                                            {product.stockQty !== undefined && (
+                                                                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${product.stockQty <= 0 ? 'bg-orange-100 text-orange-700' : 'bg-muted text-muted-foreground'}`}>
+                                                                                    Qty: {product.stockQty}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <Button type="button" variant="secondary" onClick={() => executeScan(scanBarcodeQuery)} disabled={isScanning || !scanBarcodeQuery.trim()}>
+                                                {isScanning ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Scan"}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <Label>Items</Label>
+                                            <Button type="button" variant="outline" size="sm" onClick={() => setSingleShopifyItems([...singleShopifyItems, {itemName: '', quantity: 1, price: 0}])}>
+                                                <Plus className="w-3 h-3 mr-1" /> Add Manual Item
+                                            </Button>
+                                        </div>
+                                        {singleShopifyItems.length === 0 && <div className="text-xs text-muted-foreground text-center py-2">No items added</div>}
+                                        {singleShopifyItems.map((item, idx) => (
+                                            <div key={idx} className="flex flex-col gap-2 mt-2 p-2 border rounded-md relative bg-background">
+                                                <div className="flex gap-2 pr-6">
+                                                    <Input className="flex-1 text-xs h-8" placeholder="Item Name" value={item.itemName} onChange={e => {
+                                                        const newItems = [...singleShopifyItems];
+                                                        newItems[idx].itemName = e.target.value;
+                                                        setSingleShopifyItems(newItems);
+                                                    }} />
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <Input className="flex-1 text-xs h-8" placeholder="SKU" value={item.sku || ""} onChange={e => {
+                                                        const newItems = [...singleShopifyItems];
+                                                        newItems[idx].sku = e.target.value;
+                                                        setSingleShopifyItems(newItems);
+                                                    }} />
+                                                    <Input className="flex-1 text-xs h-8" placeholder="Barcode" value={item.barcode || ""} onChange={e => {
+                                                        const newItems = [...singleShopifyItems];
+                                                        newItems[idx].barcode = e.target.value;
+                                                        setSingleShopifyItems(newItems);
+                                                    }} />
+                                                    <Input className="w-16 text-xs h-8" type="number" min="1" placeholder="Qty" value={item.quantity} onChange={e => {
+                                                        const newItems = [...singleShopifyItems];
+                                                        newItems[idx].quantity = Number(e.target.value);
+                                                        setSingleShopifyItems(newItems);
+                                                    }} />
+                                                    <Input className="w-20 text-xs h-8" type="number" min="0" placeholder="Price" value={item.price} onChange={e => {
+                                                        const newItems = [...singleShopifyItems];
+                                                        newItems[idx].price = Number(e.target.value);
+                                                        setSingleShopifyItems(newItems);
+                                                    }} />
+                                                </div>
+                                                <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-destructive absolute top-3 right-2" onClick={() => {
+                                                    setSingleShopifyItems(singleShopifyItems.filter((_, i) => i !== idx));
+                                                }}>
+                                                    <XCircle className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                             {singleType === "GIFT" && (
                                 <div className="space-y-4 rounded-lg border p-3 bg-muted/20 animate-in fade-in slide-in-from-top-1 duration-200 text-left">
                                     <div className="space-y-2">
@@ -750,7 +1107,7 @@ export default function PosVouchersPage() {
                                 locations={locations}
                                 selected={singleLocationIds}
                                 onChange={setSingleLocationIds}
-                                disabled={issuingSingle}
+                                disabled={issuingSingle || singleType === "SHOPIFY"}
                                 maxHeight="280px"
                             />
                         </div>

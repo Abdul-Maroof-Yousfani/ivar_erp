@@ -3,7 +3,7 @@
 import { authFetch } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
 
-export type VoucherType = 'GIFT' | 'EXCHANGE' | 'CREDIT' | 'CORPORATE' | 'OUTLET_GIFT' | 'REFUND';
+export type VoucherType = 'GIFT' | 'EXCHANGE' | 'CREDIT' | 'CORPORATE' | 'OUTLET_GIFT' | 'REFUND' | 'SHOPIFY';
 
 export interface Voucher {
     id: string;
@@ -23,6 +23,8 @@ export interface Voucher {
     isDeleted?: boolean;
     expiresAt?: string;
     createdAt: string;
+    claims?: any[];
+    issuedByLocation?: { name: string; code: string };
     locations: { id: string; location: { id: string; name: string; code: string } }[];
     redemptions?: { amountUsed: number; orderId: string }[];
     paymentMode?: string;
@@ -30,6 +32,7 @@ export interface Voucher {
     cardLast4?: string;
     slipNo?: string;
     merchantId?: string;
+    shopifyItems?: { orderId: string; itemName: string; barcode?: string; sku?: string; quantity: number; price: number }[];
 }
 
 export interface MerchantConfig {
@@ -84,6 +87,7 @@ export async function getVouchers(filters?: {
 }
 
 export async function issueVoucher(data: {
+    code?: string;
     voucherType: VoucherType;
     faceValue: number;
     discount?: number;
@@ -99,6 +103,7 @@ export async function issueVoucher(data: {
     cardLast4?: string;
     slipNo?: string;
     merchantId?: string;
+    shopifyItems?: { itemName: string; barcode?: string; sku?: string; quantity: number; price: number }[];
 }): Promise<{ status: boolean; data?: Voucher; message?: string }> {
     try {
         const res = await authFetch('/pos-config/vouchers', {
