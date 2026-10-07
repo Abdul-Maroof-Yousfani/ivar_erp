@@ -4,7 +4,7 @@ import { PrismaService } from '../database/prisma.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { runInBackground } from '../common/utils/run-in-background.util';
 
-export type VoucherType = 'GIFT' | 'EXCHANGE' | 'CREDIT' | 'CORPORATE' | 'OUTLET_GIFT' | 'REFUND';
+export type VoucherType = 'GIFT' | 'EXCHANGE' | 'CREDIT' | 'CORPORATE' | 'OUTLET_GIFT' | 'REFUND' | 'SHOPIFY';
 
 // Code format per type:
 //   GIFT        → GFT-XXXXXX
@@ -13,6 +13,7 @@ export type VoucherType = 'GIFT' | 'EXCHANGE' | 'CREDIT' | 'CORPORATE' | 'OUTLET
 //   CORPORATE   → CRP-XXXXXX
 //   OUTLET_GIFT → OGT-XXXXXX
 //   REFUND      → RFD-XXXXXX
+//   SHOPIFY     → SHP-XXXXXX
 function generateCode(type: VoucherType): string {
     const prefix: Record<VoucherType, string> = {
         GIFT: 'GFT',
@@ -21,6 +22,7 @@ function generateCode(type: VoucherType): string {
         CORPORATE: 'CRP',
         OUTLET_GIFT: 'OGT',
         REFUND: 'RFD',
+        SHOPIFY: 'SHP',
     };
     const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
     return `${prefix[type]}-${rand}`;
@@ -67,6 +69,7 @@ export class VoucherService {
                 include: {
                     locations: { include: { location: { select: { id: true, name: true, code: true } } } },
                     redemptions: { select: { amountUsed: true, orderId: true } },
+                    shopifyItems: true,
                 },
                 orderBy: { createdAt: 'desc' },
             });
@@ -79,6 +82,7 @@ export class VoucherService {
 
     // ── Issue a voucher (admin or POS) ────────────────────────────
     async issueVoucher(data: {
+        code?: string;
         voucherType: VoucherType;
         faceValue: number;
         discount?: number;
@@ -97,9 +101,10 @@ export class VoucherService {
         cardLast4?: string;
         slipNo?: string;
         merchantId?: string;
+        shopifyItems?: { itemName: string; barcode?: string; sku?: string; quantity: number; price: number }[];
     }, ctx?: { userId?: string; ipAddress?: string; userAgent?: string }) {
         try {
-            const code = generateCode(data.voucherType);
+            const code = data.code ? data.code : generateCode(data.voucherType);
 
             // EXCHANGE vouchers are usable everywhere by default (empty location restriction)
             // REFUND vouchers are also locked to issuing location (record-only)
@@ -148,6 +153,20 @@ export class VoucherService {
                                     : `Issued as ${data.voucherType} (Paid via Cash)`,
                         },
                     },
+                    ...(data.shopifyItems && data.shopifyItems.length > 0 && data.sourceOrderId
+                        ? {
+                            shopifyItems: {
+                                create: data.shopifyItems.map((item) => ({
+                                    orderId: data.sourceOrderId!,
+                                    itemName: item.itemName,
+                                    barcode: item.barcode,
+                                    sku: item.sku,
+                                    quantity: item.quantity,
+                                    price: item.price,
+                                })),
+                            },
+                        }
+                        : {}),
                 },
                 include: {
                     locations: { include: { location: { select: { id: true, name: true, code: true } } } },
