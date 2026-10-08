@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaMasterService } from '../database/prisma-master.service';
 import {
   CreatePosSalesOrderDto,
@@ -33,6 +34,7 @@ export class PosSalesService implements OnModuleInit {
     private voucherService: VoucherService,
     private notificationsService: NotificationsService,
     private stockMovementService: StockMovementService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   // ─── Schedule midnight hold-clear ─────────────────────────────────
@@ -132,7 +134,7 @@ export class PosSalesService implements OnModuleInit {
     return nextNumber;
   }
 
-  private async generateOrderNumber(
+  public async generateOrderNumber(
     locationId: string,
     tx?: Prisma.TransactionClient,
   ): Promise<string> {
@@ -651,7 +653,7 @@ export class PosSalesService implements OnModuleInit {
         const totalDiscount = finalLineItemDiscount + globalDiscAmt;
         const location = await tx.location.findUnique({
           where: { id: locationId },
-          select: { fbrEnabled: true, fbrNtn: true },
+          select: { fbrEnabled: true, fbrNtn: true, name: true },
         });
         const fbrPosFee = location?.fbrEnabled && location?.fbrNtn ? 1 : 0;
         const grandTotal = Math.max(
@@ -802,6 +804,16 @@ export class PosSalesService implements OnModuleInit {
                   bankGlCode: true,
                 },
               },
+              customer: {
+                select: {
+                  id: true,
+                  name: true,
+                  contactNo: true,
+                  email: true,
+                  address: true,
+                  code: true,
+                },
+              },
             },
           });
         } else {
@@ -876,6 +888,16 @@ export class PosSalesService implements OnModuleInit {
                   description: true,
                   commissionRate: true,
                   bankGlCode: true,
+                },
+              },
+              customer: {
+                select: {
+                  id: true,
+                  name: true,
+                  contactNo: true,
+                  email: true,
+                  address: true,
+                  code: true,
                 },
               },
             },
@@ -993,6 +1015,7 @@ export class PosSalesService implements OnModuleInit {
               creditVouchers.length > 0 ? creditVouchers : undefined,
             fbrSynced: fbrResult.success,
             fbrError: fbrResult.error,
+            locationName: location?.name,
           },
           message:
             creditVouchers.length > 0
@@ -1016,6 +1039,14 @@ export class PosSalesService implements OnModuleInit {
           status: 'success',
         }),
       );
+
+      // Emit event for Mergn integration
+      this.eventEmitter.emit('pos.order.created', {
+        order: result.data,
+        customer: result.data.customer,
+        items: result.data.items,
+        location: { name: result.data.locationName },
+      });
 
       return result;
     } catch (error: any) {
@@ -1144,10 +1175,10 @@ export class PosSalesService implements OnModuleInit {
       >(itemRecords.map((r: any) => [r.id, r]));
 
       // Customer details if available
-      const buyerName = order.customerName || 'Guest';
-      const buyerNtn = order.customerNtn || null;
-      const buyerCnic = order.customerCnic || null;
-      const buyerPhone = order.customerPhone || null;
+      const buyerName = order.customerName || order.customer?.name || 'Guest';
+      const buyerNtn = order.customerNtn || order.customer?.ntn || null;
+      const buyerCnic = order.customerCnic || order.customer?.cnic || null;
+      const buyerPhone = order.customerPhone || order.customer?.contactNo || order.customer?.phone || null;
 
       // Map payment mode (1: Cash, 2: Card, 3: Voucher, 4: Loyalty, 5: Mixed, 6: Cheque)
       let paymentMode = 1;
@@ -3410,9 +3441,27 @@ export class PosSalesService implements OnModuleInit {
       }
     }
 
-    // Fetch any vouchers issued from this order
+    // Fetch any vouchers issued from this order (only CREDIT / CORPORATE change vouchers issued at sale checkout)
     const creditVouchers = await this.prisma.voucher.findMany({
-      where: { sourceOrderId: id, isDeleted: false },
+      where: {
+        sourceOrderId: id,
+        voucherType: { in: ['CREDIT', 'CORPORATE'] },
+        isDeleted: false,
+      },
+      select: {
+        code: true,
+        faceValue: true,
+        expiresAt: true,
+        voucherType: true,
+      },
+    });
+
+    const exchangeVouchers = await this.prisma.voucher.findMany({
+      where: {
+        sourceOrderId: id,
+        voucherType: 'EXCHANGE',
+        isDeleted: false,
+      },
       select: {
         code: true,
         faceValue: true,
@@ -3429,6 +3478,7 @@ export class PosSalesService implements OnModuleInit {
         tenders,
         creditVouchers,
         issuedVouchers: creditVouchers,
+        exchangeVouchers,
         hasReturn,
         hasRefund,
         cashier,
@@ -3583,6 +3633,14 @@ export class PosSalesService implements OnModuleInit {
           });
         }
 
+        // ── Fetch active campaign discounts scoped to this order's location ──
+        const returnItemIds = items.map((i) => i.itemId);
+        const campaignDiscounts = await this.getActiveCampaignDiscounts(
+          returnItemIds,
+          order.locationId,
+          tx,
+        );
+
         // ── Validate and process return items ──
         for (const returnItem of items) {
           const orderItem = order.items.find(
@@ -3634,33 +3692,46 @@ export class PosSalesService implements OnModuleInit {
             ? Number(currentItem.unitPrice)
             : originalPaidPerUnit;
 
-          const now = new Date();
-          const startDate = currentItem?.discountStartDate
-            ? new Date(currentItem.discountStartDate)
-            : null;
-          const endDate = currentItem?.discountEndDate
-            ? new Date(currentItem.discountEndDate)
-            : null;
-          const discountActive =
-            currentItem &&
-            (!startDate || startDate <= now) &&
-            (!endDate || endDate >= now);
-
-          const discountRate = discountActive
-            ? Number(currentItem.discountRate || 0)
-            : 0;
-          const discountAmount = discountActive
-            ? Number(currentItem.discountAmount || 0)
-            : 0;
+          const campaignDisc = campaignDiscounts.get(returnItem.itemId);
 
           let effectiveDiscountPercent = 0;
-          if (discountRate > 0) {
-            effectiveDiscountPercent = discountRate;
-          } else if (discountAmount > 0 && latestPrice > 0) {
-            effectiveDiscountPercent = Math.min(
-              100,
-              (discountAmount / latestPrice) * 100,
-            );
+          if (campaignDisc) {
+            if (campaignDisc.discountRate > 0) {
+              effectiveDiscountPercent = campaignDisc.discountRate;
+            } else if (campaignDisc.discountAmount > 0 && latestPrice > 0) {
+              effectiveDiscountPercent = Math.min(
+                100,
+                (campaignDisc.discountAmount / latestPrice) * 100,
+              );
+            }
+          } else {
+            const now = new Date();
+            const startDate = currentItem?.discountStartDate
+              ? new Date(currentItem.discountStartDate)
+              : null;
+            const endDate = currentItem?.discountEndDate
+              ? new Date(currentItem.discountEndDate)
+              : null;
+            const discountActive =
+              currentItem &&
+              (!startDate || startDate <= now) &&
+              (!endDate || endDate >= now);
+
+            const discountRate = discountActive
+              ? Number(currentItem.discountRate || 0)
+              : 0;
+            const discountAmount = discountActive
+              ? Number(currentItem.discountAmount || 0)
+              : 0;
+
+            if (discountRate > 0) {
+              effectiveDiscountPercent = discountRate;
+            } else if (discountAmount > 0 && latestPrice > 0) {
+              effectiveDiscountPercent = Math.min(
+                100,
+                (discountAmount / latestPrice) * 100,
+              );
+            }
           }
 
           // Current price is already tax-inclusive (retail price)
@@ -3708,52 +3779,63 @@ export class PosSalesService implements OnModuleInit {
             priceAdjusted,
           });
 
-          // Process stock movement, stock ledger, and inventory update via StockMovementService for all returns
-          if (order.locationId && order.locationId !== effectiveLocationId) {
-            const origLoc = await tx.location.findUnique({
-              where: { id: order.locationId },
-              select: { name: true },
-            });
-            const retLoc = effectiveLocationId
-              ? await tx.location.findUnique({
-                  where: { id: effectiveLocationId },
-                  select: { name: true },
-                })
-              : null;
-            const origName = origLoc?.name || 'Original Branch';
-            const retName = retLoc?.name || 'Return Outlet';
+          // 1. Create Stock Ledger entry (+ PLUS / INBOUND for POS_RETURN)
+          await this.stockLedgerService.createEntry(
+            {
+              itemId: returnItem.itemId,
+              warehouseId: warehouse.id,
+              locationId: effectiveLocationId,
+              qty: returnItem.quantity,
+              movementType: MovementType.INBOUND,
+              referenceType: 'POS_RETURN',
+              referenceId: order.id,
+            },
+            tx,
+          );
 
-            await this.stockMovementService.executeMovement(
-              {
-                itemId: returnItem.itemId,
-                fromLocationId: order.locationId,
-                toLocationId: effectiveLocationId || undefined,
-                quantity: returnItem.quantity,
-                type: 'CROSS_LOCATION_RETURN_TRANSFER',
-                referenceType: 'OUTLET_TRANSFER_OUT',
-                referenceId: crossLocationStn?.id || order.id,
-                notes: `Automated Stock Transfer against Sales Return #${returnNumber} (${crossLocationStn ? `STN #${crossLocationStn.requestNo}, ` : ''}Original Order #${order.orderNumber} sold at ${origName}). Physical item received at ${retName}.`,
-                userId: ctx?.userId,
-                transaction: tx,
-              },
-              ctx,
-            );
+          // 2. Increment stock in outlet (Location-specific InventoryItem) (+ PLUS)
+          const existingInv = await tx.inventoryItem.findFirst({
+            where: {
+              itemId: returnItem.itemId,
+              locationId: effectiveLocationId,
+              status: 'AVAILABLE',
+            },
+          });
+          if (existingInv) {
+            await tx.inventoryItem.update({
+              where: { id: existingInv.id },
+              data: { quantity: { increment: returnItem.quantity } },
+            });
           } else {
-            await this.stockMovementService.executeMovement(
-              {
+            await tx.inventoryItem.create({
+              data: {
                 itemId: returnItem.itemId,
-                toLocationId: effectiveLocationId || undefined,
+                warehouseId: warehouse.id,
+                locationId: effectiveLocationId,
                 quantity: returnItem.quantity,
-                type: 'POS_RETURN',
-                referenceType: 'POS_RETURN',
-                referenceId: order.id,
-                notes: `POS Return against Order #${order.orderNumber} (Return #${returnNumber})`,
-                userId: ctx?.userId,
-                transaction: tx,
+                status: 'AVAILABLE',
               },
-              ctx,
-            );
+            });
           }
+
+          // 3. Log Stock Movement audit entry
+          const isCrossLoc = !!(order.locationId && order.locationId !== effectiveLocationId);
+          await tx.stockMovement.create({
+            data: {
+              movementNo: `MV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              itemId: returnItem.itemId,
+              fromLocationId: isCrossLoc ? order.locationId : null,
+              toLocationId: effectiveLocationId,
+              quantity: returnItem.quantity,
+              type: isCrossLoc ? 'CROSS_LOCATION_RETURN_TRANSFER' : 'POS_RETURN',
+              referenceType: 'POS_RETURN',
+              referenceId: order.id,
+              notes: isCrossLoc
+                ? `Automated Stock Transfer against Sales Return #${returnNumber} (${crossLocationStn ? `STN #${crossLocationStn.requestNo}, ` : ''}Original Order #${order.orderNumber}). Physical item received at return branch.`
+                : `POS Return against Order #${order.orderNumber} (Return #${returnNumber})`,
+              createdById: ctx?.userId || null,
+            },
+          });
 
           // Update the map with current return
           alreadyReturnedMap.set(
@@ -3885,9 +3967,68 @@ export class PosSalesService implements OnModuleInit {
           tx,
         );
 
+        // ── Save to PosReturn & PosReturnItem tables ──────────────
+        const subtotalWost = itemRefundDetails.reduce(
+          (sum, d) => sum + (d.unitPrice * d.quantity) / (1 + d.taxPercent / 100),
+          0,
+        );
+        const totalDiscount = itemRefundDetails.reduce(
+          (sum, d) => sum + d.discountAmount,
+          0,
+        );
+        const totalTax = itemRefundDetails.reduce(
+          (sum, d) => sum + d.taxAmount,
+          0,
+        );
+
+        const savedPosReturn = await tx.posReturn.create({
+          data: {
+            returnNumber,
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            returnType: 'RETURN',
+            locationId: effectiveLocationId || order.locationId || '',
+            originalLocationId: order.locationId,
+            cashierUserId: ctx?.userId || order.cashierUserId,
+            processedById: ctx?.userId,
+            subtotal: new Prisma.Decimal(Math.round(subtotalWost * 100) / 100),
+            discountAmount: new Prisma.Decimal(Math.round(totalDiscount * 100) / 100),
+            taxAmount: new Prisma.Decimal(Math.round(totalTax * 100) / 100),
+            grandTotal: new Prisma.Decimal(Math.round(totalRefundAmount * 100) / 100),
+            refundMode: exchangeVoucher ? 'VOUCHER' : 'CASH',
+            voucherCode: exchangeVoucher?.code || null,
+            fbrCreditNoteNumber: fbrReturnResult.fbrInvoiceNumber || null,
+            fbrStatus: fbrReturnResult.fbrStatus || 'PENDING',
+            reason: reason || null,
+            notes: order.notes || null,
+            items: {
+              create: itemRefundDetails.map((d) => {
+                const wostPerUnit = d.unitPrice / (1 + d.taxPercent / 100);
+                return {
+                  orderItemId: d.orderItemId,
+                  itemId: d.itemId,
+                  quantity: d.quantity,
+                  unitPrice: new Prisma.Decimal(d.unitPrice),
+                  wostAmount: new Prisma.Decimal(Math.round(wostPerUnit * d.quantity * 100) / 100),
+                  discountPercent: new Prisma.Decimal(d.discountPercent),
+                  discountAmount: new Prisma.Decimal(d.discountAmount),
+                  taxPercent: new Prisma.Decimal(d.taxPercent),
+                  taxAmount: new Prisma.Decimal(d.taxAmount),
+                  couponDeduction: new Prisma.Decimal(d.couponDeduction),
+                  originalPaidPerUnit: new Prisma.Decimal(d.originalPaidPerUnit),
+                  refundPerUnit: new Prisma.Decimal(d.refundPerUnit),
+                  netTotal: new Prisma.Decimal(Math.round(d.refundPerUnit * d.quantity * 100) / 100),
+                  priceAdjusted: d.priceAdjusted,
+                };
+              }),
+            },
+          },
+        });
+
         return {
           status: true,
           data: updatedOrder,
+          posReturnId: savedPosReturn.id,
           returnRef: returnNumber,
           fbrCreditNoteNumber: fbrReturnResult.fbrInvoiceNumber || null,
           fbrStatus: fbrReturnResult.fbrStatus,
@@ -4014,15 +4155,123 @@ export class PosSalesService implements OnModuleInit {
 
       if (!order) return { status: false, message: 'Order not found' };
 
-      // Fetch ALREADY-RETURNED quantities from stock ledger
+      // 1. Try to fetch from dedicated PosReturn table first
+      const posReturn = await this.prisma.posReturn.findFirst({
+        where: {
+          orderId,
+          ...(type === 'return'
+            ? { returnType: { in: ['RETURN', 'EXCHANGE'] } }
+            : type === 'refund'
+              ? { returnType: 'REFUND' }
+              : {}),
+        },
+        include: {
+          items: {
+            include: {
+              item: {
+                select: {
+                  description: true,
+                  sku: true,
+                  barCode: true,
+                  brand: { select: { name: true } },
+                  size: { select: { name: true } },
+                  color: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (posReturn && posReturn.items.length > 0) {
+        const enrichedItems = posReturn.items.map((ri) => ({
+          orderItemId: ri.orderItemId,
+          itemId: ri.itemId,
+          item: {
+            ...ri.item,
+            unitPrice: Number(ri.unitPrice),
+          },
+          quantity: ri.quantity,
+          returnableQty: ri.quantity,
+          unitPrice: Number(ri.unitPrice),
+          wostAmount: Number(ri.wostAmount),
+          discountAmount: Number(ri.discountAmount),
+          discountPercent: Number(ri.discountPercent),
+          taxAmount: Number(ri.taxAmount),
+          taxPercent: Number(ri.taxPercent),
+          lineTotal: Number(ri.wostAmount) + Number(ri.taxAmount),
+          couponDeduction: Number(ri.couponDeduction),
+          originalPaidPerUnit: Number(ri.originalPaidPerUnit),
+          refundPerUnit: Number(ri.refundPerUnit),
+          priceAdjusted: ri.priceAdjusted,
+          refundAmount: Number(ri.netTotal),
+        }));
+
+        const discountNotes: string[] = [];
+        if (
+          order.coupon &&
+          (order.coupon.discountType === 'voucher' ||
+            order.coupon.discountType === 'fixed')
+        ) {
+          discountNotes.push(
+            `${order.coupon.code} - ${order.coupon.description || 'Voucher'}`,
+          );
+        }
+        if ((order as any).alliance) {
+          discountNotes.push(
+            `Alliance: ${(order as any).alliance.partnerName || (order as any).alliance.code}`,
+          );
+        }
+
+        const exchangeVoucher = posReturn.voucherCode
+          ? await this.prisma.voucher.findFirst({
+              where: {
+                code: posReturn.voucherCode,
+                isDeleted: false,
+              },
+              select: { code: true, faceValue: true, expiresAt: true },
+            })
+          : await this.prisma.voucher.findFirst({
+              where: {
+                sourceOrderId: order.id,
+                voucherType: 'EXCHANGE',
+                isDeleted: false,
+              },
+              select: { code: true, faceValue: true, expiresAt: true },
+              orderBy: { createdAt: 'desc' },
+            });
+
+        return {
+          status: true,
+          data: {
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            returnNumber: posReturn.returnNumber || (order as any).returnNumber,
+            refundNumber: (order as any).refundNumber,
+            items: enrichedItems,
+            subtotalWost: Number(posReturn.subtotal),
+            discountAmount: Number(posReturn.discountAmount),
+            taxAmount: Number(posReturn.taxAmount),
+            grandTotal: Number(posReturn.grandTotal),
+            reason: posReturn.reason || order.notes,
+            discountNotes,
+            exchangeVoucher: exchangeVoucher || undefined,
+            fbrCreditNoteNumber: posReturn.fbrCreditNoteNumber || undefined,
+            returnedAt: posReturn.createdAt.toISOString(),
+          },
+        };
+      }
+
+      // 2. Fallback for legacy returns: fetch from stock ledger
       const returnEntries = await this.prisma.stockLedger.findMany({
         where: {
           referenceType:
             type === 'return'
-              ? 'POS_RETURN'
+              ? { in: ['POS_RETURN', 'POS_EXCHANGE_IN'] }
               : type === 'refund'
                 ? 'POS_REFUND'
-                : { in: ['POS_RETURN', 'POS_REFUND'] },
+                : { in: ['POS_RETURN', 'POS_REFUND', 'POS_EXCHANGE_IN'] },
           referenceId: orderId,
         },
         select: { itemId: true, qty: true, referenceType: true },
@@ -4064,47 +4313,67 @@ export class PosSalesService implements OnModuleInit {
       const grandTotal = Number(order.grandTotal);
 
       // Build details for RETURNED items only
-      const enrichedItems = order.items
-        .filter((oi) => returnedQtyMap.has(oi.itemId)) // Only items that were returned
-        .map((oi) => {
-          const returnedQty = returnedQtyMap.get(oi.itemId) || 0;
-          const orderedQty = Number(oi.quantity);
+      const returnedItemsList = order.items.filter((oi) =>
+        returnedQtyMap.has(oi.itemId),
+      );
+      const returnedItemIds = returnedItemsList.map((oi) => oi.itemId);
+      const campaignDiscounts = await this.getActiveCampaignDiscounts(
+        returnedItemIds,
+        order.locationId,
+      );
 
-          // Proportional scaling factor based on returned quantity
-          const scaleFactor = returnedQty / orderedQty;
+      const enrichedItems = returnedItemsList.map((oi) => {
+        const returnedQty = returnedQtyMap.get(oi.itemId) || 0;
+        const orderedQty = Number(oi.quantity);
 
-          const unitPrice = Number(oi.unitPrice);
-          const discountAmount = Number(oi.discountAmount || 0) * scaleFactor;
-          const discountPercent = Number(oi.discountPercent || 0);
-          const taxAmount = Number(oi.taxAmount || 0) * scaleFactor;
-          const taxPercent = Number(oi.taxPercent || 0);
-          const lineTotal = Number(oi.lineTotal) * scaleFactor;
+        // Proportional scaling factor based on returned quantity
+        const scaleFactor = returnedQty / orderedQty;
 
-          // Proportional coupon deduction
-          const isAllianceOrNoGlobalDisc =
-            Math.abs(lineTotalsSum - grandTotal) <= 5;
-          const couponDeduction =
-            isAllianceOrNoGlobalDisc || lineTotalsSum <= 0
-              ? 0
-              : (lineTotal / lineTotalsSum) * globalDiscAmt;
+        const unitPrice = Number(oi.unitPrice);
+        const discountAmount = Number(oi.discountAmount || 0) * scaleFactor;
+        const discountPercent = Number(oi.discountPercent || 0);
+        const taxAmount = Number(oi.taxAmount || 0) * scaleFactor;
+        const taxPercent = Number(oi.taxPercent || 0);
+        const lineTotal = Number(oi.lineTotal) * scaleFactor;
 
-          // Original paid per unit (after all discounts including coupon)
-          let originalPaidPerUnit = 0;
-          if (isAllianceOrNoGlobalDisc) {
-            originalPaidPerUnit = lineTotal / returnedQty;
-          } else {
-            originalPaidPerUnit =
-              lineTotalsSum > 0
-                ? ((lineTotal / lineTotalsSum) * grandTotal) / returnedQty
-                : lineTotal / returnedQty;
+        // Proportional coupon deduction
+        const isAllianceOrNoGlobalDisc =
+          Math.abs(lineTotalsSum - grandTotal) <= 5;
+        const couponDeduction =
+          isAllianceOrNoGlobalDisc || lineTotalsSum <= 0
+            ? 0
+            : (lineTotal / lineTotalsSum) * globalDiscAmt;
+
+        // Original paid per unit (after all discounts including coupon)
+        let originalPaidPerUnit = 0;
+        if (isAllianceOrNoGlobalDisc) {
+          originalPaidPerUnit = lineTotal / returnedQty;
+        } else {
+          originalPaidPerUnit =
+            lineTotalsSum > 0
+              ? ((lineTotal / lineTotalsSum) * grandTotal) / returnedQty
+              : lineTotal / returnedQty;
+        }
+
+        // Current price is already tax-inclusive (retail price)
+        const currentItem = oi.item;
+        const latestPrice = currentItem
+          ? Number((currentItem as any).unitPrice || 0)
+          : originalPaidPerUnit;
+
+        const campaignDisc = campaignDiscounts.get(oi.itemId);
+
+        let effectiveDiscountPercent = 0;
+        if (campaignDisc) {
+          if (campaignDisc.discountRate > 0) {
+            effectiveDiscountPercent = campaignDisc.discountRate;
+          } else if (campaignDisc.discountAmount > 0 && latestPrice > 0) {
+            effectiveDiscountPercent = Math.min(
+              100,
+              (campaignDisc.discountAmount / latestPrice) * 100,
+            );
           }
-
-          // Current price is already tax-inclusive (retail price)
-          const currentItem = oi.item;
-          const latestPrice = currentItem
-            ? Number((currentItem as any).unitPrice || 0)
-            : originalPaidPerUnit;
-
+        } else {
           const now = new Date();
           const startDate = (currentItem as any)?.discountStartDate
             ? new Date((currentItem as any).discountStartDate)
@@ -4124,7 +4393,6 @@ export class PosSalesService implements OnModuleInit {
             ? Number((currentItem as any).discountAmount || 0)
             : 0;
 
-          let effectiveDiscountPercent = 0;
           if (discountRate > 0) {
             effectiveDiscountPercent = discountRate;
           } else if (activeDiscountAmount > 0 && latestPrice > 0) {
@@ -4133,6 +4401,7 @@ export class PosSalesService implements OnModuleInit {
               (activeDiscountAmount / latestPrice) * 100,
             );
           }
+        }
 
           // Current price is already tax-inclusive (retail price)
           const currentPriceWithTax =
@@ -4413,11 +4682,142 @@ export class PosSalesService implements OnModuleInit {
           order.locationId && order.locationId !== effectiveLocationId
         );
 
-        // ── Restore returned items ──────────────────────────────
+        // ── Sequential Return Number for exchange return hierarchy ──
+        let returnNumber = (order as any).returnNumber;
+        if (!returnNumber) {
+          returnNumber = await this.generateReturnNumber(
+            effectiveLocationId || '',
+            tx,
+          );
+        }
+
+        // ── Auto-create STN (TransferRequest) if exchange is at a different outlet ──
+        let crossLocationStn: any = null;
+        if (order.locationId && order.locationId !== effectiveLocationId) {
+          const currentYear = new Date().getFullYear();
+          const prefix = 'STN';
+          const lastRequest = await tx.transferRequest.findFirst({
+            where: {
+              requestNo: {
+                startsWith: `${prefix}-${currentYear}`,
+              },
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+          });
+
+          let nextNumber = 1;
+          if (lastRequest) {
+            const lastNumber = parseInt(
+              lastRequest.requestNo.split('-').pop() || '0',
+              10,
+            );
+            if (!isNaN(lastNumber)) {
+              nextNumber = lastNumber + 1;
+            }
+          }
+          const requestNo = `${prefix}-${currentYear}-${nextNumber.toString().padStart(4, '0')}`;
+
+          const origLoc = await tx.location.findUnique({
+            where: { id: order.locationId },
+            select: { warehouseId: true, name: true },
+          });
+          const retLoc = effectiveLocationId
+            ? await tx.location.findUnique({
+                where: { id: effectiveLocationId },
+                select: { warehouseId: true, name: true },
+              })
+            : null;
+          const origName = origLoc?.name || 'Original Branch';
+          const exName = retLoc?.name || 'Exchange Outlet';
+
+          crossLocationStn = await tx.transferRequest.create({
+            data: {
+              requestNo,
+              fromLocationId: order.locationId,
+              toLocationId: effectiveLocationId,
+              fromWarehouseId: origLoc?.warehouseId || warehouse.id,
+              toWarehouseId: retLoc?.warehouseId || warehouse.id,
+              transferType: 'OUTLET_TO_OUTLET',
+              status: 'COMPLETED',
+              requiresSourceApproval: false,
+              sourceApprovedById: ctx?.userId || null,
+              sourceApprovedAt: new Date(),
+              checkedById: ctx?.userId || null,
+              checkedAt: new Date(),
+              authorizedById: ctx?.userId || null,
+              authorizedAt: new Date(),
+              approvedById: ctx?.userId || null,
+              createdById: ctx?.userId || null,
+              notes: `Automated Transfer against Sales Exchange #${returnNumber} (Original Order #${order.orderNumber} sold at ${origName}). Physical item received at ${exName}.`,
+              items: {
+                create: returnedItems.map((ri) => ({
+                  itemId: ri.itemId,
+                  quantity: new Prisma.Decimal(ri.quantity),
+                  fulfilledQty: new Prisma.Decimal(ri.quantity),
+                })),
+              },
+            },
+          });
+        }
+
+        const lineTotalsSum = order.items.reduce(
+          (s, i) => s + Number(i.lineTotal),
+          0,
+        );
+        const orderLevelDiscount = lineTotalsSum - Number(order.grandTotal);
+        const isAllianceOrNoGlobalDisc =
+          Math.abs(lineTotalsSum - Number(order.grandTotal)) <= 5;
+
+        let totalRefundAmount = 0;
+        const itemRefundDetails: any[] = [];
+
+        // ── Restore returned items with proper POS_RETURN hierarchy ──
         for (const ri of returnedItems) {
           const orderItem = order.items.find((i) => i.id === ri.orderItemId);
-          if (!orderItem || ri.quantity > orderItem.quantity) continue;
+          if (!orderItem || ri.quantity <= 0) continue;
 
+          const qty = Number(orderItem.quantity);
+          const lineTotal = Number(orderItem.lineTotal);
+
+          const itemCouponDeduction =
+            isAllianceOrNoGlobalDisc || lineTotalsSum <= 0
+              ? 0
+              : (lineTotal / lineTotalsSum) * orderLevelDiscount;
+          const itemShare = lineTotal - itemCouponDeduction;
+
+          let originalPaidPerUnit = 0;
+          if (isAllianceOrNoGlobalDisc) {
+            originalPaidPerUnit = lineTotal / qty;
+          } else {
+            originalPaidPerUnit = itemShare / qty;
+          }
+
+          const taxPct = Number(orderItem.taxPercent || 0);
+          const taxDivisor = 1 + taxPct / 100;
+          const wostRefund = (Number(orderItem.unitPrice) * ri.quantity) / taxDivisor;
+          const finalDiscountAmount = Number(orderItem.discountAmount ?? 0) * (ri.quantity / qty);
+          const finalTaxAmount = Number(orderItem.taxAmount ?? 0) * (ri.quantity / qty);
+          const refundPerUnit = originalPaidPerUnit;
+          totalRefundAmount += refundPerUnit * ri.quantity;
+
+          itemRefundDetails.push({
+            orderItemId: ri.orderItemId,
+            itemId: ri.itemId,
+            quantity: ri.quantity,
+            unitPrice: Math.round(Number(orderItem.unitPrice) * 100) / 100,
+            discountAmount: Math.round(finalDiscountAmount * 100) / 100,
+            discountPercent: Number(orderItem.discountPercent ?? 0),
+            taxAmount: Math.round(finalTaxAmount * 100) / 100,
+            taxPercent: taxPct,
+            couponDeduction: Math.round(itemCouponDeduction * (ri.quantity / qty) * 100) / 100,
+            originalPaidPerUnit: Math.round(originalPaidPerUnit * 100) / 100,
+            refundPerUnit: Math.round(refundPerUnit * 100) / 100,
+            priceAdjusted: false,
+          });
+
+          // Stock Ledger: POS_RETURN (Inbound + PLUS)
           await this.stockLedgerService.createEntry(
             {
               itemId: ri.itemId,
@@ -4425,12 +4825,13 @@ export class PosSalesService implements OnModuleInit {
               locationId: effectiveLocationId,
               qty: ri.quantity,
               movementType: MovementType.INBOUND,
-              referenceType: 'POS_EXCHANGE_IN',
+              referenceType: 'POS_RETURN',
               referenceId: order.id,
             },
             tx,
           );
 
+          // InventoryItem increment (+ PLUS)
           const existing = await tx.inventoryItem.findFirst({
             where: {
               itemId: ri.itemId,
@@ -4455,22 +4856,23 @@ export class PosSalesService implements OnModuleInit {
             });
           }
 
-          if (isCrossLocation) {
-            await tx.stockMovement.create({
-              data: {
-                movementNo: `MV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-                itemId: ri.itemId,
-                fromLocationId: order.locationId,
-                toLocationId: effectiveLocationId,
-                quantity: ri.quantity,
-                type: 'CROSS_LOCATION_EXCHANGE_TRANSFER',
-                referenceType: 'POS_EXCHANGE',
-                referenceId: order.id,
-                notes: `Automated stock transfer for cross-location exchange of Order ${order.orderNumber}`,
-                createdById: ctx?.userId || null,
-              },
-            });
-          }
+          // Stock Movement audit entry
+          await tx.stockMovement.create({
+            data: {
+              movementNo: `MV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              itemId: ri.itemId,
+              fromLocationId: isCrossLocation ? order.locationId : null,
+              toLocationId: effectiveLocationId,
+              quantity: ri.quantity,
+              type: isCrossLocation ? 'CROSS_LOCATION_EXCHANGE_TRANSFER' : 'POS_RETURN',
+              referenceType: 'POS_RETURN',
+              referenceId: order.id,
+              notes: isCrossLocation
+                ? `Automated Stock Transfer against Sales Exchange #${returnNumber} (${crossLocationStn ? `STN #${crossLocationStn.requestNo}, ` : ''}Original Order #${order.orderNumber}). Physical item received at exchange branch.`
+                : `POS Return (Exchange) against Order #${order.orderNumber} (Return #${returnNumber})`,
+              createdById: ctx?.userId || null,
+            },
+          });
         }
 
         // ── Deduct new items ────────────────────────────────────
@@ -4511,29 +4913,111 @@ export class PosSalesService implements OnModuleInit {
               },
             });
           }
+
+          await tx.stockMovement.create({
+            data: {
+              movementNo: `MV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              itemId: ni.itemId,
+              fromLocationId: null,
+              toLocationId: effectiveLocationId,
+              quantity: -ni.quantity,
+              type: 'POS_EXCHANGE_OUT',
+              referenceType: 'POS_EXCHANGE_OUT',
+              referenceId: order.id,
+              notes: `POS Exchange Item Out against Order #${order.orderNumber}`,
+              createdById: ctx?.userId || null,
+            },
+          });
         }
 
-        const returnedValue = returnedItems.reduce((s, ri) => {
-          const oi = order.items.find((i) => i.id === ri.orderItemId);
-          // Use lineTotal/quantity so discounts & tax are correctly reflected
-          return (
-            s +
-            (oi
-              ? (Number(oi.lineTotal) / Number(oi.quantity)) * ri.quantity
-              : 0)
-          );
-        }, 0);
+        const returnedValue = totalRefundAmount;
         const newValue = newItems.reduce(
           (s, ni) => s + ni.unitPrice * ni.quantity,
           0,
         );
         const difference = newValue - returnedValue; // positive = customer pays more, negative = refund
 
+        // ── FBR Return Sync (Credit Note: InvoiceType 3) ──────────────
+        const fbrReturnResult = await this.syncReturnWithFbr(
+          order,
+          returnNumber,
+          effectiveLocationId,
+          itemRefundDetails,
+          tx,
+        );
+
+        // ── Save to PosReturn & PosReturnItem tables ──────────────
+        const subtotalWost = itemRefundDetails.reduce(
+          (sum, d) => sum + (d.unitPrice * d.quantity) / (1 + d.taxPercent / 100),
+          0,
+        );
+        const totalDiscount = itemRefundDetails.reduce(
+          (sum, d) => sum + d.discountAmount,
+          0,
+        );
+        const totalTax = itemRefundDetails.reduce(
+          (sum, d) => sum + d.taxAmount,
+          0,
+        );
+
+        const savedPosReturn = await tx.posReturn.create({
+          data: {
+            returnNumber,
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            returnType: 'EXCHANGE',
+            locationId: effectiveLocationId || order.locationId || '',
+            originalLocationId: order.locationId,
+            cashierUserId: ctx?.userId || order.cashierUserId,
+            processedById: ctx?.userId,
+            subtotal: new Prisma.Decimal(Math.round(subtotalWost * 100) / 100),
+            discountAmount: new Prisma.Decimal(Math.round(totalDiscount * 100) / 100),
+            taxAmount: new Prisma.Decimal(Math.round(totalTax * 100) / 100),
+            grandTotal: new Prisma.Decimal(Math.round(totalRefundAmount * 100) / 100),
+            refundMode: 'EXCHANGE',
+            fbrCreditNoteNumber: fbrReturnResult?.fbrInvoiceNumber || null,
+            fbrStatus: fbrReturnResult?.fbrStatus || 'PENDING',
+            reason: reason || null,
+            notes: order.notes || null,
+            items: {
+              create: itemRefundDetails.map((d) => {
+                const wostPerUnit = d.unitPrice / (1 + d.taxPercent / 100);
+                return {
+                  orderItemId: d.orderItemId,
+                  itemId: d.itemId,
+                  quantity: d.quantity,
+                  unitPrice: new Prisma.Decimal(d.unitPrice),
+                  wostAmount: new Prisma.Decimal(Math.round(wostPerUnit * d.quantity * 100) / 100),
+                  discountPercent: new Prisma.Decimal(d.discountPercent),
+                  discountAmount: new Prisma.Decimal(d.discountAmount),
+                  taxPercent: new Prisma.Decimal(d.taxPercent),
+                  taxAmount: new Prisma.Decimal(d.taxAmount),
+                  couponDeduction: new Prisma.Decimal(d.couponDeduction),
+                  originalPaidPerUnit: new Prisma.Decimal(d.originalPaidPerUnit),
+                  refundPerUnit: new Prisma.Decimal(d.refundPerUnit),
+                  netTotal: new Prisma.Decimal(Math.round(d.refundPerUnit * d.quantity * 100) / 100),
+                  priceAdjusted: d.priceAdjusted,
+                };
+              }),
+            },
+          },
+        });
+
+        let locationNarration = '';
+        if (isCrossLocation && effectiveLocationId) {
+          const exLoc = await tx.location.findUnique({
+            where: { id: effectiveLocationId },
+            select: { name: true },
+          });
+          locationNarration = ` [Cross-Location Exchange: Physical stock received at ${exLoc?.name || 'Exchange Branch'}; Stock transfer created against Order ${order.orderNumber} / SR ${returnNumber}]`;
+        }
+
         const updatedOrder = await tx.salesOrder.update({
           where: { id },
           data: {
             status: 'exchanged',
-            notes: reason ? `Exchange: ${reason}` : order.notes,
+            returnNumber,
+            notes: `${reason ? `Exchange (${returnNumber}): ${reason}` : order.notes || ''}${locationNarration}`.trim(),
           },
         });
 
@@ -5324,6 +5808,126 @@ export class PosSalesService implements OnModuleInit {
     return { status: true, cleared: expiredOrders.length };
   }
 
+  // ─── Resolve active campaign discounts scoped to location or global ───
+  private async getActiveCampaignDiscounts(
+    itemIds: string[],
+    locationId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<
+    Map<
+      string,
+      {
+        discountRate: number;
+        discountAmount: number;
+        startDate: Date | null;
+        endDate: Date | null;
+      }
+    >
+  > {
+    if (!itemIds.length) return new Map();
+
+    const client = tx || this.prisma;
+    const now = new Date();
+
+    const campaignItems = await client.discountCampaignItem.findMany({
+      where: {
+        itemId: { in: itemIds },
+        campaign: {
+          AND: [
+            {
+              OR: [
+                { startDate: null },
+                { startDate: { lte: now } },
+              ],
+            },
+            {
+              OR: [
+                { endDate: null },
+                { endDate: { gte: now } },
+              ],
+            },
+          ],
+        },
+      },
+      include: {
+        campaign: {
+          include: {
+            locations: {
+              select: { locationId: true },
+            },
+          },
+        },
+      },
+      orderBy: {
+        campaign: {
+          createdAt: 'desc',
+        },
+      },
+    });
+
+    const discountMap = new Map<
+      string,
+      {
+        discountRate: number;
+        discountAmount: number;
+        startDate: Date | null;
+        endDate: Date | null;
+      }
+    >();
+
+    // For each itemId, resolve the highest-priority campaign:
+    // Priority 1: Campaign explicitly scoped to this locationId
+    // Priority 2: Global campaign (locations.length === 0)
+    for (const itemId of itemIds) {
+      const itemsForThisItem = campaignItems.filter(
+        (ci) => ci.itemId === itemId,
+      );
+      if (!itemsForThisItem.length) continue;
+
+      // 1. Check for location-specific campaign
+      const locationSpecific = itemsForThisItem.find((ci) =>
+        ci.campaign.locations.some((l) => l.locationId === locationId),
+      );
+
+      // 2. Check for global campaign (no location restrictions)
+      const globalCampaign = itemsForThisItem.find(
+        (ci) => ci.campaign.locations.length === 0,
+      );
+
+      const matched = locationSpecific || globalCampaign;
+      if (matched) {
+        if (matched.campaign.clearMode) {
+          // Explicit clear mode for this location/item
+          discountMap.set(itemId, {
+            discountRate: 0,
+            discountAmount: 0,
+            startDate: null,
+            endDate: null,
+          });
+        } else {
+          const discountRate =
+            matched.overrideRate !== null && matched.overrideRate !== undefined
+              ? Number(matched.overrideRate)
+              : Number(matched.campaign.discountRate || 0);
+          const discountAmount =
+            matched.overrideAmount !== null &&
+            matched.overrideAmount !== undefined
+              ? Number(matched.overrideAmount)
+              : Number(matched.campaign.discountAmount || 0);
+
+          discountMap.set(itemId, {
+            discountRate,
+            discountAmount,
+            startDate: matched.campaign.startDate,
+            endDate: matched.campaign.endDate,
+          });
+        }
+      }
+    }
+
+    return discountMap;
+  }
+
   // ─── Enrich items with master data + stock for POS display ────────
   private async enrichForPos(items: any[], locationId: string) {
     if (!items.length) return [];
@@ -5363,6 +5967,12 @@ export class PosSalesService implements OnModuleInit {
       }
     }
 
+    // ── Fetch active campaign discounts scoped to this location ───────
+    const campaignDiscounts = await this.getActiveCampaignDiscounts(
+      itemIds,
+      locationId,
+    );
+
     const now = new Date();
 
     return items.map((item) => {
@@ -5370,23 +5980,33 @@ export class PosSalesService implements OnModuleInit {
       // Use unitPrice from item setup, not unitCost
       const latestPrice = Number(item.unitPrice || 0);
 
-      // ── Resolve effective discount respecting date validity ──────────
-      // A discount is active if:
-      //   - discountStartDate is null OR discountStartDate <= now
-      //   - discountEndDate is null OR discountEndDate >= now
-      const startDate = item.discountStartDate
-        ? new Date(item.discountStartDate)
-        : null;
-      const endDate = item.discountEndDate
-        ? new Date(item.discountEndDate)
-        : null;
-      const discountActive =
-        (!startDate || startDate <= now) && (!endDate || endDate >= now);
+      // ── Resolve effective discount respecting location campaigns & dates ──
+      const campaignDiscount = campaignDiscounts.get(item.id);
 
-      const discountRate = discountActive ? Number(item.discountRate || 0) : 0;
-      const discountAmount = discountActive
-        ? Number(item.discountAmount || 0)
-        : 0;
+      let discountRate = 0;
+      let discountAmount = 0;
+      let startDate: Date | null = null;
+      let endDate: Date | null = null;
+
+      if (campaignDiscount) {
+        discountRate = campaignDiscount.discountRate;
+        discountAmount = campaignDiscount.discountAmount;
+        startDate = campaignDiscount.startDate;
+        endDate = campaignDiscount.endDate;
+      } else {
+        // Fall back to baseline Item discount if active
+        startDate = item.discountStartDate
+          ? new Date(item.discountStartDate)
+          : null;
+        endDate = item.discountEndDate
+          ? new Date(item.discountEndDate)
+          : null;
+        const discountActive =
+          (!startDate || startDate <= now) && (!endDate || endDate >= now);
+
+        discountRate = discountActive ? Number(item.discountRate || 0) : 0;
+        discountAmount = discountActive ? Number(item.discountAmount || 0) : 0;
+      }
 
       // Effective discount percent for the cart:
       // If discountRate (%) is set, use it directly.
@@ -5413,8 +6033,12 @@ export class PosSalesService implements OnModuleInit {
         // Raw discount fields
         discountRate,
         discountAmount,
-        discountStartDate: item.discountStartDate ?? null,
-        discountEndDate: item.discountEndDate ?? null,
+        discountStartDate: startDate
+          ? startDate.toISOString()
+          : item.discountStartDate ?? null,
+        discountEndDate: endDate
+          ? endDate.toISOString()
+          : item.discountEndDate ?? null,
         // Computed effective discount percent (ready for cart)
         effectiveDiscountPercent:
           Math.round(effectiveDiscountPercent * 100) / 100,
@@ -7278,7 +7902,7 @@ export class PosSalesService implements OnModuleInit {
         ? await this.prisma.voucher.findMany({
             where: {
               sourceOrderId: { in: orderIds },
-              voucherType: 'CREDIT',
+              voucherType: { in: ['CREDIT', 'CORPORATE'] },
               isDeleted: false,
             },
           })
@@ -7635,13 +8259,9 @@ export class PosSalesService implements OnModuleInit {
         const type = iv.voucherType;
         const faceVal = Number(iv.faceValue || 0);
 
-        if (type === 'GIFT' || type === 'CORPORATE' || type === 'OUTLET_GIFT') {
+        if (type === 'GIFT' || type === 'OUTLET_GIFT') {
           issuedGift += faceVal;
-        } else if (
-          type === 'CREDIT' ||
-          type === 'EXCHANGE' ||
-          type === 'REFUND'
-        ) {
+        } else if (type === 'CREDIT' || type === 'CORPORATE') {
           issuedCredit += faceVal;
         }
       }

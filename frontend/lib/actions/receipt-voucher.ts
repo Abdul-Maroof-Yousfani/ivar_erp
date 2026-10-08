@@ -32,7 +32,14 @@ export interface ReceiptVoucher {
     debitAccountCode?: string;
     debitAmount: number;
     customerId?: string;
-    status: "pending" | "approved" | "rejected";
+    status: "draft" | "pending_check" | "pending_approval" | "approved" | "rejected";
+    makerId?: string;
+    checkerId?: string;
+    authorizerId?: string;
+    checkedAt?: string;
+    approvedAt?: string;
+    rejectionReason?: string;
+    remarks?: string;
     description?: string;
     taxType?: string;
     isAdvance?: boolean;
@@ -41,22 +48,49 @@ export interface ReceiptVoucher {
     details: ReceiptVoucherDetail[];
     invoices?: { salesInvoiceId: string; receivedAmount: number }[];
     folio?: string | null;
+    lastPrintedAt?: string | null;
     createdAt: string;
     createdBy: string;
 }
 
-export async function getReceiptVouchers(type?: "bank" | "cash") {
-    try {
-        const q = type ? `?type=${type}` : "";
-        const response = await authFetch(`/finance/receipt-vouchers${q}`, { cache: 'no-store' });
-        if (!response.ok) return { status: false, data: [] };
-        const data = response.data;
-        const vouchersArray = data.data || data;
-        
-        if (!Array.isArray(vouchersArray)) {
-            return { status: false, data: [] };
-        }
+export interface ReceiptVoucherFilters {
+    type?: string;
+    status?: string;
+    fromDate?: string;
+    toDate?: string;
+    accountId?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: string;
+}
 
+export async function getReceiptVouchers(filters?: ReceiptVoucherFilters) {
+    try {
+        const queryParams = new URLSearchParams();
+        if (filters?.type && filters.type !== "all") queryParams.append("type", filters.type);
+        if (filters?.status && filters.status !== "all") queryParams.append("status", filters.status);
+        if (filters?.fromDate) queryParams.append("fromDate", filters.fromDate);
+        if (filters?.toDate) queryParams.append("toDate", filters.toDate);
+        if (filters?.accountId && filters.accountId !== "all") queryParams.append("accountId", filters.accountId);
+        if (filters?.search?.trim()) queryParams.append("search", filters.search.trim());
+        if (filters?.page) queryParams.append("page", String(filters.page));
+        if (filters?.limit) queryParams.append("limit", String(filters.limit));
+        if (filters?.sortBy) queryParams.append("sortBy", filters.sortBy);
+        if (filters?.sortOrder) queryParams.append("sortOrder", filters.sortOrder);
+
+        const response = await authFetch(`/finance/receipt-vouchers?${queryParams.toString()}`, { cache: 'no-store' });
+        if (!response.ok) return { status: false, data: [], pagination: { total: 0, page: 1, limit: 10, totalPages: 1 } };
+        const data = response.data;
+        const vouchersArray = Array.isArray(data) ? data : (data?.data || []);
+        const pagination = data.pagination || {
+            total: vouchersArray.length,
+            page: filters?.page || 1,
+            limit: filters?.limit || 10,
+            totalPages: Math.ceil(vouchersArray.length / (filters?.limit || 10)) || 1,
+        };
+        
         return {
             status: true,
             data: vouchersArray.map((rv: any) => ({
@@ -74,10 +108,15 @@ export async function getReceiptVouchers(type?: "bank" | "cash") {
                     credit:          Number(d.credit) || 0,
                 })) || [],
             })),
+            pagination,
         };
     } catch {
-        return { status: false, data: [] };
+        return { status: false, data: [], pagination: { total: 0, page: 1, limit: 10, totalPages: 1 } };
     }
+}
+
+export async function getRsrvVouchers(filters?: ReceiptVoucherFilters) {
+    return getReceiptVouchers({ ...filters, type: "rs_rv" });
 }
 
 export async function createReceiptVoucher(data: any) {
@@ -220,7 +259,7 @@ export async function updateReceiptVoucher(id: string, data: any) {
     }
 }
 
-export async function updateReceiptVoucherStatus(id: string, status: "approved" | "rejected" | "pending", remarks?: string) {
+export async function updateReceiptVoucherStatus(id: string, status: "draft" | "pending_check" | "pending_approval" | "approved" | "rejected", remarks?: string) {
     try {
         const response = await authFetch(`/finance/receipt-vouchers/${id}/status`, {
             method: "PATCH",
@@ -233,8 +272,62 @@ export async function updateReceiptVoucherStatus(id: string, status: "approved" 
         }
 
         revalidatePath("/erp/finance/receipt-voucher/list");
+        revalidatePath("/erp/finance/retail-sale-receipt-voucher/list");
         revalidatePath(`/erp/finance/receipt-voucher/${id}`);
         return { status: true, message: `Receipt Voucher ${status} successfully` };
+    } catch (e: any) {
+        return { status: false, message: e.message || "An unexpected error occurred" };
+    }
+}
+
+export async function unapproveReceiptVoucher(id: string, remarks?: string) {
+    try {
+        const response = await authFetch(`/finance/receipt-vouchers/${id}/unapprove`, {
+            method: "PATCH",
+            body: JSON.stringify({ remarks }),
+        });
+
+        if (!response.ok) {
+            const err = response.data || {};
+            return { status: false, message: err.message || `Failed to unapprove voucher: ${response.status}` };
+        }
+
+        revalidatePath("/erp/finance/receipt-voucher/list");
+        revalidatePath("/erp/finance/retail-sale-receipt-voucher/list");
+        revalidatePath(`/erp/finance/receipt-voucher/${id}`);
+        return { status: true, message: "Receipt Voucher unapproved successfully" };
+    } catch (e: any) {
+        return { status: false, message: e.message || "An unexpected error occurred" };
+    }
+}
+
+export async function bulkUpdateReceiptVoucherStatus(
+    ids: string[],
+    status: "draft" | "pending_check" | "pending_approval" | "approved" | "rejected",
+    remarks?: string
+) {
+    try {
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const id of ids) {
+            const res = await updateReceiptVoucherStatus(id, status, remarks);
+            if (res.status) {
+                successCount++;
+            } else {
+                failCount++;
+            }
+        }
+
+        revalidatePath("/erp/finance/receipt-voucher/list");
+        revalidatePath("/erp/finance/retail-sale-receipt-voucher/list");
+
+        return {
+            status: true,
+            message: `Bulk operation finished: ${successCount} updated successfully${failCount > 0 ? `, ${failCount} failed` : ''}.`,
+            successCount,
+            failCount,
+        };
     } catch (e: any) {
         return { status: false, message: e.message || "An unexpected error occurred" };
     }
@@ -246,13 +339,19 @@ export async function queueReceiptVouchersExport(opts?: {
     status?: string;
     dateFrom?: string;
     dateTo?: string;
+    accountId?: string;
+    search?: string;
+    ids?: string[];
 }): Promise<{ status: boolean; jobId?: string; message?: string }> {
     try {
         const params = new URLSearchParams();
-        if (opts?.type   && opts.type   !== 'all') params.set('type',   opts.type);
-        if (opts?.status && opts.status !== 'all') params.set('status', opts.status);
-        if (opts?.dateFrom)                         params.set('dateFrom', opts.dateFrom);
-        if (opts?.dateTo)                           params.set('dateTo',   opts.dateTo);
+        if (opts?.type      && opts.type      !== 'all') params.set('type',      opts.type);
+        if (opts?.status    && opts.status    !== 'all') params.set('status',    opts.status);
+        if (opts?.dateFrom)                              params.set('dateFrom',  opts.dateFrom);
+        if (opts?.dateTo)                                params.set('dateTo',    opts.dateTo);
+        if (opts?.accountId && opts.accountId !== 'all') params.set('accountId', opts.accountId);
+        if (opts?.search    && opts.search.trim())       params.set('search',    opts.search.trim());
+        if (opts?.ids       && opts.ids.length > 0)      params.set('ids',       opts.ids.join(','));
 
         const response = await authFetch(
             `/finance/receipt-vouchers/export?${params.toString()}`,
@@ -268,6 +367,21 @@ export async function queueReceiptVouchersExport(opts?: {
         return { status: true, jobId: result?.data?.jobId };
     } catch (error: any) {
         return { status: false, message: error.message || 'An unexpected error occurred' };
+    }
+}
+
+export async function markReceiptVoucherAsPrinted(id: string) {
+    try {
+        const response = await authFetch(`/finance/receipt-vouchers/${id}/print`, {
+            method: "PATCH",
+        });
+        if (!response.ok) {
+            return { status: false, message: "Failed to mark receipt voucher as printed" };
+        }
+        revalidatePath("/erp/finance/receipt-voucher");
+        return { status: true, data: response.data };
+    } catch {
+        return { status: false, message: "Network error occurred" };
     }
 }
 

@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { supplierApi } from '@/lib/api';
+import { supplierApi, PURCHASE_TYPE_OPTIONS } from '@/lib/api';
 import {
   getPurchaseInvoice,
   updatePurchaseInvoice,
@@ -80,6 +80,7 @@ export default function EditPurchaseInvoicePage() {
   const [invoiceDate, setInvoiceDate] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [supplierId, setSupplierId] = useState('');
+  const [purchaseType, setPurchaseType] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [items, setItems] = useState<EditableInvoiceItem[]>([]);
@@ -131,6 +132,7 @@ export default function EditPurchaseInvoicePage() {
           : ''
       );
       setSupplierId(invoiceData.supplierId || '');
+      setPurchaseType(invoiceData.purchaseType || '');
       setNotes(invoiceData.notes || '');
       setDiscountAmount(Number(invoiceData.discountAmount || 0));
 
@@ -261,6 +263,7 @@ export default function EditPurchaseInvoicePage() {
         invoiceDate: invoiceDate ? new Date(invoiceDate).toISOString() : new Date().toISOString(),
         dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
         supplierId,
+        purchaseType: purchaseType || undefined,
         discountAmount: Number(discountAmount),
         notes,
         items: items.map((i) => ({
@@ -428,6 +431,26 @@ export default function EditPurchaseInvoicePage() {
               </div>
 
               <div>
+                <Label htmlFor="purchaseType">Purchase Type</Label>
+                <Select
+                  value={purchaseType}
+                  onValueChange={setPurchaseType}
+                  disabled={isReadOnly}
+                >
+                  <SelectTrigger id="purchaseType" className="mt-1">
+                    <SelectValue placeholder="Select Purchase Type..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PURCHASE_TYPE_OPTIONS.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
                 <Label htmlFor="dueDate">Due Date</Label>
                 <div className="mt-1">
                   <DatePicker
@@ -440,7 +463,7 @@ export default function EditPurchaseInvoicePage() {
                 </div>
               </div>
 
-              <div className="md:col-span-2">
+              <div className="md:col-span-1">
                 <Label htmlFor="notes">Notes / Remarks</Label>
                 <Textarea
                   id="notes"
@@ -448,7 +471,7 @@ export default function EditPurchaseInvoicePage() {
                   onChange={(e) => setNotes(e.target.value)}
                   disabled={isReadOnly}
                   placeholder="Additional invoice notes or reference details..."
-                  rows={2}
+                  rows={1}
                   className="mt-1"
                 />
               </div>

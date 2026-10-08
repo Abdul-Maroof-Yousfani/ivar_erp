@@ -6,6 +6,7 @@ import { StockTransactionDetailExportService } from './stock-transaction-detail-
 import { AvailableStockSummaryExportService } from './available-stock-summary-export.service';
 import { OverallAvailableReservedStockExportService } from './overall-available-reserved-stock-export.service';
 import { OutOfStockReportService } from './out-of-stock-report.service';
+import { AvailableStockByLocationExportService } from './available-stock-by-location-export.service';
 import { MovementType } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
@@ -19,6 +20,7 @@ export class StockLedgerController {
     private readonly availableStockSummaryExportService: AvailableStockSummaryExportService,
     private readonly overallAvailableReservedStockExportService: OverallAvailableReservedStockExportService,
     private readonly outOfStockReportService: OutOfStockReportService,
+    private readonly availableStockByLocationExportService: AvailableStockByLocationExportService,
   ) { }
 
   @Get('levels')
@@ -428,6 +430,7 @@ export class StockLedgerController {
       startDate?: string;
       endDate?: string;
       format: 'xlsx' | 'pdf';
+      exportType?: 'hierarchical' | 'flat';
       summaryOnly?: boolean;
       showBrand?: boolean;
       showDivision?: boolean;
@@ -449,6 +452,7 @@ export class StockLedgerController {
       startDate: body.startDate,
       endDate: body.endDate,
       format: body.format,
+      exportType: body.exportType || 'flat',
       summaryOnly: body.summaryOnly,
       showBrand: body.showBrand,
       showDivision: body.showDivision,
@@ -668,4 +672,25 @@ export class StockLedgerController {
       res.status(status).send({ status: false, message: err?.message ?? 'Export file not found' });
     }
   }
+
+  // ── Available Stock — By Location Excel Export (direct stream, no queue) ──
+  @Get('available-stock-summary/export-by-location')
+  @UseGuards(JwtAuthGuard)
+  async exportStockByLocation(
+    @Query('locationId') locationId?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('asOfDate') asOfDate?: string,
+    @Res() res?: any,
+  ) {
+    try {
+      await this.availableStockByLocationExportService.streamExcelByLocation(
+        { locationId, warehouseId, asOfDate },
+        res,
+      );
+    } catch (err: any) {
+      const status = err?.status ?? 500;
+      res.status(status).send({ status: false, message: err?.message ?? 'Export failed' });
+    }
+  }
 }
+

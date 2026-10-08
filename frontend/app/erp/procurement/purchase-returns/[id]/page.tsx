@@ -298,6 +298,8 @@ export default function PurchaseReturnDetailPage() {
                         <Badge variant="outline">
                           {purchaseReturn.sourceType === "GRN"
                             ? "GRN"
+                            : purchaseReturn.sourceType === "PURCHASE_INVOICE"
+                            ? "Purchase Invoice"
                             : "Landed Cost"}
                         </Badge>
                       </div>
@@ -467,6 +469,18 @@ export default function PurchaseReturnDetailPage() {
                     <p className="text-gray-600">
                       PO Number:{" "}
                       {purchaseReturn.landedCost.purchaseOrder?.poNumber}
+                    </p>
+                  </div>
+                )}
+              {purchaseReturn.sourceType === "PURCHASE_INVOICE" &&
+                purchaseReturn.purchaseInvoice && (
+                  <div>
+                    <h3 className="font-semibold">Purchase Invoice Reference</h3>
+                    <p className="text-gray-600">
+                      Invoice Number: {purchaseReturn.purchaseInvoice.invoiceNumber}
+                    </p>
+                    <p className="text-gray-600">
+                      Invoice Date: {formatDate(purchaseReturn.purchaseInvoice.invoiceDate)}
                     </p>
                   </div>
                 )}

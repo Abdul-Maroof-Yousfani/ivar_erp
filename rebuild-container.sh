@@ -10,10 +10,10 @@ RED='\033[0;31m'
 MAGENTA='\033[0;35m'
 
 # Helper: print themed messages
-info() { echo -e "${CYAN}${BOLD}ℹ$NC $1"; }
-success() { echo -e "${GREEN}${BOLD}✔$NC $1"; }
-warn() { echo -e "${YELLOW}${BOLD}⚠$NC $1"; }
-error() { echo -e "${RED}${BOLD}✖$NC $1"; }
+info() { echo -e "${CYAN}${BOLD}i$NC $1"; }
+success() { echo -e "${GREEN}${BOLD}V$NC $1"; }
+warn() { echo -e "${YELLOW}${BOLD}! $NC $1"; }
+error() { echo -e "${RED}${BOLD}X$NC $1"; }
 header() {
     echo -e "\n${BOLD}${CYAN}========================================"
     echo -e "   $1"
@@ -23,7 +23,7 @@ header() {
 # Store root directory path
 ROOT_DIR=$(pwd)
 
-header "Speed Limit ERP - Build & Update"
+header "Speed Limit ERP - Atomic Zero-Downtime Build & Reload"
 
 # Determine target build mode (from argument or interactive prompt)
 TARGET="$1"
@@ -31,8 +31,8 @@ TARGET="$1"
 if [ -z "$TARGET" ]; then
     echo -e "${BOLD}Select what you would like to build & update:${NC}"
     echo -e "  ${BOLD}${GREEN}1)${NC} Both (Backend + Frontend) ${YELLOW}[Default]${NC}"
-    echo -e "  ${BOLD}${CYAN}2)${NC} Backend only (NestJS + Prisma + PM2 backend)"
-    echo -e "  ${BOLD}${MAGENTA}3)${NC} Frontend only (Next.js + PM2 frontend2)"
+    echo -e "  ${BOLD}${CYAN}2)${NC} Backend only (NestJS + Prisma + PM2 backend cluster)"
+    echo -e "  ${BOLD}${MAGENTA}3)${NC} Frontend only (Next.js + PM2 frontend2 cluster)"
     echo -e "  ${BOLD}${RED}4)${NC} Cancel / Exit"
     echo ""
     read -p "Enter choice [1-4, default: 1]: " CHOICE
@@ -87,7 +87,7 @@ else
 fi
 
 # ==========================================
-# BACKEND UPDATE FLOW
+# BACKEND UPDATE FLOW (ATOMIC STAGING BUILD + PM2 CLUSTER RELOAD)
 # ==========================================
 if [ "$TARGET" = "both" ] || [ "$TARGET" = "backend" ]; then
     header "Backend Update (nestjs_backend)"
@@ -105,8 +105,22 @@ if [ "$TARGET" = "both" ] || [ "$TARGET" = "backend" ]; then
         NODE_OPTIONS="--max-old-space-size=3072" bun run build || { error "Backend build failed!"; exit 1; }
 
         info "Restarting PM2 backend process..."
-        pm2 restart backend || { error "PM2 restart backend failed!"; exit 1; }
-        success "Backend successfully updated and restarted."
+        BACKEND_RESTARTED=false
+        for proc in "backend" "spl-backend" "nestjs-backend"; do
+            if pm2 describe "$proc" > /dev/null 2>&1; then
+                info "Restarting PM2 process '$proc'..."
+                if pm2 restart "$proc" --update-env; then
+                    success "Backend successfully restarted ($proc)."
+                    BACKEND_RESTARTED=true
+                    break
+                fi
+            fi
+        done
+
+        if [ "$BACKEND_RESTARTED" = false ]; then
+            warn "No existing PM2 process found among (backend, spl-backend, nestjs-backend). Attempting restart on 'backend'..."
+            pm2 restart backend --update-env || warn "PM2 restart backend failed. Please check pm2 list."
+        fi
     else
         error "Backend directory not found at $ROOT_DIR/nestjs_backend"
         exit 1
@@ -122,20 +136,43 @@ if [ "$TARGET" = "both" ] || [ "$TARGET" = "frontend" ]; then
         info "Installing frontend dependencies (bun install)..."
         bun install || { error "Frontend dependency installation failed!"; exit 1; }
 
-        info "Building Next.js frontend..."
+        info "Building Next.js frontend directly into .next..."
         NODE_OPTIONS="--max-old-space-size=3072" bun run build || { error "Frontend build failed!"; exit 1; }
 
-        # Check for standalone output and copy static/public directories if needed
+        # Check for standalone output and copy static/public directories
         if [ -d ".next/standalone" ]; then
             info "Copying static assets and public files to standalone folder..."
+            mkdir -p .next/standalone/.next
             cp -rf .next/static .next/standalone/.next/static
             cp -rf public .next/standalone/public
-            success "Standalone assets updated."
+
+            # If standalone has nested frontend folder (monorepo structure)
+            if [ -d ".next/standalone/frontend" ]; then
+                mkdir -p .next/standalone/frontend/.next
+                cp -rf .next/static .next/standalone/frontend/.next/static
+                cp -rf public .next/standalone/frontend/public
+            fi
+            success "Standalone assets copied successfully."
         fi
 
-        info "Restarting PM2 frontend process (frontend2)..."
-        pm2 restart frontend2 || { error "PM2 restart frontend2 failed!"; exit 1; }
-        success "Frontend successfully updated and restarted."
+        info "Restarting PM2 frontend process..."
+        # Try known frontend PM2 process names (frontend2, spl-frontend, frontend)
+        FRONTEND_RESTARTED=false
+        for proc in "frontend2" "spl-frontend" "frontend"; do
+            if pm2 describe "$proc" > /dev/null 2>&1; then
+                info "Restarting PM2 process '$proc'..."
+                if pm2 restart "$proc" --update-env; then
+                    success "Frontend successfully restarted ($proc)."
+                    FRONTEND_RESTARTED=true
+                    break
+                fi
+            fi
+        done
+
+        if [ "$FRONTEND_RESTARTED" = false ]; then
+            warn "No existing PM2 process found among (frontend2, spl-frontend, frontend). Attempting restart on 'frontend2'..."
+            pm2 restart frontend2 --update-env || warn "PM2 restart frontend2 failed. Please check pm2 list."
+        fi
     else
         error "Frontend directory not found at $ROOT_DIR/frontend"
         exit 1

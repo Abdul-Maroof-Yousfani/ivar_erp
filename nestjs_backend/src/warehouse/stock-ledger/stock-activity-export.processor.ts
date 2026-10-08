@@ -22,6 +22,7 @@ export interface StockActivityExportJobData {
   endDate?: string;
   format: 'xlsx' | 'pdf';
   summaryOnly?: boolean;
+  showOutlet?: boolean;
   showBrand?: boolean;
   showDivision?: boolean;
   showCategory?: boolean;
@@ -153,9 +154,52 @@ export class StockActivityExportProcessor {
         distinct: ['itemId'],
       });
 
+      const UNACCEPTED_TRANSFER_STATUSES = [
+        'PENDING',
+        'PENDING_CHECKER',
+        'PENDING_AUTHORIZER',
+        'PENDING_APPROVER',
+        'APPROVED',
+        'SOURCE_APPROVED',
+        'IN_TRANSIT',
+        'PARTIAL_RECEIVED',
+      ];
+
+      const transitOrConditions: any[] = [];
+      const hasExplicitLoc = locIds.length > 0;
+      const hasExplicitWh = whIds.length > 0;
+
+      if (hasExplicitLoc && !hasExplicitWh) {
+        transitOrConditions.push({ toLocationId: locationWhere });
+        transitOrConditions.push({ fromLocationId: locationWhere });
+      } else if (hasExplicitWh && !hasExplicitLoc) {
+        transitOrConditions.push({ toWarehouseId: warehouseWhere });
+        transitOrConditions.push({ transferType: 'OUTLET_TO_WAREHOUSE', fromWarehouseId: warehouseWhere });
+        transitOrConditions.push({ fromWarehouseId: warehouseWhere, toLocationId: { not: null } });
+      } else if (hasExplicitLoc && hasExplicitWh) {
+        transitOrConditions.push({ toLocationId: locationWhere });
+        transitOrConditions.push({ fromLocationId: locationWhere });
+        transitOrConditions.push({ toWarehouseId: warehouseWhere });
+        transitOrConditions.push({ transferType: 'OUTLET_TO_WAREHOUSE', fromWarehouseId: warehouseWhere });
+        transitOrConditions.push({ fromWarehouseId: warehouseWhere, toLocationId: { not: null } });
+      }
+      const transitWhere = transitOrConditions.length > 0 ? { OR: transitOrConditions } : {};
+
+      const transitItemIds = await prisma.transferRequestItem.findMany({
+        where: {
+          transferRequest: {
+            ...transitWhere,
+            status: { in: UNACCEPTED_TRANSFER_STATUSES },
+          },
+        },
+        select: { itemId: true },
+        distinct: ['itemId'],
+      });
+
       const uniqueItemIds = [...new Set([
         ...inventoryItems.map(i => i.itemId),
         ...ledgerItems.map(l => l.itemId),
+        ...transitItemIds.map(t => t.itemId),
       ])];
 
       if (uniqueItemIds.length === 0) {
@@ -247,33 +291,25 @@ export class StockActivityExportProcessor {
         },
       });
 
-      const toLocOrWhFilters: any[] = [];
-      if (locationWhere) toLocOrWhFilters.push({ toLocationId: locationWhere });
-      if (warehouseWhere) toLocOrWhFilters.push({ toWarehouseId: warehouseWhere });
-
-      const toLocOrWhWhere = toLocOrWhFilters.length > 1
-        ? { OR: toLocOrWhFilters }
-        : (toLocOrWhFilters.length === 1 ? toLocOrWhFilters[0] : {});
-
       const transitItems = await prisma.transferRequestItem.findMany({
         where: {
           itemId: { in: matchedItemIds },
           transferRequest: {
-            ...toLocOrWhWhere,
-            status: { in: ['PENDING', 'SOURCE_APPROVED'] },
-            transferType: { in: ['WAREHOUSE_TO_OUTLET', 'OUTLET_TO_OUTLET', 'OUTLET_TO_WAREHOUSE', 'WAREHOUSE_TO_WAREHOUSE'] },
+            ...transitWhere,
+            status: { in: UNACCEPTED_TRANSFER_STATUSES },
           },
         },
         select: {
           itemId: true,
           quantity: true,
+          fulfilledQty: true,
         },
       });
 
       const transitMap = new Map<string, number>();
       for (const row of transitItems) {
-        const qty = Number(row.quantity || 0);
-        transitMap.set(row.itemId, (transitMap.get(row.itemId) || 0) + qty);
+        const remainingQty = Math.max(0, Number(row.quantity || 0) - Number(row.fulfilledQty || 0));
+        transitMap.set(row.itemId, (transitMap.get(row.itemId) || 0) + remainingQty);
       }
 
       await job.progress(60);
@@ -347,6 +383,7 @@ export class StockActivityExportProcessor {
       const sVariant = showVariant !== undefined ? showVariant : !summaryOnly;
 
       const levels: string[] = [];
+      if (showOutlet) levels.push('outlet');
       if (sBrand) levels.push('brand');
       if (sDivision) levels.push('division');
       if (sCategory) levels.push('category');
@@ -422,7 +459,9 @@ export class StockActivityExportProcessor {
           let nodeVal = '';
           let extraFields: any = {};
 
-          if (levelName === 'brand') {
+          if (levelName === 'outlet') {
+            nodeVal = (item as any).locationName || 'POS Outlet';
+          } else if (levelName === 'brand') {
             nodeVal = item.brand?.name || 'No Brand';
           } else if (levelName === 'division') {
             nodeVal = item.division?.name || 'No Division';
@@ -596,7 +635,7 @@ export class StockActivityExportProcessor {
         const centerAlign = { horizontal: 'center' as const, vertical: 'middle' as const };
 
         const styleHeaderRow = (row: ExcelJS.Row, bgHex: string, bold: boolean, size = 9, fgHex = '1E293B') => {
-          for (let colNum = 1; colNum <= 18; colNum++) {
+          for (let colNum = 1; colNum <= 20; colNum++) {
             const cell = row.getCell(colNum);
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${bgHex}` } };
             cell.font = { bold, size, color: { argb: `FF${fgHex}` } };
@@ -616,6 +655,7 @@ export class StockActivityExportProcessor {
           indent: number;
           prefix: string;
         }> = {
+          outlet: { bgHex: '0F172A', fgHex: 'FFFFFF', fontSize: 10.5, bold: true, indent: 0, prefix: 'STORE / OUTLET: ' },
           brand: { bgHex: '1E293B', fgHex: 'FFFFFF', fontSize: 10, bold: true, indent: 0, prefix: 'BRAND: ' },
           division: { bgHex: '334155', fgHex: 'FFFFFF', fontSize: 9.5, bold: true, indent: 2, prefix: 'DIVISION: ' },
           category: { bgHex: '475569', fgHex: 'FFFFFF', fontSize: 9, bold: true, indent: 4, prefix: 'CATEGORY: ' },
@@ -665,7 +705,7 @@ export class StockActivityExportProcessor {
             balance: node.totals.balance,
           });
 
-          for (let colNum = 1; colNum <= 18; colNum++) {
+          for (let colNum = 1; colNum <= 20; colNum++) {
             const cell = row.getCell(colNum);
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${style.bgHex}` } };
             cell.font = { bold: style.bold, size: style.fontSize, color: { argb: `FF${style.fgHex}` } };

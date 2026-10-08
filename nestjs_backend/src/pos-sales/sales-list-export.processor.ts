@@ -280,9 +280,9 @@ export class SalesListExportProcessor {
           const type = iv.voucherType;
           const faceVal = Number(iv.faceValue || 0);
 
-          if (type === 'GIFT' || type === 'CORPORATE' || type === 'OUTLET_GIFT') {
+          if (type === 'GIFT' || type === 'OUTLET_GIFT') {
             issuedGift += faceVal;
-          } else if (type === 'CREDIT' || type === 'EXCHANGE' || type === 'REFUND') {
+          } else if (type === 'CREDIT' || type === 'CORPORATE') {
             issuedCredit += faceVal;
           }
         }

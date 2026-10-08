@@ -20,14 +20,25 @@ import {
     Barcode,
     X,
     MapPin,
-    ArrowRightLeft
+    ArrowRightLeft,
+    Printer,
+    Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { COMPANY_NAME } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/components/providers/auth-provider";
-import { getReturnTransferRequests, acceptTransferRequest, createReturnTransferRequest, createOutletToOutletTransferRequest, getOutboundTransferRequests } from "@/lib/actions/transfer-request";
+import { getReturnTransferRequests, acceptTransferRequest, createReturnTransferRequest, updateTransferRequestStatus, getOutboundTransferRequests, createOutletToOutletTransferRequest } from "@/lib/actions/transfer-request";
 import { getLocations } from "@/lib/actions/location";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -42,6 +53,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { ChevronsUpDown, Check } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
 import { warehouseApi, inventoryApi } from "@/lib/api";
+import * as XLSX from "xlsx";
 
 interface Warehouse {
     id: string;
@@ -75,6 +87,8 @@ interface RequestItem {
     item?: {
         sku: string;
         description: string;
+        size?: any;
+        color?: any;
     };
 }
 
@@ -97,6 +111,189 @@ export default function ReturnRequestsPage() {
     const [requests, setRequests] = useState<ReturnRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isAccepting, setIsAccepting] = useState<string | null>(null);
+    const [isRejecting, setIsRejecting] = useState<string | null>(null);
+    const [printingId, setPrintingId] = useState<string | null>(null);
+    const [rejectModalOpen, setRejectModalOpen] = useState<string | null>(null);
+
+    const handlePrint = (request: any) => {
+        setPrintingId(request.id);
+        const win = window.open("", "_blank");
+        if (!win) {
+            toast.error("Allow popups to print");
+            setPrintingId(null);
+            return;
+        }
+
+        const dateStr = format(new Date(request.createdAt), "dd MMM yyyy HH:mm");
+        const companyName = COMPANY_NAME;
+        const sourceLoc = user?.terminal?.location?.name || request.fromLocation?.name || "This Location";
+        const destLoc = request.toWarehouse?.name || request.toLocation?.name || "Main Warehouse";
+        const refNo = request.requestNo || "N/A";
+        const notes = request.notes || "";
+
+        // Status styling and text
+        let statusText = "PENDING APPROVAL";
+        let statusClass = "status-pending";
+        if (request.status === "APPROVED" || request.status === "COMPLETED") {
+            statusText = "APPROVED / RETURNED";
+            statusClass = "status-approved";
+        } else if (request.status === "REJECTED") {
+            statusText = "REJECTED";
+            statusClass = "status-rejected";
+        }
+
+        win.document.write(`
+            <html><head><title>Return Request - ${refNo}</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { font-family: 'Segoe UI', Arial, sans-serif; color: #333; line-height: 1.4; padding: 40px; }
+                .header-container { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #ea580c; padding-bottom: 16px; margin-bottom: 20px; }
+                .company-name { font-size: 24px; font-weight: 800; color: #9a3412; letter-spacing: 1px; }
+                .document-title { font-size: 14px; font-weight: 600; color: #4b5563; text-transform: uppercase; margin-top: 4px; }
+                .status-badge { padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; border: 1px solid; display: inline-block; }
+                .status-pending { background-color: #fef3c7; color: #d97706; border-color: #f59e0b; }
+                .status-approved { background-color: #dcfce7; color: #15803d; border-color: #22c55e; }
+                .status-rejected { background-color: #fee2e2; color: #b91c1c; border-color: #ef4444; }
+                
+                .meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 30px; background-color: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; }
+                .meta-item { display: flex; flex-direction: column; }
+                .meta-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px; }
+                .meta-value { font-size: 13px; font-weight: 600; color: #1e293b; }
+                
+                table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                th { background-color: #f1f5f9; color: #475569; font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 10px 12px; border-bottom: 2px solid #cbd5e1; text-align: left; }
+                td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; color: #334155; }
+                .text-right { text-align: right; }
+                .font-bold { font-weight: 700; }
+                
+                .notes-section { background-color: #f8fafc; border-left: 4px solid #ea580c; padding: 12px 16px; margin-bottom: 40px; border-radius: 0 8px 8px 0; }
+                .notes-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; margin-bottom: 4px; }
+                .notes-content { font-size: 12px; color: #334155; }
+                
+                .signature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; margin-top: 60px; }
+                .signature-box { border-top: 1px solid #94a3b8; text-align: center; padding-top: 8px; font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; }
+                
+                @media print {
+                    body { padding: 0; }
+                    .meta-grid { background-color: #fff !important; border: 1px solid #cbd5e1; }
+                    th { background-color: #e2e8f0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                }
+            </style></head><body>
+                <div class="header-container">
+                    <div>
+                        <div class="company-name">${companyName}</div>
+                        <div class="document-title">RETURN / TRANSFER SLIP</div>
+                    </div>
+                    <div>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
+                    </div>
+                </div>
+                
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">Reference No</span>
+                        <span class="meta-value">${refNo}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Request Date</span>
+                        <span class="meta-value">${dateStr}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Return From</span>
+                        <span class="meta-value">${sourceLoc}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Destination</span>
+                        <span class="meta-value">${destLoc}</span>
+                    </div>
+                </div>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 60px;">S.No</th>
+                            <th>SKU Code</th>
+                            <th>Item Description</th>
+                            <th>Size</th>
+                            <th>Color</th>
+                            <th class="text-right" style="width: 100px;">Quantity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${request.items.map((item: any, idx: number) => `
+                            <tr>
+                                <td>${idx + 1}</td>
+                                <td class="font-bold">${item.item?.sku || "—"}</td>
+                                <td>${item.item?.description || "Item"}</td>
+                                <td>${item.item?.size?.name || item.item?.size || "—"}</td>
+                                <td>${item.item?.color?.name || item.item?.color || "—"}</td>
+                                <td class="text-right font-bold">${Number(item.quantity)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                
+                ${notes ? `
+                    <div class="notes-section">
+                        <div class="notes-title">Return Reason / Notes</div>
+                        <div class="notes-content">${notes}</div>
+                    </div>
+                ` : ''}
+                
+                <div class="signature-grid">
+                    <div class="signature-box">Prepared By</div>
+                    <div class="signature-box">Authorized By</div>
+                    <div class="signature-box">Received By</div>
+                </div>
+            </body></html>
+        `);
+        win.document.close();
+        win.focus();
+        // Wait for document to render, then print
+        setTimeout(() => {
+            win.print();
+            // Close after print dialog is dismissed
+            win.onafterprint = () => {
+                win.close();
+                setPrintingId(null);
+            };
+            // Fallback: close after 60s if onafterprint never fires
+            setTimeout(() => {
+                if (!win.closed) win.close();
+                setPrintingId(null);
+            }, 60000);
+        }, 500);
+    };
+
+    const handleExportCSV = (request: ReturnRequest) => {
+        try {
+            const data = request.items.map((item, idx) => ({
+                "S.No": idx + 1,
+                "Request No": request.requestNo || "N/A",
+                "Request Date": format(new Date(request.createdAt), "dd MMM yyyy HH:mm"),
+                "Return From": user?.terminal?.location?.name || request.fromLocation?.name || "This Location",
+                "Destination": request.toWarehouse?.name || request.toLocation?.name || "Main Warehouse",
+                "Status": request.status,
+                "Reason / Notes": request.notes || "-",
+                "SKU": item.item?.sku || "-",
+                "Description": item.item?.description || "-",
+                "Size": (item.item as any)?.size?.name || (item.item as any)?.size || "-",
+                "Color": (item.item as any)?.color?.name || (item.item as any)?.color || "-",
+                "Quantity": Number(item.quantity)
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Return Slip");
+            
+            const fileName = `Return_Slip_${request.requestNo || request.id.substring(0, 8)}.xlsx`;
+            XLSX.writeFile(workbook, fileName);
+            toast.success("Return slip exported successfully");
+        } catch (error) {
+            console.error("Error exporting return slip:", error);
+            toast.error("Failed to export return slip");
+        }
+    };
 
     // Create Mode States
     const [isCreating, setIsCreating] = useState(false);
@@ -127,12 +324,12 @@ export default function ReturnRequestsPage() {
             const gainNode = audioCtx.createGain();
             osc.connect(gainNode);
             gainNode.connect(audioCtx.destination);
-            
+
             osc.type = 'sine';
             osc.frequency.setValueAtTime(1050, audioCtx.currentTime); // Crisp beep
             gainNode.gain.setValueAtTime(0.06, audioCtx.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
-            
+
             osc.start();
             osc.stop(audioCtx.currentTime + 0.08);
         } catch (e) {
@@ -147,19 +344,19 @@ export default function ReturnRequestsPage() {
             const osc1 = audioCtx.createOscillator();
             const osc2 = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
-            
+
             osc1.connect(gainNode);
             osc2.connect(gainNode);
             gainNode.connect(audioCtx.destination);
-            
+
             osc1.type = 'sawtooth';
             osc2.type = 'sawtooth';
             osc1.frequency.setValueAtTime(140, audioCtx.currentTime); // Error buzz
             osc2.frequency.setValueAtTime(143, audioCtx.currentTime);
-            
+
             gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
             gainNode.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.22);
-            
+
             osc1.start();
             osc2.start();
             osc1.stop(audioCtx.currentTime + 0.22);
@@ -209,7 +406,7 @@ export default function ReturnRequestsPage() {
             if (res.status && res.data && res.data.length > 0) {
                 const cleanedCode = code.toLowerCase();
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                let matched = res.data.find((item: any) => 
+                let matched = res.data.find((item: any) =>
                     (item.sku && item.sku.toLowerCase() === cleanedCode) ||
                     (item.barcode && item.barcode.toLowerCase() === cleanedCode) ||
                     (item.barCode && item.barCode.toLowerCase() === cleanedCode) ||
@@ -296,7 +493,12 @@ export default function ReturnRequestsPage() {
                 items: (req.items || []).map((it: any) => ({
                     id: it.id,
                     quantity: Number(it.quantity || 0),
-                    item: it.item ? { sku: it.item.sku, description: it.item.description } : undefined
+                    item: it.item ? { 
+                        sku: it.item.sku, 
+                        description: it.item.description,
+                        size: it.item.size,
+                        color: it.item.color
+                    } : undefined
                 }))
             });
 
@@ -489,10 +691,10 @@ export default function ReturnRequestsPage() {
     const handleAccept = async (requestId: string) => {
         setIsAccepting(requestId);
         try {
-            const res = await acceptTransferRequest(requestId, user?.id);
+            const res = await updateTransferRequestStatus(requestId, 'APPROVED');
             if (res.status) {
-                toast.success("Return request approved! Items returned to warehouse.");
-                setRequests(prev => prev.filter(r => r.id !== requestId));
+                toast.success("Return request approved and dispatched to warehouse!");
+                setRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'APPROVED' } : r));
             } else {
                 toast.error(res.message || "Failed to approve return");
             }
@@ -501,6 +703,30 @@ export default function ReturnRequestsPage() {
             toast.error(err.message || "Failed to approve return");
         } finally {
             setIsAccepting(null);
+        }
+    };
+
+    const handleReject = async (requestId: string) => {
+        setRejectModalOpen(requestId);
+    };
+
+    const confirmReject = async () => {
+        if (!rejectModalOpen) return;
+        setIsRejecting(rejectModalOpen);
+        try {
+            const res = await updateTransferRequestStatus(rejectModalOpen, 'REJECTED');
+            if (res.status) {
+                toast.success("Return request cancelled/rejected.");
+                setRequests(prev => prev.filter(r => r.id !== rejectModalOpen));
+                setRejectModalOpen(null);
+            } else {
+                toast.error(res.message || "Failed to reject return request");
+            }
+        } catch (error) {
+            const err = error as { message?: string };
+            toast.error(err.message || "Failed to reject return request");
+        } finally {
+            setIsRejecting(null);
         }
     };
 
@@ -576,358 +802,356 @@ export default function ReturnRequestsPage() {
                         </Card>
 
                         <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-                        {/* Left Column: Destination & Item Search */}
-                        <div className="md:col-span-2 space-y-6">
-                            {/* Destination Type Card */}
-                            <Card className="border-border/50 shadow-sm">
-                                <CardHeader className="pb-3">
-                                    <CardTitle className="text-md font-bold flex items-center gap-2 text-foreground">
-                                        <ArrowRightLeft className="h-5 w-5 text-orange-600" />
-                                        Destination
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">Return to warehouse or transfer to another POS outlet.</CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    {/* Toggle */}
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setDestType('warehouse')}
-                                            className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 text-sm font-bold transition-all ${
-                                                destType === 'warehouse'
-                                                    ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300'
-                                                    : 'border-border/50 bg-muted/20 text-muted-foreground hover:border-orange-200'
-                                            }`}
-                                        >
-                                            <Building2 className="h-4 w-4" />
-                                            Warehouse
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setDestType('location')}
-                                            className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 text-sm font-bold transition-all ${
-                                                destType === 'location'
-                                                    ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300'
-                                                    : 'border-border/50 bg-muted/20 text-muted-foreground hover:border-orange-200'
-                                            }`}
-                                        >
-                                            <MapPin className="h-4 w-4" />
-                                            POS Location
-                                        </button>
-                                    </div>
-
-                                    {/* Warehouse Combobox */}
-                                    {destType === 'warehouse' && (
-                                        <div className="space-y-2">
-                                            <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Warehouse</Label>
-                                            <Popover open={warehouseOpen} onOpenChange={setWarehouseOpen}>
-                                                <PopoverTrigger asChild>
-                                                    <button
-                                                        type="button"
-                                                        role="combobox"
-                                                        aria-expanded={warehouseOpen}
-                                                        className="w-full h-11 flex items-center justify-between px-3 rounded-md border border-input bg-muted/30 text-sm hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1 transition-colors"
-                                                    >
-                                                        <span className={selectedWarehouseId ? 'text-foreground font-medium' : 'text-muted-foreground'}>
-                                                            {selectedWarehouseId
-                                                                ? warehouses.find(w => w.id === selectedWarehouseId)?.name
-                                                                : 'Select destination warehouse...'}
-                                                        </span>
-                                                        <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                                    </button>
-                                                </PopoverTrigger>
-                                                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" side="bottom" align="start" sideOffset={4}>
-                                                    <Command>
-                                                        <CommandInput placeholder="Search warehouse..." className="h-9" />
-                                                        <CommandList>
-                                                            <CommandEmpty>No warehouse found.</CommandEmpty>
-                                                            <CommandGroup>
-                                                                {warehouses.map(w => (
-                                                                    <CommandItem
-                                                                        key={w.id}
-                                                                        value={w.name}
-                                                                        onSelect={() => {
-                                                                            setSelectedWarehouseId(w.id);
-                                                                            setWarehouseOpen(false);
-                                                                        }}
-                                                                        className="flex items-center justify-between gap-2 cursor-pointer"
-                                                                    >
-                                                                        <span>{w.name}</span>
-                                                                        {selectedWarehouseId === w.id && <Check className="h-4 w-4 text-orange-600 shrink-0" />}
-                                                                    </CommandItem>
-                                                                ))}
-                                                            </CommandGroup>
-                                                        </CommandList>
-                                                    </Command>
-                                                </PopoverContent>
-                                            </Popover>
-                                        </div>
-                                    )}
-
-                                    {/* POS Location Combobox */}
-                                    {destType === 'location' && (
-                                        <div className="space-y-2">
-                                            <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">POS Outlet</Label>
-                                            <Popover open={locationOpen} onOpenChange={setLocationOpen}>
-                                                <PopoverTrigger asChild>
-                                                    <button
-                                                        type="button"
-                                                        role="combobox"
-                                                        aria-expanded={locationOpen}
-                                                        className="w-full h-11 flex items-center justify-between px-3 rounded-md border border-input bg-muted/30 text-sm hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1 transition-colors"
-                                                    >
-                                                        <span className={selectedLocationId ? 'text-foreground font-medium' : 'text-muted-foreground'}>
-                                                            {selectedLocationId
-                                                                ? posLocations.find(l => l.id === selectedLocationId)?.name
-                                                                : 'Select destination outlet...'}
-                                                        </span>
-                                                        <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                                    </button>
-                                                </PopoverTrigger>
-                                                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" side="bottom" align="start" sideOffset={4}>
-                                                    <Command>
-                                                        <CommandInput placeholder="Search outlet by name or code..." className="h-9" />
-                                                        <CommandList>
-                                                            <CommandEmpty>No outlet found.</CommandEmpty>
-                                                            <CommandGroup>
-                                                                {posLocations.map(l => (
-                                                                    <CommandItem
-                                                                        key={l.id}
-                                                                        value={`${l.name} ${l.code}`}
-                                                                        onSelect={() => {
-                                                                            setSelectedLocationId(l.id);
-                                                                            setLocationOpen(false);
-                                                                        }}
-                                                                        className="flex items-center justify-between gap-2 cursor-pointer"
-                                                                    >
-                                                                        <div className="min-w-0">
-                                                                            <span className="font-medium block truncate">{l.name}</span>
-                                                                            <span className="text-[10px] text-muted-foreground font-mono">{l.code}</span>
-                                                                        </div>
-                                                                        {selectedLocationId === l.id && <Check className="h-4 w-4 text-orange-600 shrink-0" />}
-                                                                    </CommandItem>
-                                                                ))}
-                                                            </CommandGroup>
-                                                        </CommandList>
-                                                    </Command>
-                                                </PopoverContent>
-                                            </Popover>
-                                            {selectedLocationId && (
-                                                <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
-                                                    ⚠ Destination outlet must approve from their <strong>Outbound</strong> page, then accept from <strong>Inbound</strong>.
-                                                </p>
-                                            )}
-                                        </div>
-                                    )}
-                                </CardContent>
-                            </Card>
-
-                            {/* Item Search Card */}
-                            <Card className="border-border/50 shadow-sm">
-                                <CardHeader className="pb-4">
-                                    <CardTitle className="text-md font-bold flex items-center gap-2 text-foreground">
-                                        <Search className="h-5 w-5 text-orange-600" />
-                                        Search Items
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">Find items with available stock at this outlet.</CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    <div className="relative">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                                        <Input
-                                            placeholder="Search by SKU or description..."
-                                            value={itemQuery}
-                                            onChange={(e) => setItemQuery(e.target.value)}
-                                            className="pl-9 h-11 bg-muted/20 border-border/50"
-                                        />
-                                    </div>
-
-                                    {/* Search Results */}
-                                    <ScrollArea className="h-[250px] rounded-lg border border-border/50 bg-muted/5">
-                                        {isSearching ? (
-                                            <div className="p-4 space-y-2">
-                                                {[1, 2, 3].map(i => (
-                                                    <Skeleton key={i} className="h-12 w-full rounded-md" />
-                                                ))}
-                                            </div>
-                                        ) : searchResults.length === 0 ? (
-                                            <div className="flex flex-col items-center justify-center h-[200px] text-center p-4">
-                                                <Package className="h-8 w-8 text-muted-foreground/30 mb-2" />
-                                                <p className="text-xs font-medium text-muted-foreground">
-                                                    {itemQuery ? "No matching items with stock found" : "Type to search available stock"}
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            <div className="divide-y divide-border/50">
-                                                {searchResults.map((item) => (
-                                                    <button
-                                                        key={item.id}
-                                                        type="button"
-                                                        onClick={() => addToCart(item)}
-                                                        className="w-full text-left p-3 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-colors flex items-center justify-between gap-4 group"
-                                                    >
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center flex-wrap gap-1.5 mb-1">
-                                                                <span className="font-mono text-[9px] font-bold bg-muted px-1.5 py-0.5 rounded text-muted-foreground group-hover:bg-orange-100 group-hover:text-orange-700 dark:group-hover:bg-orange-950/40 dark:group-hover:text-orange-300 transition-colors">
-                                                                    {item.sku}
-                                                                </span>
-                                                                {item.size?.name && (
-                                                                    <Badge variant="outline" className="text-[9px] py-0 px-1 font-medium">
-                                                                        Size: {item.size.name}
-                                                                    </Badge>
-                                                                )}
-                                                                {item.color?.name && (
-                                                                    <Badge variant="outline" className="text-[9px] py-0 px-1 font-medium">
-                                                                        Color: {item.color.name}
-                                                                    </Badge>
-                                                                )}
-                                                            </div>
-                                                            <p className="text-xs font-semibold truncate text-foreground">{item.description}</p>
-                                                        </div>
-                                                        <div className="text-right flex-none">
-                                                            <span className="text-[9px] block font-bold text-muted-foreground uppercase tracking-wider">Available</span>
-                                                            <span className="text-xs font-bold text-emerald-600">{item.totalQuantity} units</span>
-                                                        </div>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </ScrollArea>
-                                </CardContent>
-                            </Card>
-                        </div>
-
-                        {/* Right Column: Return Cart */}
-                        <div className="md:col-span-3">
-                            <Card className="border-border/50 shadow-sm h-full flex flex-col min-h-[450px]">
-                                <CardHeader className="pb-4 border-b border-border/50 flex flex-row items-center justify-between">
-                                    <div>
+                            {/* Left Column: Destination & Item Search */}
+                            <div className="md:col-span-2 space-y-6">
+                                {/* Destination Type Card */}
+                                <Card className="border-border/50 shadow-sm">
+                                    <CardHeader className="pb-3">
                                         <CardTitle className="text-md font-bold flex items-center gap-2 text-foreground">
-                                            <ShoppingCart className="h-5 w-5 text-orange-600" />
-                                            Return List
+                                            <ArrowRightLeft className="h-5 w-5 text-orange-600" />
+                                            Destination
                                         </CardTitle>
-                                        <CardDescription className="text-xs">Items selected for return.</CardDescription>
-                                    </div>
-                                    <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-100/80 dark:bg-orange-950/40 dark:text-orange-300 font-bold">
-                                        {cart.length} {cart.length === 1 ? 'item' : 'items'}
-                                    </Badge>
-                                </CardHeader>
+                                        <CardDescription className="text-xs">Return to warehouse or transfer to another POS outlet.</CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="space-y-4">
+                                        {/* Toggle */}
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setDestType('warehouse')}
+                                                className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 text-sm font-bold transition-all ${destType === 'warehouse'
+                                                        ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300'
+                                                        : 'border-border/50 bg-muted/20 text-muted-foreground hover:border-orange-200'
+                                                    }`}
+                                            >
+                                                <Building2 className="h-4 w-4" />
+                                                Warehouse
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setDestType('location')}
+                                                className={`flex items-center justify-center gap-2 p-3 rounded-lg border-2 text-sm font-bold transition-all ${destType === 'location'
+                                                        ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300'
+                                                        : 'border-border/50 bg-muted/20 text-muted-foreground hover:border-orange-200'
+                                                    }`}
+                                            >
+                                                <MapPin className="h-4 w-4" />
+                                                POS Location
+                                            </button>
+                                        </div>
 
-                                <div className="flex-1 flex flex-col justify-between">
-                                    {/* Cart Items */}
-                                    <ScrollArea className="flex-1 max-h-[300px]">
-                                        {cart.length === 0 ? (
-                                            <div className="flex flex-col items-center justify-center py-20 text-center p-6">
-                                                <ShoppingCart className="h-12 w-12 text-muted-foreground/20 mb-3" />
-                                                <h4 className="font-bold text-muted-foreground text-sm">Return List is Empty</h4>
-                                                <p className="text-xs text-muted-foreground/60 max-w-xs mt-1">
-                                                    Search and select items on the left to add them to your return request.
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            <div className="divide-y divide-border/50">
-                                                {cart.map(({ item, quantity }) => (
-                                                    <div key={item.id} className="p-4 flex items-center justify-between gap-4">
-                                                        <div className="min-w-0 flex-1">
-                                                            <p className="font-mono text-xs font-bold text-orange-600 mb-0.5">{item.sku}</p>
-                                                            <h4 className="text-sm font-semibold text-foreground truncate">{item.description}</h4>
-                                                            <div className="flex items-center gap-2 mt-1.5">
-                                                                {item.size?.name && (
-                                                                    <span className="text-[10px] text-muted-foreground">Size: <span className="font-bold text-foreground">{item.size.name}</span></span>
-                                                                )}
-                                                                {item.color?.name && (
-                                                                    <span className="text-[10px] text-muted-foreground">Color: <span className="font-bold text-foreground">{item.color.name}</span></span>
-                                                                )}
-                                                                <span className="text-[10px] text-muted-foreground">Available: <span className="font-bold text-emerald-600">{item.totalQuantity}</span></span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="flex items-center gap-4 flex-none">
-                                                            {/* Quantity Selector */}
-                                                            <div className="flex items-center border border-border/50 rounded-lg overflow-hidden bg-background shadow-sm h-9">
-                                                                <Button
-                                                                    type="button"
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    className="h-full w-8 rounded-none border-r border-border/50 hover:bg-muted"
-                                                                    onClick={() => updateCartQuantity(item.id, quantity - 1)}
-                                                                    disabled={quantity <= 1}
-                                                                >
-                                                                    <Minus className="h-3 w-3" />
-                                                                </Button>
-                                                                <span className="w-10 text-center font-mono text-xs font-bold">{quantity}</span>
-                                                                <Button
-                                                                    type="button"
-                                                                    variant="ghost"
-                                                                    size="icon"
-                                                                    className="h-full w-8 rounded-none border-l border-border/50 hover:bg-muted"
-                                                                    onClick={() => updateCartQuantity(item.id, quantity + 1)}
-                                                                    disabled={quantity >= item.totalQuantity}
-                                                                >
-                                                                    <Plus className="h-3 w-3" />
-                                                                </Button>
-                                                            </div>
-
-                                                            {/* Delete Button */}
-                                                            <Button
-                                                                type="button"
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                className="text-destructive hover:bg-destructive/10 hover:text-destructive h-9 w-9 rounded-lg"
-                                                                onClick={() => removeFromCart(item.id)}
-                                                            >
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </Button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </ScrollArea>
-
-                                     {/* Footer & Notes */}
-                                    <div className="p-4 md:p-6 border-t border-border/50 bg-muted/5 space-y-4">
-                                        {/* Total Qty Summary */}
-                                        {cart.length > 0 && (
-                                            <div className="flex items-center justify-between bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900 rounded-lg px-4 py-2.5">
-                                                <span className="text-xs font-bold uppercase tracking-wider text-orange-700 dark:text-orange-400">Total Return Qty</span>
-                                                <span className="text-2xl font-black text-orange-600 dark:text-orange-400">
-                                                    {cart.reduce((sum, i) => sum + i.quantity, 0)}
-                                                </span>
+                                        {/* Warehouse Combobox */}
+                                        {destType === 'warehouse' && (
+                                            <div className="space-y-2">
+                                                <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Warehouse</Label>
+                                                <Popover open={warehouseOpen} onOpenChange={setWarehouseOpen}>
+                                                    <PopoverTrigger asChild>
+                                                        <button
+                                                            type="button"
+                                                            role="combobox"
+                                                            aria-expanded={warehouseOpen}
+                                                            className="w-full h-11 flex items-center justify-between px-3 rounded-md border border-input bg-muted/30 text-sm hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1 transition-colors"
+                                                        >
+                                                            <span className={selectedWarehouseId ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+                                                                {selectedWarehouseId
+                                                                    ? warehouses.find(w => w.id === selectedWarehouseId)?.name
+                                                                    : 'Select destination warehouse...'}
+                                                            </span>
+                                                            <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                                        </button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" side="bottom" align="start" sideOffset={4}>
+                                                        <Command>
+                                                            <CommandInput placeholder="Search warehouse..." className="h-9" />
+                                                            <CommandList>
+                                                                <CommandEmpty>No warehouse found.</CommandEmpty>
+                                                                <CommandGroup>
+                                                                    {warehouses.map(w => (
+                                                                        <CommandItem
+                                                                            key={w.id}
+                                                                            value={w.name}
+                                                                            onSelect={() => {
+                                                                                setSelectedWarehouseId(w.id);
+                                                                                setWarehouseOpen(false);
+                                                                            }}
+                                                                            className="flex items-center justify-between gap-2 cursor-pointer"
+                                                                        >
+                                                                            <span>{w.name}</span>
+                                                                            {selectedWarehouseId === w.id && <Check className="h-4 w-4 text-orange-600 shrink-0" />}
+                                                                        </CommandItem>
+                                                                    ))}
+                                                                </CommandGroup>
+                                                            </CommandList>
+                                                        </Command>
+                                                    </PopoverContent>
+                                                </Popover>
                                             </div>
                                         )}
-                                        <div className="space-y-2">
-                                            <Label htmlFor="return-notes" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Return Reason / Notes</Label>
-                                            <Textarea
-                                                id="return-notes"
-                                                placeholder="Specify the reason for returning these items..."
-                                                value={notes}
-                                                onChange={(e) => setNotes(e.target.value)}
-                                                rows={2}
-                                                className="bg-background resize-none border-border/50"
+
+                                        {/* POS Location Combobox */}
+                                        {destType === 'location' && (
+                                            <div className="space-y-2">
+                                                <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">POS Outlet</Label>
+                                                <Popover open={locationOpen} onOpenChange={setLocationOpen}>
+                                                    <PopoverTrigger asChild>
+                                                        <button
+                                                            type="button"
+                                                            role="combobox"
+                                                            aria-expanded={locationOpen}
+                                                            className="w-full h-11 flex items-center justify-between px-3 rounded-md border border-input bg-muted/30 text-sm hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1 transition-colors"
+                                                        >
+                                                            <span className={selectedLocationId ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+                                                                {selectedLocationId
+                                                                    ? posLocations.find(l => l.id === selectedLocationId)?.name
+                                                                    : 'Select destination outlet...'}
+                                                            </span>
+                                                            <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                                        </button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" side="bottom" align="start" sideOffset={4}>
+                                                        <Command>
+                                                            <CommandInput placeholder="Search outlet by name or code..." className="h-9" />
+                                                            <CommandList>
+                                                                <CommandEmpty>No outlet found.</CommandEmpty>
+                                                                <CommandGroup>
+                                                                    {posLocations.map(l => (
+                                                                        <CommandItem
+                                                                            key={l.id}
+                                                                            value={`${l.name} ${l.code}`}
+                                                                            onSelect={() => {
+                                                                                setSelectedLocationId(l.id);
+                                                                                setLocationOpen(false);
+                                                                            }}
+                                                                            className="flex items-center justify-between gap-2 cursor-pointer"
+                                                                        >
+                                                                            <div className="min-w-0">
+                                                                                <span className="font-medium block truncate">{l.name}</span>
+                                                                                <span className="text-[10px] text-muted-foreground font-mono">{l.code}</span>
+                                                                            </div>
+                                                                            {selectedLocationId === l.id && <Check className="h-4 w-4 text-orange-600 shrink-0" />}
+                                                                        </CommandItem>
+                                                                    ))}
+                                                                </CommandGroup>
+                                                            </CommandList>
+                                                        </Command>
+                                                    </PopoverContent>
+                                                </Popover>
+                                                {selectedLocationId && (
+                                                    <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                                                        ⚠ Destination outlet must approve from their <strong>Outbound</strong> page, then accept from <strong>Inbound</strong>.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+
+                                {/* Item Search Card */}
+                                <Card className="border-border/50 shadow-sm">
+                                    <CardHeader className="pb-4">
+                                        <CardTitle className="text-md font-bold flex items-center gap-2 text-foreground">
+                                            <Search className="h-5 w-5 text-orange-600" />
+                                            Search Items
+                                        </CardTitle>
+                                        <CardDescription className="text-xs">Find items with available stock at this outlet.</CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="space-y-4">
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                                            <Input
+                                                placeholder="Search by SKU or description..."
+                                                value={itemQuery}
+                                                onChange={(e) => setItemQuery(e.target.value)}
+                                                className="pl-9 h-11 bg-muted/20 border-border/50"
                                             />
                                         </div>
 
-                                        <Button
-                                            onClick={handleSubmitReturn}
-                                            className="w-full h-12 text-md font-bold gap-2 shadow-lg shadow-orange-100 dark:shadow-none bg-orange-600 hover:bg-orange-700 text-white"
-                                            disabled={isSubmitting || cart.length === 0}
-                                        >
-                                            {isSubmitting ? (
-                                                <RefreshCcw className="h-5 w-5 animate-spin" />
+                                        {/* Search Results */}
+                                        <ScrollArea className="h-[250px] rounded-lg border border-border/50 bg-muted/5">
+                                            {isSearching ? (
+                                                <div className="p-4 space-y-2">
+                                                    {[1, 2, 3].map(i => (
+                                                        <Skeleton key={i} className="h-12 w-full rounded-md" />
+                                                    ))}
+                                                </div>
+                                            ) : searchResults.length === 0 ? (
+                                                <div className="flex flex-col items-center justify-center h-[200px] text-center p-4">
+                                                    <Package className="h-8 w-8 text-muted-foreground/30 mb-2" />
+                                                    <p className="text-xs font-medium text-muted-foreground">
+                                                        {itemQuery ? "No matching items with stock found" : "Type to search available stock"}
+                                                    </p>
+                                                </div>
                                             ) : (
-                                                <Send className="h-5 w-5" />
+                                                <div className="divide-y divide-border/50">
+                                                    {searchResults.map((item) => (
+                                                        <button
+                                                            key={item.id}
+                                                            type="button"
+                                                            onClick={() => addToCart(item)}
+                                                            className="w-full text-left p-3 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-colors flex items-center justify-between gap-4 group"
+                                                        >
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex items-center flex-wrap gap-1.5 mb-1">
+                                                                    <span className="font-mono text-[9px] font-bold bg-muted px-1.5 py-0.5 rounded text-muted-foreground group-hover:bg-orange-100 group-hover:text-orange-700 dark:group-hover:bg-orange-950/40 dark:group-hover:text-orange-300 transition-colors">
+                                                                        {item.sku}
+                                                                    </span>
+                                                                    {item.size?.name && (
+                                                                        <Badge variant="outline" className="text-[9px] py-0 px-1 font-medium">
+                                                                            Size: {item.size.name}
+                                                                        </Badge>
+                                                                    )}
+                                                                    {item.color?.name && (
+                                                                        <Badge variant="outline" className="text-[9px] py-0 px-1 font-medium">
+                                                                            Color: {item.color.name}
+                                                                        </Badge>
+                                                                    )}
+                                                                </div>
+                                                                <p className="text-xs font-semibold truncate text-foreground">{item.description}</p>
+                                                            </div>
+                                                            <div className="text-right flex-none">
+                                                                <span className="text-[9px] block font-bold text-muted-foreground uppercase tracking-wider">Available</span>
+                                                                <span className="text-xs font-bold text-emerald-600">{item.totalQuantity} units</span>
+                                                            </div>
+                                                        </button>
+                                                    ))}
+                                                </div>
                                             )}
-                                            {isSubmitting ? "Submitting..." : "Submit Return Request"}
-                                        </Button>
+                                        </ScrollArea>
+                                    </CardContent>
+                                </Card>
+                            </div>
+
+                            {/* Right Column: Return Cart */}
+                            <div className="md:col-span-3">
+                                <Card className="border-border/50 shadow-sm h-full flex flex-col min-h-[450px]">
+                                    <CardHeader className="pb-4 border-b border-border/50 flex flex-row items-center justify-between">
+                                        <div>
+                                            <CardTitle className="text-md font-bold flex items-center gap-2 text-foreground">
+                                                <ShoppingCart className="h-5 w-5 text-orange-600" />
+                                                Return List
+                                            </CardTitle>
+                                            <CardDescription className="text-xs">Items selected for return.</CardDescription>
+                                        </div>
+                                        <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-100/80 dark:bg-orange-950/40 dark:text-orange-300 font-bold">
+                                            {cart.length} {cart.length === 1 ? 'item' : 'items'}
+                                        </Badge>
+                                    </CardHeader>
+
+                                    <div className="flex-1 flex flex-col justify-between">
+                                        {/* Cart Items */}
+                                        <ScrollArea className="flex-1 max-h-[300px]">
+                                            {cart.length === 0 ? (
+                                                <div className="flex flex-col items-center justify-center py-20 text-center p-6">
+                                                    <ShoppingCart className="h-12 w-12 text-muted-foreground/20 mb-3" />
+                                                    <h4 className="font-bold text-muted-foreground text-sm">Return List is Empty</h4>
+                                                    <p className="text-xs text-muted-foreground/60 max-w-xs mt-1">
+                                                        Search and select items on the left to add them to your return request.
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <div className="divide-y divide-border/50">
+                                                    {cart.map(({ item, quantity }) => (
+                                                        <div key={item.id} className="p-4 flex items-center justify-between gap-4">
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="font-mono text-xs font-bold text-orange-600 mb-0.5">{item.sku}</p>
+                                                                <h4 className="text-sm font-semibold text-foreground truncate">{item.description}</h4>
+                                                                <div className="flex items-center gap-2 mt-1.5">
+                                                                    {item.size?.name && (
+                                                                        <span className="text-[10px] text-muted-foreground">Size: <span className="font-bold text-foreground">{item.size.name}</span></span>
+                                                                    )}
+                                                                    {item.color?.name && (
+                                                                        <span className="text-[10px] text-muted-foreground">Color: <span className="font-bold text-foreground">{item.color.name}</span></span>
+                                                                    )}
+                                                                    <span className="text-[10px] text-muted-foreground">Available: <span className="font-bold text-emerald-600">{item.totalQuantity}</span></span>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex items-center gap-4 flex-none">
+                                                                {/* Quantity Selector */}
+                                                                <div className="flex items-center border border-border/50 rounded-lg overflow-hidden bg-background shadow-sm h-9">
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        className="h-full w-8 rounded-none border-r border-border/50 hover:bg-muted"
+                                                                        onClick={() => updateCartQuantity(item.id, quantity - 1)}
+                                                                        disabled={quantity <= 1}
+                                                                    >
+                                                                        <Minus className="h-3 w-3" />
+                                                                    </Button>
+                                                                    <span className="w-10 text-center font-mono text-xs font-bold">{quantity}</span>
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        className="h-full w-8 rounded-none border-l border-border/50 hover:bg-muted"
+                                                                        onClick={() => updateCartQuantity(item.id, quantity + 1)}
+                                                                        disabled={quantity >= item.totalQuantity}
+                                                                    >
+                                                                        <Plus className="h-3 w-3" />
+                                                                    </Button>
+                                                                </div>
+
+                                                                {/* Delete Button */}
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="text-destructive hover:bg-destructive/10 hover:text-destructive h-9 w-9 rounded-lg"
+                                                                    onClick={() => removeFromCart(item.id)}
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </ScrollArea>
+
+                                        {/* Footer & Notes */}
+                                        <div className="p-4 md:p-6 border-t border-border/50 bg-muted/5 space-y-4">
+                                            {/* Total Qty Summary */}
+                                            {cart.length > 0 && (
+                                                <div className="flex items-center justify-between bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-900 rounded-lg px-4 py-2.5">
+                                                    <span className="text-xs font-bold uppercase tracking-wider text-orange-700 dark:text-orange-400">Total Return Qty</span>
+                                                    <span className="text-2xl font-black text-orange-600 dark:text-orange-400">
+                                                        {cart.reduce((sum, i) => sum + i.quantity, 0)}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <div className="space-y-2">
+                                                <Label htmlFor="return-notes" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Return Reason / Notes</Label>
+                                                <Textarea
+                                                    id="return-notes"
+                                                    placeholder="Specify the reason for returning these items..."
+                                                    value={notes}
+                                                    onChange={(e) => setNotes(e.target.value)}
+                                                    rows={2}
+                                                    className="bg-background resize-none border-border/50"
+                                                />
+                                            </div>
+
+                                            <Button
+                                                onClick={handleSubmitReturn}
+                                                className="w-full h-12 text-md font-bold gap-2 shadow-lg shadow-orange-100 dark:shadow-none bg-orange-600 hover:bg-orange-700 text-white"
+                                                disabled={isSubmitting || cart.length === 0}
+                                            >
+                                                {isSubmitting ? (
+                                                    <RefreshCcw className="h-5 w-5 animate-spin" />
+                                                ) : (
+                                                    <Send className="h-5 w-5" />
+                                                )}
+                                                {isSubmitting ? "Submitting..." : "Submit Return Request"}
+                                            </Button>
+                                        </div>
                                     </div>
-                                </div>
-                            </Card>
+                                </Card>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </main>
-        </div>
+                </main>
+            </div>
         );
     }
 
@@ -1074,23 +1298,52 @@ export default function ReturnRequestsPage() {
                                             </div>
 
                                             <div className="w-full md:w-auto flex flex-col gap-2 flex-none">
-                                                <Button
-                                                    className="w-full md:w-40 h-14 text-lg font-bold gap-2 shadow-lg shadow-orange-100 dark:shadow-none bg-orange-600 hover:bg-orange-700 text-white"
-                                                    disabled={isAccepting === request.id || !hasPermission('pos.inventory.returns.approve')}
-                                                    onClick={() => handleAccept(request.id)}
-                                                >
-                                                    {isAccepting === request.id ? (
-                                                        <RefreshCcw className="h-5 w-5 animate-spin" />
-                                                    ) : (
-                                                        <CheckCircle2 className="h-5 w-5" />
+                                                {request.status === 'PENDING_CHECKER' && (
+                                                    <Button
+                                                        className="w-full md:w-44 h-14 text-lg font-bold gap-2 shadow-lg shadow-orange-100 dark:shadow-none bg-orange-600 hover:bg-orange-700 text-white"
+                                                        disabled={isAccepting === request.id || isRejecting === request.id || !hasPermission('pos.inventory.returns.approve')}
+                                                        onClick={() => handleAccept(request.id)}
+                                                    >
+                                                        {isAccepting === request.id ? (
+                                                            <RefreshCcw className="h-5 w-5 animate-spin" />
+                                                        ) : (
+                                                            <CheckCircle2 className="h-5 w-5" />
+                                                        )}
+                                                        {isAccepting === request.id ? "Approving..." : "Approve Return"}
+                                                    </Button>
+                                                )}
+                                                <div className="flex gap-2">
+                                                    {request.status === 'PENDING_CHECKER' && (
+                                                        <Button
+                                                            variant="outline"
+                                                            className="flex-1 h-10 font-semibold text-red-600 dark:text-red-400 border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-950/20"
+                                                            disabled={isRejecting === request.id || isAccepting === request.id}
+                                                            onClick={() => handleReject(request.id)}
+                                                        >
+                                                            {isRejecting === request.id ? (
+                                                                <RefreshCcw className="h-4 w-4 animate-spin mr-1" />
+                                                            ) : (
+                                                                <X className="h-4 w-4 mr-1" />
+                                                            )}
+                                                            Reject
+                                                        </Button>
                                                     )}
-                                                    {isAccepting === request.id ? "Approving..." : "Approve Return"}
-                                                </Button>
-                                                <Button variant="outline" className="w-full md:w-40 h-10 font-semibold text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-900 hover:bg-orange-50 dark:hover:bg-orange-950/20" asChild>
-                                                    <Link href={`/pos/inventory/returns/slip/${request.id}`} target="_blank">
-                                                        <FileText className="h-4 w-4 mr-2" /> View Details
-                                                    </Link>
-                                                </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        className="flex-1 h-10 font-semibold text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-900 hover:bg-orange-50 dark:hover:bg-orange-950/20"
+                                                        disabled={printingId === request.id}
+                                                        onClick={() => handlePrint(request)}
+                                                    >
+                                                        <Printer className="h-4 w-4 mr-1" /> Slip
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        className="flex-1 h-10 font-semibold text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+                                                        onClick={() => handleExportCSV(request)}
+                                                    >
+                                                        <Download className="h-4 w-4 mr-1" /> CSV
+                                                    </Button>
+                                                </div>
                                             </div>
                                         </CardContent>
                                     </div>
@@ -1100,6 +1353,27 @@ export default function ReturnRequestsPage() {
                     )}
                 </div>
             </main>
+
+            {/* Reject Confirmation Dialog */}
+            <Dialog open={!!rejectModalOpen} onOpenChange={(open) => !open && setRejectModalOpen(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Reject Return Request</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to cancel / reject this return request? This action cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="mt-4 gap-2 sm:gap-0">
+                        <Button variant="outline" onClick={() => setRejectModalOpen(null)} disabled={!!isRejecting}>
+                            Cancel
+                        </Button>
+                        <Button variant="destructive" onClick={confirmReject} disabled={!!isRejecting}>
+                            {isRejecting ? <RefreshCcw className="h-4 w-4 animate-spin mr-2" /> : null}
+                            Reject Request
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

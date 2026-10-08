@@ -93,16 +93,20 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
           'manualDbUrl',
           '$disconnect',
         ];
-        if (ownMethods.includes(prop as string)) {
+        // A. Handle own methods & properties of PrismaService instance or Object prototype
+        if (ownMethods.includes(prop as string) || (typeof prop === 'string' && prop in Object.prototype)) {
           return Reflect.get(target, prop, receiver);
         }
 
-        // B. Delegate JavaScript/TypeScript inspects, private properties, and Promise properties
+        // B. Delegate JavaScript/TypeScript inspects, Object prototype methods, NestJS lifecycle hooks, private properties, and Promise properties
         if (
           typeof prop === 'symbol' ||
-          prop.startsWith('_') ||
-          prop === 'constructor' ||
-          prop === 'then'
+          (typeof prop === 'string' && (
+            prop.startsWith('_') ||
+            prop.startsWith('onModule') ||
+            prop.startsWith('onApplication') ||
+            ['constructor', 'then', 'catch', 'finally', 'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable', 'toString', 'valueOf', 'toLocaleString', 'toJSON', 'inspect'].includes(prop)
+          ))
         ) {
           return Reflect.get(target, prop, receiver);
         }
@@ -127,40 +131,51 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
 
   /**
    * Retrieves or instantiates a unique Prisma Client for a given tenant company
+  /**
+   * Static method to retrieve or create dynamic tenant PrismaClient instance with pool pooling
    */
-  getTenantClient(companyId: string, dbUrl: string): PrismaClient {
+  static getTenantClient(companyId: string, dbUrl: string): PrismaClient {
+    if (!companyId || !dbUrl) {
+      throw new Error('companyId and dbUrl are required for tenant client creation');
+    }
+
     let client = PrismaService.clientsPool.get(companyId);
 
     if (!client) {
-      this.logger.log(
+      const logger = new Logger('PrismaService');
+      logger.log(
         `Creating new connection pool and PrismaClient for tenant company: ${companyId}`,
       );
 
       const pool = new Pool({
         connectionString: dbUrl,
-        max: 10, // Max 10 connections per tenant pool (highly efficient and lightweight)
+        max: 20, // Max 20 connections per tenant pool
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 10000,
+        connectionTimeoutMillis: 30000, // 30 second connection timeout to prevent rapid pool exhaustion
       });
 
       pool.on('error', (err) => {
-        this.logger.error(`Pool error for tenant company ${companyId}:`, err);
+        logger.error(`Pool error for tenant company ${companyId}:`, err);
       });
 
       const adapter = new PrismaPg(pool);
 
-      // Create instance ONCE per company context.
       client = new PrismaClient({
         adapter: adapter as any,
       });
 
-      // Track pool on the client for safe teardown
       (client as any)._pgPool = pool;
-
       PrismaService.clientsPool.set(companyId, client);
     }
 
     return client;
+  }
+
+  /**
+   * Dynamic tenant client resolver - delegates to static method
+   */
+  getTenantClient(companyId: string, dbUrl: string): PrismaClient {
+    return PrismaService.getTenantClient(companyId, dbUrl);
   }
 
   /**

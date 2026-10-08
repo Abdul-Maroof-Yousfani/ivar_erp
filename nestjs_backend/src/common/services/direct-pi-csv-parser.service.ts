@@ -11,6 +11,7 @@ export interface DirectPiParsedRecord {
         dueDate?: string;
         supplier?: string;
         warehouse?: string;
+        purchaseType?: string;
         barCode?: string;
         sku?: string;
         description?: string;
@@ -75,7 +76,7 @@ export class DirectPiCsvParserService {
 
     private mapColumns(row: any): DirectPiParsedRecord['data'] {
         const invoiceNumber = this.normalizeValue(this.getValue(row, [
-            'invoiceNumber', 'invoiceNo', 'Invoice Number', 'Invoice No', 'Invoice#', 'Invoice', 'Inv No', 'Invoice Num'
+            'invoiceNumber', 'invoiceNo', 'Invoice Number', 'Invoice No', 'Invoice#', 'Invoice', 'Inv No', 'Invoice Num', 'PI Number', 'PI No', 'PINumber', 'Invoice Group', 'InvoiceGroup', 'Group'
         ])) ?? undefined;
 
         const invoiceDate = this.normalizeValue(this.getValue(row, [
@@ -92,6 +93,10 @@ export class DirectPiCsvParserService {
 
         const warehouse = this.normalizeValue(this.getValue(row, [
             'warehouse', 'Warehouse', 'Warehouse Name', 'Warehouse Code', 'Location', 'Store', 'Branch'
+        ])) ?? undefined;
+
+        const purchaseType = this.normalizeValue(this.getValue(row, [
+            'purchaseType', 'purchase_type', 'Purchase Type', 'PurchaseType', 'Purchase Head', 'Purchase Category', 'Account Head', 'Head'
         ])) ?? undefined;
 
         const barCode = this.normalizeValue(this.getValue(row, [
@@ -140,6 +145,7 @@ export class DirectPiCsvParserService {
             dueDate,
             supplier,
             warehouse,
+            purchaseType,
             barCode,
             sku,
             description,

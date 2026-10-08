@@ -25,12 +25,26 @@ export async function getVendor(id: string) {
     }
 }
 
+export async function getNextVendorCode(): Promise<{ status: boolean; data: string; message?: string }> {
+    try {
+        const response = await authFetch("/finance/suppliers/next-code");
+        const result = response.data;
+        if (result && result.data) {
+            return { status: true, data: result.data };
+        }
+        return { status: false, data: "20010001", message: result?.message || "Failed to fetch next code" };
+    } catch (error) {
+        console.error("Get next vendor code error:", error);
+        return { status: false, data: "20010001", message: "Failed to fetch next code" };
+    }
+}
+
 export async function updateVendor(id: string, data: any) {
     try {
         // Transform data to match backend DTO
         const payload = {
             ...data,
-            type: data.type === "local" ? "LOCAL" : "INTERNATIONAL",
+            type: data.type === "local" ? "LOCAL" : "IMPORT",
             nature: data.type === "local" ? data.nature : undefined,
             brand: data.type === "import" ? data.brand : undefined,
             cnicNo: data.cnic,
@@ -76,7 +90,7 @@ export async function createVendor(data: any) {
         // Transform data to match backend DTO
         const payload = {
             ...data,
-            type: data.type === "local" ? "LOCAL" : "INTERNATIONAL",
+            type: data.type === "local" ? "LOCAL" : "IMPORT",
             nature: data.type === "local" ? data.nature : undefined,
             brand: data.type === "import" ? data.brand : undefined,
             cnicNo: data.cnic,

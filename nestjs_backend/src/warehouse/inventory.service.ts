@@ -135,20 +135,18 @@ export class InventoryService {
     let stockMap: Map<string, number>;
 
     if (locationId) {
-      // Outlet stock: use InventoryItem directly
-      const inventoryItems = await this.prisma.inventoryItem.findMany({
+      // Outlet stock: use StockLedger (immutable source of truth)
+      const stockEntries = await this.prisma.stockLedger.groupBy({
+        by: ['itemId'],
         where: {
           itemId: { in: itemIds },
           locationId,
-          status: 'AVAILABLE',
         },
-        select: { itemId: true, quantity: true },
+        _sum: { qty: true },
       });
-      const outletMap = new Map<string, number>();
-      for (const inv of inventoryItems) {
-        outletMap.set(inv.itemId, (outletMap.get(inv.itemId) || 0) + Number(inv.quantity));
-      }
-      stockMap = outletMap;
+      stockMap = new Map(
+        stockEntries.map((a) => [a.itemId, Math.max(0, Number(a._sum.qty) || 0)]),
+      );
     } else if (warehouseId) {
       // Warehouse stock: use StockLedger
       const stockEntries = await this.prisma.stockLedger.groupBy({
@@ -161,7 +159,7 @@ export class InventoryService {
         _sum: { qty: true },
       });
       stockMap = new Map(
-        stockEntries.map((a) => [a.itemId, Number(a._sum.qty) || 0]),
+        stockEntries.map((a) => [a.itemId, Math.max(0, Number(a._sum.qty) || 0)]),
       );
     } else {
       // Global search (no warehouse/location filter) — sum all available inventory

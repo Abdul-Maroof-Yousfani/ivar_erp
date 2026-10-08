@@ -115,6 +115,7 @@ import { WarehouseModule } from '../warehouse/warehouse.module';
     ],
     exports: [
         PosSalesService, 
+        FbrService,
         NetSalesSummaryExportService,
         PosSalesActivityExportService,
         SalesRegisterExportService,

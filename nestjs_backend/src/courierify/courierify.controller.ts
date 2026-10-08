@@ -64,11 +64,10 @@ export class CourierifyController {
   }
 
   @Post('shipments/:id/actions')
-  @ApiOperation({ summary: 'Act on a shipment (retry delivery, cancel, re-route)' })
-  async actOnShipment(
-    @Param('id') id: string,
-    @Body() dto: ShipmentActionDto,
-  ) {
+  @ApiOperation({
+    summary: 'Act on a shipment (retry delivery, cancel, re-route)',
+  })
+  async actOnShipment(@Param('id') id: string, @Body() dto: ShipmentActionDto) {
     return this.courierifyService.actOnShipment(id, dto);
   }
 

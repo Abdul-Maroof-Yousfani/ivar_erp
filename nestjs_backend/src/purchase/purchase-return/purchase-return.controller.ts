@@ -41,6 +41,13 @@ export class PurchaseReturnController {
     return this.purchaseReturnService.getEligibleLandedCosts();
   }
 
+  @Get('eligible-purchase-invoices')
+  @ApiOperation({ summary: 'Get eligible purchase invoices for return' })
+  @ApiResponse({ status: 200, description: 'List of eligible purchase invoices' })
+  getEligiblePurchaseInvoices() {
+    return this.purchaseReturnService.getEligiblePurchaseInvoices();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get purchase return by ID' })
   @ApiResponse({ status: 200, description: 'Purchase return details' })

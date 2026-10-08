@@ -64,6 +64,12 @@ export function StockTransferHistoryList({ initialEntries }: StockTransferHistor
                         <Clock className="h-3 w-3" /> pending
                     </Badge>
                 );
+            case 'PARTIAL_RECEIVED':
+                return (
+                    <Badge variant="secondary" className="bg-amber-100 text-amber-800 hover:bg-amber-100/80 border-amber-300 gap-1 capitalize font-bold">
+                        <Clock className="h-3 w-3 text-amber-600" /> partial received
+                    </Badge>
+                );
             case 'COMPLETED':
                 return (
                     <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-100/80 border-green-200 gap-1 capitalize">

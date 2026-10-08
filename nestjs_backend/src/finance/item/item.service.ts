@@ -36,6 +36,18 @@ export class ItemService {
 
   async create(createItemDto: CreateItemDto) {
     try {
+      if (createItemDto.barCode) {
+        const existingBarcode = await this.prisma.item.findFirst({
+          where: { barCode: createItemDto.barCode },
+        });
+        if (existingBarcode) {
+          return {
+            status: false,
+            message: `Item with barcode ${createItemDto.barCode} already exists`,
+          };
+        }
+      }
+
       const nextId = await this.generateNextItemId();
       const data = await this.prisma.item.create({
         data: {
@@ -211,6 +223,21 @@ export class ItemService {
       if (!findResult)
         return { status: false, message: `Item with ID ${id} not found` };
 
+      if (
+        updateItemDto.barCode &&
+        updateItemDto.barCode !== findResult.barCode
+      ) {
+        const existingBarcode = await this.prisma.item.findFirst({
+          where: { barCode: updateItemDto.barCode },
+        });
+        if (existingBarcode) {
+          return {
+            status: false,
+            message: `Item with barcode ${updateItemDto.barCode} already exists`,
+          };
+        }
+      }
+
       const data = await this.prisma.item.update({
         where: { id },
         data: updateItemDto,
@@ -331,23 +358,33 @@ export class ItemService {
           ? 'percent'
           : 'fixed';
 
+      const isLocationScoped = Boolean(
+        dto.locationIds && dto.locationIds.length > 0,
+      );
+
       const campaign = await this.prisma.$transaction(
         async (tx) => {
-          // Fast path: single updateMany for items with no override
-          if (bulkIds.length > 0) {
-            await tx.item.updateMany({
-              where: { id: { in: bulkIds } },
-              data: sharedData,
-            });
-          }
+          // If the campaign is global (not scoped to specific locations),
+          // update the baseline item records. If it IS scoped to specific locations,
+          // DO NOT touch Item.discountRate / Item.discountAmount so other locations
+          // are not affected.
+          if (!isLocationScoped) {
+            // Fast path: single updateMany for items with no override
+            if (bulkIds.length > 0) {
+              await tx.item.updateMany({
+                where: { id: { in: bulkIds } },
+                data: sharedData,
+              });
+            }
 
-          // Individual updates only for items with overrides
-          for (const id of overriddenItemIds) {
-            const override = overrideMap.get(id)!;
-            await tx.item.update({
-              where: { id },
-              data: { ...sharedData, ...override },
-            });
+            // Individual updates only for items with overrides
+            for (const id of overriddenItemIds) {
+              const override = overrideMap.get(id)!;
+              await tx.item.update({
+                where: { id },
+                data: { ...sharedData, ...override },
+              });
+            }
           }
 
           // Persist campaign record with items + locations

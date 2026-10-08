@@ -36,6 +36,7 @@ interface PurchaseInvoice {
   remainingAmount: number;
   status: string;
   paymentStatus: string;
+  purchaseType?: string;
 }
 
 export default function PurchaseInvoiceListPage() {
@@ -315,7 +316,12 @@ export default function PurchaseInvoiceListPage() {
                         className="border-b hover:bg-background/80"
                       >
                         <td className="p-3 font-medium">
-                          {invoice.invoiceNumber}
+                          <div>{invoice.invoiceNumber}</div>
+                          {invoice.purchaseType && (
+                            <Badge variant="outline" className="mt-1 text-[10px] px-1.5 py-0 h-4 bg-primary/5 text-primary border-primary/20 font-normal">
+                              {invoice.purchaseType}
+                            </Badge>
+                          )}
                         </td>
                         <td className="p-3">
                           {new Date(invoice.invoiceDate).toLocaleDateString()}

@@ -285,9 +285,53 @@ export class OverallAvailableReservedStockExportService {
       distinct: ['itemId'],
     });
 
+    const UNACCEPTED_TRANSFER_STATUSES = [
+      'PENDING',
+      'PENDING_CHECKER',
+      'PENDING_AUTHORIZER',
+      'PENDING_APPROVER',
+      'APPROVED',
+      'SOURCE_APPROVED',
+      'IN_TRANSIT',
+      'PARTIAL_RECEIVED',
+    ];
+
+    const transitOrConditions: any[] = [];
+    const hasExplicitLoc = locIds.length > 0;
+    const hasExplicitWh = whIds.length > 0;
+
+    if (hasExplicitLoc && !hasExplicitWh) {
+      transitOrConditions.push({ toLocationId: locationWhere });
+      transitOrConditions.push({ fromLocationId: locationWhere });
+    } else if (hasExplicitWh && !hasExplicitLoc) {
+      transitOrConditions.push({ toWarehouseId: warehouseWhere });
+      transitOrConditions.push({ transferType: 'OUTLET_TO_WAREHOUSE', fromWarehouseId: warehouseWhere });
+      transitOrConditions.push({ fromWarehouseId: warehouseWhere, toLocationId: { not: null } });
+    } else if (hasExplicitLoc && hasExplicitWh) {
+      transitOrConditions.push({ toLocationId: locationWhere });
+      transitOrConditions.push({ fromLocationId: locationWhere });
+      transitOrConditions.push({ toWarehouseId: warehouseWhere });
+      transitOrConditions.push({ transferType: 'OUTLET_TO_WAREHOUSE', fromWarehouseId: warehouseWhere });
+      transitOrConditions.push({ fromWarehouseId: warehouseWhere, toLocationId: { not: null } });
+    }
+    const transitWhere = transitOrConditions.length > 0 ? { OR: transitOrConditions } : {};
+
+    const transitItemIds = await prisma.transferRequestItem.findMany({
+      where: {
+        transferRequest: {
+          ...transitWhere,
+          createdAt: { lte: targetDate },
+          status: { in: UNACCEPTED_TRANSFER_STATUSES },
+        },
+      },
+      select: { itemId: true },
+      distinct: ['itemId'],
+    });
+
     const uniqueItemIds = [...new Set([
       ...inventoryItems.map(i => i.itemId),
       ...ledgerItems.map(l => l.itemId),
+      ...transitItemIds.map(t => t.itemId),
     ])];
 
     const whIdsList = warehouses.map(w => w.id);
@@ -338,31 +382,27 @@ export class OverallAvailableReservedStockExportService {
     if (locationWhere) toLocOrWhFilters.push({ toLocationId: locationWhere });
     if (warehouseWhere) toLocOrWhFilters.push({ toWarehouseId: warehouseWhere });
 
-    const toLocOrWhWhere = toLocOrWhFilters.length > 1
-      ? { OR: toLocOrWhFilters }
-      : (toLocOrWhFilters.length === 1 ? toLocOrWhFilters[0] : {});
-
     // Query transit items as of targetDate
     const transitItems = await prisma.transferRequestItem.findMany({
       where: {
         itemId: { in: matchedItemIds },
         transferRequest: {
-          ...toLocOrWhWhere,
+          ...transitWhere,
           createdAt: { lte: targetDate },
-          status: { in: ['PENDING', 'SOURCE_APPROVED'] },
-          transferType: { in: ['WAREHOUSE_TO_OUTLET', 'OUTLET_TO_OUTLET', 'OUTLET_TO_WAREHOUSE', 'WAREHOUSE_TO_WAREHOUSE'] },
+          status: { in: UNACCEPTED_TRANSFER_STATUSES },
         },
       },
       select: {
         itemId: true,
         quantity: true,
+        fulfilledQty: true,
       },
     });
 
     const transitMap = new Map<string, number>();
     for (const row of transitItems) {
-      const qty = Number(row.quantity || 0);
-      transitMap.set(row.itemId, (transitMap.get(row.itemId) || 0) + qty);
+      const remainingQty = Math.max(0, Number(row.quantity || 0) - Number(row.fulfilledQty || 0));
+      transitMap.set(row.itemId, (transitMap.get(row.itemId) || 0) + remainingQty);
     }
 
     // Query reserved stock for matched items as of targetDate

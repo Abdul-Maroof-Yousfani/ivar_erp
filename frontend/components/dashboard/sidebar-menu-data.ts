@@ -384,7 +384,7 @@ export const masterMenuData: MenuItem[] = [
     module: "HR",
     permissions: ["master.location.read", "master.location.create"],
     children: [
-      { title: "Add", href: "/master/location/add" },
+      // { title: "Add", href: "/master/location/add" },
       { title: "View", href: "/master/location/list" },
     ],
   },
@@ -739,25 +739,45 @@ export const menuData: MenuItem[] = [
         ],
       },
       {
+        title: "Retail Sale Receipt Voucher (RSRV)",
+        permissions: ["erp.finance.receipt-voucher.read"],
+        children: [
+          {
+            title: "List",
+            href: "/erp/finance/retail-sale-receipt-voucher/list",
+            permissions: ["erp.finance.receipt-voucher.read"],
+          },
+        ],
+      },
+      {
         title: "Reports",
+        permissions: ["erp.finance.chart-of-account.read"],
         children: [
           {
             title: "General Ledger",
             href: "/erp/finance/reports/general-ledger",
+            permissions: ["erp.finance.chart-of-account.read"],
           },
           {
             title: "General Ledger Summary",
             href: "/erp/finance/reports/general-ledger-summary",
+            permissions: ["erp.finance.chart-of-account.read"],
           },
           {
             title: "Trial Balance",
             href: "/erp/finance/reports/trial-balance",
+            permissions: ["erp.finance.chart-of-account.read"],
           },
           {
             title: "Balance Sheet",
             href: "/erp/finance/reports/balance-sheet",
+            permissions: ["erp.finance.chart-of-account.read"],
           },
-          { title: "Profit & Loss", href: "/erp/finance/reports/profit-loss" },
+          {
+            title: "Profit & Loss",
+            href: "/erp/finance/reports/profit-loss",
+            permissions: ["erp.finance.chart-of-account.read"],
+          },
         ],
       },
     ],
@@ -1008,7 +1028,10 @@ export const menuData: MenuItem[] = [
         title: "Reports",
         children: [
           { title: "Out-of-Stock Report", href: "/erp/reports/out-of-stock" },
-          { title: "Sales & Stock Activity", href: "/erp/reports/sales-activity" },
+          {
+            title: "Sales & Stock Activity",
+            href: "/erp/reports/sales-activity",
+          },
           { title: "Sales Summary", href: "/erp/sales/reports/summary" },
           {
             title: "Customer Ledger",
@@ -1730,6 +1753,11 @@ export const menuData: MenuItem[] = [
         permissions: ["pos.report.view"],
       },
       {
+        title: "Available Stock Summary",
+        href: "/pos/reports/available-stock-summary",
+        permissions: ["pos.report.view"],
+      },
+      {
         href: "/pos/reports/sales-register",
         title: "Sales Register",
         permissions: ["pos.report.view"],
@@ -1752,11 +1780,11 @@ export const menuData: MenuItem[] = [
     environment: "ERP",
     permissions: ["erp.report.view"],
     children: [
-      // {
-      //   title: "Stock Activity",
-      //   href: "/erp/reports/pos/stock-activity",
-      //   permissions: ["erp.report.view"],
-      // },
+      {
+        title: "Stock Activity",
+        href: "/erp/reports/pos/stock-activity",
+        permissions: ["erp.report.view"],
+      },
       {
         title: "Available Stock Summary",
         href: "/erp/reports/pos/available-stock-summary",
@@ -1804,7 +1832,6 @@ export const menuData: MenuItem[] = [
       // },
     ],
   },
-
 
   // ── POS: Terminal ────────────────────────────────────────────────────────────
   {

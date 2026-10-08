@@ -79,6 +79,10 @@ export class CreatePurchaseInvoiceDto {
   invoiceType?: 'GRN_BASED' | 'LANDED_COST_BASED' | 'DIRECT';
 
   @IsOptional()
+  @IsString()
+  purchaseType?: string;
+
+  @IsOptional()
   @IsNumber()
   @Transform(({ value }) => parseFloat(value))
   discountAmount?: number;

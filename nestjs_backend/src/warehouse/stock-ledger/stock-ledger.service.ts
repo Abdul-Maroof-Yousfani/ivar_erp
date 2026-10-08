@@ -94,6 +94,56 @@ export class StockLedgerService {
       const searchNum = parseFloat(searchLower);
       const isSearchNum = !isNaN(searchNum);
 
+      // 5. Resolve matching reference documents (transfers by TR-*, GRNs, sales orders, etc.)
+      const [
+        matchingTransfers,
+        matchingGrns,
+        matchingOrders,
+        matchingAdjustments,
+        matchingPurchaseReturns,
+        matchingChallans,
+      ] = await Promise.all([
+        this.prisma.transferRequest.findMany({
+          where: { requestNo: { contains: search, mode: 'insensitive' } },
+          select: { id: true },
+        }),
+        this.prisma.goodsReceiptNote.findMany({
+          where: { grnNumber: { contains: search, mode: 'insensitive' } },
+          select: { id: true },
+        }),
+        this.prisma.salesOrder.findMany({
+          where: {
+            OR: [
+              { orderNumber: { contains: search, mode: 'insensitive' } },
+              { returnNumber: { contains: search, mode: 'insensitive' } },
+              { refundNumber: { contains: search, mode: 'insensitive' } },
+            ],
+          },
+          select: { id: true },
+        }),
+        this.prisma.stockAdjustment.findMany({
+          where: { adjustmentNo: { contains: search, mode: 'insensitive' } },
+          select: { id: true },
+        }),
+        this.prisma.purchaseReturn.findMany({
+          where: { returnNumber: { contains: search, mode: 'insensitive' } },
+          select: { id: true },
+        }),
+        this.prisma.deliveryChallan.findMany({
+          where: { challanNo: { contains: search, mode: 'insensitive' } },
+          select: { id: true },
+        }),
+      ]);
+
+      const matchingDocRefIds = [
+        ...matchingTransfers.map((t) => t.id),
+        ...matchingGrns.map((g) => g.id),
+        ...matchingOrders.map((o) => o.id),
+        ...matchingAdjustments.map((a) => a.id),
+        ...matchingPurchaseReturns.map((p) => p.id),
+        ...matchingChallans.map((c) => c.id),
+      ];
+
       where.OR = [
         { item: { sku: { contains: search, mode: 'insensitive' } } },
         { item: { description: { contains: search, mode: 'insensitive' } } },
@@ -104,6 +154,7 @@ export class StockLedgerService {
         ...(matchedEnumValues.length > 0 ? [{ referenceType: { in: matchedEnumValues } }] : []),
         ...(matchedMovementType ? [{ movementType: matchedMovementType }] : []),
         ...(isSearchNum ? [{ qty: searchNum }] : []),
+        ...(matchingDocRefIds.length > 0 ? [{ referenceId: { in: matchingDocRefIds } }] : []),
       ];
     }
 
@@ -155,9 +206,155 @@ export class StockLedgerService {
       }
     }
 
+    // Enrich reference documents (e.g. TR-000304 for transfers)
+    const transferIds = new Set<string>();
+    const grnIds = new Set<string>();
+    const salesOrderIds = new Set<string>();
+    const claimIds = new Set<string>();
+    const adjustmentIds = new Set<string>();
+    const purchaseReturnIds = new Set<string>();
+    const challanIds = new Set<string>();
+    const movementIds = new Set<string>();
+    const landedCostIds = new Set<string>();
+    const fabricTrackerIds = new Set<string>();
+
+    for (const entry of data) {
+      const refId = entry.referenceId;
+      if (!refId) continue;
+      const refType = entry.referenceType;
+
+      if (['TRANSFER_REQUEST', 'OUTLET_TRANSFER_IN', 'OUTLET_TRANSFER_OUT', 'RETURN_REQUEST', 'CLAIM_RETURN', 'CLAIM_TO_PLM', 'CLAIM_RETURN_REQUEST', 'WAREHOUSE_TRANSFER_IN', 'WAREHOUSE_TRANSFER_OUT'].includes(refType)) {
+        transferIds.add(refId);
+      } else if (['GRN', 'PURCHASE_INVOICE_GRN', 'GOODS_RECEIPT_NOTE'].includes(refType)) {
+        grnIds.add(refId);
+      } else if (['POS_SALE', 'POS_RETURN', 'POS_REFUND', 'POS_VOID', 'POS_EXCHANGE_IN', 'POS_EXCHANGE_OUT', 'POS_HOLD'].includes(refType)) {
+        salesOrderIds.add(refId);
+      } else if (['POS_CLAIM_APPROVED', 'CLAIM_ACKNOWLEDGED', 'POS_CLAIM'].includes(refType)) {
+        claimIds.add(refId);
+      } else if (['STOCK_ADJUSTMENT', 'ADJUSTMENT', 'INVENTORY_ADJUSTMENT', 'PHYSICAL_COUNT'].includes(refType)) {
+        adjustmentIds.add(refId);
+      } else if (['PURCHASE_RETURN', 'PURCHASE_RETURN_LC', 'PURCHASE_RETURN_GRN'].includes(refType)) {
+        purchaseReturnIds.add(refId);
+      } else if (['DELIVERY_CHALLAN'].includes(refType)) {
+        challanIds.add(refId);
+      } else if (['STOCK_MOVEMENT', 'RETURN_MOVEMENT'].includes(refType)) {
+        movementIds.add(refId);
+      } else if (['LANDED_COST'].includes(refType)) {
+        landedCostIds.add(refId);
+      } else if (['FABRIC_ISSUE', 'FABRIC_RECEIPT', 'FABRIC_TRACKER'].includes(refType)) {
+        fabricTrackerIds.add(refId);
+      }
+    }
+
+    const [
+      transfers,
+      grns,
+      salesOrders,
+      claims,
+      adjustments,
+      purchaseReturns,
+      challans,
+      movements,
+      landedCosts,
+      fabricTrackers,
+    ] = await Promise.all([
+      transferIds.size > 0
+        ? this.prisma.transferRequest.findMany({
+            where: { id: { in: [...transferIds] } },
+            select: { id: true, requestNo: true },
+          })
+        : Promise.resolve([]),
+      grnIds.size > 0
+        ? this.prisma.goodsReceiptNote.findMany({
+            where: { id: { in: [...grnIds] } },
+            select: { id: true, grnNumber: true },
+          })
+        : Promise.resolve([]),
+      salesOrderIds.size > 0
+        ? this.prisma.salesOrder.findMany({
+            where: { id: { in: [...salesOrderIds] } },
+            select: { id: true, orderNumber: true, returnNumber: true, refundNumber: true },
+          })
+        : Promise.resolve([]),
+      claimIds.size > 0
+        ? this.prisma.posClaim.findMany({
+            where: { id: { in: [...claimIds] } },
+            select: { id: true, claimNumber: true },
+          })
+        : Promise.resolve([]),
+      adjustmentIds.size > 0
+        ? this.prisma.stockAdjustment.findMany({
+            where: { id: { in: [...adjustmentIds] } },
+            select: { id: true, adjustmentNo: true },
+          })
+        : Promise.resolve([]),
+      purchaseReturnIds.size > 0
+        ? this.prisma.purchaseReturn.findMany({
+            where: { id: { in: [...purchaseReturnIds] } },
+            select: { id: true, returnNumber: true },
+          })
+        : Promise.resolve([]),
+      challanIds.size > 0
+        ? this.prisma.deliveryChallan.findMany({
+            where: { id: { in: [...challanIds] } },
+            select: { id: true, challanNo: true },
+          })
+        : Promise.resolve([]),
+      movementIds.size > 0
+        ? this.prisma.stockMovement.findMany({
+            where: { id: { in: [...movementIds] } },
+            select: { id: true, movementNo: true },
+          })
+        : Promise.resolve([]),
+      landedCostIds.size > 0
+        ? this.prisma.landedCost.findMany({
+            where: { id: { in: [...landedCostIds] } },
+            select: { id: true, landedCostNumber: true },
+          })
+        : Promise.resolve([]),
+      fabricTrackerIds.size > 0
+        ? this.prisma.fabricVendorTracker.findMany({
+            where: { id: { in: [...fabricTrackerIds] } },
+            select: { id: true, trackerNumber: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const refDocMap = new Map<string, string>();
+    for (const t of transfers) if (t.requestNo) refDocMap.set(t.id, t.requestNo);
+    for (const g of grns) if (g.grnNumber) refDocMap.set(g.id, g.grnNumber);
+    for (const c of claims) if (c.claimNumber) refDocMap.set(c.id, c.claimNumber);
+    for (const a of adjustments) if (a.adjustmentNo) refDocMap.set(a.id, a.adjustmentNo);
+    for (const pr of purchaseReturns) if (pr.returnNumber) refDocMap.set(pr.id, pr.returnNumber);
+    for (const dc of challans) if (dc.challanNo) refDocMap.set(dc.id, dc.challanNo);
+    for (const sm of movements) if (sm.movementNo) refDocMap.set(sm.id, sm.movementNo);
+    for (const lc of landedCosts) if (lc.landedCostNumber) refDocMap.set(lc.id, lc.landedCostNumber);
+    for (const ft of fabricTrackers) if (ft.trackerNumber) refDocMap.set(ft.id, ft.trackerNumber);
+
+    const salesOrderMap = new Map<string, any>();
+    for (const s of salesOrders) salesOrderMap.set(s.id, s);
+
+    const getFriendlyRef = (refType: string, refId: string): string => {
+      if (!refId) return '-';
+      if (['POS_RETURN', 'POS_EXCHANGE_IN'].includes(refType)) {
+        const s = salesOrderMap.get(refId);
+        return s?.returnNumber || s?.orderNumber || refDocMap.get(refId) || refId;
+      }
+      if (['POS_REFUND', 'POS_VOID'].includes(refType)) {
+        const s = salesOrderMap.get(refId);
+        return s?.refundNumber || s?.orderNumber || refDocMap.get(refId) || refId;
+      }
+      if (['POS_SALE', 'POS_EXCHANGE_OUT', 'POS_HOLD'].includes(refType)) {
+        const s = salesOrderMap.get(refId);
+        return s?.orderNumber || refDocMap.get(refId) || refId;
+      }
+      return refDocMap.get(refId) || refId;
+    };
+
     const enrichedData = data.map((entry) => ({
       ...entry,
       location: entry.locationId ? (locationMap.get(entry.locationId) ?? null) : null,
+      referenceNumber: getFriendlyRef(entry.referenceType, entry.referenceId),
     }));
 
     return {
@@ -329,8 +526,27 @@ export class StockLedgerService {
           const totalStock = currentStock._sum.qty || new Prisma.Decimal(0);
 
           if (totalStock.plus(quantity).isNegative()) {
+            const item = await transaction.item.findUnique({
+              where: { id: itemId },
+              select: { sku: true, description: true },
+            });
+            const location = locationId
+              ? await transaction.location.findUnique({
+                  where: { id: locationId },
+                  select: { name: true },
+                })
+              : null;
+            const warehouse = !locationId && warehouseId
+              ? await transaction.warehouse.findUnique({
+                  where: { id: warehouseId },
+                  select: { name: true },
+                })
+              : null;
+            const targetName = location?.name || warehouse?.name || locationId || warehouseId;
+            const itemLabel = item ? `${item.sku}${item.description ? ` (${item.description})` : ''}` : itemId;
+
             throw new BadRequestException(
-              `Insufficient stock for item ${itemId}${locationId ? ` in outlet/location ${locationId}` : ` in warehouse ${warehouseId}`}. Current: ${totalStock}, Requested: ${quantity.abs()}`,
+              `Insufficient stock for item ${itemLabel}${locationId ? ` in outlet/location "${targetName}"` : ` in warehouse "${targetName}"`}. Current: ${totalStock}, Requested: ${quantity.abs()}`,
             );
           }
         }
@@ -521,6 +737,7 @@ export class StockLedgerService {
       ? { OR: locOrWhFilters }
       : (locOrWhFilters.length === 1 ? locOrWhFilters[0] : {});
 
+    const showOutlet = options.showOutlet !== false;
     const showBrand = options.showBrand !== false;
     const showDivision = options.showDivision !== false;
     const showCategory = options.showCategory !== false;
@@ -530,6 +747,7 @@ export class StockLedgerService {
     const showVariant = options.showVariant !== undefined ? options.showVariant : !options.summaryOnly;
 
     const levels: string[] = [];
+    if (showOutlet) levels.push('outlet');
     if (showBrand) levels.push('brand');
     if (showDivision) levels.push('division');
     if (showCategory) levels.push('category');
@@ -560,9 +778,52 @@ export class StockLedgerService {
       distinct: ['itemId'],
     });
 
+    const UNACCEPTED_TRANSFER_STATUSES = [
+      'PENDING',
+      'PENDING_CHECKER',
+      'PENDING_AUTHORIZER',
+      'PENDING_APPROVER',
+      'APPROVED',
+      'SOURCE_APPROVED',
+      'IN_TRANSIT',
+      'PARTIAL_RECEIVED',
+    ];
+
+    const transitOrConditions: any[] = [];
+    const hasExplicitLoc = locIds.length > 0;
+    const hasExplicitWh = whIds.length > 0;
+
+    if (hasExplicitLoc && !hasExplicitWh) {
+      transitOrConditions.push({ toLocationId: locationWhere });
+      transitOrConditions.push({ fromLocationId: locationWhere });
+    } else if (hasExplicitWh && !hasExplicitLoc) {
+      transitOrConditions.push({ toWarehouseId: warehouseWhere });
+      transitOrConditions.push({ transferType: 'OUTLET_TO_WAREHOUSE', fromWarehouseId: warehouseWhere });
+      transitOrConditions.push({ fromWarehouseId: warehouseWhere, toLocationId: { not: null } });
+    } else if (hasExplicitLoc && hasExplicitWh) {
+      transitOrConditions.push({ toLocationId: locationWhere });
+      transitOrConditions.push({ fromLocationId: locationWhere });
+      transitOrConditions.push({ toWarehouseId: warehouseWhere });
+      transitOrConditions.push({ transferType: 'OUTLET_TO_WAREHOUSE', fromWarehouseId: warehouseWhere });
+      transitOrConditions.push({ fromWarehouseId: warehouseWhere, toLocationId: { not: null } });
+    }
+    const transitWhere = transitOrConditions.length > 0 ? { OR: transitOrConditions } : {};
+
+    const transitItemIds = await this.prisma.transferRequestItem.findMany({
+      where: {
+        transferRequest: {
+          ...transitWhere,
+          status: { in: UNACCEPTED_TRANSFER_STATUSES },
+        },
+      },
+      select: { itemId: true },
+      distinct: ['itemId'],
+    });
+
     const uniqueItemIds = [...new Set([
       ...inventoryItems.map(i => i.itemId),
       ...ledgerItems.map(l => l.itemId),
+      ...transitItemIds.map(t => t.itemId),
     ])];
 
     if (uniqueItemIds.length === 0) {
@@ -650,33 +911,25 @@ export class StockLedgerService {
       },
     });
 
-    const toLocOrWhFilters: any[] = [];
-    if (locationWhere) toLocOrWhFilters.push({ toLocationId: locationWhere });
-    if (warehouseWhere) toLocOrWhFilters.push({ toWarehouseId: warehouseWhere });
-
-    const toLocOrWhWhere = toLocOrWhFilters.length > 1
-      ? { OR: toLocOrWhFilters }
-      : (toLocOrWhFilters.length === 1 ? toLocOrWhFilters[0] : {});
-
     const transitItems = await this.prisma.transferRequestItem.findMany({
       where: {
         itemId: { in: matchedItemIds },
         transferRequest: {
-          ...toLocOrWhWhere,
-          status: { in: ['PENDING', 'SOURCE_APPROVED'] },
-          transferType: { in: ['WAREHOUSE_TO_OUTLET', 'OUTLET_TO_OUTLET', 'OUTLET_TO_WAREHOUSE', 'WAREHOUSE_TO_WAREHOUSE'] },
+          ...transitWhere,
+          status: { in: UNACCEPTED_TRANSFER_STATUSES },
         },
       },
       select: {
         itemId: true,
         quantity: true,
+        fulfilledQty: true,
       },
     });
 
     const transitMap = new Map<string, number>();
     for (const row of transitItems) {
-      const qty = Number(row.quantity || 0);
-      transitMap.set(row.itemId, (transitMap.get(row.itemId) || 0) + qty);
+      const remainingQty = Math.max(0, Number(row.quantity || 0) - Number(row.fulfilledQty || 0));
+      transitMap.set(row.itemId, (transitMap.get(row.itemId) || 0) + remainingQty);
     }
 
     const itemMetricsMap = new Map<string, {
@@ -809,7 +1062,9 @@ export class StockLedgerService {
         let nodeVal = '';
         let extraFields: any = {};
 
-        if (levelName === 'brand') {
+        if (levelName === 'outlet') {
+          nodeVal = (item as any).locationName || 'POS Outlet';
+        } else if (levelName === 'brand') {
           nodeVal = item.brand?.name || 'No Brand';
         } else if (levelName === 'division') {
           nodeVal = item.division?.name || 'No Division';
@@ -1038,7 +1293,7 @@ export class StockLedgerService {
       where: {
         itemId: { in: matchedItemIds },
         transferRequest: {
-          status: { in: ['PENDING', 'PENDING_CHECKER', 'PENDING_AUTHORIZER', 'PENDING_APPROVER', 'APPROVED', 'SOURCE_APPROVED'] },
+          status: { in: ['PENDING', 'PENDING_CHECKER', 'PENDING_AUTHORIZER', 'PENDING_APPROVER', 'APPROVED', 'SOURCE_APPROVED', 'IN_TRANSIT', 'PARTIAL_RECEIVED'] },
           ...toLocOrWhWhere,
         },
       },
@@ -1113,11 +1368,16 @@ export class StockLedgerService {
     const claimsTyped = claims as any[];
     const adjustmentsTyped = adjustments as any[];
 
-    const grnMap = new Map<string, any>(grnsTyped.map(g => [g.id, g]));
-    const salesOrderMap = new Map<string, any>(salesOrdersTyped.map(s => [s.id, s]));
-    const transferMap = new Map<string, any>(transfersTyped.map(t => [t.id, t]));
-    const claimMap = new Map<string, any>(claimsTyped.map(c => [c.id, c]));
-    const adjustmentMap = new Map<string, any>(adjustmentsTyped.map(a => [a.id, a]));
+    const grnMap = new Map<string, any>();
+    for (const g of grnsTyped) grnMap.set(g.id, g);
+    const salesOrderMap = new Map<string, any>();
+    for (const s of salesOrdersTyped) salesOrderMap.set(s.id, s);
+    const transferMap = new Map<string, any>();
+    for (const t of transfersTyped) transferMap.set(t.id, t);
+    const claimMap = new Map<string, any>();
+    for (const c of claimsTyped) claimMap.set(c.id, c);
+    const adjustmentMap = new Map<string, any>();
+    for (const a of adjustmentsTyped) adjustmentMap.set(a.id, a);
 
     // Map entries to detailed transactions grouped by itemId
     const itemTransactionsMap = new Map<string, any[]>();

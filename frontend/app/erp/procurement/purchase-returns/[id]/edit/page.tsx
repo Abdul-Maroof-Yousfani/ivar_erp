@@ -47,6 +47,7 @@ export default function EditPurchaseReturnPage() {
           sourceItemType: item.sourceItemType,
           grnItemId: item.grnItemId,
           landedCostItemId: item.landedCostItemId,
+          purchaseInvoiceItemId: item.purchaseInvoiceItemId,
           itemId: item.itemId,
           description: item.description,
           returnQty: item.returnQty,

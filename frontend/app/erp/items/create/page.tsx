@@ -510,9 +510,11 @@ export default function ItemCreatePage() {
                     
                     const variantSku = data.sku; // SKU remains the same base SKU
 
-                    // Append a numeric counter to the base barcode to make it unique without letters/dashes
+                    const totalVariants = colors.length * sizes.length;
+                    
+                    // Append a numeric counter to the base barcode only if there are multiple variants
                     let variantBarCode = data.barCode;
-                    if (variantBarCode) {
+                    if (variantBarCode && totalVariants > 1) {
                         variantBarCode = `${variantBarCode}${variantIndex.toString().padStart(2, '0')}`;
                     }
                     variantIndex++;

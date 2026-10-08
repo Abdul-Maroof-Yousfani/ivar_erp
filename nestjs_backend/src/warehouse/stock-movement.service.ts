@@ -88,6 +88,9 @@ export class StockMovementService {
         ) {
           // Inter-Outlet Transfer: Outlet A → Outlet B (Auto-Accepted / No verification required)
           await this.executeInterOutletTransfer(dto, tx, movement.id);
+        } else if (dto.type === 'POS_RETURN' || dto.referenceType === 'POS_RETURN') {
+          // POS Return: restore inventory (+ PLUS) and write INBOUND ledger entry
+          await this.executePosReturn(dto, tx, movement.id);
         }
 
         runInBackground(
@@ -451,6 +454,65 @@ export class StockMovementService {
     }, tx);
 
     console.log(`✅ [Stock Movement] Auto-accepted Inter-Outlet Transfer (${dto.type}) completed: ${dto.fromLocationId} → ${dto.toLocationId}`);
+  }
+
+  private async executePosReturn(dto: CreateStockMovementDto, tx: any, movementId: string) {
+    const targetLocationId = dto.toLocationId || dto.fromLocationId;
+    if (!targetLocationId) {
+      throw new BadRequestException('Target location is required for POS return stock movement');
+    }
+
+    const itemRate = await this.getCurrentItemRate(tx, dto.itemId);
+    const loc = await tx.location.findUnique({
+      where: { id: targetLocationId },
+      select: { warehouseId: true },
+    });
+    const defaultWarehouse = await tx.warehouse.findFirst({
+      where: { isActive: true, isDeleted: false },
+    });
+    const warehouseId = loc?.warehouseId || dto.toWarehouseId || defaultWarehouse?.id || '';
+
+    const returnQty = Math.abs(dto.quantity);
+
+    // 1. Write INBOUND ledger entry for the outlet (+ PLUS)
+    await this.stockLedgerService.createEntry({
+      itemId: dto.itemId,
+      warehouseId,
+      locationId: targetLocationId,
+      qty: returnQty,
+      movementType: MovementType.INBOUND,
+      referenceType: 'POS_RETURN',
+      referenceId: dto.referenceId || movementId,
+      rate: itemRate,
+    }, tx);
+
+    // 2. Increment stock in outlet (Location-specific InventoryItem) (+ PLUS)
+    const existingStock = await tx.inventoryItem.findFirst({
+      where: {
+        itemId: dto.itemId,
+        locationId: targetLocationId,
+        status: 'AVAILABLE',
+      },
+    });
+
+    if (existingStock) {
+      await tx.inventoryItem.update({
+        where: { id: existingStock.id },
+        data: { quantity: { increment: returnQty } },
+      });
+    } else {
+      await tx.inventoryItem.create({
+        data: {
+          itemId: dto.itemId,
+          warehouseId,
+          locationId: targetLocationId,
+          quantity: returnQty,
+          status: 'AVAILABLE',
+        },
+      });
+    }
+
+    console.log(`✅ [Stock Movement] POS Return completed for item ${dto.itemId} at location ${targetLocationId}: +${returnQty}`);
   }
 
   async getMovements(itemId?: string) {

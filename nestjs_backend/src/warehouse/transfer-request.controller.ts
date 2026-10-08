@@ -96,16 +96,16 @@ export class TransferRequestController {
     @Get('outbound-requests')
     @Permissions('pos.inventory.outbound.view')
     @ApiOperation({ summary: 'Get outbound requests for source approval (outlet to outlet)' })
-    async getOutboundRequests(@Query('locationId') locationId: string) {
-        const data = await this.transferRequestService.getOutboundRequests(locationId);
+    async getOutboundRequests(@Query('locationId') locationId: string, @Query('status') status?: string) {
+        const data = await this.transferRequestService.getOutboundRequests(locationId, status);
         return { status: true, data };
     }
 
     @Get('inbound-requests')
     @Permissions('pos.inventory.inbound.view')
     @ApiOperation({ summary: 'Get inbound requests for destination acceptance (outlet to outlet)' })
-    async getInboundRequests(@Query('locationId') locationId: string) {
-        const data = await this.transferRequestService.getInboundRequests(locationId);
+    async getInboundRequests(@Query('locationId') locationId: string, @Query('status') status?: string) {
+        const data = await this.transferRequestService.getInboundRequests(locationId, status);
         return { status: true, data };
     }
 
@@ -116,7 +116,8 @@ export class TransferRequestController {
         'erp.inventory.transfer.check',
         'erp.inventory.transfer.authorize',
         'pos.inventory.transfer.check',
-        'pos.inventory.transfer.authorize'
+        'pos.inventory.transfer.authorize',
+        'pos.inventory.returns.approve'
     )
     @ApiOperation({ summary: 'Update transfer request status' })
     async updateStatus(@Param('id') id: string, @Body() dto: { status: string; approvedById?: string }, @Req() req: any) {
@@ -135,13 +136,13 @@ export class TransferRequestController {
     @ApiOperation({ summary: 'Accept and execute transfer movement' })
     async accept(
         @Param('id') id: string,
-        @Body() dto: { userId?: string; receivedItems?: { itemId: string; receivedQty: number }[]; notes?: string },
+        @Body() dto: { userId?: string; receivedItems?: { id?: string; requestItemId?: string; itemId: string; receivedQty: number }[]; notes?: string; isFinal?: boolean },
         @Req() req: any
     ) {
         const data = await this.transferRequestService.acceptRequest(
             id,
             dto.userId,
-            { receivedItems: dto.receivedItems, notes: dto.notes },
+            { receivedItems: dto.receivedItems, notes: dto.notes, isFinal: dto.isFinal },
             {
                 userId: req.user?.id,
                 ipAddress: req.ip,

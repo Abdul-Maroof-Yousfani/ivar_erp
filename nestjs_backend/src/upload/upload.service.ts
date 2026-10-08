@@ -322,6 +322,41 @@ export class UploadService {
     );
   }
 
+  async getS3ObjectStream(
+    keyOrUrl: string,
+  ): Promise<{ stream: Readable; size?: number; contentType?: string } | null> {
+    if (!USE_S3 || !s3Client) return null;
+    let key = keyOrUrl;
+    if (key.startsWith('s3://')) {
+      key = key.replace('s3://', '');
+    } else if (key.startsWith('http://') || key.startsWith('https://')) {
+      try {
+        const u = new URL(key);
+        // remove leading slash
+        key = u.pathname.replace(/^\/+/, '');
+      } catch {
+        return null;
+      }
+    }
+    try {
+      const command = new GetObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: key,
+      });
+      const response = await s3Client.send(command);
+      if (response.Body) {
+        return {
+          stream: response.Body as Readable,
+          size: response.ContentLength,
+          contentType: response.ContentType,
+        };
+      }
+    } catch (e: any) {
+      this.logger.warn(`Failed to stream S3 object ${key}: ${e.message}`);
+    }
+    return null;
+  }
+
   async deleteS3Object(key: string): Promise<void> {
     if (USE_S3) {
       try {

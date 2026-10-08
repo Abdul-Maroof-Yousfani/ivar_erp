@@ -114,36 +114,42 @@ export class TransferRequestService {
         }
       }
 
-      // NOTE: Stock availability validation is bypassed to allow transfers even when system stock is negative.
-      /*
-            for (const item of data.items) {
-                let availableQty = 0;
-                if (transferType === 'WAREHOUSE_TO_OUTLET') {
-                    const stock = await this.prisma.inventoryItem.findFirst({
-                        where: {
-                            warehouseId: data.fromWarehouseId,
-                            locationId: null, // Ensure we check warehouse main stock
-                            itemId: item.itemId,
-                            status: 'AVAILABLE'
-                        }
-                    });
-                    availableQty = stock ? Number(stock.quantity) : 0;
-                } else {
-                    const stock = await this.prisma.inventoryItem.findFirst({
-                        where: {
-                            locationId: data.fromLocationId,
-                            itemId: item.itemId,
-                            status: 'AVAILABLE'
-                        }
-                    });
-                    availableQty = stock ? Number(stock.quantity) : 0;
-                }
+      // On POS level, negative stock is strictly disallowed. Validate available stock for outlet transfers.
+      if (
+        (transferType === 'OUTLET_TO_WAREHOUSE' ||
+          transferType === 'OUTLET_TO_OUTLET') &&
+        data.fromLocationId
+      ) {
+        const itemIds = data.items.map((i) => i.itemId);
+        const stockEntries = await this.prisma.stockLedger.groupBy({
+          by: ['itemId'],
+          where: {
+            itemId: { in: itemIds },
+            locationId: data.fromLocationId,
+          },
+          _sum: { qty: true },
+        });
+        const stockMap = new Map<string, number>();
+        for (const entry of stockEntries) {
+          stockMap.set(entry.itemId, Number(entry._sum.qty || 0));
+        }
 
-                if (availableQty < item.quantity) {
-                    throw new BadRequestException(`Insufficient stock for item ID: ${item.itemId}. Available: ${availableQty}, Requested: ${item.quantity}`);
-                }
-            }
-            */
+        for (const item of data.items) {
+          const availableQty = stockMap.get(item.itemId) || 0;
+          if (availableQty < item.quantity) {
+            const itemObj = await this.prisma.item.findUnique({
+              where: { id: item.itemId },
+              select: { sku: true, description: true },
+            });
+            const itemLabel = itemObj
+              ? `${itemObj.sku}${itemObj.description ? ` (${itemObj.description})` : ''}`
+              : item.itemId;
+            throw new BadRequestException(
+              `Insufficient stock for item ${itemLabel} at this outlet. Available: ${availableQty}, Requested: ${item.quantity}`,
+            );
+          }
+        }
+      }
 
       const created = await this.prisma.transferRequest.create({
         data: {
@@ -452,7 +458,10 @@ export class TransferRequestService {
               'PENDING',
               'PENDING_CHECKER',
               'PENDING_AUTHORIZER',
+              'APPROVED',
               'SOURCE_APPROVED',
+              'PARTIAL_RECEIVED',
+              'IN_TRANSIT',
             ],
           },
         });
@@ -511,7 +520,12 @@ export class TransferRequestService {
         toLocationId: locationId,
         transferType: 'WAREHOUSE_TO_OUTLET',
         status: {
-          in: ['PENDING', 'APPROVED', 'PENDING_CHECKER', 'PENDING_AUTHORIZER'],
+          in: [
+            'PENDING',
+            'APPROVED',
+            'PARTIAL_RECEIVED',
+            'IN_TRANSIT',
+          ],
         },
       },
       include: {
@@ -567,18 +581,30 @@ export class TransferRequestService {
     return Promise.all(requests.map((req) => this.enrichRequest(req)));
   }
 
-  async getOutboundRequests(locationId: string) {
+  async getOutboundRequests(locationId: string, statusType?: string) {
+    const isHistory = statusType?.toUpperCase() === 'HISTORY';
+    
+    let whereClause: any = {
+      fromLocationId: locationId,
+      transferType: 'OUTLET_TO_OUTLET',
+    };
+
+    if (isHistory) {
+      whereClause.OR = [
+        { status: { in: ['COMPLETED', 'REJECTED', 'SOURCE_APPROVED', 'PARTIAL_RECEIVED', 'IN_TRANSIT'] } },
+        { sourceApprovedById: { not: null } }
+      ];
+    } else {
+      whereClause.status = {
+        in: ['PENDING', 'APPROVED', 'PENDING_CHECKER', 'PENDING_AUTHORIZER'],
+      };
+      whereClause.requiresSourceApproval = true;
+      whereClause.sourceApprovedById = null;
+    }
+
     // Get outlet-to-outlet requests where this location is the source
     const requests = await this.prisma.transferRequest.findMany({
-      where: {
-        fromLocationId: locationId,
-        transferType: 'OUTLET_TO_OUTLET',
-        status: {
-          in: ['PENDING', 'APPROVED', 'PENDING_CHECKER', 'PENDING_AUTHORIZER'],
-        },
-        requiresSourceApproval: true,
-        sourceApprovedById: null,
-      },
+      where: whereClause,
       include: {
         items: {
           include: {
@@ -601,14 +627,23 @@ export class TransferRequestService {
     return Promise.all(requests.map((req) => this.enrichRequest(req)));
   }
 
-  async getInboundRequests(locationId: string) {
+  async getInboundRequests(locationId: string, statusType?: string) {
+    const isHistory = statusType?.toUpperCase() === 'HISTORY';
+    
+    let whereClause: any = {
+      toLocationId: locationId,
+      transferType: 'OUTLET_TO_OUTLET',
+    };
+
+    if (isHistory) {
+      whereClause.status = { in: ['COMPLETED', 'PARTIAL_RECEIVED', 'REJECTED'] };
+    } else {
+      whereClause.status = { in: ['SOURCE_APPROVED', 'IN_TRANSIT'] };
+    }
+
     // Get outlet-to-outlet requests where this location is the destination
     const requests = await this.prisma.transferRequest.findMany({
-      where: {
-        toLocationId: locationId,
-        transferType: 'OUTLET_TO_OUTLET',
-        status: 'SOURCE_APPROVED', // Only show after source approval
-      },
+      where: whereClause,
       include: {
         items: {
           include: {
@@ -718,7 +753,13 @@ export class TransferRequestService {
 
       // Enforce hierarchical approvals for Maker-Checker-Authorizer
       if (request.status === 'PENDING_CHECKER') {
-        if (status !== 'PENDING_AUTHORIZER' && status !== 'REJECTED') {
+        const isBypassAllowed = request.transferType === 'OUTLET_TO_WAREHOUSE' && (status === 'APPROVED' || status === 'PENDING');
+
+        if (
+          status !== 'PENDING_AUTHORIZER' &&
+          status !== 'REJECTED' &&
+          !isBypassAllowed
+        ) {
           throw new BadRequestException(
             `Invalid status transition from PENDING_CHECKER to ${status}.`,
           );
@@ -735,6 +776,13 @@ export class TransferRequestService {
 
         updateData.checkedById = ctx?.userId || null;
         updateData.checkedAt = new Date();
+
+        // If directly approving/pending, also set authorized
+        if (isBypassAllowed) {
+          updateData.authorizedById = ctx?.userId || null;
+          updateData.authorizedAt = new Date();
+          updateData.status = 'PENDING'; // Enter active flow
+        }
       } else if (request.status === 'PENDING_AUTHORIZER') {
         if (
           status !== 'PENDING' &&
@@ -992,6 +1040,7 @@ export class TransferRequestService {
     data?: {
       receivedItems?: { itemId: string; receivedQty: number }[];
       notes?: string;
+      isFinal?: boolean;
     },
     ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
   ) {
@@ -1028,24 +1077,57 @@ export class TransferRequestService {
         }
       }
 
-      const receivedMap = new Map<string, number>();
+      const receivedByIdMap = new Map<string, number>();
+      const receivedByItemIdMap = new Map<string, number>();
       if (data?.receivedItems && Array.isArray(data.receivedItems)) {
         for (const item of data.receivedItems) {
-          receivedMap.set(item.itemId, Number(item.receivedQty));
+          const qty = Number(item.receivedQty);
+          const reqItemId = (item as any).id || (item as any).requestItemId;
+          if (reqItemId) {
+            receivedByIdMap.set(reqItemId, qty);
+          }
+          if (item.itemId) {
+            receivedByItemIdMap.set(item.itemId, qty);
+          }
         }
       }
 
       return this.prisma.$transaction(async (tx) => {
-        // Update fulfilledQty for items
+        let totalOrderedAcrossAll = 0;
+        let totalFulfilledAcrossAll = 0;
+        const itemRxQtyMap = new Map<string, number>();
+
+        // Calculate and update cumulative fulfilledQty for items
         for (const item of request.items) {
-          const rxQty = receivedMap.has(item.itemId)
-            ? Number(receivedMap.get(item.itemId))
-            : Number(item.quantity);
+          const orderedQty = Number(item.quantity);
+          const currentFulfilled = Number(item.fulfilledQty || 0);
+          const maxRemaining = Math.max(0, orderedQty - currentFulfilled);
+
+          // Priority 1: Match by TransferRequestItem.id
+          // Priority 2: Match by item.itemId
+          // Priority 3: Default to full remaining quantity
+          let rxBatchQty = receivedByIdMap.has(item.id)
+            ? Number(receivedByIdMap.get(item.id))
+            : receivedByItemIdMap.has(item.itemId)
+              ? Number(receivedByItemIdMap.get(item.itemId))
+              : maxRemaining;
+
+          if (isNaN(rxBatchQty) || rxBatchQty < 0) rxBatchQty = 0;
+          if (rxBatchQty > maxRemaining) rxBatchQty = maxRemaining;
+
+          itemRxQtyMap.set(item.id, rxBatchQty);
+
+          const newFulfilled = currentFulfilled + rxBatchQty;
+          totalOrderedAcrossAll += orderedQty;
+          totalFulfilledAcrossAll += newFulfilled;
+
           await tx.transferRequestItem.update({
             where: { id: item.id },
-            data: { fulfilledQty: new Prisma.Decimal(rxQty) },
+            data: { fulfilledQty: new Prisma.Decimal(newFulfilled) },
           });
         }
+
+        const totalRemainingAcrossAll = Math.max(0, totalOrderedAcrossAll - totalFulfilledAcrossAll);
 
         if (request.transferType === 'WAREHOUSE_TO_OUTLET') {
           // Normal transfer: Warehouse → Outlet
@@ -1054,29 +1136,31 @@ export class TransferRequestService {
             'APPROVED',
             'PENDING_CHECKER',
             'PENDING_AUTHORIZER',
+            'PARTIAL_RECEIVED',
+            'IN_TRANSIT',
           ];
           if (!validStatuses.includes(request.status)) {
             throw new BadRequestException(
-              `Request is not in PENDING or APPROVED status (Current: ${request.status})`,
+              `Request is not in a receivable status (Current: ${request.status})`,
             );
           }
 
           for (const item of request.items) {
-            const rxQty = receivedMap.has(item.itemId)
-              ? Number(receivedMap.get(item.itemId))
-              : Number(item.quantity);
+            const rxBatchQty = itemRxQtyMap.get(item.id) ?? 0;
 
-            await this.stockMovementService.executeMovement({
-              itemId: item.itemId,
-              fromWarehouseId: request.fromWarehouseId!,
-              toLocationId: request.toLocationId!,
-              quantity: rxQty,
-              type: 'TRANSFER',
-              referenceType: 'TRANSFER_REQUEST',
-              referenceId: request.id,
-              userId: userId,
-              transaction: tx,
-            });
+            if (rxBatchQty > 0) {
+              await this.stockMovementService.executeMovement({
+                itemId: item.itemId,
+                fromWarehouseId: request.fromWarehouseId!,
+                toLocationId: request.toLocationId!,
+                quantity: rxBatchQty,
+                type: 'TRANSFER',
+                referenceType: 'TRANSFER_REQUEST',
+                referenceId: request.id,
+                userId: userId,
+                transaction: tx,
+              });
+            }
           }
         } else if (request.transferType === 'OUTLET_TO_WAREHOUSE') {
           // Return transfer: Outlet → Warehouse
@@ -1085,6 +1169,8 @@ export class TransferRequestService {
             'APPROVED',
             'PENDING_CHECKER',
             'PENDING_AUTHORIZER',
+            'PARTIAL_RECEIVED',
+            'IN_TRANSIT',
           ];
           if (!validStatuses.includes(request.status)) {
             throw new BadRequestException(
@@ -1097,9 +1183,13 @@ export class TransferRequestService {
 
           if (isClaimBased) {
             for (const item of request.items) {
-              const rxQty = receivedMap.has(item.itemId)
-                ? Number(receivedMap.get(item.itemId))
-                : Number(item.quantity);
+              const rxQty = itemRxQtyMap.has(item.id)
+                ? itemRxQtyMap.get(item.id)!
+                : receivedByIdMap.has(item.id)
+                  ? Number(receivedByIdMap.get(item.id))
+                  : receivedByItemIdMap.has(item.itemId)
+                    ? Number(receivedByItemIdMap.get(item.itemId))
+                    : Number(item.quantity);
 
               const posStock = await tx.inventoryItem.findFirst({
                 where: {
@@ -1150,7 +1240,7 @@ export class TransferRequestService {
               await this.stockMovementService.executeMovement({
                 itemId: item.itemId,
                 fromLocationId: request.fromLocationId!,
-                toWarehouseId: request.fromWarehouseId!,
+                toWarehouseId: request.toWarehouseId!,
                 quantity: rxQty,
                 type: 'RETURN_TRANSFER',
                 referenceType: 'CLAIM_RETURN_REQUEST',
@@ -1162,14 +1252,18 @@ export class TransferRequestService {
           } else {
             // Normal outlet-to-warehouse transfer (non-claim)
             for (const item of request.items) {
-              const rxQty = receivedMap.has(item.itemId)
-                ? Number(receivedMap.get(item.itemId))
-                : Number(item.quantity);
+              const rxQty = itemRxQtyMap.has(item.id)
+                ? itemRxQtyMap.get(item.id)!
+                : receivedByIdMap.has(item.id)
+                  ? Number(receivedByIdMap.get(item.id))
+                  : receivedByItemIdMap.has(item.itemId)
+                    ? Number(receivedByItemIdMap.get(item.itemId))
+                    : Number(item.quantity);
 
               await this.stockMovementService.executeMovement({
                 itemId: item.itemId,
                 fromLocationId: request.fromLocationId!,
-                toWarehouseId: request.fromWarehouseId!,
+                toWarehouseId: request.toWarehouseId!,
                 quantity: rxQty,
                 type: 'RETURN_TRANSFER',
                 referenceType: 'RETURN_REQUEST',
@@ -1188,9 +1282,13 @@ export class TransferRequestService {
           }
 
           for (const item of request.items) {
-            const rxQty = receivedMap.has(item.itemId)
-              ? Number(receivedMap.get(item.itemId))
-              : Number(item.quantity);
+            const rxQty = itemRxQtyMap.has(item.id)
+              ? itemRxQtyMap.get(item.id)!
+              : receivedByIdMap.has(item.id)
+                ? Number(receivedByIdMap.get(item.id))
+                : receivedByItemIdMap.has(item.itemId)
+                  ? Number(receivedByItemIdMap.get(item.itemId))
+                  : Number(item.quantity);
 
             // Only need to add stock to destination (source already decreased)
             const destItem = await tx.inventoryItem.findFirst({
@@ -1244,20 +1342,46 @@ export class TransferRequestService {
           }
         }
 
-        // Combine existing notes with receiving notes
-        let newNotes = request.notes || '';
-        if (data?.notes) {
-          newNotes = newNotes
-            ? `${newNotes}\n[Receiving Notes]: ${data.notes}`
-            : `[Receiving Notes]: ${data.notes}`;
+        // Determine final or partial status
+        let newStatus = 'COMPLETED';
+        if (request.transferType === 'WAREHOUSE_TO_OUTLET') {
+          if (totalRemainingAcrossAll === 0) {
+            newStatus = 'COMPLETED';
+          } else if (data?.isFinal === true) {
+            // Finalizing with shortage - notes is strictly mandatory
+            if (!data.notes || !data.notes.trim()) {
+              throw new BadRequestException(
+                `Receiving notes are required to explain the missing/shortage quantity (${totalRemainingAcrossAll} items) before completing this transfer.`,
+              );
+            }
+            newStatus = 'COMPLETED';
+          } else {
+            // Partial receipt
+            newStatus = 'PARTIAL_RECEIVED';
+          }
         }
 
-        // Update request status to completed
+        // Combine existing notes with receiving notes
+        let newNotes = request.notes || '';
+        const timestamp = new Date().toLocaleString();
+        if (data?.notes && data.notes.trim()) {
+          const prefix =
+            data?.isFinal && totalRemainingAcrossAll > 0
+              ? `[Receiving Shortage Notes - ${totalRemainingAcrossAll} missing - ${timestamp}]`
+              : newStatus === 'PARTIAL_RECEIVED'
+                ? `[Partial Receiving Notes - ${timestamp}]`
+                : `[Receiving Notes - ${timestamp}]`;
+          newNotes = newNotes
+            ? `${newNotes}\n${prefix}: ${data.notes.trim()}`
+            : `${prefix}: ${data.notes.trim()}`;
+        }
+
+        // Update request status
         const updated = await tx.transferRequest.update({
           where: { id },
           data: {
-            status: 'COMPLETED',
-            approvedById: userId,
+            status: newStatus,
+            approvedById: userId || request.approvedById,
             notes: newNotes,
           },
         });
@@ -1270,8 +1394,8 @@ export class TransferRequestService {
             module: 'transfer-request',
             entity: 'TransferRequest',
             entityId: updated.id,
-            description: `Completed transfer request ${updated.requestNo}`,
-            newValues: JSON.stringify({ status: 'COMPLETED' }),
+            description: `Transfer request ${updated.requestNo} status updated to ${newStatus}`,
+            newValues: JSON.stringify({ status: newStatus }),
             ipAddress: ctx?.ipAddress,
             userAgent: ctx?.userAgent,
             status: 'success',

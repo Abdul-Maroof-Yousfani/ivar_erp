@@ -81,6 +81,7 @@ model Item {
   // Discount Campaigns
   discountCampaignItems DiscountCampaignItem[]
   fabricTrackers        FabricVendorTracker[]
+  posReturnItems        PosReturnItem[]
 }
 
 // ─── Discount Campaign ────────────────────────────────────────────────────────

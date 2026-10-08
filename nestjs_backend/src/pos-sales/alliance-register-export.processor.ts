@@ -179,7 +179,7 @@ export class AllianceRegisterExportProcessor {
         ? await prisma.voucher.findMany({
           where: {
             sourceOrderId: { in: orderIds },
-            voucherType: 'CREDIT',
+            voucherType: { in: ['CREDIT', 'CORPORATE'] },
             isDeleted: false,
           },
         })

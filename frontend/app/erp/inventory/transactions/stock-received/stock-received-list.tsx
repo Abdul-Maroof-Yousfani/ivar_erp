@@ -375,16 +375,16 @@ export const columns: ColumnDef<StockLedgerEntry>[] = [
         accessorKey: "referenceId",
         header: "Reference",
         cell: ({ row }) => {
-            const { referenceType, referenceId } = row.original;
+            const { referenceType, referenceId, referenceNumber } = row.original as any;
             const href = getReferenceHref(referenceType, referenceId);
-            const shortId = `#${referenceId.slice(0, 8)}`;
+            const shortId = referenceNumber || (referenceId?.length > 12 ? `#${referenceId.slice(0, 8)}` : referenceId);
 
             if (href) {
                 return (
                     <Link
                         href={href}
                         className="inline-flex items-center gap-1 font-mono text-xs text-blue-600 hover:text-blue-800 hover:underline dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
-                        title={`View ${referenceType}: ${referenceId}`}
+                        title={`View ${referenceType}: ${referenceNumber || referenceId}`}
                     >
                         {shortId}
                         <ExternalLink className="h-3 w-3 shrink-0" />
@@ -393,7 +393,7 @@ export const columns: ColumnDef<StockLedgerEntry>[] = [
             }
 
             return (
-                <span className="font-mono text-xs text-muted-foreground" title={referenceId}>
+                <span className="font-mono text-xs text-muted-foreground" title={referenceNumber || referenceId}>
                     {shortId}
                 </span>
             );
@@ -655,7 +655,7 @@ export function StockReceivedList({ initialEntries, initialMeta }: StockReceived
                 color: entry.item?.color?.name || "",
                 warehouseName: entry.warehouse?.name || entry.warehouseId || "",
                 locationName: entry.location?.name || "",
-                referenceIdStr: entry.referenceId || "",
+                referenceIdStr: (entry as any).referenceNumber || entry.referenceId || "",
                 referenceTypeStr: entry.referenceType || "",
                 dateStr,
             };

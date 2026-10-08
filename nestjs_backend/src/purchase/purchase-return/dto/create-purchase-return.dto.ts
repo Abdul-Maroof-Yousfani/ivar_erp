@@ -4,7 +4,8 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export enum ReturnSourceType {
   GRN = 'GRN',
-  LANDED_COST = 'LANDED_COST'
+  LANDED_COST = 'LANDED_COST',
+  PURCHASE_INVOICE = 'PURCHASE_INVOICE'
 }
 
 export enum ReturnType {
@@ -18,7 +19,7 @@ export class CreatePurchaseReturnItemDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
-  sourceItemType: string; // GRN_ITEM, LANDED_COST_ITEM
+  sourceItemType: string; // GRN_ITEM, LANDED_COST_ITEM, PURCHASE_INVOICE_ITEM
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -29,6 +30,11 @@ export class CreatePurchaseReturnItemDto {
   @IsOptional()
   @IsString()
   landedCostItemId?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  purchaseInvoiceItemId?: string;
 
   @ApiProperty()
   @IsString()
@@ -77,6 +83,11 @@ export class CreatePurchaseReturnDto {
   @IsOptional()
   @IsString()
   landedCostId?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  purchaseInvoiceId?: string;
 
   @ApiProperty()
   @IsString()

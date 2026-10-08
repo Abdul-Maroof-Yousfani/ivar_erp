@@ -39,32 +39,6 @@ import {
 } from "@/components/ui/command";
 import { CheckIcon, ChevronDownIcon, Tag } from "lucide-react";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function findInTree(nodes: ChartOfAccount[], id: string): ChartOfAccount | undefined {
-    for (const node of nodes) {
-        if (node.id === id) return node;
-        if (node.children?.length) {
-            const found = findInTree(node.children, id);
-            if (found) return found;
-        }
-    }
-    return undefined;
-}
-
-function getLeafSubAccounts(node: ChartOfAccount | undefined): ChartOfAccount[] {
-    if (!node || !node.children || node.children.length === 0) return [];
-    const result: ChartOfAccount[] = [];
-    for (const child of node.children) {
-        if (!child.isGroup || !child.children || child.children.length === 0) {
-            result.push(child);
-        } else {
-            result.push(...getLeafSubAccounts(child));
-        }
-    }
-    return result;
-}
-
 // ─── Tag account selector ─────────────────────────────────────────────────────
 function TagAccountSelect({ children, value, onValueChange, disabled, id }: {
     children: ChartOfAccount[];
@@ -185,7 +159,7 @@ type InvoiceReceiptEntry = {
     receivingNow: number;
 };
 
-export function ReceiptVoucherForm({ initialData }: { initialData?: any }) {
+export function ReceiptVoucherForm({ initialData, defaultType = "bank" }: { initialData?: any; defaultType?: "bank" | "cash" | "rs_rv" }) {
     const router = useRouter();
     const isRestoring = useRef(false);
     const [isPending, setIsPending] = useState(false);
@@ -198,7 +172,7 @@ export function ReceiptVoucherForm({ initialData }: { initialData?: any }) {
     const form = useForm<ReceiptVoucherFormValues>({
         resolver: zodResolver(receiptVoucherSchema) as any,
         defaultValues: {
-            type: initialData?.type || "bank",
+            type: initialData?.type || defaultType,
             rvNo: initialData?.rvNo || "",
             rvDate: initialData?.rvDate ? new Date(initialData.rvDate) : new Date(),
             refBillNo: initialData?.refBillNo || "",
@@ -312,10 +286,9 @@ export function ReceiptVoucherForm({ initialData }: { initialData?: any }) {
 
     // Derive child sub-accounts for active line entry
     const activeLineChildren = useMemo(() => {
-        const nodes = getSharedTree().length > 0 ? getSharedTree() : tree;
-        if (!entryLine.accountId || nodes.length === 0) return [];
-        const node = findInTree(nodes, entryLine.accountId);
-        return getLeafSubAccounts(node);
+        if (!entryLine.accountId || tree.length === 0) return [];
+        const node = findInTree(tree, entryLine.accountId);
+        return node?.children ?? [];
     }, [entryLine.accountId, tree]);
 
     // Copy previous row values (F4 shortcut)
@@ -378,8 +351,7 @@ export function ReceiptVoucherForm({ initialData }: { initialData?: any }) {
         // Validate that Tag Sub-account is selected if the account head has children
         const nodes = getSharedTree().length > 0 ? getSharedTree() : tree;
         const node = findInTree(nodes, entryLine.accountId);
-        const subAccounts = getLeafSubAccounts(node);
-        if (node && subAccounts.length > 0 && !entryLine.tagAccountId) {
+        if (node && (node.children?.length ?? 0) > 0 && !entryLine.tagAccountId) {
             toast.error("Tag Sub-account is required for this account head.");
             return;
         }
@@ -479,24 +451,28 @@ export function ReceiptVoucherForm({ initialData }: { initialData?: any }) {
 
     // Poll for shared tree
     useEffect(() => {
-        fetchSharedTree().then((t) => {
-            if (t && t.length > 0) setTree(t);
-        });
+        fetchSharedTree();
         const initial = getSharedTree();
         if (initial.length > 0) { setTree(initial); return; }
         const id = setInterval(() => {
             const t = getSharedTree();
             if (t.length > 0) { setTree(t); clearInterval(id); }
-        }, 200);
+        }, 300);
         return () => clearInterval(id);
     }, []);
 
+
+
+    function findInTree(nodes: ChartOfAccount[], id: string): ChartOfAccount | undefined {
+        for (const node of nodes) {
+            if (node.id === id) return node;
+            if (node.children?.length) { const f = findInTree(node.children, id); if (f) return f; }
+        }
+    }
     const rowChildren = useMemo(() => {
-        const nodes = getSharedTree().length > 0 ? getSharedTree() : tree;
         return watchDetails.map((detail: any) => {
-            if (!detail.accountId || nodes.length === 0) return [];
-            const node = findInTree(nodes, detail.accountId);
-            return getLeafSubAccounts(node);
+            if (!detail.accountId || tree.length === 0) return [];
+            return findInTree(tree, detail.accountId)?.children ?? [];
         });
     }, [watchDetails.map((d: any) => d.accountId).join(","), tree]);
 
@@ -828,8 +804,7 @@ export function ReceiptVoucherForm({ initialData }: { initialData?: any }) {
             for (let i = 0; i < values.details.length; i++) {
                 const detail = values.details[i];
                 const node = findInTree(nodes, detail.accountId);
-                const subAccounts = getLeafSubAccounts(node);
-                if (node && subAccounts.length > 0 && !detail.tagAccountId) {
+                if (node && (node.children?.length ?? 0) > 0 && !detail.tagAccountId) {
                     toast.error(`Line #${i + 1}: Tag Sub-account is required for account "${node.name}".`);
                     return;
                 }
@@ -889,8 +864,8 @@ export function ReceiptVoucherForm({ initialData }: { initialData?: any }) {
                         } catch {}
                     }
                 }
-                if (initialData) {
-                    router.push("/erp/finance/receipt-voucher/list");
+                if (initialData || finalData.type === "rs_rv" || defaultType === "rs_rv") {
+                    router.push(finalData.type === "rs_rv" || defaultType === "rs_rv" ? "/erp/finance/retail-sale-receipt-voucher/list" : "/erp/finance/receipt-voucher/list");
                 } else {
                     const currentRefBillNo = form.getValues("refBillNo");
                     const currentChequeNo = form.getValues("chequeNo");
@@ -1245,8 +1220,8 @@ export function ReceiptVoucherForm({ initialData }: { initialData?: any }) {
                                             setTimeout(() => {
                                                 const nodes = getSharedTree().length > 0 ? getSharedTree() : tree;
                                                 const node = findInTree(nodes, val);
-                                                const subAccounts = getLeafSubAccounts(node);
-                                                if (subAccounts.length > 0) {
+                                                const hasChildren = (node?.children?.length ?? 0) > 0;
+                                                if (hasChildren) {
                                                     document.getElementById("entry-tagAccountId")?.focus();
                                                 } else {
                                                     focusTaxType();
@@ -1601,10 +1576,8 @@ export function ReceiptVoucherForm({ initialData }: { initialData?: any }) {
                                         </tr>
                                     ) : (
                                         visibleDetails.map((field, index) => {
-                                            const nodes = getSharedTree().length > 0 ? getSharedTree() : tree;
-                                            const accountNode = findInTree(nodes, field.accountId);
-                                            const subAccounts = getLeafSubAccounts(accountNode);
-                                            const tagNode = subAccounts.find(c => c.id === field.tagAccountId || c.code === field.tagAccountId);
+                                            const accountNode = findInTree(tree, field.accountId);
+                                            const tagNode = accountNode?.children?.find(c => c.id === field.tagAccountId);
 
                                             return (
                                                 <tr
@@ -1770,10 +1743,23 @@ export function ReceiptVoucherForm({ initialData }: { initialData?: any }) {
                         )}
                     </div>
 
-                    <div className="flex justify-center pt-6 border-t">
-                        <Button type="submit" disabled={isPending || !isBalanced}>
+                    <div className="flex justify-center gap-3 pt-6 border-t">
+                        <Button
+                            type="submit"
+                            variant="outline"
+                            disabled={isPending || !isBalanced}
+                            onClick={() => form.setValue("status", "draft")}
+                        >
                             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            {initialData ? "Update Receipt Voucher" : "Create Receipt Voucher"}
+                            Save as Draft
+                        </Button>
+                        <Button
+                            type="submit"
+                            disabled={isPending || !isBalanced}
+                            onClick={() => form.setValue("status", "pending_check")}
+                        >
+                            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {initialData ? "Update & Submit for Check" : "Submit for Check"}
                         </Button>
                     </div>
 

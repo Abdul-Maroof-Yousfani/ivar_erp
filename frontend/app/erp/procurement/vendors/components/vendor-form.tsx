@@ -1,8 +1,6 @@
 "use client";
 
-import { createVendor, updateVendor } from "@/lib/actions/procurement";
-import { getChartOfAccounts, ChartOfAccount } from "@/lib/actions/chart-of-account";
-
+import { createVendor, updateVendor, getNextVendorCode } from "@/lib/actions/procurement";
 import { useState, useEffect } from "react";
 import { useForm, SubmitHandler, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, User, Globe } from "lucide-react";
+import { Loader2, User, Globe, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -23,8 +21,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Autocomplete } from "@/components/ui/autocomplete";
-import { MultiSelect } from "@/components/ui/multi-select";
 
 interface VendorFormProps {
     initialData?: any;
@@ -35,15 +31,7 @@ interface VendorFormProps {
 export function VendorForm({ initialData, id, readOnly = false }: VendorFormProps) {
     const router = useRouter();
     const [isPending, setIsPending] = useState(false);
-    const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
-
-    useEffect(() => {
-        getChartOfAccounts().then(res => {
-            if (res.status && Array.isArray(res.data)) {
-                setAccounts(res.data);
-            }
-        });
-    }, []);
+    const [isLoadingCode, setIsLoadingCode] = useState(false);
 
     const form = useForm<VendorFormValues>({
         resolver: zodResolver(vendorSchema) as any,
@@ -61,9 +49,29 @@ export function VendorForm({ initialData, id, readOnly = false }: VendorFormProp
             pra: initialData?.praNo || "",
             ict: initialData?.ictNo || "",
             brand: initialData?.brand || "",
-            chartOfAccountIds: initialData?.chartOfAccounts ? initialData.chartOfAccounts.map((acc: any) => acc.id) : (initialData?.chartOfAccountId ? [initialData.chartOfAccountId] : []),
         },
     });
+
+    const fetchNextCode = async () => {
+        if (id || readOnly) return;
+        try {
+            setIsLoadingCode(true);
+            const res = await getNextVendorCode();
+            if (res.status && res.data) {
+                form.setValue("code", res.data, { shouldValidate: true });
+            }
+        } catch (err) {
+            console.error("Failed to fetch next vendor code", err);
+        } finally {
+            setIsLoadingCode(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!id && !initialData?.code) {
+            fetchNextCode();
+        }
+    }, [id]);
 
     const vendorType = form.watch("type");
 
@@ -82,6 +90,7 @@ export function VendorForm({ initialData, id, readOnly = false }: VendorFormProp
                 toast.success(result.message);
                 if (!id) {
                     form.reset();
+                    fetchNextCode();
                 } else {
                     router.push("/erp/procurement/vendors");
                 }
@@ -129,8 +138,32 @@ export function VendorForm({ initialData, id, readOnly = false }: VendorFormProp
                     {/* Basic Details */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground uppercase font-semibold">Code <span className="text-destructive">*</span></Label>
-                            <Input {...form.register("code")} placeholder="Enter Supplier Code" disabled={readOnly} />
+                            <div className="flex items-center justify-between">
+                                <Label className="text-xs text-muted-foreground uppercase font-semibold">
+                                    Supplier Code <span className="text-destructive">*</span>
+                                </Label>
+                                {!id && !readOnly && (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={fetchNextCode}
+                                        disabled={isLoadingCode}
+                                        className="h-6 px-2 text-[11px] text-primary hover:text-primary gap-1"
+                                    >
+                                        <RefreshCw className={`h-3 w-3 ${isLoadingCode ? "animate-spin" : ""}`} />
+                                        <span>Next Code</span>
+                                    </Button>
+                                )}
+                            </div>
+                            <div className="relative">
+                                <Input
+                                    {...form.register("code")}
+                                    placeholder="e.g. 20010067"
+                                    disabled={readOnly}
+                                    className="font-mono text-sm"
+                                />
+                            </div>
                             {form.formState.errors.code && (
                                 <p className="text-xs text-destructive">{form.formState.errors.code.message}</p>
                             )}
@@ -157,30 +190,6 @@ export function VendorForm({ initialData, id, readOnly = false }: VendorFormProp
                             <Label className="text-xs text-muted-foreground uppercase font-semibold">Contact Number</Label>
                             <Input {...form.register("contactNo")} placeholder="Enter Contact Number" disabled={readOnly} />
                         </div>
-                    </div>
-
-                    <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground uppercase font-semibold">Chart of Account <span className="text-destructive">*</span></Label>
-                        <Controller
-                            control={form.control}
-                            name="chartOfAccountIds"
-                            render={({ field }) => (
-                                <MultiSelect
-                                    options={accounts.map((acc) => ({
-                                        value: acc.id,
-                                        label: `${acc.code} - ${acc.name}`,
-                                    }))}
-                                    value={field.value}
-                                    onValueChange={field.onChange}
-                                    placeholder="Select Accounts"
-                                    searchPlaceholder="Search accounts..."
-                                    disabled={readOnly}
-                                />
-                            )}
-                        />
-                        {form.formState.errors.chartOfAccountIds && (
-                            <p className="text-xs text-destructive">{form.formState.errors.chartOfAccountIds.message}</p>
-                        )}
                     </div>
 
                     {/* Tax & Registration Details - Common for Both */}
@@ -225,13 +234,18 @@ export function VendorForm({ initialData, id, readOnly = false }: VendorFormProp
                                         control={form.control}
                                         name="nature"
                                         render={({ field }) => (
-                                            <Select onValueChange={field.onChange} defaultValue={field.value} disabled={readOnly}>
+                                            <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value} disabled={readOnly}>
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Select Nature" />
                                                 </SelectTrigger>
                                                 <SelectContent>
+                                                    <SelectItem value="FABRIC">Fabric</SelectItem>
                                                     <SelectItem value="GOODS">Goods</SelectItem>
                                                     <SelectItem value="SERVICES">Services</SelectItem>
+                                                    <SelectItem value="ACCESSORIES">Accessories</SelectItem>
+                                                    <SelectItem value="CMT SERVICES">CMT Services</SelectItem>
+                                                    <SelectItem value="FINISHED GOODS">Finished Goods</SelectItem>
+                                                    <SelectItem value="FRAGNANCE">Fragrance</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                         )}

@@ -88,6 +88,7 @@ interface PrintReceiptProps {
     code: string;
     faceValue: number;
     expiresAt: Date | null;
+    voucherType?: string;
   }[];
   onClose: () => void;
 }
@@ -201,6 +202,18 @@ export function PrintReceipt({
   const [layout, setLayout] = useState<"thermal" | "a4">(defaultLayout);
   const [isDownloading, setIsDownloading] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
+
+  // Filter out exchange and refund vouchers (issued on return)
+  // so only sale checkout credit vouchers appear on the sale receipt.
+  const filteredCreditVouchers = creditVouchers?.filter((v: any) => {
+    if (v.voucherType && (v.voucherType === "EXCHANGE" || v.voucherType === "REFUND")) {
+      return false;
+    }
+    if (typeof v.code === "string" && (v.code.startsWith("EXC-") || v.code.startsWith("REF-"))) {
+      return false;
+    }
+    return true;
+  });
 
   useEffect(() => {
     setMounted(true);
@@ -510,7 +523,7 @@ export function PrintReceipt({
     settings,
     suppressItemDiscounts,
     suppressLabel,
-    creditVouchers,
+    creditVouchers: filteredCreditVouchers,
     hasFbrInfo,
   };
 
@@ -752,6 +765,7 @@ interface ReceiptBodyProps {
     code: string;
     faceValue: number;
     expiresAt: Date | null;
+    voucherType?: string;
   }[];
   hasFbrInfo?: boolean;
 }
@@ -915,10 +929,12 @@ function ReceiptBody({
           )}
           {(() => {
             const phone =
+              order?.customer?.contactNo ||
               order?.customer?.phone ||
               order?.customerPhone ||
               order?.customerMobile ||
               order?.customer?.contactNumber ||
+              order?.contactNo ||
               order?.contactNumber ||
               order?.phone;
             if (phone && phone !== "N/A") {
@@ -1217,6 +1233,9 @@ function ReceiptBody({
       <div className="text-center text-[9px] pt-1 pb-1 space-y-0">
         <p>{settings.receiptFooter || "*** THANK YOU FOR SHOPPING ***"}</p>
         <p className="tracking-widest font-bold">{order?.orderNumber}</p>
+        <p className="text-[9px] mt-1 font-bold">INPL POS</p>
+        <p className="text-[8px] font-normal">Powered by Innovative Network (Pvt.) Ltd.</p>
+        <p className="text-[8px] font-normal">+92(21)34303051-3 | innovative-net.com</p>
       </div>
     </div>
   );
@@ -1259,9 +1278,11 @@ function A4InvoiceBody({
   const customerName =
     order?.customer?.name || order?.customerName || "Walk-in Customer";
   const customerPhone =
+    order?.customer?.contactNo ||
     order?.customer?.phone ||
     order?.customerPhone ||
     order?.customerMobile ||
+    order?.contactNo ||
     "N/A";
   const customerEmail = order?.customer?.email || order?.customerEmail || "";
   const customerAddress =
@@ -1703,8 +1724,14 @@ function A4InvoiceBody({
             <p className="text-[9px] text-zinc-400 font-mono mt-0.5">
               Invoice Ref: {order?.orderNumber}
             </p>
-            <p className="text-[9px] text-zinc-400 pt-0.5">
-              Software by Innovative Network (Pvt) Ltd
+            <p className="text-[10px] text-zinc-500 font-bold mt-1">
+              INPL POS
+            </p>
+            <p className="text-[9px] text-zinc-400">
+              Powered by Innovative Network (Pvt.) Ltd.
+            </p>
+            <p className="text-[9px] text-zinc-400">
+              +92(21)34303051-3 | innovative-net.com
             </p>
           </div>
         </div>
