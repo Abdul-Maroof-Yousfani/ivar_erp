@@ -902,6 +902,7 @@ export class TransferRequestService {
               referenceType: 'OUTLET_TRANSFER_OUT',
               referenceId: request.id,
               rate: transferRate,
+              allowNegativeStock: true,
             },
             tx,
           );
@@ -1161,17 +1162,20 @@ export class TransferRequestService {
               );
 
               // 3. Now execute the normal outlet-to-warehouse transfer
-              await this.stockMovementService.executeMovement({
-                itemId: item.itemId,
-                fromLocationId: request.fromLocationId!,
-                toWarehouseId: request.toWarehouseId!,
-                quantity: rxQty,
-                type: 'RETURN_TRANSFER',
-                referenceType: 'CLAIM_RETURN_REQUEST',
-                referenceId: request.id,
-                userId: userId,
-                transaction: tx,
-              });
+              if (rxQty > 0) {
+                await this.stockMovementService.executeMovement({
+                  itemId: item.itemId,
+                  fromLocationId: request.fromLocationId!,
+                  toWarehouseId: request.toWarehouseId!,
+                  quantity: rxQty,
+                  type: 'RETURN_TRANSFER',
+                  referenceType: 'CLAIM_RETURN_REQUEST',
+                  referenceId: request.id,
+                  userId: userId,
+                  transaction: tx,
+                  allowNegativeStock: true,
+                });
+              }
             }
           } else {
             // Normal outlet-to-warehouse transfer (non-claim)
@@ -1184,17 +1188,20 @@ export class TransferRequestService {
                     ? Number(receivedByItemIdMap.get(item.itemId))
                     : Number(item.quantity);
 
-              await this.stockMovementService.executeMovement({
-                itemId: item.itemId,
-                fromLocationId: request.fromLocationId!,
-                toWarehouseId: request.toWarehouseId!,
-                quantity: rxQty,
-                type: 'RETURN_TRANSFER',
-                referenceType: 'RETURN_REQUEST',
-                referenceId: request.id,
-                userId: userId,
-                transaction: tx,
-              });
+              if (rxQty > 0) {
+                await this.stockMovementService.executeMovement({
+                  itemId: item.itemId,
+                  fromLocationId: request.fromLocationId!,
+                  toWarehouseId: request.toWarehouseId!,
+                  quantity: rxQty,
+                  type: 'RETURN_TRANSFER',
+                  referenceType: 'RETURN_REQUEST',
+                  referenceId: request.id,
+                  userId: userId,
+                  transaction: tx,
+                  allowNegativeStock: true,
+                });
+              }
             }
           }
         } else if (request.transferType === 'OUTLET_TO_OUTLET') {

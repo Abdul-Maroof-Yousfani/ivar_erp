@@ -193,8 +193,10 @@ export default function StockTransferPage() {
         if (!inspectingRequest) return;
 
         const receivedItems = inspectingRequest.items.map((item: any) => ({
+            id: item.id,
+            requestItemId: item.id,
             itemId: item.itemId,
-            receivedQty: receivedQtyMap[item.itemId] !== undefined ? Number(receivedQtyMap[item.itemId]) : Number(item.quantity || 0),
+            receivedQty: receivedQtyMap[item.itemId] !== undefined ? Math.max(0, Number(receivedQtyMap[item.itemId])) : Number(item.quantity || 0),
         }));
 
         setIsAccepting(inspectingRequest.id);
