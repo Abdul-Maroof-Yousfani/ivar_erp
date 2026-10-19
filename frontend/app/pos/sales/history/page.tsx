@@ -723,6 +723,8 @@ export default function SalesHistoryPage() {
         partially_returned: "bg-blue-500/10 text-blue-700 border-blue-300",
         refunded: "bg-purple-500/10 text-purple-700 border-purple-300",
         exchanged: "bg-cyan-500/10 text-cyan-700 border-cyan-300",
+        booked: "bg-blue-500/10 text-blue-700 border-blue-300",
+        delivered: "bg-emerald-500/10 text-emerald-700 border-emerald-300",
     };
 
     const columns = useMemo<ColumnDef<any>[]>(() => [
@@ -1093,8 +1095,25 @@ export default function SalesHistoryPage() {
             <Dialog open={showDetails} onOpenChange={setShowDetails}>
                 <DialogContent showCloseButton={false} className="max-w-[1400px] max-h-[90vh] flex flex-col p-0 w-[98vw]">
                     {(() => {
-                        const totalPaid = selectedOrder?.tenders?.reduce((s: number, t: any) => s + Number(t.amount), 0) || 0;
-                        const balanceDue = Math.max(0, (selectedOrder?.grandTotal || 0) - totalPaid);
+                        const isCourierify = selectedOrder?.notes?.includes("Source: Courierify");
+                        const totalPaid = selectedOrder?.tenders?.reduce((s: number, t: any) => {
+                            if (t.method?.toLowerCase() === 'cod' || t.method?.toLowerCase() === 'cash_on_delivery') {
+                                if (isCourierify && selectedOrder.status !== 'delivered' && selectedOrder.paymentStatus !== 'paid' && selectedOrder.paymentStatus !== 'collected_pending_settlement') {
+                                    return s;
+                                }
+                            }
+                            return s + Number(t.amount);
+                        }, 0) || 0;
+                        const allTendersSum = (selectedOrder?.tenders || []).reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+                        const deliveryCharges = (() => {
+                            const match = selectedOrder?.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
+                            if (match && match[1]) return parseFloat(match[1].replace(/,/g, ""));
+                            if (allTendersSum > Number(selectedOrder?.grandTotal || 0)) return allTendersSum - Number(selectedOrder?.grandTotal || 0);
+                            return 0;
+                        })();
+                        const itemsTotal = Number(selectedOrder?.subtotal || 0) + Number(selectedOrder?.taxAmount || 0) - Number(selectedOrder?.discountAmount || 0);
+                        const effectiveGrandTotal = Math.max(Number(selectedOrder?.grandTotal || 0), itemsTotal + deliveryCharges);
+                        const balanceDue = Math.max(0, effectiveGrandTotal - totalPaid);
                         const isHold = selectedOrder?.status === "hold";
                         const isToday = selectedOrder ? isSameDay(new Date(selectedOrder.createdAt)) : false;
                         const canEditTender = canUpdateTender && canEditOrderTender(selectedOrder).canEdit;
@@ -1167,7 +1186,7 @@ export default function SalesHistoryPage() {
                                         </div>
                                         <div className="bg-primary px-4 py-3 rounded-xl shadow-lg shadow-primary/20">
                                             <p className="text-[9px] font-black text-primary-foreground/70 uppercase tracking-widest mb-1.5">Grand Total</p>
-                                            <p className="text-sm font-black tracking-tight text-primary-foreground">{formatCurrency(selectedOrder?.grandTotal || 0)}</p>
+                                            <p className="text-sm font-black tracking-tight text-primary-foreground">{formatCurrency(effectiveGrandTotal)}</p>
                                         </div>
                                         {!isHold && (
                                             <div className={cn("px-4 py-3 rounded-xl border shadow-lg",

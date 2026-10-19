@@ -6,9 +6,10 @@ import { DatabaseModule } from '../database/database.module';
 import { PosSalesModule } from '../pos-sales/pos-sales.module';
 import { WarehouseModule } from '../warehouse/warehouse.module';
 import { StockLedgerModule } from '../warehouse/stock-ledger/stock-ledger.module';
+import { ShopifyModule } from '../shopify/shopify.module';
 
 @Module({
-  imports: [DatabaseModule, PosSalesModule, WarehouseModule, StockLedgerModule],
+  imports: [DatabaseModule, PosSalesModule, WarehouseModule, StockLedgerModule, ShopifyModule],
   controllers: [CourierifyController, CourierifyWebhookController],
   providers: [CourierifyService],
   exports: [CourierifyService],

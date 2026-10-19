@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-
+import { ShopifyService } from '../shopify/shopify.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { runInBackground } from '../common/utils/run-in-background.util';
 
@@ -33,6 +33,7 @@ export class VoucherService {
     constructor(
         private prisma: PrismaService,
         private activityLogs: ActivityLogsService,
+        private shopifyService: ShopifyService,
     ) {}
 
     // ── List vouchers (admin) ─────────────────────────────────────
@@ -187,6 +188,47 @@ export class VoucherService {
                     userAgent: ctx?.userAgent,
                     status: 'success',
                 }),
+            );
+
+            // ── Push voucher to Shopify (non-blocking) ────────────────────────
+            runInBackground(
+                'Shopify Push Voucher',
+                (async () => {
+                const syncableTypes = ['EXCHANGE', 'GIFT', 'CREDIT'];
+                if (!syncableTypes.includes(data.voucherType) || isRefundVoucher) {
+                    // Not a syncable type — mark as SKIPPED
+                    await this.prisma.voucher.update({
+                        where: { id: voucher.id },
+                        data: { shopifySyncStatus: 'SKIPPED' },
+                    });
+                    return;
+                }
+
+                const result = await this.shopifyService.pushVoucherToShopify({
+                    id: voucher.id,
+                    code: voucher.code,
+                    voucherType: voucher.voucherType,
+                    faceValue: Number(voucher.faceValue),
+                    expiresAt: voucher.expiresAt,
+                });
+
+                if (result.success) {
+                    await this.prisma.voucher.update({
+                        where: { id: voucher.id },
+                        data: {
+                            shopifyPriceRuleId: result.priceRuleId,
+                            shopifyDiscountId: result.discountCodeId,
+                            shopifySyncStatus: 'SYNCED',
+                            shopifySyncedAt: new Date(),
+                        },
+                    });
+                } else {
+                    await this.prisma.voucher.update({
+                        where: { id: voucher.id },
+                        data: { shopifySyncStatus: 'FAILED' },
+                    });
+                }
+            })(),
             );
 
             return { status: true, data: voucher, message: `Voucher ${code} issued` };
@@ -410,8 +452,30 @@ export class VoucherService {
             // Mark original voucher as redeemed
             await tx.voucher.update({
                 where: { id: r.voucherId },
-                data: { isRedeemed: true, isActive: false },
+                data: {
+                    isRedeemed: true,
+                    isActive: false,
+                    shopifySyncStatus: 'REDEEMED_POS',
+                    shopifySyncedAt: new Date(),
+                },
             });
+
+            // Mark as expired on Shopify so it cannot be reused online (do not delete)
+            if (voucher.shopifyPriceRuleId) {
+                runInBackground(
+                    `Shopify Expire Redeemed Voucher ${voucher.code}`,
+                    this.shopifyService.expirePriceRule(voucher.shopifyPriceRuleId).catch(err => {
+                        console.error(`Failed to expire redeemed voucher ${voucher.code} from Shopify: ${err.message}`);
+                    })
+                );
+            } else {
+                runInBackground(
+                    `Shopify Expire Redeemed Voucher by Code ${voucher.code}`,
+                    this.shopifyService.expirePriceRuleByCode(voucher.code).catch(err => {
+                        console.error(`Failed to expire redeemed voucher ${voucher.code} by code from Shopify: ${err.message}`);
+                    })
+                );
+            }
 
             await tx.voucherTransaction.create({
                 data: {
@@ -566,6 +630,14 @@ export class VoucherService {
                     notes: reason ?? 'Voided by staff',
                 },
             });
+
+            // ── Delete from Shopify if synced ──────────────────────────────────
+            if ((voucher as any).shopifyPriceRuleId) {
+                runInBackground(
+                    'Shopify Delete PriceRule',
+                    this.shopifyService.deletePriceRule((voucher as any).shopifyPriceRuleId),
+                );
+            }
 
             runInBackground(
                 'Void Voucher',
@@ -740,6 +812,16 @@ export class VoucherService {
                     status: 'success',
                 }),
             );
+
+            // If synced to Shopify, update Shopify PriceRule ends_at
+            if (voucher.shopifyPriceRuleId) {
+                runInBackground(
+                    `Shopify Update Voucher Expiry ${voucher.code}`,
+                    this.shopifyService.updatePriceRuleExpiry(voucher.shopifyPriceRuleId, updatedExpiresAt).catch(err => {
+                        console.error(`Failed to update voucher ${voucher.code} expiry on Shopify: ${err.message}`);
+                    })
+                );
+            }
 
             return { status: true, message: 'Voucher expiry updated' };
         } catch (error: any) {

@@ -23,7 +23,7 @@ import { formatCurrency } from "@/lib/utils";
 import { PrintReturnReceipt, type ReturnReceiptLine } from "@/components/pos/print-return-receipt";
 import { ManagerVerificationDialog } from "@/components/auth/manager-verification-dialog";
 
-function paidPerUnit(oi: any, orderGrandTotal: number, orderLineTotalsSum: number) {
+function paidPerUnit(oi: any, orderGrandTotal: number, orderLineTotalsSum: number, orderNotes?: string) {
   // Distribute grandTotal proportionally based on each item's lineTotal share
   // This correctly handles global discounts (coupon/promo applied at order level)
   const qty = Number(oi.quantity);
@@ -32,14 +32,20 @@ function paidPerUnit(oi: any, orderGrandTotal: number, orderLineTotalsSum: numbe
     return 0;
   }
   
-  // If the order line totals sum is extremely close to grand total (within FBR fee and minor rounding),
-  // then we can just return the actual lineTotal divided by quantity to avoid distributing FBR fee/rounding.
+  // Delivery charges are shipping fees and must never be refunded or included in item return/exchange values
+  const deliveryCharges = (() => {
+    const match = orderNotes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
+    if (match && match[1]) return parseFloat(match[1].replace(/,/g, ""));
+    return 0;
+  })();
+  const itemsGrandTotal = Math.max(0, orderGrandTotal - deliveryCharges);
+
   const lineTotal = Number(oi.lineTotal);
-  if (Math.abs(orderLineTotalsSum - orderGrandTotal) <= 5) {
+  if (Math.abs(orderLineTotalsSum - itemsGrandTotal) <= 5) {
     return lineTotal / qty;
   }
   
-  const itemShare = orderLineTotalsSum > 0 ? (lineTotal / orderLineTotalsSum) * orderGrandTotal : lineTotal;
+  const itemShare = orderLineTotalsSum > 0 ? (lineTotal / orderLineTotalsSum) * itemsGrandTotal : lineTotal;
   return itemShare / qty;
 }
 
@@ -65,7 +71,27 @@ interface ReturnLine {
 }
 
 interface NewLine { itemId: string; name: string; sku: string; size?: string; color?: string; quantity: number; unitPrice: number; discountPct: number; }
-interface LoadedOrder { id: string; orderNumber: string; grandTotal: number; createdAt: string; items: any[]; coupon?: string; promo?: string; alliance?: string; locationName?: string; locationId?: string; }
+interface LoadedOrder {
+    id: string;
+    orderNumber: string;
+    grandTotal: number;
+    createdAt: string;
+    items: any[];
+    coupon?: string;
+    promo?: string;
+    alliance?: string;
+    locationName?: string;
+    locationId?: string;
+    customer?: {
+        id?: string;
+        name?: string;
+        contactNo?: string;
+        phone?: string;
+    } | null;
+    customerName?: string;
+    customerPhone?: string;
+    customerMobile?: string;
+}
 
 export default function ReturnsPage() {
     const router = useRouter();
@@ -166,6 +192,9 @@ export default function ReturnsPage() {
                     alliance: found.alliance?.code || undefined,
                     locationName: found.location?.name || undefined,
                     locationId: found.locationId || undefined,
+                    customer: found.customer || null,
+                    customerName: found.customer?.name || found.customerName || undefined,
+                    customerPhone: found.customer?.contactNo || found.customer?.phone || found.customerPhone || undefined,
                 }]);
 
                 // Append return lines for this order (qty = 0 by default)
@@ -194,7 +223,7 @@ export default function ReturnsPage() {
                         size: oi.item?.size?.name || "",
                         color: oi.item?.color?.name || "",
                         orderedQty: remainingQty, returnQty: 0,
-                        paidPerUnit: paidPerUnit(oi, orderGrandTotal, lineTotalsSum),
+                        paidPerUnit: paidPerUnit(oi, orderGrandTotal, lineTotalsSum, found.notes),
                         originalUnitPrice: Number(oi.unitPrice),
                         discountPercent: Number(oi.discountPercent ?? 0),
                         discountAmount: Number(oi.discountAmount ?? 0),
@@ -498,7 +527,7 @@ export default function ReturnsPage() {
                 {loadedOrders.length > 0 && (
                     <div className="flex flex-wrap gap-2">
                         {loadedOrders.map(o => (
-                            <div key={o.id} className="flex items-center gap-2.5 rounded-full bg-gradient-to-r from-emerald-500/10 to-teal-500/10 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-300/80 dark:border-emerald-700/80 px-4 py-2 shadow-sm transition-all hover:shadow duration-200">
+                            <div key={o.id} className="flex items-center gap-2.5 rounded-full bg-linear-to-r from-emerald-500/10 to-teal-500/10 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-300/80 dark:border-emerald-700/80 px-4 py-2 shadow-sm transition-all hover:shadow duration-200">
                                 <div className="p-1 bg-emerald-500 text-white rounded-full">
                                     <Receipt className="h-3 w-3 shrink-0" />
                                 </div>
@@ -1075,8 +1104,8 @@ export default function ReturnsPage() {
                     notes={notes || undefined}
                     returnedAt={returnReceipt.returnedAt}
                     exchangeVoucher={returnReceipt.exchangeVoucher}
-                    customerName={loadedOrders[0]?.customer?.name || (loadedOrders[0] as any)?.customerName}
-                    customerPhone={loadedOrders[0]?.customer?.phone || (loadedOrders[0] as any)?.customerPhone || (loadedOrders[0] as any)?.customerMobile}
+                    customerName={loadedOrders[0]?.customer?.name || loadedOrders[0]?.customerName}
+                    customerPhone={loadedOrders[0]?.customer?.contactNo || loadedOrders[0]?.customer?.phone || loadedOrders[0]?.customerPhone || loadedOrders[0]?.customerMobile}
                     discountNotes={loadedOrders
                         .filter(o => o.coupon || o.promo || o.alliance)
                         .map(o => {

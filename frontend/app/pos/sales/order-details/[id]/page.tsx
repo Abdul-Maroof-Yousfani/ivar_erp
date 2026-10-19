@@ -43,6 +43,8 @@ const STATUS_BADGE: Record<string, string> = {
     returned: "bg-purple-500/10 text-purple-700 border-purple-300",
     refunded: "bg-purple-500/10 text-purple-700 border-purple-300",
     exchanged: "bg-cyan-500/10 text-cyan-700 border-cyan-300",
+    booked: "bg-blue-500/10 text-blue-700 border-blue-300",
+    delivered: "bg-emerald-500/10 text-emerald-700 border-emerald-300",
 };
 
 export default function OrderDetailsPage() {
@@ -167,14 +169,24 @@ export default function OrderDetailsPage() {
     const isCourierify = order.notes?.includes("Source: Courierify");
     const totalPaid = order.tenders?.reduce((s: number, t: any) => {
         if (t.method?.toLowerCase() === 'cod' || t.method?.toLowerCase() === 'cash_on_delivery') {
-            if (isCourierify && order.status !== 'delivered' && order.status !== 'completed' && order.paymentStatus !== 'paid' && order.paymentStatus !== 'collected_pending_settlement') {
+            if (isCourierify && order.status !== 'delivered' && order.paymentStatus !== 'paid' && order.paymentStatus !== 'collected_pending_settlement') {
                 return s; // Don't count COD as paid until delivered for Courierify
             }
         }
         return s + Number(t.amount);
     }, 0) || 0;
+
+    const allTendersSum = (order.tenders || []).reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+    const deliveryCharges = (() => {
+        const match = order.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
+        if (match && match[1]) return parseFloat(match[1].replace(/,/g, ""));
+        if (allTendersSum > Number(order.grandTotal)) return allTendersSum - Number(order.grandTotal);
+        return 0;
+    })();
+    const itemsTotal = Number(order.subtotal || 0) + Number(order.taxAmount || 0) - Number(order.discountAmount || 0);
+    const effectiveGrandTotal = Math.max(Number(order.grandTotal || 0), itemsTotal + deliveryCharges);
     
-    const balanceDue = Math.max(0, Number(order.grandTotal) - totalPaid);
+    const balanceDue = Math.max(0, effectiveGrandTotal - totalPaid);
     const isHold = order.status === "hold";
     const isToday = isSameDay(new Date(order.createdAt));
 
@@ -374,7 +386,9 @@ export default function OrderDetailsPage() {
                                                     {t.voucherFaceValue && <span className="text-[9px] font-mono font-black text-amber-600 ring-1 ring-amber-500/20 px-1.5 py-0.5 rounded-md bg-amber-500/5">Val: {formatCurrency(t.voucherFaceValue)}</span>}
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className="text-[9px] font-black text-muted-foreground uppercase">Paid</p>
+                                                    <p className="text-[9px] font-black text-muted-foreground uppercase">
+                                                        {t.method?.toLowerCase() === 'cod' && isCourierify && order.status !== 'delivered' && order.paymentStatus !== 'paid' ? 'To Collect' : 'Paid'}
+                                                    </p>
                                                     <p className="text-sm font-black font-mono">{formatCurrency(t.amount)}</p>
                                                 </div>
                                             </div>
@@ -631,11 +645,18 @@ export default function OrderDetailsPage() {
                                                 </div>
                                             )}
 
+                                            {deliveryCharges > 0 && (
+                                                <div className="flex justify-between text-blue-600 dark:text-blue-400 font-semibold">
+                                                    <span>Delivery Charges</span>
+                                                    <span>+{formatCurrency(deliveryCharges)}</span>
+                                                </div>
+                                            )}
+
                                             <Separator />
 
                                             <div className="flex justify-between text-base font-bold text-foreground pt-1">
                                                 <span className="font-sans">Grand Total</span>
-                                                <span>{formatCurrency(grandTotal)}</span>
+                                                <span>{formatCurrency(effectiveGrandTotal)}</span>
                                             </div>
 
                                             <div className="flex justify-between text-muted-foreground">
@@ -643,10 +664,10 @@ export default function OrderDetailsPage() {
                                                 <span>{formatCurrency(totalPaid)}</span>
                                             </div>
 
-                                            {balanceDueValue > 0 && (
+                                            {balanceDue > 0 && (
                                                 <div className="flex justify-between text-orange-600 font-bold">
                                                     <span>Balance Due</span>
-                                                    <span>{formatCurrency(balanceDueValue)}</span>
+                                                    <span>{formatCurrency(balanceDue)}</span>
                                                 </div>
                                             )}
 

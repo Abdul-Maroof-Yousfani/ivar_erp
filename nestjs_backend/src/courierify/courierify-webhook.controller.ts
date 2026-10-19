@@ -13,13 +13,19 @@ import { FastifyRequest } from 'fastify';
 import { CourierifyService } from './courierify.service';
 import { CourierifyWebhookEnvelope } from './interfaces/courierify.interface';
 import { PrismaService } from '../database/prisma.service';
+import { PrismaMasterService } from '../database/prisma-master.service';
+import { EncryptionService } from '../common/utils/encryption.service';
 
 @ApiTags('Courierify Webhook')
 @Controller('courierify')
 export class CourierifyWebhookController {
   private readonly logger = new Logger(CourierifyWebhookController.name);
 
-  constructor(private readonly courierifyService: CourierifyService) {}
+  constructor(
+    private readonly courierifyService: CourierifyService,
+    private readonly prismaMaster: PrismaMasterService,
+    private readonly encryptionService: EncryptionService,
+  ) {}
 
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
@@ -67,6 +73,8 @@ export class CourierifyWebhookController {
         ? req.body
         : JSON.parse(rawBody.toString('utf8'));
 
+    this.logger.debug(`[Courierify Webhook Payload] ${JSON.stringify(payload)}`);
+
     const eventId = payload.eventId || eventIdHeader;
     const eventTopic = payload.topic || topic;
 
@@ -75,13 +83,42 @@ export class CourierifyWebhookController {
     );
 
     // Capture active tenant context from request for background processing
-    const tenantCtx = (req as any).tenantId
+    let tenantCtx = (req as any).tenantId
       ? {
           tenantId: (req as any).tenantId,
           companyId: (req as any).companyId,
           dbUrl: (req as any).tenantDbUrl,
         }
       : null;
+
+    if (!tenantCtx) {
+      // Fallback: If no tenant specified via headers/URL (e.g., standard Courierify webhook), find the first active tenant
+      try {
+        const company = await this.prismaMaster.company.findFirst({
+          where: { status: 'active' },
+          include: { tenant: true },
+        });
+
+        if (company) {
+          let dbUrl = company.dbUrl;
+          if (company.dbPassword && company.dbUser && company.dbHost && company.dbName) {
+            const plainPassword = this.encryptionService.decrypt(company.dbPassword);
+            const encodedPassword = encodeURIComponent(String(plainPassword));
+            const port = company.dbPort || 5432;
+            dbUrl = `postgresql://${encodeURIComponent(company.dbUser)}:${encodedPassword}@${company.dbHost}:${port}/${encodeURIComponent(company.dbName)}?schema=public`;
+          }
+          
+          tenantCtx = {
+            tenantId: company.tenantId,
+            companyId: company.id,
+            dbUrl,
+          };
+          this.logger.log(`[Courierify Webhook] No tenant in request, falling back to default tenant: ${company.tenantId}`);
+        }
+      } catch (err: any) {
+        this.logger.error(`Failed to retrieve fallback tenant: ${err.message}`);
+      }
+    }
 
     // Process event asynchronously in background so response returns within 10s requirement
     setImmediate(() => {
