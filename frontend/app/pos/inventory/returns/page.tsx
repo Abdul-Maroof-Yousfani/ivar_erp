@@ -1255,11 +1255,27 @@ export default function ReturnRequestsPage() {
                                                                 ? `Multiple Items (${request.items.length})`
                                                                 : request.items[0]?.item?.description || "Return Items"}
                                                         </h3>
-                                                        <p className="text-sm text-muted-foreground font-medium truncate">
-                                                            {request.items.length > 1
-                                                                ? `SKU: ${request.items[0]?.item?.sku || 'N/A'} and ${request.items.length - 1} more`
-                                                                : `SKU: ${request.items[0]?.item?.sku || "N/A"}`}
-                                                        </p>
+                                                        <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                                                            <p className="text-xs text-muted-foreground font-mono font-medium">
+                                                                {request.items.length > 1
+                                                                    ? `SKU: ${request.items[0]?.item?.sku || 'N/A'} and ${request.items.length - 1} more`
+                                                                    : `SKU: ${request.items[0]?.item?.sku || "N/A"}`}
+                                                            </p>
+                                                            {request.items.length === 1 && (
+                                                                <>
+                                                                    {request.items[0]?.item?.color?.name && (
+                                                                        <Badge variant="outline" className="text-[9px] py-0 px-1 font-semibold">
+                                                                            Color: {request.items[0]?.item?.color?.name}
+                                                                        </Badge>
+                                                                    )}
+                                                                    {request.items[0]?.item?.size?.name && (
+                                                                        <Badge variant="outline" className="text-[9px] py-0 px-1 font-semibold">
+                                                                            Size: {request.items[0]?.item?.size?.name}
+                                                                        </Badge>
+                                                                    )}
+                                                                </>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
 
