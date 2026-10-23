@@ -112,8 +112,8 @@ export default function ReturnTransferPage() {
                     })
                 );
                 
-                // Only show items with outlet stock > 0
-                const availableItems = itemsWithOutletStock.filter(item => item.outletQuantity > 0);
+                // Allow all items regardless of stock level (negative inventory enabled)
+                const availableItems = itemsWithOutletStock;
                 setSearchResults(availableItems);
             } else {
                 toast.error('Search failed or no items found');
@@ -139,8 +139,7 @@ export default function ReturnTransferPage() {
         }
 
         if (returnQty > (outletStock || 0)) {
-            toast.error(`Cannot return more than available stock (${outletStock})`);
-            return;
+            toast.info(`Note: Return quantity (${returnQty}) exceeds available stock (${outletStock}). Transfer will result in negative balance.`);
         }
 
         setSubmitting(true);

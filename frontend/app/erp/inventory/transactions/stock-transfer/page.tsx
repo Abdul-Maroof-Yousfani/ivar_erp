@@ -942,9 +942,8 @@ export default function StockTransferPage() {
         }
 
         const hasInsufficientStock = selectedItems.some(item => item.quantity > item.availableStock);
-        if (hasInsufficientStock && transferMode !== 'WAREHOUSE_TO_OUTLET') {
-            toast.error('One or more items have insufficient stock for this transfer');
-            return;
+        if (hasInsufficientStock) {
+            toast.info('Note: One or more transfer items will result in negative stock balance.');
         }
 
         setSubmitting(true);
