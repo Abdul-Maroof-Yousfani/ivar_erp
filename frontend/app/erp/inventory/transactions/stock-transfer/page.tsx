@@ -149,6 +149,55 @@ export default function StockTransferPage() {
     const modalScannerRef = useRef<HTMLInputElement>(null);
     const [lastScannedModalItemId, setLastScannedModalItemId] = useState<string | null>(null);
 
+    // Filter/Search and Scanner for Incoming Warehouse Transfers list
+    const [incomingFilterQuery, setIncomingFilterQuery] = useState<string>('');
+    const incomingScannerRef = useRef<HTMLInputElement>(null);
+
+    // Helpers to robustly extract item metadata
+    const getItemColor = (item: any): string | null => {
+        if (!item) return null;
+        return (
+            item.item?.color?.name ||
+            (typeof item.item?.color === 'string' ? item.item.color : null) ||
+            item.color?.name ||
+            (typeof item.color === 'string' ? item.color : null) ||
+            item.item?.colorName ||
+            item.colorName ||
+            null
+        );
+    };
+
+    const getItemSize = (item: any): string | null => {
+        if (!item) return null;
+        return (
+            item.item?.size?.name ||
+            (typeof item.item?.size === 'string' ? item.item.size : null) ||
+            item.size?.name ||
+            (typeof item.size === 'string' ? item.size : null) ||
+            item.item?.sizeName ||
+            item.sizeName ||
+            null
+        );
+    };
+
+    const getItemSku = (item: any): string => {
+        if (!item) return 'N/A';
+        return (
+            item.item?.sku ||
+            item.sku ||
+            item.item?.itemId ||
+            item.itemId ||
+            item.item?.barCode ||
+            item.barCode ||
+            'N/A'
+        );
+    };
+
+    const getItemBarcode = (item: any): string | null => {
+        if (!item) return null;
+        return item.item?.barCode || item.item?.barcode || item.barCode || item.barcode || null;
+    };
+
     const fetchIncomingWarehouseTransfers = async () => {
         setLoadingIncoming(true);
         try {
@@ -217,34 +266,111 @@ export default function StockTransferPage() {
         }
     };
 
+    const handleIncomingWarehouseScan = (barcodeVal: string) => {
+        const rawCode = barcodeVal ? String(barcodeVal).replace(/[\r\n\t]/g, '').trim() : '';
+        if (!rawCode) return;
+        const code = rawCode.toLowerCase();
+
+        // 1. Direct match by transfer request number (e.g. TR-000393)
+        const matchedByReqNo = incomingWarehouseRequests.find(r => 
+            (r.requestNo && r.requestNo.toLowerCase() === code) ||
+            (r.id && r.id.toLowerCase() === code)
+        );
+        if (matchedByReqNo) {
+            if (soundEnabled) playScanSuccessBeep();
+            toast.success(`Found transfer ${matchedByReqNo.requestNo}! Opening receiving inspector...`);
+            openWarehouseInspectModal(matchedByReqNo);
+            return;
+        }
+
+        // 2. Match by SKU / Barcode inside incoming transfer requests
+        const matchedTransfers = incomingWarehouseRequests.filter(r => 
+            r.items?.some((i: any) => {
+                const sku = (i.item?.sku || i.sku || '').trim().toLowerCase();
+                const barcode = (i.item?.barcode || i.item?.barCode || i.barcode || '').trim().toLowerCase();
+                const itemCode = (i.item?.code || i.item?.itemId || '').trim().toLowerCase();
+                const itemId = (i.itemId || '').trim().toLowerCase();
+                const itemUuid = (i.item?.id || '').trim().toLowerCase();
+
+                return (
+                    sku === code ||
+                    barcode === code ||
+                    itemCode === code ||
+                    itemId === code ||
+                    itemUuid === code ||
+                    (sku && (code.includes(sku) || (code.length >= 4 && sku.includes(code)))) ||
+                    (barcode && (code.includes(barcode) || (code.length >= 4 && barcode.includes(code))))
+                );
+            })
+        );
+
+        if (matchedTransfers.length === 1) {
+            if (soundEnabled) playScanSuccessBeep();
+            const matchedReq = matchedTransfers[0];
+            toast.success(`Scanned item belongs to ${matchedReq.requestNo}! Opening inspector...`);
+            openWarehouseInspectModal(matchedReq);
+            // Count this scanned item inside the opened modal
+            setTimeout(() => {
+                handleModalScanBarcode(rawCode);
+            }, 300);
+        } else if (matchedTransfers.length > 1) {
+            if (soundEnabled) playScanSuccessBeep();
+            setIncomingFilterQuery(rawCode);
+            toast.info(`Found ${matchedTransfers.length} incoming shipments matching "${rawCode}". List filtered.`);
+        } else {
+            if (soundEnabled) playScanErrorBuzz();
+            toast.error(`Barcode/SKU "${rawCode}" not found in any pending incoming shipments.`);
+        }
+    };
+
     const handleModalScanBarcode = (barcodeVal: string) => {
-        const code = barcodeVal.trim().toLowerCase();
-        if (!code || !inspectingRequest) return;
+        const rawCode = barcodeVal ? String(barcodeVal).replace(/[\r\n\t]/g, '').trim() : '';
+        if (!rawCode || !inspectingRequest) return;
+        const code = rawCode.toLowerCase();
 
-        const matchedItem = inspectingRequest.items?.find((i: any) => {
-            const sku = i.item?.sku?.toLowerCase();
-            const barcode = (i.item?.barcode || i.item?.barCode)?.toLowerCase();
-            const itemCode = i.item?.code?.toLowerCase();
-            const itemId = i.itemId?.toLowerCase();
-            const upc = i.item?.upc?.toLowerCase();
-            const ean = i.item?.ean?.toLowerCase();
+        const matchPredicate = (i: any, checkUnderDispatched: boolean) => {
+            const sku = (i.item?.sku || i.sku || '').trim().toLowerCase();
+            const barcode = (i.item?.barcode || i.item?.barCode || i.barcode || '').trim().toLowerCase();
+            const itemCode = (i.item?.code || '').trim().toLowerCase();
+            const itmCode = (i.item?.itemId || '').trim().toLowerCase();
+            const itemId = (i.itemId || '').trim().toLowerCase();
+            const itemUuid = (i.item?.id || '').trim().toLowerCase();
+            const upc = (i.item?.upc || '').trim().toLowerCase();
+            const ean = (i.item?.ean || '').trim().toLowerCase();
 
-            return (
+            const isMatch = (
                 sku === code ||
                 barcode === code ||
                 itemCode === code ||
+                itmCode === code ||
                 itemId === code ||
+                itemUuid === code ||
                 upc === code ||
                 ean === code ||
-                (sku && code.includes(sku))
+                (sku && (code.includes(sku) || (code.length >= 4 && sku.includes(code)))) ||
+                (barcode && (code.includes(barcode) || (code.length >= 4 && barcode.includes(code))))
             );
-        });
+
+            if (!isMatch) return false;
+
+            if (checkUnderDispatched) {
+                const disp = Number(i.quantity || 0);
+                const currentRx = receivedQtyMap[i.itemId] !== undefined ? Number(receivedQtyMap[i.itemId]) : disp;
+                return currentRx < disp;
+            }
+            return true;
+        };
+
+        const matchedItem = 
+            inspectingRequest.items?.find((i: any) => matchPredicate(i, true)) ||
+            inspectingRequest.items?.find((i: any) => matchPredicate(i, false));
 
         if (matchedItem) {
             if (soundEnabled) playScanSuccessBeep();
+            const disp = Number(matchedItem.quantity || 0);
             const currentRx = receivedQtyMap[matchedItem.itemId] !== undefined 
                 ? Number(receivedQtyMap[matchedItem.itemId]) 
-                : Number(matchedItem.quantity || 0);
+                : disp;
             const newRx = currentRx + 1;
             
             setReceivedQtyMap(prev => ({
@@ -252,10 +378,17 @@ export default function StockTransferPage() {
                 [matchedItem.itemId]: newRx
             }));
             setLastScannedModalItemId(matchedItem.itemId);
-            toast.success(`+1 Scanned: ${matchedItem.item?.description || matchedItem.item?.sku || "Item"} (Total Rx: ${newRx})`);
+
+            const color = getItemColor(matchedItem);
+            const size = getItemSize(matchedItem);
+            const variantInfo = [color && `Color: ${color}`, size && `Size: ${size}`].filter(Boolean).join(' • ');
+
+            toast.success(`+1 Scanned: ${matchedItem.item?.description || matchedItem.item?.sku || "Item"}${variantInfo ? ` (${variantInfo})` : ''} (Rx: ${newRx}/${disp})`, {
+                id: `scan-rx-${matchedItem.itemId}`,
+            });
         } else {
             if (soundEnabled) playScanErrorBuzz();
-            toast.error(`Barcode/SKU "${barcodeVal}" not found in this transfer shipment.`);
+            toast.error(`Barcode/SKU "${rawCode}" not found in this transfer shipment.`);
         }
 
         setModalScanInput("");
@@ -394,13 +527,21 @@ export default function StockTransferPage() {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'F2') {
                 e.preventDefault();
-                setBarcodeTab('scan');
-                setTimeout(focusScannerInput, 50);
+                if (inspectingRequest) {
+                    modalScannerRef.current?.focus();
+                    modalScannerRef.current?.select();
+                } else if (transferMode === 'WAREHOUSE_RECEIVING') {
+                    incomingScannerRef.current?.focus();
+                    incomingScannerRef.current?.select();
+                } else {
+                    setBarcodeTab('scan');
+                    setTimeout(focusScannerInput, 50);
+                }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
+    }, [inspectingRequest, transferMode]);
 
     // Barcode Resolution handler
     const handleBarcodeResolve = async (barcode: string) => {
@@ -528,7 +669,11 @@ export default function StockTransferPage() {
                 const tag = activeEl.tagName.toLowerCase();
                 const type = (activeEl as HTMLInputElement).type?.toLowerCase();
 
-                if (activeEl.id === 'barcode-scanner-input') {
+                if (
+                    activeEl.id === 'barcode-scanner-input' ||
+                    activeEl.id === 'modal-barcode-scanner-input' ||
+                    activeEl.id === 'incoming-scanner-input'
+                ) {
                     return;
                 }
 
@@ -551,11 +696,17 @@ export default function StockTransferPage() {
             lastKeyTime = now;
 
             if (e.key === 'Enter') {
-                if (buffer.length >= 3) {
+                if (buffer.length >= 2) {
                     e.preventDefault();
                     const barcode = buffer;
                     buffer = '';
-                    handleBarcodeResolve(barcode);
+                    if (inspectingRequest) {
+                        handleModalScanBarcode(barcode);
+                    } else if (transferMode === 'WAREHOUSE_RECEIVING') {
+                        handleIncomingWarehouseScan(barcode);
+                    } else {
+                        handleBarcodeResolve(barcode);
+                    }
                 } else {
                     buffer = '';
                 }
@@ -566,7 +717,7 @@ export default function StockTransferPage() {
 
         window.addEventListener('keydown', handleGlobalKeyDown);
         return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-    }, [globalScannerActive, selectedItems, autoIncrement, bulkQty, soundEnabled, selectedWarehouseId, transferMode, destLocationId, sourceLocationId, appliedFilters]);
+    }, [globalScannerActive, inspectingRequest, transferMode, receivedQtyMap, incomingWarehouseRequests, selectedItems, autoIncrement, bulkQty, soundEnabled, selectedWarehouseId, destLocationId, sourceLocationId, appliedFilters]);
 
     // Initialize & restore draft
     useEffect(() => {
@@ -793,9 +944,8 @@ export default function StockTransferPage() {
         }
 
         const hasInsufficientStock = selectedItems.some(item => item.quantity > item.availableStock);
-        if (hasInsufficientStock && transferMode !== 'WAREHOUSE_TO_OUTLET') {
-            toast.error('One or more items have insufficient stock for this transfer');
-            return;
+        if (hasInsufficientStock) {
+            toast.info('Note: One or more transfer items will result in negative stock balance.');
         }
 
         setSubmitting(true);
@@ -998,8 +1148,34 @@ export default function StockTransferPage() {
                                 Inspect and receive stock transfers returning from outlets to the warehouse.
                             </CardDescription>
                         </div>
-                        <div className="flex items-center gap-3">
-                            <div className="w-60">
+                        <div className="flex flex-wrap items-center gap-3">
+                            <div className="relative w-64 sm:w-72">
+                                <Scan className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600" />
+                                <Input
+                                    id="incoming-scanner-input"
+                                    ref={incomingScannerRef}
+                                    placeholder="Scan SKU / Barcode / TR # (F2)..."
+                                    value={incomingFilterQuery}
+                                    onChange={(e) => setIncomingFilterQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            handleIncomingWarehouseScan(incomingFilterQuery);
+                                        }
+                                    }}
+                                    className="pl-9 pr-8 font-mono text-xs bg-background border-emerald-500/30 focus-visible:ring-emerald-500 h-9"
+                                />
+                                {incomingFilterQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIncomingFilterQuery("")}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                    >
+                                        <X className="h-3.5 w-3.5" />
+                                    </button>
+                                )}
+                            </div>
+                            <div className="w-56">
                                 <Autocomplete
                                     options={warehouseOptions}
                                     value={selectedWarehouseId}
@@ -1029,74 +1205,142 @@ export default function StockTransferPage() {
                                     There are currently no return requests or incoming stock shipments waiting to be received at this warehouse.
                                 </p>
                             </div>
-                        ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {incomingWarehouseRequests.map((req: any) => {
-                                    const totalQty = req.items?.reduce((sum: number, i: any) => sum + Number(i.quantity || 0), 0) || 0;
-                                    const fromName = req.fromLocation?.name || req.fromLocationId || "Outlet Store";
-                                    const toWhName = req.fromWarehouse?.name || "Main Warehouse";
+                        ) : (() => {
+                            const filteredRequests = incomingWarehouseRequests.filter((req: any) => {
+                                if (!incomingFilterQuery.trim()) return true;
+                                const q = incomingFilterQuery.toLowerCase().trim();
+                                const reqNoMatch = req.requestNo?.toLowerCase().includes(q);
+                                const fromLocMatch = (req.fromLocation?.name || req.fromLocationId || '')?.toLowerCase().includes(q);
+                                const itemMatch = req.items?.some((it: any) => {
+                                    const sku = getItemSku(it).toLowerCase();
+                                    const barcode = (getItemBarcode(it) || '').toLowerCase();
+                                    const desc = (it.item?.description || it.item?.name || '').toLowerCase();
+                                    const color = (getItemColor(it) || '').toLowerCase();
+                                    const size = (getItemSize(it) || '').toLowerCase();
+                                    return sku.includes(q) || barcode.includes(q) || desc.includes(q) || color.includes(q) || size.includes(q);
+                                });
+                                return reqNoMatch || fromLocMatch || itemMatch;
+                            });
 
-                                    return (
-                                        <Card key={req.id} className="border-border/60 hover:border-emerald-500/40 transition-colors shadow-xs">
-                                            <CardContent className="p-5 space-y-4">
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div>
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <span className="font-mono font-bold text-sm text-primary">{req.requestNo}</span>
-                                                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-bold">
-                                                                {req.status}
-                                                            </Badge>
-                                                            <Badge variant="secondary" className="text-[10px] font-semibold">
-                                                                {req.transferType === 'OUTLET_TO_WAREHOUSE' ? 'Return to Warehouse' : 'Stock Transfer'}
-                                                            </Badge>
-                                                        </div>
-                                                        <div className="text-xs text-muted-foreground font-medium">
-                                                            From: <span className="font-bold text-foreground">{fromName}</span> → Target: <span className="font-bold text-foreground">{toWhName}</span>
-                                                        </div>
-                                                        <div className="text-[11px] text-muted-foreground mt-0.5">
-                                                            Sent: {new Date(req.createdAt).toLocaleString()}
-                                                        </div>
-                                                    </div>
-                                                    <Badge variant="outline" className="font-bold text-xs bg-muted px-2.5 py-1">
-                                                        {totalQty} Units
-                                                    </Badge>
-                                                </div>
+                            if (filteredRequests.length === 0) {
+                                return (
+                                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                                        <Scan className="h-12 w-12 text-muted-foreground/30 mb-3 animate-pulse" />
+                                        <h3 className="text-lg font-bold text-foreground">No Shipments Match Filter</h3>
+                                        <p className="text-sm text-muted-foreground max-w-sm mt-1">
+                                            No incoming returns match "{incomingFilterQuery}".
+                                        </p>
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
+                                            onClick={() => setIncomingFilterQuery('')} 
+                                            className="mt-3 font-semibold"
+                                        >
+                                            Clear Filter
+                                        </Button>
+                                    </div>
+                                );
+                            }
 
-                                                {/* Item Summary Table */}
-                                                <div className="border rounded-md overflow-hidden bg-muted/20 text-xs">
-                                                    <div className="bg-muted/50 px-3 py-1.5 font-bold uppercase text-[10px] text-muted-foreground grid grid-cols-12 gap-2">
-                                                        <span className="col-span-8">Item Description</span>
-                                                        <span className="col-span-4 text-right">Dispatched</span>
-                                                    </div>
-                                                    <div className="divide-y max-h-28 overflow-y-auto">
-                                                        {req.items?.map((it: any) => (
-                                                            <div key={it.id} className="px-3 py-1.5 grid grid-cols-12 gap-2 items-center">
-                                                                <span className="col-span-8 font-semibold truncate">{it.item?.description || it.item?.sku || "Item"}</span>
-                                                                <span className="col-span-4 text-right font-mono font-bold">{Number(it.quantity)}</span>
+                            return (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {filteredRequests.map((req: any) => {
+                                        const totalQty = req.items?.reduce((sum: number, i: any) => sum + Number(i.quantity || 0), 0) || 0;
+                                        const fromName = req.fromLocation?.name || req.fromLocationId || "Outlet Store";
+                                        const toWhName = req.fromWarehouse?.name || "Main Warehouse";
+
+                                        return (
+                                            <Card key={req.id} className="border-border/60 hover:border-emerald-500/40 transition-colors shadow-xs">
+                                                <CardContent className="p-5 space-y-4">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <span className="font-mono font-bold text-sm text-primary">{req.requestNo}</span>
+                                                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-bold">
+                                                                    {req.status}
+                                                                </Badge>
+                                                                <Badge variant="secondary" className="text-[10px] font-semibold">
+                                                                    {req.transferType === 'OUTLET_TO_WAREHOUSE' ? 'Return to Warehouse' : 'Stock Transfer'}
+                                                                </Badge>
                                                             </div>
-                                                        ))}
+                                                            <div className="text-xs text-muted-foreground font-medium">
+                                                                From: <span className="font-bold text-foreground">{fromName}</span> → Target: <span className="font-bold text-foreground">{toWhName}</span>
+                                                            </div>
+                                                            <div className="text-[11px] text-muted-foreground mt-0.5">
+                                                                Sent: {new Date(req.createdAt).toLocaleString()}
+                                                            </div>
+                                                        </div>
+                                                        <Badge variant="outline" className="font-bold text-xs bg-muted px-2.5 py-1">
+                                                            {totalQty} Units
+                                                        </Badge>
                                                     </div>
-                                                </div>
 
-                                                {req.notes && (
-                                                    <div className="text-xs bg-muted/30 p-2 rounded border text-muted-foreground italic">
-                                                        "{req.notes}"
+                                                    {/* Item Summary Table */}
+                                                    <div className="border rounded-md overflow-hidden bg-muted/20 text-xs">
+                                                        <div className="bg-muted/50 px-3 py-1.5 font-bold uppercase text-[10px] text-muted-foreground grid grid-cols-12 gap-2">
+                                                            <span className="col-span-8">Item Description &amp; Details</span>
+                                                            <span className="col-span-4 text-right">Dispatched</span>
+                                                        </div>
+                                                        <div className="divide-y max-h-36 overflow-y-auto [scrollbar-width:thin]">
+                                                            {req.items?.map((it: any) => {
+                                                                const color = getItemColor(it);
+                                                                const size = getItemSize(it);
+                                                                const sku = getItemSku(it);
+                                                                const barcode = getItemBarcode(it);
+
+                                                                return (
+                                                                    <div key={it.id} className="px-3 py-2 grid grid-cols-12 gap-2 items-center hover:bg-muted/30 transition-colors">
+                                                                        <div className="col-span-8 min-w-0">
+                                                                            <div className="font-semibold text-foreground truncate text-xs">
+                                                                                {it.item?.description || it.item?.name || sku || "Item"}
+                                                                            </div>
+                                                                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px]">
+                                                                                <span className="font-mono text-muted-foreground font-medium">SKU: {sku}</span>
+                                                                                {color && (
+                                                                                    <Badge variant="outline" className="text-[9px] py-0 px-1 font-semibold border-border/80 bg-background text-foreground">
+                                                                                        Color: {color}
+                                                                                    </Badge>
+                                                                                )}
+                                                                                {size && (
+                                                                                    <Badge variant="outline" className="text-[9px] py-0 px-1 font-semibold border-border/80 bg-background text-foreground">
+                                                                                        Size: {size}
+                                                                                    </Badge>
+                                                                                )}
+                                                                                {barcode && (
+                                                                                    <span className="font-mono text-muted-foreground/70 hidden sm:inline">({barcode})</span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="col-span-4 text-right">
+                                                                            <span className="font-mono font-bold text-sm text-foreground">{Number(it.quantity)}</span>
+                                                                            <span className="text-[10px] text-muted-foreground ml-1">qty</span>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
                                                     </div>
-                                                )}
 
-                                                <Button
-                                                    onClick={() => openWarehouseInspectModal(req)}
-                                                    className="w-full font-bold gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
-                                                >
-                                                    <Scan className="h-4 w-4" />
-                                                    Inspect & Receive Stock
-                                                </Button>
-                                            </CardContent>
-                                        </Card>
-                                    );
-                                })}
-                            </div>
-                        )}
+                                                    {req.notes && (
+                                                        <div className="text-xs bg-muted/30 p-2 rounded border text-muted-foreground italic">
+                                                            "{req.notes}"
+                                                        </div>
+                                                    )}
+
+                                                    <Button
+                                                        onClick={() => openWarehouseInspectModal(req)}
+                                                        className="w-full font-bold gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                                                    >
+                                                        <Scan className="h-4 w-4" />
+                                                        Inspect &amp; Receive Stock
+                                                    </Button>
+                                                </CardContent>
+                                            </Card>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })()}
                     </CardContent>
                 </Card>
             ) : (
@@ -1916,6 +2160,7 @@ export default function StockTransferPage() {
                                     <div className="relative flex-1">
                                         <Scan className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600" />
                                         <Input
+                                            id="modal-barcode-scanner-input"
                                             ref={modalScannerRef}
                                             placeholder="Scan Item Barcode / SKU (or press F2 to focus)..."
                                             value={modalScanInput}
@@ -1996,17 +2241,38 @@ export default function StockTransferPage() {
                                             const rxQty = receivedQtyMap[item.itemId] !== undefined ? receivedQtyMap[item.itemId] : dispatched;
                                             const diff = rxQty - dispatched;
                                             const isLastScanned = lastScannedModalItemId === item.itemId;
+                                            const color = getItemColor(item);
+                                            const size = getItemSize(item);
+                                            const sku = getItemSku(item);
+                                            const barcode = getItemBarcode(item);
 
                                             return (
-                                                <tr key={item.id} className={`transition-colors ${isLastScanned ? "bg-emerald-500/10 font-semibold" : "hover:bg-muted/20"}`}>
+                                                <tr key={item.id} className={`transition-colors ${isLastScanned ? "bg-emerald-500/15 font-semibold" : "hover:bg-muted/20"}`}>
                                                     <td className="p-3">
                                                         <div className="font-bold text-sm flex items-center gap-1.5">
-                                                            {item.item?.description || "Item"}
+                                                            {item.item?.description || item.item?.name || "Item"}
                                                             {isLastScanned && (
-                                                                <Badge variant="secondary" className="text-[9px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 py-0 px-1">Last Scanned</Badge>
+                                                                <Badge variant="secondary" className="text-[9px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 py-0 px-1 font-bold animate-pulse">
+                                                                    Last Scanned
+                                                                </Badge>
                                                             )}
                                                         </div>
-                                                        <div className="font-mono text-muted-foreground text-[11px]">SKU: {item.item?.sku || "N/A"}</div>
+                                                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                                                            <span className="font-mono text-muted-foreground text-[11px] font-semibold">SKU: {sku}</span>
+                                                            {color && (
+                                                                <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-semibold border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200">
+                                                                    Color: <span className="font-bold ml-1">{color}</span>
+                                                                </Badge>
+                                                            )}
+                                                            {size && (
+                                                                <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-semibold border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200">
+                                                                    Size: <span className="font-bold ml-1">{size}</span>
+                                                                </Badge>
+                                                            )}
+                                                            {barcode && (
+                                                                <span className="font-mono text-muted-foreground text-[10px]">Barcode: {barcode}</span>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                     <td className="p-3 text-center font-bold text-base">
                                                         {dispatched}

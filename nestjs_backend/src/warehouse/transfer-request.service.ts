@@ -111,42 +111,7 @@ export class TransferRequestService {
         }
       }
 
-      // On POS level, negative stock is strictly disallowed. Validate available stock for outlet transfers.
-      if (
-        (transferType === 'OUTLET_TO_WAREHOUSE' ||
-          transferType === 'OUTLET_TO_OUTLET') &&
-        data.fromLocationId
-      ) {
-        const itemIds = data.items.map((i) => i.itemId);
-        const stockEntries = await this.prisma.stockLedger.groupBy({
-          by: ['itemId'],
-          where: {
-            itemId: { in: itemIds },
-            locationId: data.fromLocationId,
-          },
-          _sum: { qty: true },
-        });
-        const stockMap = new Map<string, number>();
-        for (const entry of stockEntries) {
-          stockMap.set(entry.itemId, Number(entry._sum.qty || 0));
-        }
-
-        for (const item of data.items) {
-          const availableQty = stockMap.get(item.itemId) || 0;
-          if (availableQty < item.quantity) {
-            const itemObj = await this.prisma.item.findUnique({
-              where: { id: item.itemId },
-              select: { sku: true, description: true },
-            });
-            const itemLabel = itemObj
-              ? `${itemObj.sku}${itemObj.description ? ` (${itemObj.description})` : ''}`
-              : item.itemId;
-            throw new BadRequestException(
-              `Insufficient stock for item ${itemLabel} at this outlet. Available: ${availableQty}, Requested: ${item.quantity}`,
-            );
-          }
-        }
-      }
+      // Negative stock allowed on transfer requests per business requirement
 
       const created = await this.prisma.transferRequest.create({
         data: {
@@ -1474,6 +1439,7 @@ export class TransferRequestService {
                 referenceType: 'OUTLET_TRANSFER_OUT',
                 referenceId: request.id,
                 rate: itemRate,
+                allowNegativeStock: true,
               },
               tx,
             );
