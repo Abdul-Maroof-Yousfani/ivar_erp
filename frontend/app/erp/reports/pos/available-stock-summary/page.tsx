@@ -855,7 +855,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                 <Card className="shadow-xs border-slate-100">
                     <CardContent className="p-3.5 flex items-center justify-between">
                         <div>
-                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Available Qty</p>
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Available Stock</p>
                             <h3 className="text-lg font-bold mt-0.5 text-emerald-600 dark:text-emerald-400">{formatVal(grandTotals.quantity)}</h3>
                         </div>
                         <div className="rounded-lg p-2 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600">
@@ -891,7 +891,7 @@ export default function ERPAvailableStockSummaryReportPage() {
                 <Card className="shadow-xs border-slate-100">
                     <CardContent className="p-3.5 flex items-center justify-between">
                         <div>
-                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Total Qty</p>
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Total Stock</p>
                             <h3 className="text-lg font-bold mt-0.5 text-slate-800 dark:text-slate-100">{formatVal(grandTotals.total)}</h3>
                         </div>
                         <div className="rounded-lg p-2 bg-slate-100 dark:bg-slate-800 text-slate-600">
@@ -929,10 +929,10 @@ export default function ERPAvailableStockSummaryReportPage() {
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-center w-[6%]">Size</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-center w-[8%]">Color</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-center w-[11%]">Barcode</th>
-                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%]">Quantity</th>
-                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[8%]">In Transit</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%] text-emerald-300">Available Stock</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[8%] text-amber-300">In Transit</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%] text-purple-300">Stock Reserved</th>
-                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%]">Total</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%] text-cyan-300">Total Stock</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[8%]">Selling Price</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[10%]">Value (Rs.)</th>
                             </tr>
