@@ -52,7 +52,7 @@ export class AvailableStockByLocationExportService {
     ];
 
     // unique item IDs from ledger + inventory + transit for these locations
-    const [ledgerItems, invItems] = await Promise.all([
+    const [ledgerItems, invItems, transitItems] = await Promise.all([
       this.prisma.stockLedger.findMany({
         where: { locationId: { in: locationIds }, createdAt: { lte: targetDate } },
         select: { itemId: true },
@@ -63,16 +63,38 @@ export class AvailableStockByLocationExportService {
         select: { itemId: true },
         distinct: ['itemId'],
       }),
+      this.prisma.transferRequestItem.findMany({
+        where: {
+          transferRequest: {
+            toLocationId: { in: locationIds },
+            createdAt: { lte: targetDate },
+            status: { in: UNACCEPTED_TRANSFER_STATUSES },
+          },
+        },
+        select: {
+          itemId: true,
+          quantity: true,
+          fulfilledQty: true,
+        },
+      }),
     ]);
 
     const uniqueItemIds = [...new Set([
       ...ledgerItems.map(l => l.itemId),
       ...invItems.map(i => i.itemId),
+      ...transitItems.map(t => t.itemId),
     ])];
 
     if (uniqueItemIds.length === 0) {
       res.status(200).send({ status: false, message: 'No stock data found for the selected locations.' });
       return;
+    }
+
+    // Transit map per item: remaining unfulfilled quantity in transit to target locations
+    const transitMap = new Map<string, number>();
+    for (const row of transitItems) {
+      const remaining = Math.max(0, Number(row.quantity || 0) - Number(row.fulfilledQty || 0));
+      transitMap.set(row.itemId, (transitMap.get(row.itemId) || 0) + remaining);
     }
 
     // ── 3. Fetch item master data ─────────────────────────────────────────────
@@ -152,6 +174,7 @@ export class AvailableStockByLocationExportService {
     }));
 
     const summaryColDefs = [
+      { header: 'IN TRANSIT', key: 'inTransit', width: 14 },
       { header: 'TOTAL QTY', key: 'totalQty', width: 14 },
       { header: 'Selling Price', key: 'unitPrice', width: 16 },
       { header: 'Value (Rs.)', key: 'value', width: 18 },
@@ -218,6 +241,7 @@ export class AvailableStockByLocationExportService {
 
     // brand totals per location
     const grandLocTotals = new Array(locations.length).fill(0);
+    let grandTransitTotal = 0;
     let grandTotal = 0;
     let grandValue = 0;
 
@@ -232,6 +256,7 @@ export class AvailableStockByLocationExportService {
       sheet.mergeCells(brandRow.number, 1, brandRow.number, totalCols);
 
       const brandLocTotals = new Array(locations.length).fill(0);
+      let brandTransitTotal = 0;
       let brandTotalQty = 0;
       let brandTotalValue = 0;
 
@@ -246,7 +271,9 @@ export class AvailableStockByLocationExportService {
           return q;
         });
 
-        const totalQty = locQtys.reduce((s, q) => s + q, 0);
+        const locTotal = locQtys.reduce((s, q) => s + q, 0);
+        const transitQty = transitMap.get(item.id) || 0;
+        const totalQty = locTotal + transitQty;
         if (totalQty === 0) continue; // skip zero-stock items
 
         const unitPrice = item.unitPrice || 0;
@@ -264,6 +291,7 @@ export class AvailableStockByLocationExportService {
           item.size?.name || '',
           item.barCode || '',
           ...locQtys,
+          transitQty,
           totalQty,
           unitPrice,
           totalValue,
@@ -292,10 +320,10 @@ export class AvailableStockByLocationExportService {
           }
 
           // Selling price / value — currency
-          if (colNum === fixedCols.length + locColDefs.length + 2) {
+          if (colNum === fixedCols.length + locColDefs.length + 3) {
             cell.numFmt = '#,##0.00';
           }
-          if (colNum === fixedCols.length + locColDefs.length + 3) {
+          if (colNum === fixedCols.length + locColDefs.length + 4) {
             cell.numFmt = '#,##0.00';
           }
         });
@@ -305,6 +333,8 @@ export class AvailableStockByLocationExportService {
           brandLocTotals[i] += q;
           grandLocTotals[i] += q;
         });
+        brandTransitTotal += transitQty;
+        grandTransitTotal += transitQty;
         brandTotalQty += totalQty;
         brandTotalValue += totalValue;
         grandTotal += totalQty;
@@ -316,6 +346,7 @@ export class AvailableStockByLocationExportService {
       const subtotalData = [
         `${brandName} — SUBTOTAL`, '', '', '', '', '', '', '', '', '',
         ...brandLocTotals,
+        brandTransitTotal,
         brandTotalQty,
         '',
         brandTotalValue,
@@ -329,7 +360,7 @@ export class AvailableStockByLocationExportService {
         if (colNum > fixedCols.length) {
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
         }
-        if (colNum === fixedCols.length + locColDefs.length + 3) {
+        if (colNum === fixedCols.length + locColDefs.length + 4) {
           cell.numFmt = '#,##0.00';
         }
       });
@@ -342,6 +373,7 @@ export class AvailableStockByLocationExportService {
     const grandData = [
       'GRAND TOTAL', '', '', '', '', '', '', '', '', '',
       ...grandLocTotals,
+      grandTransitTotal,
       grandTotal,
       '',
       grandValue,
@@ -355,7 +387,7 @@ export class AvailableStockByLocationExportService {
       if (colNum > fixedCols.length) {
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
       }
-      if (colNum === fixedCols.length + locColDefs.length + 3) {
+      if (colNum === fixedCols.length + locColDefs.length + 4) {
         cell.numFmt = '#,##0.00';
       }
     });

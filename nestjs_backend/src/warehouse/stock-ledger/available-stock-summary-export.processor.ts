@@ -44,7 +44,7 @@ const COLUMNS = [
   { header: 'Size', key: 'size', width: 10, align: 'center' as const },
   { header: 'Color', key: 'color', width: 14, align: 'center' as const },
   { header: 'Barcode', key: 'barcode', width: 18, align: 'center' as const },
-  { header: 'Quantity', key: 'quantity', width: 14, align: 'right' as const },
+  { header: 'Available Stock', key: 'quantity', width: 15, align: 'right' as const },
   { header: 'In Transit', key: 'transit', width: 12, align: 'right' as const },
   {
     header: 'Stock Reserved',
@@ -52,7 +52,7 @@ const COLUMNS = [
     width: 14,
     align: 'right' as const,
   },
-  { header: 'Total', key: 'total', width: 14, align: 'right' as const },
+  { header: 'Total Stock', key: 'total', width: 14, align: 'right' as const },
   {
     header: 'Selling Price',
     key: 'unitPrice',
@@ -73,10 +73,10 @@ const FLAT_COLUMNS = [
   { header: 'Color', key: 'color', width: 14 },
   { header: 'Size', key: 'size', width: 10, align: 'center' as const },
   { header: 'Barcode', key: 'barcode', width: 18 },
-  { header: 'Quantity', key: 'quantity', width: 14, align: 'right' as const },
+  { header: 'Available Stock', key: 'quantity', width: 15, align: 'right' as const },
   { header: 'In Transit', key: 'transit', width: 14, align: 'right' as const },
   { header: 'Stock Reserved', key: 'reserved', width: 16, align: 'right' as const },
-  { header: 'Total', key: 'total', width: 14, align: 'right' as const },
+  { header: 'Total Stock', key: 'total', width: 14, align: 'right' as const },
   { header: 'Selling Price', key: 'unitPrice', width: 16, align: 'right' as const },
   { header: 'Value (Rs.)', key: 'value', width: 18, align: 'right' as const },
 ];
@@ -1172,10 +1172,10 @@ export class AvailableStockSummaryExportProcessor {
               <th class="center">Size</th>
               <th class="center">Color</th>
               <th class="center">Barcode</th>
-              <th class="num">Quantity</th>
+              <th class="num">Available Stock</th>
               <th class="num">In Transit</th>
               <th class="num">Stock Reserved</th>
-              <th class="num">Total</th>
+              <th class="num">Total Stock</th>
               <th class="num">Selling Price</th>
               <th class="num">Value (Rs.)</th>
               ${includeCosting ? '<th class="num">Cost Price</th><th class="num">Total Costing</th>' : ''}

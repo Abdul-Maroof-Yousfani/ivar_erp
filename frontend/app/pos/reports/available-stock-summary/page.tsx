@@ -31,7 +31,8 @@ import {
     Search,
     X,
     SlidersHorizontal,
-    Package
+    Package,
+    MapPin
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -73,6 +74,9 @@ export default function POSAvailableStockSummaryReportPage() {
     const [pdfJobId, setPdfJobId] = useState<string | null>(null);
     const [pdfExportState, setPdfExportState] = useState<"idle" | "queueing" | "processing" | "completed" | "failed">("idle");
     const [pdfExportProgress, setPdfExportProgress] = useState<number>(0);
+
+    // By-Location Export State
+    const [byLocExportState, setByLocExportState] = useState<"idle" | "loading">("idle");
 
     const summaryOnly = !groupingLevels.variant;
 
@@ -222,6 +226,25 @@ export default function POSAvailableStockSummaryReportPage() {
             setExportState("failed");
             console.error(err);
             toast.error("Failed to queue export job.");
+        }
+    };
+
+    const handleExportByLocationClick = async () => {
+        setByLocExportState("loading");
+        try {
+            const base = getApiBaseUrl();
+            const params = new URLSearchParams();
+            if (locationParam) params.set("locationId", locationParam);
+            if (warehouseParam) params.set("warehouseId", warehouseParam);
+            if (asOfDate) params.set("asOfDate", asOfDate);
+            const url = `${base}/stock-ledger/available-stock-summary/export-by-location?${params.toString()}`;
+            window.open(url, "_blank");
+            toast.success("Export by Location started — check your downloads.");
+        } catch (err) {
+            console.error(err);
+            toast.error("Failed to export by location.");
+        } finally {
+            setByLocExportState("idle");
         }
     };
 
@@ -512,6 +535,22 @@ export default function POSAvailableStockSummaryReportPage() {
                         )}
                         {getExportButtonText()}
                     </Button>
+                    <Button
+                        variant="outline"
+                        onClick={handleExportByLocationClick}
+                        disabled={byLocExportState === "loading" || reportData.length === 0}
+                        className={cn(
+                            "gap-2 font-semibold transition-all",
+                            "border-violet-500/40 text-violet-700 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/30"
+                        )}
+                    >
+                        {byLocExportState === "loading" ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-violet-600" />
+                        ) : (
+                            <MapPin className="h-4 w-4" />
+                        )}
+                        {byLocExportState === "loading" ? "Generating..." : "Export by Location"}
+                    </Button>
                 </div>
             </div>
 
@@ -720,7 +759,7 @@ export default function POSAvailableStockSummaryReportPage() {
                 <Card className="shadow-xs border-slate-100">
                     <CardContent className="p-3.5 flex items-center justify-between">
                         <div>
-                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Available Qty</p>
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Available Stock</p>
                             <h3 className="text-lg font-bold mt-0.5 text-emerald-600 dark:text-emerald-400">{formatVal(grandTotals.quantity)}</h3>
                         </div>
                         <div className="rounded-lg p-2 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600">
@@ -756,7 +795,7 @@ export default function POSAvailableStockSummaryReportPage() {
                 <Card className="shadow-xs border-slate-100">
                     <CardContent className="p-3.5 flex items-center justify-between">
                         <div>
-                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Total Qty</p>
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Total Stock</p>
                             <h3 className="text-lg font-bold mt-0.5 text-slate-800 dark:text-slate-100">{formatVal(grandTotals.total)}</h3>
                         </div>
                         <div className="rounded-lg p-2 bg-slate-100 dark:bg-slate-800 text-slate-600">
@@ -794,10 +833,10 @@ export default function POSAvailableStockSummaryReportPage() {
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-center w-[6%]">Size</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-center w-[8%]">Color</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-center w-[11%]">Barcode</th>
-                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%]">Quantity</th>
-                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[8%]">In Transit</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%] text-emerald-300">Available Stock</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[8%] text-amber-300">In Transit</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%] text-purple-300">Stock Reserved</th>
-                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%]">Total</th>
+                                <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[9%] text-cyan-300">Total Stock</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[8%]">Selling Price</th>
                                 <th className="p-2.5 font-bold uppercase tracking-wider text-right w-[10%]">Value (Rs.)</th>
                             </tr>
