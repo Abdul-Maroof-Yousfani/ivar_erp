@@ -27,6 +27,8 @@ export interface CourierifyMoney {
 export interface CourierifyPayment {
   financialStatus: string;
   method: string;
+  prepaid?: boolean;
+  advance?: CourierifyAdvancePayment;
 }
 
 export interface CourierifyDiscountApplication {
@@ -128,10 +130,24 @@ export interface CourierifyShipment {
   assignedCourier?: string;
   status: string;
   courierStatus?: string;
-  codAmount: number;
+  cod?: {
+    fee?: number;
+    net?: number | null;
+    amount: number;
+    settled?: boolean;
+    settledAt?: string | null;
+    deliveryFee?: number | null;
+    reversalFee?: number | null;
+  };
+  money?: CourierifyMoney;
+  payment?: CourierifyPayment;
+  discounts?: CourierifyDiscounts;
+  lineItems?: CourierifyOrderLineItem[];
+  customer?: CourierifyCustomer;
+  codAmount?: number;
   netAmount?: number;
-  settled: boolean;
-  returnReceived: boolean;
+  settled?: boolean;
+  returnReceived?: boolean;
   bookedAt?: string;
   deliveredAt?: string;
   returnReceivedAt?: string;

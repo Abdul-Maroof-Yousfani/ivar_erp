@@ -451,9 +451,6 @@ export function PrintReceipt({
     order?.fbrInvoiceNumber
   );
 
-  const fbrPosFee = hasFbrInfo ? Number(order?.fbrPosFee ?? 0) || 1 : 0;
-  const finalGrandTotal = isSavedOrder ? grandTotal : grandTotal + fbrPosFee;
-  const changeAmount = Number(order?.changeAmount ?? 0);
   const totalPaid = tenders.reduce(
     (s, t) =>
       s +
@@ -462,6 +459,25 @@ export function PrintReceipt({
         : t.amount),
     0,
   );
+
+  const deliveryFee = (() => {
+    const match = order?.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
+    if (match && match[1]) return parseFloat(match[1].replace(/,/g, ""));
+    if (order?.notes?.includes("Source: Courierify") || order?.paymentMethod?.toUpperCase() === "COD") {
+      if (totalPaid > grandTotal) return totalPaid - grandTotal;
+    }
+    return 0;
+  })();
+
+  const effectiveGrandTotal = Math.max(
+    grandTotal,
+    valueForSales + totalTax + deliveryFee,
+  );
+  const fbrPosFee = hasFbrInfo ? Number(order?.fbrPosFee ?? 0) || 1 : 0;
+  const finalGrandTotal = isSavedOrder
+    ? effectiveGrandTotal
+    : effectiveGrandTotal + fbrPosFee;
+  const changeAmount = Number(order?.changeAmount ?? 0);
 
   // Alliance distribution for display - proportional to item value
   const calculateProportionalDiscount = (
@@ -514,6 +530,7 @@ export function PrintReceipt({
     valueForSales,
     grandTotal,
     fbrPosFee,
+    deliveryFee,
     finalGrandTotal,
     changeAmount,
     totalPaid,
@@ -752,6 +769,7 @@ interface ReceiptBodyProps {
   valueForSales: number;
   grandTotal: number;
   fbrPosFee: number;
+  deliveryFee?: number;
   finalGrandTotal: number;
   changeAmount: number;
   totalPaid: number;
@@ -789,6 +807,7 @@ function ReceiptBody({
   valueForSales,
   grandTotal,
   fbrPosFee,
+  deliveryFee,
   finalGrandTotal,
   changeAmount,
   totalPaid,
@@ -914,6 +933,19 @@ function ReceiptBody({
             }
             bold
           />
+          {order?.referenceNumber && order?.notes?.includes("Source: Courierify") && (
+            <Row label="Ref No." value={order.referenceNumber.replace("#", "")} />
+          )}
+          {order?.notes?.includes("Source: Courierify") && order.notes.match(/Tracking:\s*([^\s|,]+)/i) && (
+            <Row label="Tracking" value={order.notes.match(/Tracking:\s*([^\s|,]+)/i)![1]} />
+          )}
+          {order?.notes?.includes("Source: Courierify") && (
+            <Row 
+              label="Pay Mode" 
+              value={(order.paymentMethod || tenders[0]?.method || 'Unknown').replace(/_/g, " ").toUpperCase()} 
+              bold 
+            />
+          )}
           {(() => {
             const phone =
               order?.customer?.contactNo ||
@@ -1104,11 +1136,17 @@ function ReceiptBody({
           )}
           <Row
             label="Total Incl. Tax"
-            value={fmt(Math.round(finalGrandTotal - fbrPosFee))}
+            value={fmt(Math.round(valueForSales + totalTax))}
             bold
           />
           {hasFbrInfo && fbrPosFee > 0 && (
             <Row label="FBR POS Fee" value={fmt(Math.round(fbrPosFee))} />
+          )}
+          {(deliveryFee ?? 0) > 0 && (
+            <Row
+              label="Delivery Charges"
+              value={`+${fmt(Math.round(deliveryFee!))}`}
+            />
           )}
           <Row
             label="GRAND TOTAL"
@@ -1247,6 +1285,7 @@ function A4InvoiceBody({
   valueForSales,
   grandTotal,
   fbrPosFee,
+  deliveryFee,
   finalGrandTotal,
   changeAmount,
   totalPaid,
@@ -1356,6 +1395,15 @@ function A4InvoiceBody({
             )}
             {customerEmail && (
               <p className="text-zinc-655">Email: {customerEmail}</p>
+            )}
+            {order?.referenceNumber && order?.notes?.includes("Source: Courierify") && (
+              <p className="text-zinc-650 mt-1 font-semibold">Ref No: <span className="font-mono">{order.referenceNumber.replace("#", "")}</span></p>
+            )}
+            {order?.notes?.includes("Source: Courierify") && order.notes.match(/Tracking:\s*([^\s|,]+)/i) && (
+              <p className="text-zinc-650 font-semibold">Tracking: <span className="font-mono">{order.notes.match(/Tracking:\s*([^\s|,]+)/i)![1]}</span></p>
+            )}
+            {order?.notes?.includes("Source: Courierify") && (
+              <p className="text-zinc-650 font-bold uppercase mt-1">Pay Mode: <span className="text-primary">{(order.paymentMethod || tenders[0]?.method || 'Unknown').replace(/_/g, " ")}</span></p>
             )}
           </div>
           {customerAddress && (
@@ -1599,6 +1647,15 @@ function A4InvoiceBody({
                   <span>FBR POS Service Charge</span>
                   <span className="font-mono">
                     {fmt(Math.round(fbrPosFee))}
+                  </span>
+                </div>
+              )}
+
+              {(deliveryFee ?? 0) > 0 && (
+                <div className="flex justify-between text-zinc-700 py-0.5 font-medium">
+                  <span>Delivery Charges</span>
+                  <span className="font-mono text-zinc-800">
+                    +{fmt(Math.round(deliveryFee!))}
                   </span>
                 </div>
               )}

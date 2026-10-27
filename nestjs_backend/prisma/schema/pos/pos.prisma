@@ -293,6 +293,16 @@ model Voucher {
   expiresAt  DateTime? @map("expires_at")
   discount   Decimal   @default(0) @map("discount") @db.Decimal(15, 2)
 
+  // Shopify sync fields
+  /// Shopify PriceRule ID (used to manage/delete the discount rule)
+  shopifyPriceRuleId String?   @map("shopify_price_rule_id")
+  /// Shopify DiscountCode object ID
+  shopifyDiscountId  String?   @map("shopify_discount_id")
+  /// Sync status: PENDING | SYNCED | FAILED | SKIPPED
+  shopifySyncStatus  String?   @default("PENDING") @map("shopify_sync_status")
+  /// When was this voucher last synced to Shopify
+  shopifySyncedAt    DateTime? @map("shopify_synced_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
