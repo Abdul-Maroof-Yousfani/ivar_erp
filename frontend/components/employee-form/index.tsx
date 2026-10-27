@@ -1158,7 +1158,6 @@ export function EmployeeForm({
         "reportingManager",
         "employeeSalary",
         "cnicNumber",
-        "allocation",
       ];
 
       const results = await Promise.all(

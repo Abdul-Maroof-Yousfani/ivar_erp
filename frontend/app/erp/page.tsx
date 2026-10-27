@@ -125,7 +125,15 @@ const ERPDashboard = () => {
   const [orders, setOrders] = useState<any[]>([]);
   const [stockLevels, setStockLevels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const { hasPermission } = useAuth();
+  const { hasPermission, isAdmin } = useAuth();
+
+  useEffect(() => {
+    if (!isAdmin() && !hasPermission("erp.dashboard.overview.view") && !hasPermission("erp.dashboard.inventory.view")) {
+      if (hasPermission("erp.report.available-stock-summary") || hasPermission("erp.report.view")) {
+        router.replace("/erp/reports/pos/available-stock-summary");
+      }
+    }
+  }, [hasPermission, isAdmin, router]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
