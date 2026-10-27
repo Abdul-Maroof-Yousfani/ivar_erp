@@ -25,7 +25,7 @@ import {
     Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { COMPANY_NAME } from "@/lib/utils";
+import { COMPANY_NAME, cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -420,13 +420,6 @@ export default function ReturnRequestsPage() {
 
                 if (matched) {
                     const totalQty = matched.totalQuantity || 0;
-                    if (totalQty <= 0) {
-                        playScanErrorBuzz();
-                        toast.error(`Item "${matched.description || matched.sku}" has 0 available stock at this outlet.`);
-                        setScanInput('');
-                        return;
-                    }
-
                     const itemToAdd: Item = {
                         id: matched.id,
                         sku: matched.sku,
@@ -436,19 +429,13 @@ export default function ReturnRequestsPage() {
                         totalQuantity: totalQty,
                     };
 
-                    const existingInCart = cart.find(c => c.item.id === matched.id);
-                    const currentQty = existingInCart ? existingInCart.quantity : 0;
-
-                    if (currentQty >= totalQty) {
-                        playScanErrorBuzz();
-                        toast.warning(`Cannot add more than available outlet stock (${totalQty}) for ${matched.sku}`);
-                        setScanInput('');
-                        return;
-                    }
-
                     playScanSuccessBeep();
                     addToCart(itemToAdd);
-                    toast.success(`+1 Scanned & Added: ${itemToAdd.description || itemToAdd.sku}`);
+                    if (totalQty <= 0) {
+                        toast.info(`+1 Scanned & Added: ${itemToAdd.description || itemToAdd.sku} (Current stock: ${totalQty})`);
+                    } else {
+                        toast.success(`+1 Scanned & Added: ${itemToAdd.description || itemToAdd.sku}`);
+                    }
                 } else {
                     playScanErrorBuzz();
                     toast.warning(`Multiple items found for "${code}". Please select from search results.`);
@@ -571,7 +558,7 @@ export default function ReturnRequestsPage() {
                     size: item.size,
                     color: item.color,
                     totalQuantity: item.totalQuantity || 0
-                })).filter((item) => item.totalQuantity > 0);
+                }));
                 setSearchResults(availableItems);
             }
         } catch (error) {
@@ -602,10 +589,6 @@ export default function ReturnRequestsPage() {
         setCart(prev => {
             const existing = prev.find(i => i.item.id === item.id);
             if (existing) {
-                if (existing.quantity >= item.totalQuantity) {
-                    toast.warning(`Cannot add more than available stock (${item.totalQuantity})`);
-                    return prev;
-                }
                 return prev.map(i => i.item.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
             }
             return [...prev, { item, quantity: 1 }];
@@ -617,8 +600,7 @@ export default function ReturnRequestsPage() {
     const updateCartQuantity = (itemId: string, newQty: number) => {
         setCart(prev => prev.map(i => {
             if (i.item.id === itemId) {
-                const maxStock = i.item.totalQuantity;
-                const validatedQty = Math.max(1, Math.min(maxStock, newQty));
+                const validatedQty = Math.max(1, newQty);
                 return { ...i, quantity: validatedQty };
             }
             return i;
@@ -953,7 +935,7 @@ export default function ReturnRequestsPage() {
                                             <Search className="h-5 w-5 text-orange-600" />
                                             Search Items
                                         </CardTitle>
-                                        <CardDescription className="text-xs">Find items with available stock at this outlet.</CardDescription>
+                                        <CardDescription className="text-xs">Find items to return or transfer (negative inventory allowed).</CardDescription>
                                     </CardHeader>
                                     <CardContent className="space-y-4">
                                         <div className="relative">
@@ -978,7 +960,7 @@ export default function ReturnRequestsPage() {
                                                 <div className="flex flex-col items-center justify-center h-[200px] text-center p-4">
                                                     <Package className="h-8 w-8 text-muted-foreground/30 mb-2" />
                                                     <p className="text-xs font-medium text-muted-foreground">
-                                                        {itemQuery ? "No matching items with stock found" : "Type to search available stock"}
+                                                        {itemQuery ? "No matching items found" : "Type to search items"}
                                                     </p>
                                                 </div>
                                             ) : (
@@ -1010,7 +992,9 @@ export default function ReturnRequestsPage() {
                                                             </div>
                                                             <div className="text-right flex-none">
                                                                 <span className="text-[9px] block font-bold text-muted-foreground uppercase tracking-wider">Available</span>
-                                                                <span className="text-xs font-bold text-emerald-600">{item.totalQuantity} units</span>
+                                                                <span className={cn("text-xs font-bold", item.totalQuantity > 0 ? "text-emerald-600" : "text-amber-600")}>
+                                                                    {item.totalQuantity} units
+                                                                </span>
                                                             </div>
                                                         </button>
                                                     ))}
@@ -1062,7 +1046,7 @@ export default function ReturnRequestsPage() {
                                                                     {item.color?.name && (
                                                                         <span className="text-[10px] text-muted-foreground">Color: <span className="font-bold text-foreground">{item.color.name}</span></span>
                                                                     )}
-                                                                    <span className="text-[10px] text-muted-foreground">Available: <span className="font-bold text-emerald-600">{item.totalQuantity}</span></span>
+                                                                    <span className="text-[10px] text-muted-foreground">Available: <span className={cn("font-bold", item.totalQuantity > 0 ? "text-emerald-600" : "text-amber-600")}>{item.totalQuantity}</span></span>
                                                                 </div>
                                                             </div>
 
@@ -1086,7 +1070,6 @@ export default function ReturnRequestsPage() {
                                                                         size="icon"
                                                                         className="h-full w-8 rounded-none border-l border-border/50 hover:bg-muted"
                                                                         onClick={() => updateCartQuantity(item.id, quantity + 1)}
-                                                                        disabled={quantity >= item.totalQuantity}
                                                                     >
                                                                         <Plus className="h-3 w-3" />
                                                                     </Button>
@@ -1255,11 +1238,27 @@ export default function ReturnRequestsPage() {
                                                                 ? `Multiple Items (${request.items.length})`
                                                                 : request.items[0]?.item?.description || "Return Items"}
                                                         </h3>
-                                                        <p className="text-sm text-muted-foreground font-medium truncate">
-                                                            {request.items.length > 1
-                                                                ? `SKU: ${request.items[0]?.item?.sku || 'N/A'} and ${request.items.length - 1} more`
-                                                                : `SKU: ${request.items[0]?.item?.sku || "N/A"}`}
-                                                        </p>
+                                                        <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                                                            <p className="text-xs text-muted-foreground font-mono font-medium">
+                                                                {request.items.length > 1
+                                                                    ? `SKU: ${request.items[0]?.item?.sku || 'N/A'} and ${request.items.length - 1} more`
+                                                                    : `SKU: ${request.items[0]?.item?.sku || "N/A"}`}
+                                                            </p>
+                                                            {request.items.length === 1 && (
+                                                                <>
+                                                                    {request.items[0]?.item?.color?.name && (
+                                                                        <Badge variant="outline" className="text-[9px] py-0 px-1 font-semibold">
+                                                                            Color: {request.items[0]?.item?.color?.name}
+                                                                        </Badge>
+                                                                    )}
+                                                                    {request.items[0]?.item?.size?.name && (
+                                                                        <Badge variant="outline" className="text-[9px] py-0 px-1 font-semibold">
+                                                                            Size: {request.items[0]?.item?.size?.name}
+                                                                        </Badge>
+                                                                    )}
+                                                                </>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
 

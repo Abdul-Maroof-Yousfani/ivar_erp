@@ -294,6 +294,7 @@ export class StockMovementService {
         referenceType: dto.referenceType || 'RETURN_REQUEST',
         referenceId: dto.referenceId || movementId,
         rate: itemRate,
+        allowNegativeStock: true,
       }, tx);
 
       console.log('✅ [Stock Movement] Outlet OUTBOUND ledger entry created');
@@ -344,6 +345,7 @@ export class StockMovementService {
         referenceType: 'CLAIM_TO_PLM',
         referenceId: dto.referenceId || movementId,
         rate: itemRate,
+        allowNegativeStock: true,
       }, tx);
       console.log('✅ [Stock Movement] POS OUTBOUND ledger entry created');
     } else {
@@ -362,6 +364,7 @@ export class StockMovementService {
         referenceType: 'CLAIM_RETURN',
         referenceId: dto.referenceId || movementId,
         rate: itemRate,
+        allowNegativeStock: true,
       }, tx);
 
       console.log('✅ [Stock Movement] Claim return OUTBOUND ledger entry created (audit only)');
@@ -439,6 +442,7 @@ export class StockMovementService {
       referenceType: dto.referenceType || 'INTER_OUTLET_TRANSFER',
       referenceId: dto.referenceId || movementId,
       rate: itemRate,
+      allowNegativeStock: true,
     }, tx);
 
     // 2. Ledger INBOUND for destination outlet
