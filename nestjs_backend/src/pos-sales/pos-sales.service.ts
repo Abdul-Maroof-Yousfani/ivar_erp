@@ -1733,63 +1733,135 @@ export class PosSalesService implements OnModuleInit {
     }
 
     const cleanSearch = orderNumber.trim();
-    const rawOrders = await this.prisma.salesOrder.findMany({
-      where: {
-        orderNumber: { equals: cleanSearch, mode: 'insensitive' },
-        status: { notIn: ['hold', 'hold_expired', 'hold_cancelled'] },
-      },
-      take: 10,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            contactNo: true,
-            email: true,
-          },
+    const strippedHash = cleanSearch.replace(/^#+/, '').trim();
+    const withHash = `#${strippedHash}`;
+    const withDoubleHash = `##${strippedHash}`;
+    const crfPlain = `CRF-${cleanSearch}`;
+    const crfStripped = `CRF-${strippedHash}`;
+    const crfWithHash = `CRF-#${strippedHash}`;
+    const shopifyGid = `gid://shopify/Order/${strippedHash}`;
+
+    // Candidates for exact matching
+    const exactOrderNumbers = Array.from(
+      new Set(
+        [
+          cleanSearch,
+          strippedHash,
+          withHash,
+          crfPlain,
+          crfStripped,
+          crfWithHash,
+        ].filter(Boolean),
+      ),
+    );
+    const exactReferenceNumbers = Array.from(
+      new Set(
+        [
+          cleanSearch,
+          strippedHash,
+          withHash,
+          withDoubleHash,
+          shopifyGid,
+        ].filter(Boolean),
+      ),
+    );
+
+    const includeRelations = {
+      customer: {
+        select: {
+          id: true,
+          name: true,
+          contactNo: true,
+          email: true,
         },
-        items: {
-          include: {
-            item: {
-              select: {
-                description: true,
-                sku: true,
-                barCode: true,
-                size: { select: { name: true } },
-                color: { select: { name: true } },
-                brand: { select: { name: true } },
-              },
+      },
+      items: {
+        include: {
+          item: {
+            select: {
+              description: true,
+              sku: true,
+              barCode: true,
+              size: { select: { name: true } },
+              color: { select: { name: true } },
+              brand: { select: { name: true } },
             },
           },
         },
-        promo: { select: { name: true, code: true } },
-        coupon: { select: { code: true, description: true } },
-        alliance: {
-          select: {
-            partnerName: true,
-            code: true,
-            discountPercent: true,
-            maxDiscount: true,
-          },
-        },
-        merchant: {
-          select: {
-            id: true,
-            bankName: true,
-            description: true,
-            commissionRate: true,
-            bankGlCode: true,
-          },
-        },
-        voucherRedemptions: {
-          select: {
-            amountUsed: true,
-            voucher: { select: { code: true, faceValue: true } },
-          },
+      },
+      promo: { select: { name: true, code: true } },
+      coupon: { select: { code: true, description: true } },
+      alliance: {
+        select: {
+          partnerName: true,
+          code: true,
+          discountPercent: true,
+          maxDiscount: true,
         },
       },
+      merchant: {
+        select: {
+          id: true,
+          bankName: true,
+          description: true,
+          commissionRate: true,
+          bankGlCode: true,
+        },
+      },
+      voucherRedemptions: {
+        select: {
+          amountUsed: true,
+          voucher: { select: { code: true, faceValue: true } },
+        },
+      },
+    };
+
+    // 1. Try exact matches on orderNumber, referenceNumber (Shopify ID), or fbrInvoiceNumber first
+    let rawOrders = await this.prisma.salesOrder.findMany({
+      where: {
+        OR: [
+          { orderNumber: { in: exactOrderNumbers, mode: 'insensitive' } },
+          { referenceNumber: { in: exactReferenceNumbers, mode: 'insensitive' } },
+          { fbrInvoiceNumber: { equals: cleanSearch, mode: 'insensitive' } },
+        ],
+        status: { notIn: ['hold', 'hold_expired', 'hold_cancelled'] },
+      },
+      take: 20,
+      orderBy: { createdAt: 'desc' },
+      include: includeRelations,
     });
+
+    // 2. If no exact match found, fall back to contains / partial matching
+    if (rawOrders.length === 0) {
+      const fuzzyOr: Prisma.SalesOrderWhereInput[] = [
+        {
+          orderNumber: {
+            contains: strippedHash || cleanSearch,
+            mode: 'insensitive',
+          },
+        },
+        {
+          referenceNumber: {
+            contains: strippedHash || cleanSearch,
+            mode: 'insensitive',
+          },
+        },
+        { notes: { contains: cleanSearch, mode: 'insensitive' } },
+      ];
+      if (strippedHash && strippedHash !== cleanSearch) {
+        fuzzyOr.push({ notes: { contains: strippedHash, mode: 'insensitive' } });
+      }
+
+      rawOrders = await this.prisma.salesOrder.findMany({
+        where: {
+          OR: fuzzyOr,
+          status: { notIn: ['hold', 'hold_expired', 'hold_cancelled'] },
+        },
+        take: 20,
+        orderBy: { createdAt: 'desc' },
+        include: includeRelations,
+      });
+    }
 
     if (rawOrders.length === 0) {
       return {
@@ -1797,6 +1869,37 @@ export class PosSalesService implements OnModuleInit {
         message: `Order matching "${cleanSearch}" not found`,
       };
     }
+
+    // Sort: Exact matches on referenceNumber or orderNumber first
+    rawOrders.sort((a, b) => {
+      const aRefExact =
+        a.referenceNumber?.toLowerCase() === cleanSearch.toLowerCase() ||
+        a.referenceNumber?.toLowerCase() === withHash.toLowerCase() ||
+        a.referenceNumber?.toLowerCase() === strippedHash.toLowerCase()
+          ? 0
+          : 1;
+      const bRefExact =
+        b.referenceNumber?.toLowerCase() === cleanSearch.toLowerCase() ||
+        b.referenceNumber?.toLowerCase() === withHash.toLowerCase() ||
+        b.referenceNumber?.toLowerCase() === strippedHash.toLowerCase()
+          ? 0
+          : 1;
+      if (aRefExact !== bRefExact) return aRefExact - bRefExact;
+
+      const aOrderExact =
+        a.orderNumber.toLowerCase() === cleanSearch.toLowerCase() ||
+        a.orderNumber.toLowerCase() === strippedHash.toLowerCase()
+          ? 0
+          : 1;
+      const bOrderExact =
+        b.orderNumber.toLowerCase() === cleanSearch.toLowerCase() ||
+        b.orderNumber.toLowerCase() === strippedHash.toLowerCase()
+          ? 0
+          : 1;
+      if (aOrderExact !== bOrderExact) return aOrderExact - bOrderExact;
+
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
 
     const orderIds = rawOrders.map((o) => o.id);
     const returnEntries = await this.prisma.stockLedger.findMany({
