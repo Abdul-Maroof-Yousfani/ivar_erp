@@ -86,6 +86,9 @@ export class AvailableStockByLocationExportService {
           itemId: true,
           quantity: true,
           fulfilledQty: true,
+          transferRequest: {
+            select: { toLocationId: true },
+          },
         },
       }),
     ]);
@@ -103,9 +106,17 @@ export class AvailableStockByLocationExportService {
 
     // Transit map per item: remaining unfulfilled quantity in transit to target locations
     const transitMap = new Map<string, number>();
+    // Transit map per item per destination location: transitByLocMap[itemId][toLocationId] = qty
+    const transitByLocMap = new Map<string, Map<string, number>>();
     for (const row of transitItems) {
       const remaining = Math.max(0, Number(row.quantity || 0) - Number(row.fulfilledQty || 0));
       transitMap.set(row.itemId, (transitMap.get(row.itemId) || 0) + remaining);
+      const toLocId = (row as any).transferRequest?.toLocationId;
+      if (toLocId) {
+        if (!transitByLocMap.has(row.itemId)) transitByLocMap.set(row.itemId, new Map());
+        const locTransitMap = transitByLocMap.get(row.itemId)!;
+        locTransitMap.set(toLocId, (locTransitMap.get(toLocId) || 0) + remaining);
+      }
     }
 
     // ── 3. Fetch item master data ─────────────────────────────────────────────
@@ -161,8 +172,8 @@ export class AvailableStockByLocationExportService {
     workbook.created = new Date();
     const sheet = workbook.addWorksheet('Stock By Location', { views: [{ state: 'frozen', ySplit: 3 }] });
 
-    // Shortcodes for column headers (prefer code, else abbreviated name)
-    const locShortcodes = locations.map(l => l.code?.trim() || l.name.slice(0, 8).toUpperCase());
+    // Shortcodes for column headers: prefer location code, fallback to name (up to 10 chars), then use ID prefix
+    const locShortcodes = locations.map((l, idx) => { const code = l.code?.trim(); if (code) return code; const name = (l.name || '').trim(); if (name) return name.slice(0, 10).toUpperCase(); return 'LOC' + String(idx + 1); });
 
     // ── Column definitions ───────────────────────────────────────────────────
     const fixedCols = [
@@ -184,6 +195,13 @@ export class AvailableStockByLocationExportService {
       width: Math.max(code.length + 2, 12),
     }));
 
+    // Transit per location column definitions (one col per location, prefixed 'T:')
+    const transitColDefs = locShortcodes.map((code, i) => ({
+      header: 'T:' + code,
+      key: 'transit_loc_' + i,
+      width: Math.max(code.length + 4, 12),
+    }));
+
     const summaryColDefs = [
       { header: 'IN TRANSIT', key: 'inTransit', width: 14 },
       { header: 'TOTAL QTY', key: 'totalQty', width: 14 },
@@ -191,12 +209,12 @@ export class AvailableStockByLocationExportService {
       { header: 'Value (Rs.)', key: 'value', width: 18 },
     ];
 
-    sheet.columns = [...fixedCols, ...locColDefs, ...summaryColDefs].map(col => ({
+    sheet.columns = [...fixedCols, ...locColDefs, ...transitColDefs, ...summaryColDefs].map(col => ({
       key: col.key,
       width: col.width,
     }));
 
-    const totalCols = fixedCols.length + locColDefs.length + summaryColDefs.length;
+    const totalCols = fixedCols.length + locColDefs.length + transitColDefs.length + summaryColDefs.length;
 
     // ── Row 1: Report title ───────────────────────────────────────────────────
     const titleRow = sheet.addRow(['Available Stock Summary — By Location']);
@@ -208,16 +226,18 @@ export class AvailableStockByLocationExportService {
     sheet.mergeCells(1, 1, 1, totalCols);
 
     // ── Row 2: Subtitle ───────────────────────────────────────────────────────
-    const asOfLabel = `As of: ${targetDate.toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+    // -- Row 2: Subtitle with date and location code -> name legend
+    const locNamesLabel = locations.map((l, i) => locShortcodes[i] + ': ' + (l.name || '')).join('  |  ');
+    const asOfLabel = 'As of: ' + targetDate.toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) + '   |   ' + locNamesLabel;
     const subtitleRow = sheet.addRow([asOfLabel]);
-    subtitleRow.font = { italic: true, size: 10, color: { argb: 'FF374151' } };
-    subtitleRow.height = 16;
-    sheet.mergeCells(2, 1, 2, totalCols);
-
+    subtitleRow.font = { italic: true, size: 9, color: { argb: 'FF374151' } };
+    subtitleRow.height = 20;
     // ── Row 3: Column headers ─────────────────────────────────────────────────
+    sheet.mergeCells(2, 1, 2, totalCols);
     const allHeaders = [
       ...fixedCols.map(c => c.header),
       ...locShortcodes,
+      ...transitColDefs.map(c => c.header),
       ...summaryColDefs.map(c => c.header),
     ];
     const headerRow = sheet.addRow(allHeaders);
@@ -252,6 +272,7 @@ export class AvailableStockByLocationExportService {
 
     // brand totals per location
     const grandLocTotals = new Array(locations.length).fill(0);
+    const grandTransitLocTotals = new Array(locations.length).fill(0);
     let grandTransitTotal = 0;
     let grandTotal = 0;
     let grandValue = 0;
@@ -267,6 +288,7 @@ export class AvailableStockByLocationExportService {
       sheet.mergeCells(brandRow.number, 1, brandRow.number, totalCols);
 
       const brandLocTotals = new Array(locations.length).fill(0);
+      const brandTransitLocTotals = new Array(locations.length).fill(0);
       let brandTransitTotal = 0;
       let brandTotalQty = 0;
       let brandTotalValue = 0;
@@ -290,6 +312,12 @@ export class AvailableStockByLocationExportService {
         const unitPrice = item.unitPrice || 0;
         const totalValue = totalQty * unitPrice;
 
+        // Per-location transit quantities for this item
+        const locTransitQtys = locations.map(loc => {
+          const itemTransitLocMap = transitByLocMap.get(item.id);
+          return itemTransitLocMap?.get(loc.id) ?? 0;
+        });
+
         const rowData = [
           item.brand?.name || '',
           item.division?.name || '',
@@ -302,6 +330,7 @@ export class AvailableStockByLocationExportService {
           item.size?.name || '',
           item.barCode || '',
           ...locQtys,
+          ...locTransitQtys,
           transitQty,
           totalQty,
           unitPrice,
@@ -330,11 +359,13 @@ export class AvailableStockByLocationExportService {
             }
           }
 
-          // Selling price / value — currency
-          if (colNum === fixedCols.length + locColDefs.length + 3) {
+          // Selling price / value — currency (now offset by transitColDefs too)
+          const sellingPriceColIdx = fixedCols.length + locColDefs.length + transitColDefs.length + 3;
+          const valueColIdx = fixedCols.length + locColDefs.length + transitColDefs.length + 4;
+          if (colNum === sellingPriceColIdx) {
             cell.numFmt = '#,##0.00';
           }
-          if (colNum === fixedCols.length + locColDefs.length + 4) {
+          if (colNum === valueColIdx) {
             cell.numFmt = '#,##0.00';
           }
         });
@@ -343,6 +374,10 @@ export class AvailableStockByLocationExportService {
         locQtys.forEach((q, i) => {
           brandLocTotals[i] += q;
           grandLocTotals[i] += q;
+        });
+        locTransitQtys.forEach((q, i) => {
+          brandTransitLocTotals[i] += q;
+          grandTransitLocTotals[i] += q;
         });
         brandTransitTotal += transitQty;
         grandTransitTotal += transitQty;
@@ -357,6 +392,7 @@ export class AvailableStockByLocationExportService {
       const subtotalData = [
         `${brandName} — SUBTOTAL`, '', '', '', '', '', '', '', '', '',
         ...brandLocTotals,
+        ...brandTransitLocTotals,
         brandTransitTotal,
         brandTotalQty,
         '',
@@ -371,7 +407,8 @@ export class AvailableStockByLocationExportService {
         if (colNum > fixedCols.length) {
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
         }
-        if (colNum === fixedCols.length + locColDefs.length + 4) {
+        const subtotalValueColIdx = fixedCols.length + locColDefs.length + transitColDefs.length + 4;
+        if (colNum === subtotalValueColIdx) {
           cell.numFmt = '#,##0.00';
         }
       });
@@ -384,6 +421,7 @@ export class AvailableStockByLocationExportService {
     const grandData = [
       'GRAND TOTAL', '', '', '', '', '', '', '', '', '',
       ...grandLocTotals,
+      ...grandTransitLocTotals,
       grandTransitTotal,
       grandTotal,
       '',
@@ -398,7 +436,8 @@ export class AvailableStockByLocationExportService {
       if (colNum > fixedCols.length) {
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
       }
-      if (colNum === fixedCols.length + locColDefs.length + 4) {
+      const grandValueColIdx = fixedCols.length + locColDefs.length + transitColDefs.length + 4;
+      if (colNum === grandValueColIdx) {
         cell.numFmt = '#,##0.00';
       }
     });
