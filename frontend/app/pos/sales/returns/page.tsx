@@ -13,6 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+    Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
     ArrowLeft, Search, Loader2, RotateCcw, ArrowLeftRight,
     AlertCircle, CheckCircle2, Minus, Plus, Info, FileText, Send, X, Receipt,
 } from "lucide-react";
@@ -23,7 +26,7 @@ import { formatCurrency } from "@/lib/utils";
 import { PrintReturnReceipt, type ReturnReceiptLine } from "@/components/pos/print-return-receipt";
 import { ManagerVerificationDialog } from "@/components/auth/manager-verification-dialog";
 
-function paidPerUnit(oi: any, orderGrandTotal: number, orderLineTotalsSum: number) {
+function paidPerUnit(oi: any, orderGrandTotal: number, orderLineTotalsSum: number, orderNotes?: string) {
   // Distribute grandTotal proportionally based on each item's lineTotal share
   // This correctly handles global discounts (coupon/promo applied at order level)
   const qty = Number(oi.quantity);
@@ -32,14 +35,20 @@ function paidPerUnit(oi: any, orderGrandTotal: number, orderLineTotalsSum: numbe
     return 0;
   }
   
-  // If the order line totals sum is extremely close to grand total (within FBR fee and minor rounding),
-  // then we can just return the actual lineTotal divided by quantity to avoid distributing FBR fee/rounding.
+  // Delivery charges are shipping fees and must never be refunded or included in item return/exchange values
+  const deliveryCharges = (() => {
+    const match = orderNotes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
+    if (match && match[1]) return parseFloat(match[1].replace(/,/g, ""));
+    return 0;
+  })();
+  const itemsGrandTotal = Math.max(0, orderGrandTotal - deliveryCharges);
+
   const lineTotal = Number(oi.lineTotal);
-  if (Math.abs(orderLineTotalsSum - orderGrandTotal) <= 5) {
+  if (Math.abs(orderLineTotalsSum - itemsGrandTotal) <= 5) {
     return lineTotal / qty;
   }
   
-  const itemShare = orderLineTotalsSum > 0 ? (lineTotal / orderLineTotalsSum) * orderGrandTotal : lineTotal;
+  const itemShare = orderLineTotalsSum > 0 ? (lineTotal / orderLineTotalsSum) * itemsGrandTotal : lineTotal;
   return itemShare / qty;
 }
 
@@ -55,7 +64,7 @@ const REASON_CODES = [
 type Mode = "return" | "exchange" | "claim" | "refund";
 
 interface ReturnLine {
-    orderId: string; orderNumber: string;
+    orderId: string; orderNumber: string; referenceNumber?: string;
     orderItemId: string; itemId: string;
     name: string; sku: string; brand?: string; size?: string; color?: string;
     orderedQty: number; returnQty: number;
@@ -65,7 +74,29 @@ interface ReturnLine {
 }
 
 interface NewLine { itemId: string; name: string; sku: string; size?: string; color?: string; quantity: number; unitPrice: number; discountPct: number; }
-interface LoadedOrder { id: string; orderNumber: string; grandTotal: number; createdAt: string; items: any[]; coupon?: string; promo?: string; alliance?: string; locationName?: string; locationId?: string; }
+interface LoadedOrder {
+    id: string;
+    orderNumber: string;
+    referenceNumber?: string;
+    notes?: string;
+    grandTotal: number;
+    createdAt: string;
+    items: any[];
+    coupon?: string;
+    promo?: string;
+    alliance?: string;
+    locationName?: string;
+    locationId?: string;
+    customer?: {
+        id?: string;
+        name?: string;
+        contactNo?: string;
+        phone?: string;
+    } | null;
+    customerName?: string;
+    customerPhone?: string;
+    customerMobile?: string;
+}
 
 export default function ReturnsPage() {
     const router = useRouter();
@@ -78,6 +109,7 @@ export default function ReturnsPage() {
     // ── Order search ──────────────────────────────────────────────────
     const [orderSearch, setOrderSearch] = useState("");
     const [isSearching, setIsSearching] = useState(false);
+    const [multipleMatches, setMultipleMatches] = useState<any[] | null>(null);
 
     // ── Loaded orders (multi-order support) ───────────────────────────
     const [loadedOrders, setLoadedOrders] = useState<LoadedOrder[]>([]);
@@ -144,72 +176,146 @@ export default function ReturnsPage() {
         exchangeVoucher?: { code: string; faceValue: number; expiresAt: string } | null;
     } | null>(null);
 
+    // ── Core helper: Add a validated order to state ───────────────────
+    const addLoadedOrder = useCallback((found: any) => {
+        if (!found) return;
+        if (loadedOrders.some(o => o.id === found.id)) {
+            toast.info(`Order ${found.orderNumber}${found.referenceNumber ? ` (${found.referenceNumber})` : ""} is already added`);
+            return;
+        }
+        if (found.status === "voided") {
+            toast.error("Cannot process a voided order");
+            return;
+        }
+
+        // Check if there are returnable items
+        const orderItems = found.items || [];
+        const returnableItems = orderItems.filter((oi: any) => {
+            const alreadyReturned = Number(oi.returnedQty ?? 0);
+            const alreadyClaimed = Number(oi.claimedQty ?? 0);
+            const totalProcessed = alreadyReturned + alreadyClaimed;
+            return Number(oi.quantity) - totalProcessed > 0;
+        });
+
+        if (orderItems.length > 0 && returnableItems.length === 0) {
+            toast.warning(`All items in order ${found.orderNumber} have already been returned or claimed`);
+        }
+
+        setLoadedOrders(prev => [...prev, {
+            id: found.id,
+            orderNumber: found.orderNumber,
+            referenceNumber: found.referenceNumber || undefined,
+            notes: found.notes || undefined,
+            grandTotal: Number(found.grandTotal),
+            createdAt: found.createdAt,
+            items: found.items || [],
+            coupon: found.coupon?.code || undefined,
+            promo: found.promo?.code || undefined,
+            alliance: found.alliance?.code || undefined,
+            locationName: found.location?.name || undefined,
+            locationId: found.locationId || undefined,
+            customer: found.customer || null,
+            customerName: found.customer?.name || found.customerName || undefined,
+            customerPhone: found.customer?.contactNo || found.customer?.phone || found.customerPhone || undefined,
+        }]);
+
+        const lineTotalsSum = orderItems.reduce((s: number, oi: any) => s + Number(oi.lineTotal), 0);
+        const orderGrandTotal = Number(found.grandTotal);
+
+        const lines: ReturnLine[] = returnableItems.map((oi: any) => {
+            const alreadyReturned = Number(oi.returnedQty ?? 0);
+            const alreadyClaimed = Number(oi.claimedQty ?? 0);
+            const totalProcessed = alreadyReturned + alreadyClaimed;
+            const remainingQty = Number(oi.quantity) - totalProcessed;
+            return {
+                orderId: found.id,
+                orderNumber: found.orderNumber,
+                referenceNumber: found.referenceNumber || undefined,
+                orderItemId: oi.id,
+                itemId: oi.itemId,
+                name: oi.item?.description || oi.itemId,
+                sku: oi.item?.sku || "",
+                brand: oi.item?.brand || oi.item?.brandName || "",
+                size: oi.item?.size?.name || "",
+                color: oi.item?.color?.name || "",
+                orderedQty: remainingQty,
+                returnQty: 0,
+                paidPerUnit: paidPerUnit(oi, orderGrandTotal, lineTotalsSum, found.notes),
+                originalUnitPrice: Number(oi.unitPrice),
+                discountPercent: Number(oi.discountPercent ?? 0),
+                discountAmount: Number(oi.discountAmount ?? 0),
+                taxAmount: Number(oi.taxAmount ?? 0),
+                taxPercent: Number(oi.taxPercent ?? 0),
+                originalQty: Number(oi.quantity),
+            };
+        });
+
+        setReturnLines(prev => [...prev, ...lines]);
+        setOrderSearch("");
+        setMultipleMatches(null);
+        toast.success(`Loaded order ${found.orderNumber}${found.referenceNumber ? ` (${found.referenceNumber})` : ""}`);
+    }, [loadedOrders]);
+
     // ── Add an order ──────────────────────────────────────────────────
     const handleAddOrder = useCallback(async () => {
-        if (!orderSearch.trim()) return;
-        if (loadedOrders.find(o => o.orderNumber.toLowerCase() === orderSearch.trim().toLowerCase())) {
-            toast.info("Order already added"); return;
+        const query = orderSearch.trim();
+        if (!query) return;
+
+        const clean = query.toLowerCase();
+        const stripped = clean.replace(/^#+/, "");
+        if (loadedOrders.some(o => 
+            o.orderNumber.toLowerCase() === clean || 
+            o.orderNumber.toLowerCase() === stripped ||
+            o.referenceNumber?.toLowerCase() === clean ||
+            o.referenceNumber?.toLowerCase() === `#${stripped}` ||
+            o.referenceNumber?.toLowerCase().replace(/^#+/, "") === stripped
+        )) {
+            toast.info("Order already added");
+            return;
         }
+
         setIsSearching(true);
         try {
-            const res = await authFetch("/pos-sales/orders/search-for-return", { params: { search: orderSearch.trim() } });
+            const res = await authFetch("/pos-sales/orders/search-for-return", { params: { search: query } });
             if (res.ok && res.data?.status) {
-                const found = res.data.data?.[0];
-                if (!found) { toast.error("Order not found"); return; }
-                if (found.status === "voided") { toast.error("Cannot process a voided order"); return; }
+                const results = res.data.data || [];
+                if (results.length === 0) {
+                    toast.error("Order not found");
+                    return;
+                }
 
-                setLoadedOrders(prev => [...prev, {
-                    id: found.id, orderNumber: found.orderNumber,
-                    grandTotal: Number(found.grandTotal), createdAt: found.createdAt,
-                    items: found.items || [],
-                    coupon: found.coupon?.code || undefined,
-                    promo: found.promo?.code || undefined,
-                    alliance: found.alliance?.code || undefined,
-                    locationName: found.location?.name || undefined,
-                    locationId: found.locationId || undefined,
-                }]);
+                // If only 1 result, add immediately
+                if (results.length === 1) {
+                    addLoadedOrder(results[0]);
+                    return;
+                }
 
-                // Append return lines for this order (qty = 0 by default)
-                const orderItems = found.items || [];
-                const lineTotalsSum = orderItems.reduce((s: number, oi: any) => s + Number(oi.lineTotal), 0);
-                const orderGrandTotal = Number(found.grandTotal);
+                // If exact match on orderNumber or referenceNumber exists in top result, add immediately
+                const top = results[0];
+                const topRef = (top.referenceNumber || "").toLowerCase();
+                const topNum = (top.orderNumber || "").toLowerCase();
+                if (
+                    topRef === clean || 
+                    topRef === `#${stripped}` || 
+                    topRef.replace(/^#+/, "") === stripped ||
+                    topNum === clean ||
+                    topNum === stripped
+                ) {
+                    addLoadedOrder(top);
+                    return;
+                }
 
-                const lines: ReturnLine[] = orderItems
-                    .filter((oi: any) => {
-                        const alreadyReturned = Number(oi.returnedQty ?? 0);
-                        const alreadyClaimed = Number(oi.claimedQty ?? 0);
-                        const totalProcessed = alreadyReturned + alreadyClaimed;
-                        return Number(oi.quantity) - totalProcessed > 0; // skip fully returned/claimed items
-                    })
-                    .map((oi: any) => {
-                    const alreadyReturned = Number(oi.returnedQty ?? 0);
-                    const alreadyClaimed = Number(oi.claimedQty ?? 0);
-                    const totalProcessed = alreadyReturned + alreadyClaimed;
-                    const remainingQty = Number(oi.quantity) - totalProcessed;
-                    return {
-                        orderId: found.id, orderNumber: found.orderNumber,
-                        orderItemId: oi.id, itemId: oi.itemId,
-                        name: oi.item?.description || oi.itemId,
-                        sku: oi.item?.sku || "",
-                        brand: oi.item?.brand || oi.item?.brandName || "",
-                        size: oi.item?.size?.name || "",
-                        color: oi.item?.color?.name || "",
-                        orderedQty: remainingQty, returnQty: 0,
-                        paidPerUnit: paidPerUnit(oi, orderGrandTotal, lineTotalsSum),
-                        originalUnitPrice: Number(oi.unitPrice),
-                        discountPercent: Number(oi.discountPercent ?? 0),
-                        discountAmount: Number(oi.discountAmount ?? 0),
-                        taxAmount: Number(oi.taxAmount ?? 0),
-                        taxPercent: Number(oi.taxPercent ?? 0),
-                        originalQty: Number(oi.quantity),
-                    };
-                });
-                setReturnLines(prev => [...prev, ...lines]);
-                setOrderSearch("");
-            } else { toast.error(res.data?.message || "Order not found"); }
-        } catch { toast.error("Failed to search order"); }
-        finally { setIsSearching(false); }
-    }, [orderSearch, loadedOrders]);
+                // Multiple fuzzy matches found: show selection dialog
+                setMultipleMatches(results);
+            } else {
+                toast.error(res.data?.message || "Order not found");
+            }
+        } catch {
+            toast.error("Failed to search order");
+        } finally {
+            setIsSearching(false);
+        }
+    }, [orderSearch, loadedOrders, addLoadedOrder]);
 
     // ── Remove an order ───────────────────────────────────────────────
     const removeOrder = (orderId: string) => {
@@ -483,13 +589,18 @@ export default function ReturnsPage() {
 
             {/* Order search — add multiple */}
             <div className="rounded-xl border bg-card p-5 space-y-3">
-                <Label className="text-sm font-semibold">
-                    Add Receipt(s)
-                    {isMultiOrder && <Badge variant="secondary" className="ml-2 text-xs">{loadedOrders.length} orders</Badge>}
-                </Label>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                    <Label className="text-sm font-semibold">
+                        Add Receipt(s) / Shopify Order
+                        {isMultiOrder && <Badge variant="secondary" className="ml-2 text-xs">{loadedOrders.length} orders</Badge>}
+                    </Label>
+                    <span className="text-[11px] text-muted-foreground">
+                        Search by Invoice #, POS Order #, or Shopify Order ID (e.g. #126958 or 126958)
+                    </span>
+                </div>
                 <div className="flex gap-2">
                     <Input
-                        placeholder="Order number (e.g. SO-20260401-0001)"
+                        placeholder="Invoice #, Order #, or Shopify Order ID (e.g. #126958, SI-...)"
                         value={orderSearch}
                         onChange={e => setOrderSearch(e.target.value)}
                         onKeyDown={e => e.key === "Enter" && handleAddOrder()}
@@ -505,11 +616,16 @@ export default function ReturnsPage() {
                 {loadedOrders.length > 0 && (
                     <div className="flex flex-wrap gap-2">
                         {loadedOrders.map(o => (
-                            <div key={o.id} className="flex items-center gap-2.5 rounded-full bg-gradient-to-r from-emerald-500/10 to-teal-500/10 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-300/80 dark:border-emerald-700/80 px-4 py-2 shadow-sm transition-all hover:shadow duration-200">
+                            <div key={o.id} className="flex items-center gap-2.5 rounded-full bg-linear-to-r from-emerald-500/10 to-teal-500/10 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-300/80 dark:border-emerald-700/80 px-4 py-2 shadow-sm transition-all hover:shadow duration-200">
                                 <div className="p-1 bg-emerald-500 text-white rounded-full">
                                     <Receipt className="h-3 w-3 shrink-0" />
                                 </div>
                                 <span className="font-mono font-extrabold text-emerald-700 dark:text-emerald-300 text-sm tracking-wide">{o.orderNumber}</span>
+                                {o.referenceNumber && (
+                                    <Badge variant="outline" className="bg-emerald-100/70 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 border-emerald-400 font-mono text-[11px] font-semibold py-0 px-2">
+                                        Shopify: {o.referenceNumber}
+                                    </Badge>
+                                )}
                                 {o.locationName && (
                                     <Badge variant="outline" className="bg-emerald-100/60 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 border-emerald-300 text-[10px] font-medium py-0 px-2">
                                         Sold at: {o.locationName}
@@ -528,6 +644,62 @@ export default function ReturnsPage() {
                     </div>
                 )}
             </div>
+
+            {/* Multiple matching orders selection dialog */}
+            <Dialog open={!!multipleMatches} onOpenChange={open => !open && setMultipleMatches(null)}>
+                <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle>Select Matching Order</DialogTitle>
+                        <DialogDescription>
+                            Multiple orders were found matching &quot;{orderSearch}&quot;. Please select the order you want to load:
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="overflow-y-auto space-y-2.5 py-2 flex-1 pr-1">
+                        {multipleMatches?.map((matchOrder: any) => (
+                            <div 
+                                key={matchOrder.id} 
+                                className="flex items-center justify-between p-3.5 rounded-lg border hover:border-emerald-500 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20 transition-all cursor-pointer group"
+                                onClick={() => addLoadedOrder(matchOrder)}
+                            >
+                                <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-mono font-bold text-sm text-foreground">{matchOrder.orderNumber}</span>
+                                        {matchOrder.referenceNumber && (
+                                            <Badge variant="secondary" className="font-mono text-xs bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200">
+                                                Shopify: {matchOrder.referenceNumber}
+                                            </Badge>
+                                        )}
+                                        {matchOrder.status && (
+                                            <Badge variant="outline" className="text-[10px] uppercase">
+                                                {matchOrder.status}
+                                            </Badge>
+                                        )}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+                                        {matchOrder.customer?.name && <span>Customer: {matchOrder.customer.name}</span>}
+                                        {matchOrder.customer?.contactNo && <span>Phone: {matchOrder.customer.contactNo}</span>}
+                                        {matchOrder.location?.name && <span>Location: {matchOrder.location.name}</span>}
+                                        <span>Date: {new Date(matchOrder.createdAt).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+                                <div className="text-right flex items-center gap-3">
+                                    <div>
+                                        <div className="font-bold text-sm text-emerald-600 dark:text-emerald-400 font-mono">
+                                            {formatCurrency(Number(matchOrder.grandTotal))}
+                                        </div>
+                                        <div className="text-[10px] text-muted-foreground">
+                                            {matchOrder.items?.length || 0} item(s)
+                                        </div>
+                                    </div>
+                                    <Button size="sm" variant="default" className="group-hover:bg-emerald-600 group-hover:text-white">
+                                        Select
+                                    </Button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </DialogContent>
+            </Dialog>
 
             {loadedOrders.length > 0 && (
                 <>
@@ -650,7 +822,12 @@ export default function ReturnsPage() {
                                             <TableRow key={line.orderItemId} className={cn(line.returnQty > 0 && "bg-destructive/5")}>
                                                 {isMultiOrder && (
                                                     <TableCell>
-                                                        <span className="font-mono text-xs text-muted-foreground">{line.orderNumber}</span>
+                                                        <span className="font-mono text-xs text-muted-foreground block">{line.orderNumber}</span>
+                                                        {line.referenceNumber && (
+                                                            <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold block">
+                                                                Shopify: {line.referenceNumber}
+                                                            </span>
+                                                        )}
                                                     </TableCell>
                                                 )}
                                                 <TableCell>
@@ -1082,8 +1259,8 @@ export default function ReturnsPage() {
                     notes={notes || undefined}
                     returnedAt={returnReceipt.returnedAt}
                     exchangeVoucher={returnReceipt.exchangeVoucher}
-                    customerName={loadedOrders[0]?.customer?.name || (loadedOrders[0] as any)?.customerName}
-                    customerPhone={loadedOrders[0]?.customer?.phone || (loadedOrders[0] as any)?.customerPhone || (loadedOrders[0] as any)?.customerMobile}
+                    customerName={loadedOrders[0]?.customer?.name || loadedOrders[0]?.customerName}
+                    customerPhone={loadedOrders[0]?.customer?.contactNo || loadedOrders[0]?.customer?.phone || loadedOrders[0]?.customerPhone || loadedOrders[0]?.customerMobile}
                     discountNotes={loadedOrders
                         .filter(o => o.coupon || o.promo || o.alliance)
                         .map(o => {

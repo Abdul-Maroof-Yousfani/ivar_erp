@@ -305,17 +305,11 @@ export class AvailableStockSummaryExportService {
 
     if (hasExplicitLoc && !hasExplicitWh) {
       transitOrConditions.push({ toLocationId: locationWhere });
-      transitOrConditions.push({ fromLocationId: locationWhere });
     } else if (hasExplicitWh && !hasExplicitLoc) {
       transitOrConditions.push({ toWarehouseId: warehouseWhere });
-      transitOrConditions.push({ transferType: 'OUTLET_TO_WAREHOUSE', fromWarehouseId: warehouseWhere });
-      transitOrConditions.push({ fromWarehouseId: warehouseWhere, toLocationId: { not: null } });
     } else if (hasExplicitLoc && hasExplicitWh) {
       transitOrConditions.push({ toLocationId: locationWhere });
-      transitOrConditions.push({ fromLocationId: locationWhere });
       transitOrConditions.push({ toWarehouseId: warehouseWhere });
-      transitOrConditions.push({ transferType: 'OUTLET_TO_WAREHOUSE', fromWarehouseId: warehouseWhere });
-      transitOrConditions.push({ fromWarehouseId: warehouseWhere, toLocationId: { not: null } });
     }
     const transitWhere = transitOrConditions.length > 0 ? { OR: transitOrConditions } : {};
 

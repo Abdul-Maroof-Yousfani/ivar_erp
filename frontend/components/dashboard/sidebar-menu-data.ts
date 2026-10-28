@@ -876,14 +876,22 @@ export const menuData: MenuItem[] = [
       },
       {
         title: "Reports",
+        permissions: [
+          "erp.report.available-stock-summary",
+          "erp.report.out-of-stock",
+          "erp.report.view",
+          "inventory.read",
+        ],
         children: [
           {
             title: "Available Stock Summary",
             href: "/erp/reports/available-stock-summary",
+            permissions: ["erp.report.available-stock-summary", "erp.report.view"],
           },
           {
             title: "Out-of-Stock Report",
             href: "/erp/reports/out-of-stock",
+            permissions: ["erp.report.out-of-stock", "erp.report.view"],
           },
         ],
       },
@@ -1778,17 +1786,21 @@ export const menuData: MenuItem[] = [
     title: "POS Reports",
     icon: TrendingUp,
     environment: "ERP",
-    permissions: ["erp.report.view"],
+    permissions: [
+      "erp.report.view",
+      "erp.report.available-stock-summary",
+      "erp.report.stock-activity",
+    ],
     children: [
       {
         title: "Stock Activity",
         href: "/erp/reports/pos/stock-activity",
-        permissions: ["erp.report.view"],
+        permissions: ["erp.report.stock-activity", "erp.report.view"],
       },
       {
         title: "Available Stock Summary",
         href: "/erp/reports/pos/available-stock-summary",
-        permissions: ["erp.report.view"],
+        permissions: ["erp.report.available-stock-summary", "erp.report.view"],
       },
       // {
       //   title: "Stock Transaction Details",

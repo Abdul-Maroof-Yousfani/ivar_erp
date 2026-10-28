@@ -592,9 +592,6 @@ export class EmployeeService {
       if (!(body as { leavesPolicy?: unknown }).leavesPolicy) {
         throw new Error('Leaves Policy is required');
       }
-      if (!(body as { allocation?: unknown }).allocation) {
-        throw new Error('Allocation is required');
-      }
 
       // Resolve department (handle both ID and name)
       const departmentValue = String(
@@ -730,57 +727,54 @@ export class EmployeeService {
       let stateId: string = stateValue;
       let cityId: string = cityValue;
 
-      if (!isUUID(countryValue)) {
-        // It's a name, resolve to ID
+      // Check if country exists by ID directly first
+      const countryRecord = countryValue
+        ? await this.prisma.country.findUnique({
+            where: { id: countryValue },
+          })
+        : null;
+
+      if (countryRecord) {
+        countryId = countryRecord.id;
+      } else {
+        // It's not an ID, resolve as name
         countryId = (await this.findCountryByName(countryValue)) || '';
         if (!countryId) {
           throw new Error(`Country not found: ${countryValue}`);
         }
-      } else {
-        // Verify the UUID exists
-        const countryExists = await this.prisma.country.findUnique({
-          where: { id: countryValue },
-        });
-        if (!countryExists) {
-          throw new Error(
-            `Country with ID ${countryValue} does not exist in database`,
-          );
-        }
       }
 
-      if (!isUUID(stateValue)) {
-        // It's a name, resolve to ID
+      // Check if state exists by ID directly first
+      const stateRecord = stateValue
+        ? await this.prisma.state.findUnique({
+            where: { id: stateValue },
+          })
+        : null;
+
+      if (stateRecord) {
+        stateId = stateRecord.id;
+      } else {
+        // It's not an ID, resolve as name
         stateId = (await this.findStateByName(stateValue, countryId)) || '';
         if (!stateId) {
           throw new Error(`State not found: ${stateValue}`);
         }
-      } else {
-        // Verify the UUID exists
-        const stateExists = await this.prisma.state.findUnique({
-          where: { id: stateValue },
-        });
-        if (!stateExists) {
-          throw new Error(
-            `State with ID ${stateValue} does not exist in database`,
-          );
-        }
       }
 
-      if (!isUUID(cityValue)) {
-        // It's a name, resolve to ID
+      // Check if city exists by ID directly first
+      const cityRecord = cityValue
+        ? await this.prisma.city.findUnique({
+            where: { id: cityValue },
+          })
+        : null;
+
+      if (cityRecord) {
+        cityId = cityRecord.id;
+      } else {
+        // It's not an ID, resolve as name
         cityId = (await this.findCityByName(cityValue, stateId)) || '';
         if (!cityId) {
           throw new Error(`City not found: ${cityValue}`);
-        }
-      } else {
-        // Verify the UUID exists
-        const cityExists = await this.prisma.city.findUnique({
-          where: { id: cityValue },
-        });
-        if (!cityExists) {
-          throw new Error(
-            `City with ID ${cityValue} does not exist in database`,
-          );
         }
       }
 
@@ -1423,23 +1417,34 @@ export class EmployeeService {
       // Resolve country, state, city
       let resolvedCountryId: string | null | undefined = undefined;
       if (countryValue !== undefined && countryValue !== null) {
-        resolvedCountryId = !isUUID(countryValue)
-          ? await this.findCountryByName(countryValue)
-          : countryValue;
+        const countryRecord = await this.prisma.country.findUnique({
+          where: { id: countryValue },
+        });
+        resolvedCountryId = countryRecord
+          ? countryRecord.id
+          : await this.findCountryByName(countryValue);
       }
 
       let resolvedStateId: string | undefined | null = undefined;
-      if (stateValue !== undefined) {
-        resolvedStateId =
-          !isUUID(stateValue) && resolvedCountryId
+      if (stateValue !== undefined && stateValue !== null) {
+        const stateRecord = await this.prisma.state.findUnique({
+          where: { id: stateValue },
+        });
+        resolvedStateId = stateRecord
+          ? stateRecord.id
+          : resolvedCountryId
             ? await this.findStateByName(stateValue, resolvedCountryId)
             : stateValue;
       }
 
       let resolvedCityId: string | undefined | null = undefined;
-      if (cityValue !== undefined) {
-        resolvedCityId =
-          !isUUID(cityValue) && resolvedStateId
+      if (cityValue !== undefined && cityValue !== null) {
+        const cityRecord = await this.prisma.city.findUnique({
+          where: { id: cityValue },
+        });
+        resolvedCityId = cityRecord
+          ? cityRecord.id
+          : resolvedStateId
             ? await this.findCityByName(cityValue, resolvedStateId)
             : cityValue;
       }

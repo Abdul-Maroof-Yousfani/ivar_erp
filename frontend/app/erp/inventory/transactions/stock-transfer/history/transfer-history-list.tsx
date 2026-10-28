@@ -125,12 +125,29 @@ export function StockTransferHistoryList({ initialEntries }: StockTransferHistor
                                     </div>
                                 </TableCell>
                                 <TableCell>
-                                    {transfer.items.map((item: any, idx: number) => (
-                                        <div key={idx} className="flex flex-col">
-                                            <span className="font-bold text-sm leading-tight">{item.item?.description}</span>
-                                            <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">SKU: {item.item?.sku}</span>
-                                        </div>
-                                    ))}
+                                    {transfer.items.map((item: any, idx: number) => {
+                                        const colorStr = item.item?.color?.name || (typeof item.item?.color === 'string' ? item.item.color : null);
+                                        const sizeStr = item.item?.size?.name || (typeof item.item?.size === 'string' ? item.item.size : null);
+
+                                        return (
+                                            <div key={idx} className="flex flex-col mb-1 last:mb-0">
+                                                <span className="font-bold text-sm leading-tight">{item.item?.description || item.item?.name || "Item"}</span>
+                                                <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">SKU: {item.item?.sku || "N/A"}</span>
+                                                    {colorStr && (
+                                                        <Badge variant="outline" className="text-[9px] py-0 px-1 font-semibold border-border/70">
+                                                            Color: {colorStr}
+                                                        </Badge>
+                                                    )}
+                                                    {sizeStr && (
+                                                        <Badge variant="outline" className="text-[9px] py-0 px-1 font-semibold border-border/70">
+                                                            Size: {sizeStr}
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </TableCell>
                                 <TableCell className="text-center">
                                     <span className="text-lg font-black text-primary">

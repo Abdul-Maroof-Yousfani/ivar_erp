@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -15,6 +16,8 @@ import { PrismaMasterService } from '../database/prisma-master.service';
 
 @Injectable()
 export class TransferRequestService {
+  private readonly logger = new Logger(TransferRequestService.name);
+
   constructor(
     private prisma: PrismaService,
     private stockMovementService: StockMovementService,
@@ -111,42 +114,7 @@ export class TransferRequestService {
         }
       }
 
-      // On POS level, negative stock is strictly disallowed. Validate available stock for outlet transfers.
-      if (
-        (transferType === 'OUTLET_TO_WAREHOUSE' ||
-          transferType === 'OUTLET_TO_OUTLET') &&
-        data.fromLocationId
-      ) {
-        const itemIds = data.items.map((i) => i.itemId);
-        const stockEntries = await this.prisma.stockLedger.groupBy({
-          by: ['itemId'],
-          where: {
-            itemId: { in: itemIds },
-            locationId: data.fromLocationId,
-          },
-          _sum: { qty: true },
-        });
-        const stockMap = new Map<string, number>();
-        for (const entry of stockEntries) {
-          stockMap.set(entry.itemId, Number(entry._sum.qty || 0));
-        }
-
-        for (const item of data.items) {
-          const availableQty = stockMap.get(item.itemId) || 0;
-          if (availableQty < item.quantity) {
-            const itemObj = await this.prisma.item.findUnique({
-              where: { id: item.itemId },
-              select: { sku: true, description: true },
-            });
-            const itemLabel = itemObj
-              ? `${itemObj.sku}${itemObj.description ? ` (${itemObj.description})` : ''}`
-              : item.itemId;
-            throw new BadRequestException(
-              `Insufficient stock for item ${itemLabel} at this outlet. Available: ${availableQty}, Requested: ${item.quantity}`,
-            );
-          }
-        }
-      }
+      // Negative stock allowed on transfer requests per business requirement
 
       const created = await this.prisma.transferRequest.create({
         data: {
@@ -209,6 +177,76 @@ export class TransferRequestService {
     }
   }
 
+  /**
+   * OMS Auto-Approval: Bypass Maker-Checker-Authorizer chain and immediately
+   * accept a transfer request. Used ONLY by the Courierify integration for OMS POS.
+   * All auto-approvals are fully logged in the activity log for audit trail.
+   */
+  async autoAcceptForOms(
+    transferId: string,
+    salesOrderId?: string,
+  ): Promise<void> {
+    try {
+      // Move directly to PENDING so acceptRequest's status guard passes
+      await this.prisma.transferRequest.update({
+        where: { id: transferId },
+        data: {
+          status: 'PENDING',
+          checkedAt: new Date(),
+          authorizedAt: new Date(),
+        },
+      });
+
+      // Now accept: this moves stock and marks COMPLETED
+      await this.acceptRequest(
+        transferId,
+        'OMS_AUTO_SYSTEM',
+        {},
+        {
+          userId: 'OMS_AUTO_SYSTEM',
+          ipAddress: 'system',
+          userAgent: 'OMS-Courierify-AutoApproval',
+        },
+      );
+
+      // Log auto-approval event for full audit history
+      runInBackground(
+        'OMS Auto-Approve Transfer',
+        this.activityLogs.log({
+          userId: 'OMS_AUTO_SYSTEM',
+          action: 'auto_approve',
+          module: 'transfer-request',
+          entity: 'TransferRequest',
+          entityId: transferId,
+          description: `[OMS AUTO] Transfer request auto-approved by Courierify integration`,
+          newValues: JSON.stringify({
+            transferId,
+            salesOrderId: salesOrderId || null,
+            method: 'OMS_COURIERIFY_AUTO',
+            approvedAt: new Date().toISOString(),
+          }),
+          status: 'success',
+        }),
+      );
+    } catch (error: any) {
+      runInBackground(
+        'OMS Auto-Approve Transfer (Failure)',
+        this.activityLogs.log({
+          userId: 'OMS_AUTO_SYSTEM',
+          action: 'auto_approve',
+          module: 'transfer-request',
+          entity: 'TransferRequest',
+          entityId: transferId,
+          description: `[OMS AUTO] Failed to auto-approve transfer request`,
+          errorMessage: error?.message,
+          newValues: JSON.stringify({ transferId, salesOrderId }),
+          status: 'failure',
+        }),
+      );
+      // Don't rethrow — auto-approval failure should NOT block order creation
+      this.logger.error(`[OMS Auto-Approve] Failed for transfer ${transferId}: ${error.message}`, error.stack);
+    }
+  }
   async createBypassedRequest(
     data: {
       fromWarehouseId?: string;
@@ -401,7 +439,10 @@ export class TransferRequestService {
     }
     if (search) {
       andClauses.push({
-        requestNo: { contains: search.trim(), mode: 'insensitive' },
+        OR: [
+          { requestNo: { contains: search.trim(), mode: 'insensitive' } },
+          { notes: { contains: search.trim(), mode: 'insensitive' } },
+        ],
       });
     }
     if (dateFrom || dateTo) {
@@ -1474,6 +1515,7 @@ export class TransferRequestService {
                 referenceType: 'OUTLET_TRANSFER_OUT',
                 referenceId: request.id,
                 rate: itemRate,
+                allowNegativeStock: true,
               },
               tx,
             );

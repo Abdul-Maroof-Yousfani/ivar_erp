@@ -2064,6 +2064,11 @@ export const PERMISSIONS = [
   { name: 'pos.dashboard.view', description: 'View POS Dashboard & Stats' },
   { name: 'pos.report.view', description: 'View POS Reports' },
 
+  // ── ERP Reports ─────────────────────────────────────────────────────────────
+  { name: 'erp.report.view', module: 'erp.report', action: 'view', description: 'View All ERP Reports' },
+  { name: 'erp.report.available-stock-summary', module: 'erp.report', action: 'available-stock-summary', description: 'View Available Stock Summary Report' },
+  { name: 'erp.report.stock-activity', module: 'erp.report', action: 'stock-activity', description: 'View Stock Activity Report' },
+
 
 
   // ── Profile Management ──────────────────────────────────────────────────────

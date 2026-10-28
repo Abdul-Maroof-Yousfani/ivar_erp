@@ -11,6 +11,7 @@ import { AllianceCsvParserService } from '../common/services/alliance-csv-parser
 import { AllianceValidatorService } from '../common/services/alliance-validator.service';
 import { UploadEventsService } from '../finance/item/upload-events.service';
 import { DatabaseModule } from '../database/database.module';
+import { ShopifyModule } from '../shopify/shopify.module';
 
 // Merchant Uploader & Exporter imports
 import { MerchantBulkUploadController } from './merchant-bulk-upload.controller';
@@ -25,6 +26,7 @@ import { MerchantExportProcessor } from './merchant-export.processor';
 @Module({
     imports: [
         DatabaseModule,
+        ShopifyModule, // Provides ShopifyService to VoucherService
         BullModule.registerQueue(
             { name: 'alliance-upload' },
             { name: 'merchant-upload' },
