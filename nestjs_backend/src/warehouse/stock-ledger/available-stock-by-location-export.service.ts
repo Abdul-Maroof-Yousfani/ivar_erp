@@ -22,6 +22,7 @@ export class AvailableStockByLocationExportService {
 
     // ── 1. Resolve locations ──────────────────────────────────────────────────
     const locIds = locationId ? locationId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const whIds = warehouseId ? warehouseId.split(',').map(s => s.trim()).filter(Boolean) : [];
 
     let locations: { id: string; name: string; code: string | null }[];
     if (locIds.length > 0) {
@@ -51,6 +52,16 @@ export class AvailableStockByLocationExportService {
       'APPROVED', 'SOURCE_APPROVED', 'IN_TRANSIT', 'PARTIAL_RECEIVED',
     ];
 
+    // Build transit filter matching target destination/source
+    const transitOrConditions: any[] = [];
+    if (locIds.length > 0) {
+      transitOrConditions.push({ toLocationId: { in: locIds } });
+    }
+    if (whIds.length > 0) {
+      transitOrConditions.push({ toWarehouseId: { in: whIds } });
+    }
+    const transitWhere = transitOrConditions.length > 0 ? { OR: transitOrConditions } : {};
+
     // unique item IDs from ledger + inventory + transit for these locations
     const [ledgerItems, invItems, transitItems] = await Promise.all([
       this.prisma.stockLedger.findMany({
@@ -66,7 +77,7 @@ export class AvailableStockByLocationExportService {
       this.prisma.transferRequestItem.findMany({
         where: {
           transferRequest: {
-            toLocationId: { in: locationIds },
+            ...transitWhere,
             createdAt: { lte: targetDate },
             status: { in: UNACCEPTED_TRANSFER_STATUSES },
           },
