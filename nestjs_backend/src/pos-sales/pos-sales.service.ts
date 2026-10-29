@@ -1779,55 +1779,135 @@ export class PosSalesService implements OnModuleInit {
     }
 
     const cleanSearch = orderNumber.trim();
-    const rawOrders = await this.prisma.salesOrder.findMany({
-      where: {
-        orderNumber: { equals: cleanSearch, mode: 'insensitive' },
-        status: { notIn: ['hold', 'hold_expired', 'hold_cancelled'] },
+    const strippedHash = cleanSearch.replace(/^#+/, '').trim();
+    const withHash = `#${strippedHash}`;
+    const withDoubleHash = `##${strippedHash}`;
+    const crfPlain = `CRF-${cleanSearch}`;
+    const crfStripped = `CRF-${strippedHash}`;
+    const crfWithHash = `CRF-#${strippedHash}`;
+    const shopifyGid = `gid://shopify/Order/${strippedHash}`;
+
+    // Candidates for exact matching
+    const exactOrderNumbers = Array.from(
+      new Set(
+        [
+          cleanSearch,
+          strippedHash,
+          withHash,
+          crfPlain,
+          crfStripped,
+          crfWithHash,
+        ].filter(Boolean),
+      ),
+    );
+    const exactReferenceNumbers = Array.from(
+      new Set(
+        [
+          cleanSearch,
+          strippedHash,
+          withHash,
+          withDoubleHash,
+          shopifyGid,
+        ].filter(Boolean),
+      ),
+    );
+
+    const includeRelations = {
+      customer: {
+        select: {
+          id: true,
+          name: true,
+          contactNo: true,
+          email: true,
+        },
       },
-      take: 10,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        items: {
-          include: {
-            item: {
-              select: {
-                description: true,
-                sku: true,
-                barCode: true,
-                size: { select: { name: true } },
-                color: { select: { name: true } },
-                brand: { select: { name: true } },
-              },
+      items: {
+        include: {
+          item: {
+            select: {
+              description: true,
+              sku: true,
+              barCode: true,
+              size: { select: { name: true } },
+              color: { select: { name: true } },
+              brand: { select: { name: true } },
             },
           },
         },
-        promo: { select: { name: true, code: true } },
-        coupon: { select: { code: true, description: true } },
-        alliance: {
-          select: {
-            partnerName: true,
-            code: true,
-            discountPercent: true,
-            maxDiscount: true,
-          },
-        },
-        merchant: {
-          select: {
-            id: true,
-            bankName: true,
-            description: true,
-            commissionRate: true,
-            bankGlCode: true,
-          },
-        },
-        voucherRedemptions: {
-          select: {
-            amountUsed: true,
-            voucher: { select: { code: true, faceValue: true } },
-          },
+      },
+      promo: { select: { name: true, code: true } },
+      coupon: { select: { code: true, description: true } },
+      alliance: {
+        select: {
+          partnerName: true,
+          code: true,
+          discountPercent: true,
+          maxDiscount: true,
         },
       },
+      merchant: {
+        select: {
+          id: true,
+          bankName: true,
+          description: true,
+          commissionRate: true,
+          bankGlCode: true,
+        },
+      },
+      voucherRedemptions: {
+        select: {
+          amountUsed: true,
+          voucher: { select: { code: true, faceValue: true } },
+        },
+      },
+    };
+
+    // 1. Try exact matches on orderNumber, referenceNumber (Shopify ID), or fbrInvoiceNumber first
+    let rawOrders = await this.prisma.salesOrder.findMany({
+      where: {
+        OR: [
+          { orderNumber: { in: exactOrderNumbers, mode: 'insensitive' } },
+          { referenceNumber: { in: exactReferenceNumbers, mode: 'insensitive' } },
+          { fbrInvoiceNumber: { equals: cleanSearch, mode: 'insensitive' } },
+        ],
+        status: { notIn: ['hold', 'hold_expired', 'hold_cancelled'] },
+      },
+      take: 20,
+      orderBy: { createdAt: 'desc' },
+      include: includeRelations,
     });
+
+    // 2. If no exact match found, fall back to contains / partial matching
+    if (rawOrders.length === 0) {
+      const fuzzyOr: Prisma.SalesOrderWhereInput[] = [
+        {
+          orderNumber: {
+            contains: strippedHash || cleanSearch,
+            mode: 'insensitive',
+          },
+        },
+        {
+          referenceNumber: {
+            contains: strippedHash || cleanSearch,
+            mode: 'insensitive',
+          },
+        },
+        { notes: { contains: cleanSearch, mode: 'insensitive' } },
+      ];
+      if (strippedHash && strippedHash !== cleanSearch) {
+        fuzzyOr.push({ notes: { contains: strippedHash, mode: 'insensitive' } });
+      }
+
+      rawOrders = await this.prisma.salesOrder.findMany({
+        where: {
+          OR: fuzzyOr,
+          status: { notIn: ['hold', 'hold_expired', 'hold_cancelled'] },
+        },
+        take: 20,
+        orderBy: { createdAt: 'desc' },
+        include: includeRelations,
+      });
+    }
 
     if (rawOrders.length === 0) {
       return {
@@ -1835,6 +1915,37 @@ export class PosSalesService implements OnModuleInit {
         message: `Order matching "${cleanSearch}" not found`,
       };
     }
+
+    // Sort: Exact matches on referenceNumber or orderNumber first
+    rawOrders.sort((a, b) => {
+      const aRefExact =
+        a.referenceNumber?.toLowerCase() === cleanSearch.toLowerCase() ||
+        a.referenceNumber?.toLowerCase() === withHash.toLowerCase() ||
+        a.referenceNumber?.toLowerCase() === strippedHash.toLowerCase()
+          ? 0
+          : 1;
+      const bRefExact =
+        b.referenceNumber?.toLowerCase() === cleanSearch.toLowerCase() ||
+        b.referenceNumber?.toLowerCase() === withHash.toLowerCase() ||
+        b.referenceNumber?.toLowerCase() === strippedHash.toLowerCase()
+          ? 0
+          : 1;
+      if (aRefExact !== bRefExact) return aRefExact - bRefExact;
+
+      const aOrderExact =
+        a.orderNumber.toLowerCase() === cleanSearch.toLowerCase() ||
+        a.orderNumber.toLowerCase() === strippedHash.toLowerCase()
+          ? 0
+          : 1;
+      const bOrderExact =
+        b.orderNumber.toLowerCase() === cleanSearch.toLowerCase() ||
+        b.orderNumber.toLowerCase() === strippedHash.toLowerCase()
+          ? 0
+          : 1;
+      if (aOrderExact !== bOrderExact) return aOrderExact - bOrderExact;
+
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
 
     const orderIds = rawOrders.map((o) => o.id);
     const returnEntries = await this.prisma.stockLedger.findMany({
@@ -2252,51 +2363,84 @@ export class PosSalesService implements OnModuleInit {
       const rawCard = Number(order.cardAmount ?? 0);
       const change = Number(order.changeAmount ?? 0);
       const grandTotal = Number(order.grandTotal ?? 0);
-
-      // Determine if voucher redemption is double-counted within card/cash amounts
-      const excess = Math.max(
-        0,
-        rawCash + rawCard + voucherTotalFromRedemptions - (grandTotal + change),
-      );
+      const isCourierify =
+        order.notes?.includes('Source: Courierify') ||
+        order.paymentMethod?.toUpperCase() === 'COD';
 
       let cash = rawCash;
       let card = rawCard;
-      if (excess > 0) {
-        if (card > 0) {
-          card = Math.max(0, card - excess);
-        } else {
-          cash = Math.max(0, cash - excess);
+
+      if (!isCourierify) {
+        // Determine if voucher redemption is double-counted within card/cash amounts
+        const excess = Math.max(
+          0,
+          rawCash + rawCard + voucherTotalFromRedemptions - (grandTotal + change),
+        );
+
+        if (excess > 0) {
+          if (card > 0) {
+            card = Math.max(0, card - excess);
+          } else {
+            cash = Math.max(0, cash - excess);
+          }
         }
       }
 
-      if (order.tenderType === 'split') {
-        if (cash > 0) tenders.push({ method: 'cash', amount: cash });
-        if (card > 0) tenders.push({ method: 'card', amount: card });
+      const cashMethodName = isCourierify ? 'cod' : 'cash';
+      let cardMethod = 'card';
+      let advanceSlipNo: string | undefined = undefined;
+      if (isCourierify) {
+        const advMatch = order.notes?.match(/Advance Paid:\s*Rs\.?\s*[\d.,]+\s*\(([^)]+)\)/i);
+        if (advMatch && advMatch[1]) {
+          const parts = advMatch[1].split(/ref:?/i);
+          const rawMethod = (parts[0]?.trim() || 'card').toLowerCase().replace(/\s+/g, '_');
+          cardMethod = rawMethod.includes('bank') ? 'bank_transfer' : 'card';
+          advanceSlipNo = parts[1]?.trim() || undefined;
+        } else {
+          cardMethod = order.paymentMethod?.toLowerCase() === 'bank_transfer' ? 'bank_transfer' : 'card';
+        }
+      }
+
+      const pm = String(order.paymentMethod || '').toLowerCase();
+      const isCardOrOnline =
+        order.tenderType?.toLowerCase() === 'card' ||
+        pm.includes('card') ||
+        pm.includes('gateway') ||
+        pm.includes('online') ||
+        pm.includes('prepaid') ||
+        pm.includes('stripe') ||
+        pm.includes('payfast') ||
+        pm.includes('shopify');
+
+      if (order.tenderType?.toLowerCase() === 'split' || (cash > 0 && card > 0)) {
+        if (cash > 0) tenders.push({ method: cashMethodName, amount: cash });
+        if (card > 0) tenders.push({ method: cardMethod, amount: card, slipNo: advanceSlipNo });
+      } else if (isCardOrOnline || pm === 'bank_transfer') {
+        const finalCard =
+          card > 0
+            ? card
+            : Math.max(0, grandTotal - voucherTotalFromRedemptions);
+        if (finalCard > 0)
+          tenders.push({
+            method: pm === 'bank_transfer' ? 'bank_transfer' : 'card',
+            amount: finalCard,
+            slipNo: advanceSlipNo,
+          });
       } else if (order.paymentMethod) {
-        if (order.paymentMethod === 'cash') {
+        if (pm === 'cash' || pm === 'cod') {
           const finalCash =
             cash > 0
               ? cash
               : Math.max(0, grandTotal - voucherTotalFromRedemptions);
           if (finalCash > 0)
-            tenders.push({ method: 'cash', amount: finalCash });
-        } else if (
-          order.paymentMethod === 'card' ||
-          order.paymentMethod === 'bank_transfer'
-        ) {
-          const finalCard =
-            card > 0
-              ? card
-              : Math.max(0, grandTotal - voucherTotalFromRedemptions);
-          if (finalCard > 0)
-            tenders.push({ method: order.paymentMethod, amount: finalCard });
+            tenders.push({ method: cashMethodName, amount: finalCash });
         } else if (order.paymentMethod !== 'voucher') {
           const finalAmt = Math.max(
             0,
             grandTotal - voucherTotalFromRedemptions,
           );
           if (finalAmt > 0)
-            tenders.push({ method: order.paymentMethod, amount: finalAmt });
+            tenders.push({ method: isCourierify ? 'cod' : order.paymentMethod, amount: finalAmt });
         }
       }
 
@@ -2820,12 +2964,41 @@ export class PosSalesService implements OnModuleInit {
         });
       }
 
-      if (order.tenderType === 'split') {
+      const isCourierify =
+        order.notes?.includes('Source: Courierify') ||
+        order.paymentMethod?.toUpperCase() === 'COD';
+      const cashMethodName = isCourierify ? 'cod' : 'cash';
+      let cardMethod = 'card';
+      let advanceSlipNo: string | undefined = undefined;
+      if (isCourierify) {
+        const advMatch = order.notes?.match(/Advance Paid:\s*Rs\.?\s*[\d.,]+\s*\(([^)]+)\)/i);
+        if (advMatch && advMatch[1]) {
+          const parts = advMatch[1].split(/ref:?/i);
+          const rawMethod = (parts[0]?.trim() || 'card').toLowerCase().replace(/\s+/g, '_');
+          cardMethod = rawMethod.includes('bank') ? 'bank_transfer' : 'card';
+          advanceSlipNo = parts[1]?.trim() || undefined;
+        } else {
+          cardMethod = order.paymentMethod?.toLowerCase() === 'bank_transfer' ? 'bank_transfer' : 'card';
+        }
+      }
+
+      const pm = String(order.paymentMethod || '').toLowerCase();
+      const isCardOrOnline =
+        order.tenderType?.toLowerCase() === 'card' ||
+        pm.includes('card') ||
+        pm.includes('gateway') ||
+        pm.includes('online') ||
+        pm.includes('prepaid') ||
+        pm.includes('stripe') ||
+        pm.includes('payfast') ||
+        pm.includes('shopify');
+
+      if (order.tenderType?.toLowerCase() === 'split' || (Number(order.cashAmount) > 0 && Number(order.cardAmount) > 0)) {
         if (Number(order.cashAmount) > 0)
-          tenders.push({ method: 'cash', amount: Number(order.cashAmount) });
+          tenders.push({ method: cashMethodName, amount: Number(order.cashAmount) });
         const isLegacy =
           order.voucherAmount === null || order.voucherAmount === undefined;
-        const realCardAmount = isLegacy
+        const realCardAmount = isLegacy && !isCourierify
           ? Math.max(
               0,
               Number(order.cardAmount) -
@@ -2834,19 +3007,30 @@ export class PosSalesService implements OnModuleInit {
             )
           : Number(order.cardAmount);
         if (realCardAmount > 0)
-          tenders.push({ method: 'card', amount: realCardAmount });
+          tenders.push({ method: cardMethod, amount: realCardAmount, slipNo: advanceSlipNo });
+      } else if (isCardOrOnline || pm === 'bank_transfer') {
+        const finalCard =
+          Number(order.cardAmount) > 0
+            ? Number(order.cardAmount)
+            : Math.max(0, Number(order.grandTotal) - voucherTotalFromRedemptions);
+        if (finalCard > 0)
+          tenders.push({
+            method: pm === 'bank_transfer' ? 'bank_transfer' : 'card',
+            amount: finalCard,
+            slipNo: advanceSlipNo,
+          });
       } else if (order.paymentMethod) {
         if (voucherTotalFromRedemptions > 0) {
           const totalOrder = Number(order.grandTotal);
           const remaining = totalOrder - voucherTotalFromRedemptions;
           if (remaining > 0)
-            tenders.push({ method: order.paymentMethod, amount: remaining });
+            tenders.push({ method: (isCourierify && (pm === 'cod' || pm === 'cash')) ? 'cod' : order.paymentMethod, amount: remaining });
         } else {
           const amount =
             Number(order.cashAmount) ||
             Number(order.cardAmount) ||
             Number(order.grandTotal);
-          tenders.push({ method: order.paymentMethod, amount });
+          tenders.push({ method: (isCourierify && (pm === 'cod' || pm === 'cash')) ? 'cod' : order.paymentMethod, amount });
         }
       }
 
@@ -3443,47 +3627,80 @@ export class PosSalesService implements OnModuleInit {
     const rawCard = Number(order.cardAmount ?? 0);
     const change = Number(order.changeAmount ?? 0);
     const grandTotal = Number(order.grandTotal ?? 0);
-
-    // Determine if voucher redemption is double-counted within card/cash amounts
-    const excess = Math.max(
-      0,
-      rawCash + rawCard + voucherTotalFromRedemptions - (grandTotal + change),
-    );
+    const isCourierify =
+      order.notes?.includes('Source: Courierify') ||
+      order.paymentMethod?.toUpperCase() === 'COD';
 
     let cash = rawCash;
     let card = rawCard;
-    if (excess > 0) {
-      if (card > 0) {
-        card = Math.max(0, card - excess);
-      } else {
-        cash = Math.max(0, cash - excess);
+
+    if (!isCourierify) {
+      // Determine if voucher redemption is double-counted within card/cash amounts
+      const excess = Math.max(
+        0,
+        rawCash + rawCard + voucherTotalFromRedemptions - (grandTotal + change),
+      );
+
+      if (excess > 0) {
+        if (card > 0) {
+          card = Math.max(0, card - excess);
+        } else {
+          cash = Math.max(0, cash - excess);
+        }
       }
     }
 
-    if (order.tenderType === 'split') {
-      if (cash > 0) tenders.push({ method: 'cash', amount: cash });
-      if (card > 0) tenders.push({ method: 'card', amount: card });
+    const cashMethodName = isCourierify ? 'cod' : 'cash';
+    let cardMethod = 'card';
+    let advanceSlipNo: string | undefined = undefined;
+    if (isCourierify) {
+      const advMatch = order.notes?.match(/Advance Paid:\s*Rs\.?\s*[\d.,]+\s*\(([^)]+)\)/i);
+      if (advMatch && advMatch[1]) {
+        const parts = advMatch[1].split(/ref:?/i);
+        const rawMethod = (parts[0]?.trim() || 'card').toLowerCase().replace(/\s+/g, '_');
+        cardMethod = rawMethod.includes('bank') ? 'bank_transfer' : 'card';
+        advanceSlipNo = parts[1]?.trim() || undefined;
+      } else {
+        cardMethod = order.paymentMethod?.toLowerCase() === 'bank_transfer' ? 'bank_transfer' : 'card';
+      }
+    }
+
+    const pm = String(order.paymentMethod || '').toLowerCase();
+    const isCardOrOnline =
+      order.tenderType?.toLowerCase() === 'card' ||
+      pm.includes('card') ||
+      pm.includes('gateway') ||
+      pm.includes('online') ||
+      pm.includes('prepaid') ||
+      pm.includes('stripe') ||
+      pm.includes('payfast') ||
+      pm.includes('shopify');
+
+    if (order.tenderType?.toLowerCase() === 'split' || (cash > 0 && card > 0)) {
+      if (cash > 0) tenders.push({ method: cashMethodName, amount: cash });
+      if (card > 0) tenders.push({ method: cardMethod, amount: card, slipNo: advanceSlipNo });
+    } else if (isCardOrOnline || pm === 'bank_transfer') {
+      const finalCard =
+        card > 0
+          ? card
+          : Math.max(0, grandTotal - voucherTotalFromRedemptions);
+      if (finalCard > 0)
+        tenders.push({
+          method: pm === 'bank_transfer' ? 'bank_transfer' : 'card',
+          amount: finalCard,
+          slipNo: advanceSlipNo,
+        });
     } else if (order.paymentMethod) {
-      if (order.paymentMethod === 'cash') {
+      if (pm === 'cash' || pm === 'cod') {
         const finalCash =
           cash > 0
             ? cash
             : Math.max(0, grandTotal - voucherTotalFromRedemptions);
-        if (finalCash > 0) tenders.push({ method: 'cash', amount: finalCash });
-      } else if (
-        order.paymentMethod === 'card' ||
-        order.paymentMethod === 'bank_transfer'
-      ) {
-        const finalCard =
-          card > 0
-            ? card
-            : Math.max(0, grandTotal - voucherTotalFromRedemptions);
-        if (finalCard > 0)
-          tenders.push({ method: order.paymentMethod, amount: finalCard });
+        if (finalCash > 0) tenders.push({ method: cashMethodName, amount: finalCash });
       } else if (order.paymentMethod !== 'voucher') {
         const finalAmt = Math.max(0, grandTotal - voucherTotalFromRedemptions);
         if (finalAmt > 0)
-          tenders.push({ method: order.paymentMethod, amount: finalAmt });
+          tenders.push({ method: isCourierify ? 'cod' : order.paymentMethod, amount: finalAmt });
       }
     }
 
@@ -3598,12 +3815,20 @@ export class PosSalesService implements OnModuleInit {
           priceAdjusted: boolean;
         }[] = [];
 
-        // Pre-compute for proportional coupon distribution
+        // Pre-compute for proportional coupon distribution (excluding delivery charges)
         const lineTotalsSum = order.items.reduce(
           (s, i) => s + Number(i.lineTotal),
           0,
         );
-        const orderLevelDiscount = lineTotalsSum - Number(order.grandTotal);
+        const deliveryCharges = (() => {
+          const match = order.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
+          if (match && match[1]) return parseFloat(match[1].replace(/,/g, ''));
+          return 0;
+        })();
+        const itemsGrandTotal = Math.max(0, Number(order.grandTotal) - deliveryCharges);
+        const orderLevelDiscount = Math.max(0, lineTotalsSum - itemsGrandTotal);
+        const isAllianceOrNoGlobalDisc =
+          Math.abs(lineTotalsSum - itemsGrandTotal) <= 5;
 
         // ── Auto-create STN (TransferRequest) if return is at a different outlet ──
         let crossLocationStn: any = null;
@@ -3705,16 +3930,15 @@ export class PosSalesService implements OnModuleInit {
           const qty = Number(orderItem.quantity);
           const lineTotal = Number(orderItem.lineTotal);
 
-          const isAllianceOrNoGlobalDisc =
-            Math.abs(lineTotalsSum - Number(order.grandTotal)) <= 5;
+          const isAllianceOrNoGlobalDiscItem = isAllianceOrNoGlobalDisc;
           const itemCouponDeduction =
-            isAllianceOrNoGlobalDisc || lineTotalsSum <= 0
+            isAllianceOrNoGlobalDiscItem || lineTotalsSum <= 0
               ? 0
               : (lineTotal / lineTotalsSum) * orderLevelDiscount;
           const itemShare = lineTotal - itemCouponDeduction;
 
           let originalPaidPerUnit = 0;
-          if (isAllianceOrNoGlobalDisc) {
+          if (isAllianceOrNoGlobalDiscItem) {
             originalPaidPerUnit = lineTotal / qty;
           } else {
             originalPaidPerUnit = itemShare / qty;
@@ -4809,9 +5033,15 @@ export class PosSalesService implements OnModuleInit {
           (s, i) => s + Number(i.lineTotal),
           0,
         );
-        const orderLevelDiscount = lineTotalsSum - Number(order.grandTotal);
+        const deliveryCharges = (() => {
+          const match = order.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
+          if (match && match[1]) return parseFloat(match[1].replace(/,/g, ''));
+          return 0;
+        })();
+        const itemsGrandTotal = Math.max(0, Number(order.grandTotal) - deliveryCharges);
+        const orderLevelDiscount = Math.max(0, lineTotalsSum - itemsGrandTotal);
         const isAllianceOrNoGlobalDisc =
-          Math.abs(lineTotalsSum - Number(order.grandTotal)) <= 5;
+          Math.abs(lineTotalsSum - itemsGrandTotal) <= 5;
 
         let totalRefundAmount = 0;
         const itemRefundDetails: any[] = [];
