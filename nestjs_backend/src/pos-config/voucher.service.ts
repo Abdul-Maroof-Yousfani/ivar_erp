@@ -68,13 +68,139 @@ export class VoucherService {
                 where,
                 include: {
                     locations: { include: { location: { select: { id: true, name: true, code: true } } } },
-                    redemptions: { select: { amountUsed: true, orderId: true } },
+                    redemptions: {
+                        select: {
+                            amountUsed: true,
+                            orderId: true,
+                            createdAt: true,
+                            order: {
+                                select: {
+                                    id: true,
+                                    orderNumber: true,
+                                    locationId: true,
+                                },
+                            },
+                        },
+                    },
+                    claims: {
+                        select: {
+                            claimNumber: true,
+                            salesOrder: {
+                                select: {
+                                    id: true,
+                                    orderNumber: true,
+                                    locationId: true,
+                                },
+                            },
+                        },
+                    },
                     shopifyItems: true,
                 },
                 orderBy: { createdAt: 'desc' },
             });
 
-            return { status: true, data: vouchers };
+            // Collect potential sourceOrderIds (UUID format or not)
+            const potentialOrderIds = vouchers
+                .map((v) => v.sourceOrderId)
+                .filter((id): id is string => !!id && id.length > 20);
+
+            const sourceOrders = potentialOrderIds.length > 0
+                ? await this.prisma.salesOrder.findMany({
+                    where: { id: { in: potentialOrderIds } },
+                    select: { id: true, orderNumber: true, returnNumber: true, refundNumber: true, locationId: true },
+                })
+                : [];
+
+            const sourceOrderMap = new Map(sourceOrders.map((o) => [o.id, o]));
+
+            // Collect all unique location IDs needed
+            const locationIdsToFetch = new Set<string>();
+            vouchers.forEach((v) => {
+                if (v.issuedByLocationId) locationIdsToFetch.add(v.issuedByLocationId);
+                v.redemptions?.forEach((r) => {
+                    if (r.order?.locationId) locationIdsToFetch.add(r.order.locationId);
+                });
+                if (v.sourceOrderId && sourceOrderMap.has(v.sourceOrderId)) {
+                    const srcLoc = sourceOrderMap.get(v.sourceOrderId)?.locationId;
+                    if (srcLoc) locationIdsToFetch.add(srcLoc);
+                }
+                v.claims?.forEach((c) => {
+                    if (c.salesOrder?.locationId) locationIdsToFetch.add(c.salesOrder.locationId);
+                });
+            });
+
+            const fetchedLocations = locationIdsToFetch.size > 0
+                ? await this.prisma.location.findMany({
+                    where: { id: { in: Array.from(locationIdsToFetch) } },
+                    select: { id: true, name: true, code: true },
+                })
+                : [];
+
+            const locationMap = new Map(fetchedLocations.map((l) => [l.id, l]));
+
+            const enrichedVouchers = vouchers.map((v) => {
+                // 1. Resolve Invoice / Source (Shopify Order ID or Sale / Return Invoice # or Claim #)
+                let invoiceNumber = '-';
+                if (v.voucherType === 'SHOPIFY') {
+                    invoiceNumber = v.sourceOrderId || (v.shopifyItems && v.shopifyItems.length > 0 ? v.shopifyItems[0].orderId : '') || '-';
+                } else if (v.claims && v.claims.length > 0) {
+                    invoiceNumber = v.claims.map((c) => c.claimNumber).join(', ');
+                } else if (v.sourceOrderId) {
+                    const srcOrd = sourceOrderMap.get(v.sourceOrderId);
+                    if (srcOrd) {
+                        invoiceNumber = srcOrd.returnNumber || srcOrd.refundNumber || srcOrd.orderNumber || v.sourceOrderId;
+                    } else {
+                        invoiceNumber = v.sourceOrderId;
+                    }
+                }
+
+                // 2. Resolve Issued Location
+                let issuedLocation = v.issuedByLocationId ? locationMap.get(v.issuedByLocationId) || null : null;
+                if (!issuedLocation && v.sourceOrderId && sourceOrderMap.has(v.sourceOrderId)) {
+                    const srcLocId = sourceOrderMap.get(v.sourceOrderId)?.locationId;
+                    if (srcLocId) issuedLocation = locationMap.get(srcLocId) || null;
+                }
+                if (!issuedLocation && v.claims && v.claims.length > 0) {
+                    const claimLocId = v.claims[0].salesOrder?.locationId;
+                    if (claimLocId) issuedLocation = locationMap.get(claimLocId) || null;
+                }
+                if (!issuedLocation && v.locations && v.locations.length === 1 && v.locations[0].location) {
+                    issuedLocation = v.locations[0].location;
+                }
+
+                // 3. Resolve Redeemed Location and Order
+                let redeemedLocation = null;
+                let redeemedInvoice = '-';
+                if (v.isRedeemed && v.redemptions && v.redemptions.length > 0) {
+                    const redLocNames = new Set<string>();
+                    const redOrderNumbers = new Set<string>();
+                    v.redemptions.forEach((r) => {
+                        if (r.order?.locationId && locationMap.has(r.order.locationId)) {
+                            const loc = locationMap.get(r.order.locationId)!;
+                            redLocNames.add(`${loc.name} (${loc.code})`);
+                        }
+                        if (r.order?.orderNumber) {
+                            redOrderNumbers.add(r.order.orderNumber);
+                        }
+                    });
+                    if (redLocNames.size > 0) {
+                        redeemedLocation = Array.from(redLocNames).join(', ');
+                    }
+                    if (redOrderNumbers.size > 0) {
+                        redeemedInvoice = Array.from(redOrderNumbers).join(', ');
+                    }
+                }
+
+                return {
+                    ...v,
+                    invoiceNumber,
+                    issuedByLocation: issuedLocation,
+                    redeemedLocation: redeemedLocation || (v.isRedeemed ? 'Redeemed' : '—'),
+                    redeemedInvoice,
+                };
+            });
+
+            return { status: true, data: enrichedVouchers };
         } catch (error: any) {
             return { status: false, message: error.message };
         }
