@@ -582,16 +582,61 @@ export default function PosVouchersPage() {
             `"REPORT: VOUCHERS (${activeTab})"`
         ].join("\n");
 
-        let headers = ["Code", "Type", "Description", "Value", "Discount", "Expires", "Issued", "Status"];
+        let headers = [
+            "Code",
+            "Type",
+            "Invoice / Source",
+            "Issued From",
+            "Redeemed At",
+            "Description",
+            "Value",
+            "Discount",
+            "Expires",
+            "Issued",
+            "Status"
+        ];
         if (activeTab === "SHOPIFY") {
-            headers = ["Code", "Type", "Description", "Value", "Discount", "Expires", "Issued", "Status", "Order ID", "Item Name", "SKU", "Barcode", "Item Qty", "Item Price"];
+            headers = [
+                "Code",
+                "Type",
+                "Invoice / Source",
+                "Issued From",
+                "Redeemed At",
+                "Description",
+                "Value",
+                "Discount",
+                "Expires",
+                "Issued",
+                "Status",
+                "Order ID",
+                "Item Name",
+                "SKU",
+                "Barcode",
+                "Item Qty",
+                "Item Price"
+            ];
         }
 
         const rows: any[] = [];
         filtered.forEach(v => {
+            const issuedLocStr = v.issuedByLocation
+                ? `${v.issuedByLocation.name} (${v.issuedByLocation.code})`
+                : "Global / Head Office";
+
+            const redeemedLocStr = v.isRedeemed
+                ? (v.redeemedLocation && v.redeemedLocation !== "—"
+                    ? (v.redeemedInvoice && v.redeemedInvoice !== "-" ? `${v.redeemedLocation} [Inv: ${v.redeemedInvoice}]` : v.redeemedLocation)
+                    : "Redeemed")
+                : "-";
+
+            const invoiceStr = v.invoiceNumber && v.invoiceNumber !== "-" ? v.invoiceNumber : "-";
+
             const baseRow = [
                 v.code,
                 v.voucherType,
+                invoiceStr,
+                issuedLocStr,
+                redeemedLocStr,
                 v.description || "-",
                 v.faceValue.toString(),
                 (v.discount || 0).toString(),
@@ -599,7 +644,7 @@ export default function PosVouchersPage() {
                 new Date(v.createdAt).toLocaleDateString("en-GB"),
                 v.isDeleted ? "Voided" : v.isRedeemed ? "Redeemed" : "Active"
             ];
-            const emptyBaseRow = ["", "", "", "", "", "", "", ""];
+            const emptyBaseRow = ["", "", "", "", "", "", "", "", "", "", ""];
 
             if (activeTab === "SHOPIFY") {
                 if (v.shopifyItems && v.shopifyItems.length > 0) {
@@ -724,8 +769,10 @@ export default function PosVouchersPage() {
                                     <TableRow className="bg-muted/30">
                                         <TableHead>Code</TableHead>
                                         <TableHead>Type</TableHead>
-                                        <TableHead>Description</TableHead>
+                                        <TableHead>Invoice / Order #</TableHead>
                                         <TableHead>Issued From</TableHead>
+                                        <TableHead>Redeemed At</TableHead>
+                                        <TableHead>Description</TableHead>
                                         <TableHead className="text-right">Value</TableHead>
                                         <TableHead>Expires</TableHead>
                                         <TableHead>Issued</TableHead>
@@ -756,8 +803,19 @@ export default function PosVouchersPage() {
                                                         {typeInfo?.label}
                                                     </span>
                                                 </TableCell>
-                                                <TableCell className="text-sm text-muted-foreground max-w-40 truncate">
-                                                    {v.description ? v.description : v.companyName ? `${v.companyName}${v.companyGlCode ? ` (${v.companyGlCode})` : ""}` : "—"}
+                                                <TableCell>
+                                                    {v.invoiceNumber && v.invoiceNumber !== "-" ? (
+                                                        <div className="space-y-0.5">
+                                                            <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold bg-muted px-2 py-0.5 rounded border border-border">
+                                                                {v.invoiceNumber}
+                                                            </span>
+                                                            {v.voucherType === "SHOPIFY" && (
+                                                                <div className="text-[10px] text-muted-foreground">Shopify Order</div>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-muted-foreground">—</span>
+                                                    )}
                                                 </TableCell>
                                                 <TableCell className="text-sm">
                                                     {v.issuedByLocation ? (
@@ -766,8 +824,27 @@ export default function PosVouchersPage() {
                                                             <div className="text-[10px] text-muted-foreground font-mono">{v.issuedByLocation.code}</div>
                                                         </div>
                                                     ) : (
-                                                        <span className="text-muted-foreground italic text-xs">Global</span>
+                                                        <span className="text-muted-foreground italic text-xs">Global / Head Office</span>
                                                     )}
+                                                </TableCell>
+                                                <TableCell className="text-sm">
+                                                    {v.isRedeemed ? (
+                                                        v.redeemedLocation && v.redeemedLocation !== "—" ? (
+                                                            <div className="space-y-0.5">
+                                                                <div className="font-semibold text-foreground truncate max-w-40">{v.redeemedLocation}</div>
+                                                                {v.redeemedInvoice && v.redeemedInvoice !== "-" && (
+                                                                    <div className="text-[10px] text-muted-foreground font-mono">Invoice: {v.redeemedInvoice}</div>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-blue-600 font-medium text-xs">Redeemed</span>
+                                                        )
+                                                    ) : (
+                                                        <span className="text-muted-foreground">—</span>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell className="text-sm text-muted-foreground max-w-40 truncate">
+                                                    {v.description ? v.description : v.companyName ? `${v.companyName}${v.companyGlCode ? ` (${v.companyGlCode})` : ""}` : "—"}
                                                 </TableCell>
                                                  <TableCell className="text-right font-mono">
                                                      <div className="font-semibold">{formatCurrency(Number(v.faceValue))}</div>

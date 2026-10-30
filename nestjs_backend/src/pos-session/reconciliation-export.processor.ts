@@ -15,6 +15,7 @@ export interface ReconciliationExportJobData {
   tenantDbUrl: string;
   locationId: string;
   date: string;
+  endDate?: string;
 }
 
 @Processor('reconciliation-export')
@@ -27,7 +28,7 @@ export class ReconciliationExportProcessor {
 
   @Process()
   async handleExport(job: Job<ReconciliationExportJobData>): Promise<void> {
-    const { jobId, userId, tenantId, tenantDbUrl, locationId, date } = job.data;
+    const { jobId, userId, tenantId, tenantDbUrl, locationId, date, endDate } = job.data;
 
     this.logger.log(`[ReconciliationExport ${jobId}] Starting background Excel export for user ${userId}`);
 
@@ -40,7 +41,7 @@ export class ReconciliationExportProcessor {
 
     try {
       await job.progress(10);
-      const data = await sessionService.getDaywiseReconciliation(locationId, date);
+      const data = await sessionService.getDaywiseReconciliation(locationId, date, endDate);
       await job.progress(30);
 
       const workbook = new ExcelJS.Workbook();
