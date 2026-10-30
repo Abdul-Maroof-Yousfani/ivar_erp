@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
@@ -6,7 +6,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { getLocations, Location } from "@/lib/actions/location";
 import { MultiSelect, MultiSelectOption } from "@/components/ui/multi-select";
 import { Button } from "@/components/ui/button";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DateRangePicker, DateRange } from "@/components/ui/date-range-picker";
 import { authFetch } from "@/lib/auth";
 import { getApiBaseUrl, cn } from "@/lib/utils";
 import {
@@ -31,12 +31,14 @@ const formatVal = (val: number | string | null | undefined, isRate: boolean = fa
 const ReconciliationSheet = ({
     activeReport,
     layout = "desktop",
-    selectedDate,
+    selectedDateFrom,
+    selectedDateTo,
     isPrint = false
 }: {
     activeReport: any;
     layout: "desktop" | "thermal";
-    selectedDate: string;
+    selectedDateFrom: string;
+    selectedDateTo?: string;
     isPrint?: boolean;
 }) => {
     if (!activeReport) return null;
@@ -79,7 +81,7 @@ const ReconciliationSheet = ({
                     </div>
                     <div className="flex justify-between text-[7.5px] font-bold tracking-tight">
                         <span>DOC ID: #{activeReport.documentNumber}</span>
-                        <span>DATE: {new Date(selectedDate).toLocaleDateString('en-GB')}</span>
+                        <span>DATE: {new Date(selectedDateFrom).toLocaleDateString('en-GB')}{selectedDateTo && selectedDateTo !== selectedDateFrom ? ' - ' + new Date(selectedDateTo).toLocaleDateString('en-GB') : ''}</span>
                     </div>
                 </div>
 
@@ -775,7 +777,11 @@ export default function ErpReconciliationReportPage() {
         return `${year}-${month}-${day}`;
     };
 
-    const [selectedDate, setSelectedDate] = useState<string>(getTodayString());
+    const [dateRange, setDateRange] = useState<DateRange>({ from: new Date(), to: new Date() });
+    const toDateStr = (d: Date | undefined): string => {
+        if (!d) return getTodayString();
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    };
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [layout, setLayout] = useState<"thermal" | "desktop">("desktop");
@@ -805,10 +811,12 @@ export default function ErpReconciliationReportPage() {
     }, [selectedLocationIds, locations]);
 
     const fetchDetails = async () => {
-        if (!selectedDate) return;
+        if (!dateRange.from) return;
         setLoading(true);
         try {
-            const url = `/pos-session/reconciliation/daywise?date=${selectedDate}&locationId=${encodeURIComponent(locationParam)}`;
+            const fromStr = toDateStr(dateRange.from);
+            const toStr = toDateStr(dateRange.to);
+            const url = `/pos-session/reconciliation/daywise?date=${fromStr}&endDate=${toStr}&locationId=${encodeURIComponent(locationParam)}`;
             const res = await authFetch(url);
             if (res.ok) {
                 setData(res.data);
@@ -826,7 +834,7 @@ export default function ErpReconciliationReportPage() {
 
     useEffect(() => {
         fetchDetails();
-    }, [selectedDate, locationParam]);
+    }, [dateRange, locationParam]);
 
     const handlePrint = () => {
         if (!data) return;
@@ -858,7 +866,7 @@ export default function ErpReconciliationReportPage() {
                 });
 
                 pdf.addImage(dataUrl, "PNG", 0, 0, pdfWidth, pdfHeight);
-                pdf.save(`reconciliation-${selectedDate}.pdf`);
+                pdf.save(`reconciliation-${toDateStr(dateRange.from)}${dateRange.to && toDateStr(dateRange.to) !== toDateStr(dateRange.from) ? `_to_${toDateStr(dateRange.to)}` : ``}.pdf`);
                 toast.success("PDF downloaded successfully", { id: toastId });
             } else {
                 toast.error("Failed to capture report content", { id: toastId });
@@ -872,13 +880,15 @@ export default function ErpReconciliationReportPage() {
     };
 
     const handleDownloadExcel = async () => {
-        if (!selectedDate) return;
+        if (!dateRange.from) return;
         setExportState("queueing");
         setExportProgress(0);
         const toastId = toast.loading("Queueing Excel export job...");
         try {
             const apiBase = getApiBaseUrl();
-            const queueRes = await fetch(`${apiBase}/pos-session/reconciliation/daywise/export/queue?date=${selectedDate}&locationId=${encodeURIComponent(locationParam)}`, {
+            const fromStr = toDateStr(dateRange.from);
+            const toStr = toDateStr(dateRange.to);
+            const queueRes = await fetch(`${apiBase}/pos-session/reconciliation/daywise/export/queue?date=${fromStr}&endDate=${toStr}&locationId=${encodeURIComponent(locationParam)}`, {
                 method: "POST",
                 credentials: "include"
             });
@@ -1056,14 +1066,17 @@ export default function ErpReconciliationReportPage() {
                         />
                     </div>
 
-                    <div className="flex flex-col gap-1.5 min-w-[200px]">
+                    <div className="flex flex-col gap-1.5 min-w-[260px]">
                         <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                             <Calendar className="h-3.5 w-3.5 text-primary" />
-                            Reconciliation Date
+                            Date Range
                         </span>
-                        <DatePicker
-                            value={selectedDate}
-                            onChange={(d: string) => setSelectedDate(d)}
+                        <DateRangePicker
+                            onUpdate={(values) => setDateRange(values.range)}
+                            initialDateFrom={dateRange.from}
+                            initialDateTo={dateRange.to}
+                            placeholder="Filter by date range"
+                            align="start"
                         />
                     </div>
 
@@ -1131,11 +1144,11 @@ export default function ErpReconciliationReportPage() {
                             )}>
                                 {layout === "thermal" ? (
                                     <div className="shadow-2xl border border-gray-200/60 rounded-md overflow-hidden bg-white">
-                                        <ReconciliationSheet activeReport={data?.merged || data} layout="thermal" selectedDate={selectedDate} />
+                                        <ReconciliationSheet activeReport={data?.merged || data} layout="thermal" selectedDateFrom={toDateStr(dateRange.from)} selectedDateTo={toDateStr(dateRange.to)} />
                                     </div>
                                 ) : (
                                     <div className="shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-gray-200/70 rounded-sm overflow-hidden w-full bg-white">
-                                        <ReconciliationSheet activeReport={data?.merged || data} layout="desktop" selectedDate={selectedDate} />
+                                        <ReconciliationSheet activeReport={data?.merged || data} layout="desktop" selectedDateFrom={toDateStr(dateRange.from)} selectedDateTo={toDateStr(dateRange.to)} />
                                     </div>
                                 )}
                             </div>
@@ -1150,11 +1163,11 @@ export default function ErpReconciliationReportPage() {
                                 >
                                     {layout === "thermal" ? (
                                         <div className="shadow-2xl border border-gray-200/60 rounded-md overflow-hidden bg-white">
-                                            <ReconciliationSheet activeReport={rep} layout="thermal" selectedDate={selectedDate} />
+                                            <ReconciliationSheet activeReport={rep} layout="thermal" selectedDateFrom={toDateStr(dateRange.from)} selectedDateTo={toDateStr(dateRange.to)} />
                                         </div>
                                     ) : (
                                         <div className="shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-gray-200/70 rounded-sm overflow-hidden w-full bg-white">
-                                            <ReconciliationSheet activeReport={rep} layout="desktop" selectedDate={selectedDate} />
+                                            <ReconciliationSheet activeReport={rep} layout="desktop" selectedDateFrom={toDateStr(dateRange.from)} selectedDateTo={toDateStr(dateRange.to)} />
                                         </div>
                                     )}
                                 </div>
@@ -1242,11 +1255,11 @@ export default function ErpReconciliationReportPage() {
                         <div key={rep?.locationId || idx} className={cn("mb-8", idx > 0 && "page-break-before")}>
                             {layout === "thermal" ? (
                                 <div className="print-layout-thermal font-mono text-[9px] text-black">
-                                    <ReconciliationSheet activeReport={rep} layout="thermal" selectedDate={selectedDate} isPrint={true} />
+                                    <ReconciliationSheet activeReport={rep} layout="thermal" selectedDateFrom={toDateStr(dateRange.from)} selectedDateTo={toDateStr(dateRange.to)} isPrint={true} />
                                 </div>
                             ) : (
                                 <div className="print-layout-desktop text-black bg-white font-sans text-[10px] leading-tight">
-                                    <ReconciliationSheet activeReport={rep} layout="desktop" selectedDate={selectedDate} isPrint={true} />
+                                    <ReconciliationSheet activeReport={rep} layout="desktop" selectedDateFrom={toDateStr(dateRange.from)} selectedDateTo={toDateStr(dateRange.to)} isPrint={true} />
                                 </div>
                             )}
                         </div>
