@@ -818,3 +818,63 @@ export async function getOutOfStockReportExportStatus(jobId: string) {
         return { status: false, message: "Failed to connect to server" };
     }
 }
+
+
+export async function getPosStockMatrix(filters: {
+    search?: string;
+    brandId?: string;
+    categoryId?: string;
+    divisionId?: string;
+    genderId?: string;
+    sizeId?: string;
+    colorId?: string;
+    locationId?: string;
+    currentLocationId?: string;
+    inStockOnly?: boolean;
+    outOfStockHereOnly?: boolean;
+    page?: number;
+    limit?: number;
+    asOfDate?: string;
+}) {
+    try {
+        const queryParams = new URLSearchParams();
+        if (filters.search) queryParams.append("search", filters.search);
+        if (filters.brandId) queryParams.append("brandId", filters.brandId);
+        if (filters.categoryId) queryParams.append("categoryId", filters.categoryId);
+        if (filters.divisionId) queryParams.append("divisionId", filters.divisionId);
+        if (filters.genderId) queryParams.append("genderId", filters.genderId);
+        if (filters.sizeId) queryParams.append("sizeId", filters.sizeId);
+        if (filters.colorId) queryParams.append("colorId", filters.colorId);
+        if (filters.locationId) queryParams.append("locationId", filters.locationId);
+        if (filters.currentLocationId) queryParams.append("currentLocationId", filters.currentLocationId);
+        if (filters.inStockOnly !== undefined) queryParams.append("inStockOnly", String(filters.inStockOnly));
+        if (filters.outOfStockHereOnly !== undefined) queryParams.append("outOfStockHereOnly", String(filters.outOfStockHereOnly));
+        if (filters.page) queryParams.append("page", String(filters.page));
+        if (filters.limit) queryParams.append("limit", String(filters.limit));
+        if (filters.asOfDate) queryParams.append("asOfDate", filters.asOfDate);
+
+        const queryString = queryParams.toString();
+        const url = `/stock-ledger/pos-stock-matrix${queryString ? `?${queryString}` : ""}`;
+
+        const response = await authFetch(url, { method: "GET" });
+        return response.data;
+    } catch (error) {
+        console.error("Get pos stock matrix error:", error);
+        return { status: false, data: null, message: "Failed to fetch pos stock matrix" };
+    }
+}
+
+export async function getPosQuickStock(search: string, currentLocationId?: string) {
+    try {
+        const queryParams = new URLSearchParams();
+        queryParams.append("search", search);
+        if (currentLocationId) queryParams.append("currentLocationId", currentLocationId);
+
+        const url = `/stock-ledger/pos-quick-stock?${queryParams.toString()}`;
+        const response = await authFetch(url, { method: "GET" });
+        return response.data;
+    } catch (error) {
+        console.error("Get pos quick stock error:", error);
+        return { status: false, data: null, message: "Failed to fetch quick stock" };
+    }
+}

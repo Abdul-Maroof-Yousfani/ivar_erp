@@ -1766,6 +1766,11 @@ export const menuData: MenuItem[] = [
         permissions: ["pos.report.view"],
       },
       {
+        title: "Overall Stock Matrix",
+        href: "/pos/reports/overall-stock-matrix",
+        permissions: ["pos.report.view"],
+      },
+      {
         href: "/pos/reports/sales-register",
         title: "Sales Register",
         permissions: ["pos.report.view"],
@@ -1800,6 +1805,11 @@ export const menuData: MenuItem[] = [
       {
         title: "Available Stock Summary",
         href: "/erp/reports/pos/available-stock-summary",
+        permissions: ["erp.report.available-stock-summary", "erp.report.view"],
+      },
+      {
+        title: "Overall Stock Matrix",
+        href: "/pos/reports/overall-stock-matrix",
         permissions: ["erp.report.available-stock-summary", "erp.report.view"],
       },
       // {

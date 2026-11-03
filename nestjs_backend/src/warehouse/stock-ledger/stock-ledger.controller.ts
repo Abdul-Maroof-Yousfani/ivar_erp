@@ -7,6 +7,7 @@ import { AvailableStockSummaryExportService } from './available-stock-summary-ex
 import { OverallAvailableReservedStockExportService } from './overall-available-reserved-stock-export.service';
 import { OutOfStockReportService } from './out-of-stock-report.service';
 import { AvailableStockByLocationExportService } from './available-stock-by-location-export.service';
+import { PosOverallStockMatrixService } from './pos-overall-stock-matrix.service';
 import { MovementType } from '@prisma/client';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
@@ -21,6 +22,7 @@ export class StockLedgerController {
     private readonly overallAvailableReservedStockExportService: OverallAvailableReservedStockExportService,
     private readonly outOfStockReportService: OutOfStockReportService,
     private readonly availableStockByLocationExportService: AvailableStockByLocationExportService,
+    private readonly posOverallStockMatrixService: PosOverallStockMatrixService,
   ) { }
 
   @Get('levels')
@@ -692,5 +694,89 @@ export class StockLedgerController {
       res.status(status).send({ status: false, message: err?.message ?? 'Export failed' });
     }
   }
-}
 
+  // ── POS Overall Stock Matrix (Inter-Store Breakdown) ──
+  @Get('pos-stock-matrix')
+  @UseGuards(JwtAuthGuard)
+  async getPosStockMatrix(
+    @Query('search') search?: string,
+    @Query('brandId') brandId?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('divisionId') divisionId?: string,
+    @Query('genderId') genderId?: string,
+    @Query('sizeId') sizeId?: string,
+    @Query('colorId') colorId?: string,
+    @Query('locationId') locationId?: string,
+    @Query('currentLocationId') currentLocationId?: string,
+    @Query('inStockOnly') inStockOnly?: string,
+    @Query('outOfStockHereOnly') outOfStockHereOnly?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('asOfDate') asOfDate?: string,
+  ) {
+    const data = await this.posOverallStockMatrixService.getMatrixData({
+      search,
+      brandId,
+      categoryId,
+      divisionId,
+      genderId,
+      sizeId,
+      colorId,
+      locationId,
+      currentLocationId,
+      inStockOnly: inStockOnly === 'true',
+      outOfStockHereOnly: outOfStockHereOnly === 'true',
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 50,
+      asOfDate,
+    });
+    return { status: true, data };
+  }
+
+  // ── POS Quick Stock Lookup (Modal / Barcode Inquiry) ──
+  @Get('pos-quick-stock')
+  @UseGuards(JwtAuthGuard)
+  async getPosQuickStock(
+    @Query('search') search: string,
+    @Query('currentLocationId') currentLocationId?: string,
+  ) {
+    return this.posOverallStockMatrixService.getQuickItemStock(search, currentLocationId);
+  }
+
+  // ── POS Overall Stock Matrix Excel Export (Direct Stream) ──
+    @Get('pos-stock-matrix/export')
+  @UseGuards(JwtAuthGuard)
+  async exportPosStockMatrix(
+    @Query('search') search?: string,
+    @Query('brandId') brandId?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('divisionId') divisionId?: string,
+    @Query('genderId') genderId?: string,
+    @Query('sizeId') sizeId?: string,
+    @Query('colorId') colorId?: string,
+    @Query('inStockOnly') inStockOnly?: string,
+    @Query('asOfDate') asOfDate?: string,
+    @Res() res?: any,
+  ) {
+    try {
+      await this.posOverallStockMatrixService.streamExcel(
+        {
+          search,
+          brandId,
+          categoryId,
+          divisionId,
+          genderId,
+          sizeId,
+          colorId,
+          inStockOnly: inStockOnly === 'true',
+          asOfDate,
+          format: 'xlsx',
+        },
+        res,
+      );
+    } catch (err: any) {
+      const status = err?.status ?? 500;
+      res.status(status).send({ status: false, message: err?.message ?? 'Export failed' });
+    }
+  }
+}
