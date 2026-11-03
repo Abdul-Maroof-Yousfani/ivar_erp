@@ -31,6 +31,7 @@ import {
   PauseCircle,
   BookOpen,
   FileText,
+  Layers,
 } from "lucide-react";
 import { cn, COMPANY_NAME } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -65,6 +66,7 @@ const posMenuGroups = [
     label: "Inventory & Products",
     items: [
       { title: "Products", icon: Package, href: "/pos/products" },
+      { title: "Overall Stock Matrix", icon: Layers, href: "/pos/reports/overall-stock-matrix" },
       { title: "Stock", icon: TrendingUp, href: "/pos/stock" },
       {
         title: "Available Stock Summary",

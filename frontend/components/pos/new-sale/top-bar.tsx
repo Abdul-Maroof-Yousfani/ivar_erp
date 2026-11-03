@@ -2,12 +2,15 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
     ScanBarcode,
     ShoppingCart,
     Package,
+    Store,
 } from "lucide-react";
 import { formatCurrency, cn } from "@/lib/utils";
+import { QuickStoreStockModal } from "@/components/pos/quick-store-stock-modal";
 
 interface TopBarProps {
     itemCount: number;
@@ -37,6 +40,10 @@ export function NewSaleTopBar({
     const fastKeyCountRef = useRef<number>(0);
     const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+    // Stock check modal states
+    const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+    const [stockModalQuery, setStockModalQuery] = useState("");
+
     // Reset active index when search results or query change
     useEffect(() => {
         setActiveIndex(-1);
@@ -48,6 +55,19 @@ export function NewSaleTopBar({
             if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
         };
     }, []);
+
+    // Global keyboard shortcut: F9 opens Other Stores Stock Lookup
+    useEffect(() => {
+        const handleGlobalKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "F9") {
+                e.preventDefault();
+                setStockModalQuery(searchQuery || "");
+                setIsStockModalOpen(true);
+            }
+        };
+        window.addEventListener("keydown", handleGlobalKeyDown);
+        return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+    }, [searchQuery]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = e.target.value;
@@ -131,7 +151,7 @@ export function NewSaleTopBar({
                             Product Entry
                         </span>
                         <span className="text-[9px] font-medium text-primary uppercase font-mono mt-0.5">
-                            [F2] Search · [Arrows / Enter] Select
+                            [F2] Search · [F9] Other Stores · [Enter] Select
                         </span>
                     </div>
 
@@ -191,7 +211,19 @@ export function NewSaleTopBar({
                                                             </span>
                                                         )}
                                                         {product.inStock === false && (
-                                                            <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Out of Stock</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setStockModalQuery(product.sku || product.barCode || "");
+                                                                    setIsStockModalOpen(true);
+                                                                }}
+                                                                className="text-[10px] bg-red-100 hover:bg-red-200 text-red-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-tight flex items-center gap-1 cursor-pointer transition-colors"
+                                                                title="Customer inquired? Click to see which other branch has this item"
+                                                            >
+                                                                <span>Out of Stock</span>
+                                                                <span className="underline font-normal normal-case ml-1 text-primary">Other stores →</span>
+                                                            </button>
                                                         )}
                                                     </div>
                                                 </div>
@@ -204,8 +236,27 @@ export function NewSaleTopBar({
                     </div>
                 </div>
 
-                {/* Right section: Items Count & Total Quantity */}
-                <div className="flex items-center gap-4 sm:gap-6 shrink-0">
+                {/* Right section: Check Other Stores Button + Items Count & Total Quantity */}
+                <div className="flex items-center gap-3 sm:gap-5 shrink-0">
+                    {/* Other Stores Stock Lookup Button */}
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                            setStockModalQuery(searchQuery || "");
+                            setIsStockModalOpen(true);
+                        }}
+                        className="gap-1.5 text-xs font-semibold h-9 border-primary/40 text-primary hover:bg-primary/10 transition-all shadow-2xs"
+                        title="Check if an item is available at any other store (Shortcut: F9)"
+                    >
+                        <Store className="h-4 w-4 text-primary" />
+                        <span className="hidden sm:inline">Other Stores Stock</span>
+                        <kbd className="hidden md:inline px-1 py-0.2 rounded bg-muted border border-border text-[9px] font-mono text-muted-foreground">F9</kbd>
+                    </Button>
+
+                    <div className="h-8 w-px bg-border hidden sm:block" />
+
                     {/* Items in Cart (Lines) */}
                     <div className="flex flex-col items-center gap-0.5">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -235,6 +286,13 @@ export function NewSaleTopBar({
                     </div>
                 </div>
             </div>
+
+            {/* Quick Stock Modal */}
+            <QuickStoreStockModal
+                isOpen={isStockModalOpen}
+                onClose={() => setIsStockModalOpen(false)}
+                initialQuery={stockModalQuery}
+            />
         </div>
     );
 }

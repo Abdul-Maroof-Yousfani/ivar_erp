@@ -16,6 +16,7 @@ import { OverallAvailableReservedStockExportProcessor } from './overall-availabl
 import { OutOfStockReportService } from './out-of-stock-report.service';
 import { OutOfStockExportProcessor } from './out-of-stock-export.processor';
 import { AvailableStockByLocationExportService } from './available-stock-by-location-export.service';
+import { PosOverallStockMatrixService } from './pos-overall-stock-matrix.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 import { ExportHistoryModule } from '../export-history/export-history.module';
@@ -54,6 +55,7 @@ import { UploadModule } from '../../upload/upload.module';
     OutOfStockReportService,
     OutOfStockExportProcessor,
     AvailableStockByLocationExportService,
+    PosOverallStockMatrixService,
   ],
   exports: [
     StockLedgerService,
@@ -64,6 +66,7 @@ import { UploadModule } from '../../upload/upload.module';
     OverallAvailableReservedStockExportService,
     OutOfStockReportService,
     AvailableStockByLocationExportService,
+    PosOverallStockMatrixService,
   ],
 })
 export class StockLedgerModule {}
