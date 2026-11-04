@@ -178,7 +178,11 @@ export class CourierifyService {
    * Get single order details by ID
    */
   async getOrder(id: string): Promise<CourierifyOrder> {
-    return this.request<CourierifyOrder>(`/orders/${id}`);
+    const rawId = String(id || '').trim();
+    // Encode '#' or special characters so fetch URL is not truncated
+    const cleanId = encodeURIComponent(rawId);
+    const res = await this.request<any>(`/orders/${cleanId}`);
+    return res?.order || res;
   }
 
   /**
@@ -707,7 +711,7 @@ export class CourierifyService {
   async processOmsOrderToPos(
     rawOrderData: any,
     occurredAt?: string,
-    options: { createStn?: boolean } = { createStn: true },
+    options: { createStn?: boolean; status?: string } = { createStn: true },
   ): Promise<any> {
     let orderData = rawOrderData || {};
     const orderId = orderData.orderId || orderData.id;
@@ -869,7 +873,7 @@ export class CourierifyService {
     // 2.5 Fallback: If still no prices, distribute COD amount across items to prevent PKR 0 orders
     if (orderData.items?.lines && Array.isArray(orderData.items.lines) && orderData.items.lines.length > 0) {
       const totalItemsQty = orderData.items.lines.reduce((sum: number, line: any) => sum + (Number(line.quantity) || 1), 0);
-      const codTotal = orderData.money?.total || orderData.money?.codToCollect || 0;
+      const codTotal = Number(orderData.money?.subtotal) > 0 ? Number(orderData.money.subtotal) : (orderData.money?.total || orderData.money?.codToCollect || 0);
 
       orderData.items.lines = orderData.items.lines.map((line: any) => {
         if (line.unitPrice === undefined && line.price === undefined) {
@@ -1429,7 +1433,7 @@ export class CourierifyService {
             customerId,
             paymentMethod: isCardOrOnline ? 'card' : rawPaymentMethod,
             paymentStatus,
-            status: shouldCreateStn ? 'booked' : 'pending',
+            status: options.status || (shouldCreateStn ? 'booked' : 'pending'),
             notes: finalNotes,
             subtotal: new Prisma.Decimal(orderSubtotalWOST),
             discountAmount: new Prisma.Decimal(orderDiscountWOST),

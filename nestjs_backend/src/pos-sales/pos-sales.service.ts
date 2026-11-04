@@ -20,6 +20,8 @@ import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { runInBackground } from '../common/utils/run-in-background.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StockMovementService } from '../warehouse/stock-movement.service';
+import { ModuleRef } from '@nestjs/core';
+import type { CourierifyService } from '../courierify/courierify.service';
 
 @Injectable()
 export class PosSalesService implements OnModuleInit {
@@ -35,6 +37,7 @@ export class PosSalesService implements OnModuleInit {
     private notificationsService: NotificationsService,
     private stockMovementService: StockMovementService,
     private eventEmitter: EventEmitter2,
+    private moduleRef: ModuleRef,
   ) {}
 
   // ─── Schedule midnight hold-clear ─────────────────────────────────
@@ -1733,7 +1736,7 @@ export class PosSalesService implements OnModuleInit {
     }
 
     const cleanSearch = orderNumber.trim();
-    const strippedHash = cleanSearch.replace(/^#+/, '').trim();
+    const strippedHash = cleanSearch.replace(/^CRF-/i, '').replace(/^#+/, '').trim();
     const withHash = `#${strippedHash}`;
     const withDoubleHash = `##${strippedHash}`;
     const crfPlain = `CRF-${cleanSearch}`;
@@ -1861,6 +1864,60 @@ export class PosSalesService implements OnModuleInit {
         orderBy: { createdAt: 'desc' },
         include: includeRelations,
       });
+    }
+
+    // 3. If no order found in local database, fetch from Courierify / Shopify and import to POS
+    if (rawOrders.length === 0) {
+      try {
+        const { CourierifyService: ServiceClass } = require('../courierify/courierify.service');
+        const courierifyService: CourierifyService = this.moduleRef.get(ServiceClass, {
+          strict: false,
+        });
+        if (courierifyService) {
+          const candidateQueries = Array.from(
+            new Set([strippedHash, cleanSearch, withHash].filter(Boolean)),
+          );
+
+          let fetchedData: any = null;
+          for (const cand of candidateQueries) {
+            try {
+              fetchedData = await courierifyService.getOrder(cand);
+              if (fetchedData) break;
+            } catch (err: any) {
+              // Not found, try next candidate
+            }
+          }
+
+          let orderData = fetchedData?.order || fetchedData;
+          if (
+            orderData &&
+            (orderData.id || orderData.orderId || orderData.orderName)
+          ) {
+            this.logger.log(
+              `[POS Return] Found order ${orderData.orderName || orderData.id} on Courierify. Creating POS Sales Order...`,
+            );
+            const createdOrder = await courierifyService.processOmsOrderToPos(
+              orderData,
+              orderData.orderedAt || orderData.createdAt,
+              { createStn: false, status: 'booked' },
+            );
+
+            if (createdOrder) {
+              const importedOrder = await this.prisma.salesOrder.findUnique({
+                where: { id: createdOrder.id },
+                include: includeRelations,
+              });
+              if (importedOrder) {
+                rawOrders = [importedOrder];
+              }
+            }
+          }
+        }
+      } catch (courierifyErr: any) {
+        this.logger.warn(
+          `[POS Return] Courierify fetch fallback error for "${cleanSearch}": ${courierifyErr.message}`,
+        );
+      }
     }
 
     if (rawOrders.length === 0) {
