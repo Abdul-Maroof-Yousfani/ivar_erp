@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { CourierifyService } from './courierify.service';
 import { CourierifyController } from './courierify.controller';
 import { CourierifyWebhookController } from './courierify-webhook.controller';
@@ -9,10 +9,15 @@ import { StockLedgerModule } from '../warehouse/stock-ledger/stock-ledger.module
 import { ShopifyModule } from '../shopify/shopify.module';
 
 @Module({
-  imports: [DatabaseModule, PosSalesModule, WarehouseModule, StockLedgerModule, ShopifyModule],
+  imports: [
+    DatabaseModule,
+    forwardRef(() => PosSalesModule),
+    WarehouseModule,
+    StockLedgerModule,
+    ShopifyModule,
+  ],
   controllers: [CourierifyController, CourierifyWebhookController],
   providers: [CourierifyService],
   exports: [CourierifyService],
 })
 export class CourierifyModule {}
-

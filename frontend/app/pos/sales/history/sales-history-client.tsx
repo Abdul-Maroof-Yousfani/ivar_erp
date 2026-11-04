@@ -441,9 +441,45 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
         {
             accessorKey: "grandTotal",
             header: () => <div className="text-right">Total</div>,
-            cell: ({ row }) => (
-                <div className="text-right font-bold">Rs. {fmtCurrency(row.getValue("grandTotal"))}</div>
-            ),
+            cell: ({ row }) => {
+                const order = row.original;
+                const grandTotal = Number(row.getValue("grandTotal") || 0);
+                const isRefunded = order.status === "refunded";
+                const isPartiallyReturned = order.status === "partially_returned";
+
+                const refundMatch = order.notes?.match(/Cash refund(?:ed)?\s*Rs\.?\s*([\d.,]+)/i);
+                const refundedAmount = refundMatch ? parseFloat(refundMatch[1].replace(/,/g, "")) : null;
+
+                if (isRefunded) {
+                    return (
+                        <div className="text-right">
+                            <div className="text-xs text-muted-foreground line-through font-mono">
+                                Rs. {fmtCurrency(grandTotal)}
+                            </div>
+                            <div className="font-bold text-purple-600 dark:text-purple-400 font-mono">
+                                Rs. {fmtCurrency(refundedAmount ?? grandTotal)}
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (isPartiallyReturned && refundedAmount != null) {
+                    return (
+                        <div className="text-right">
+                            <div className="font-bold font-mono">
+                                Rs. {fmtCurrency(grandTotal)}
+                            </div>
+                            <div className="text-[10px] text-purple-600 dark:text-purple-400 font-mono font-medium">
+                                Ref: Rs. {fmtCurrency(refundedAmount)}
+                            </div>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="text-right font-bold font-mono">Rs. {fmtCurrency(grandTotal)}</div>
+                );
+            },
         },
         {
             accessorKey: "status",
@@ -767,7 +803,7 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
                             couponDeduction: item.couponDeduction,
                         }))
                     }
-                    refundTotal={returnDetails?.items?.reduce((s: number, i: any) => s + (i.refundAmount ?? 0), 0) ?? 0}
+                    refundTotal={returnDetails?.grandTotal != null ? Number(returnDetails.grandTotal) : (returnDetails?.items?.reduce((s: number, i: any) => s + (i.refundAmount ?? 0), 0) ?? 0)}
                     notes={returnDetails?.reason}
                     discountNotes={returnDetails?.discountNotes}
                     returnedAt={returnDetails?.returnedAt}
