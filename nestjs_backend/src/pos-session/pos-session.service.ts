@@ -1343,7 +1343,7 @@ export class PosSessionService {
         total: totalCardReceived,
   }}}
 
-  async getDaywiseReconciliation(locationId: string, date: string) {
+  async getDaywiseReconciliation(locationId: string, date: string, endDate?: string) {
     const locIds = locationId ? locationId.split(',').map((s) => s.trim()).filter(Boolean) : [];
     const allLocations = await this.prisma.location.findMany();
     const locationMap = new Map(allLocations.map((l) => [l.id, l.code || l.name]));
@@ -1352,7 +1352,8 @@ export class PosSessionService {
       const startOfDay = new Date(date + 'T00:00:00');
       startOfDay.setHours(0, 0, 0, 0);
 
-      const endOfDay = new Date(date + 'T00:00:00');
+      const endDateStr = endDate || date;
+      const endOfDay = new Date(endDateStr + 'T00:00:00');
       endOfDay.setHours(23, 59, 59, 999);
 
       const timeFilter = {
@@ -1843,7 +1844,7 @@ export class PosSessionService {
         locationId: targetLocId || locationId,
         locationName: displayName,
         reportTitle: 'Sales Reconciliation',
-        dateRange: formatDate(date + 'T00:00:00'),
+        dateRange: (endDate && endDate !== date) ? (formatDate(date + 'T00:00:00') + ' to ' + formatDate(endDateStr + 'T00:00:00')) : formatDate(date + 'T00:00:00'),
         documentNumber: `REC-${date.replace(/-/g, '')}`,
         selectedDate: date,
         session: null,
@@ -2183,7 +2184,7 @@ export class PosSessionService {
     res.send(buffer);
   }
 
-  async queueDaywiseReconciliationExcel(userId: string, locationId: string, date: string): Promise<{ jobId: string }> {
+  async queueDaywiseReconciliationExcel(userId: string, locationId: string, date: string, endDate?: string): Promise<{ jobId: string }> {
     const jobId = uuidv4();
     const tenantId = this.prisma.getTenantId() ?? '';
     const tenantDbUrl = this.prisma.getTenantDbUrl() ?? '';
@@ -2200,6 +2201,7 @@ export class PosSessionService {
         tenantDbUrl,
         locationId,
         date,
+        endDate,
       },
       {
         jobId,

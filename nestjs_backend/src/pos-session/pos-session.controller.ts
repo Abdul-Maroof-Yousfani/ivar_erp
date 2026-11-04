@@ -92,6 +92,7 @@ export class PosSessionController {
     async getDaywiseReconciliation(
         @Req() req: any,
         @Query('date') date: string,
+        @Query('endDate') endDate?: string,
         @Query('locationId') queryLocationId?: string,
     ) {
         let locationId = queryLocationId;
@@ -102,7 +103,7 @@ export class PosSessionController {
                 locationId = req.user?.locationId || '';
             }
         }
-        return this.sessionService.getDaywiseReconciliation(locationId || '', date);
+        return this.sessionService.getDaywiseReconciliation(locationId || '', date, endDate);
     }
 
     @Get('reconciliation/daywise/excel')
@@ -129,6 +130,7 @@ export class PosSessionController {
     async queueReconciliationExport(
         @Req() req: any,
         @Query('date') date: string,
+        @Query('endDate') endDate?: string,
         @Query('locationId') queryLocationId?: string,
     ) {
         let locationId = queryLocationId;
@@ -140,7 +142,7 @@ export class PosSessionController {
             }
         }
         const userId = req.user?.userId;
-        const result = await this.sessionService.queueDaywiseReconciliationExcel(userId, locationId || '', date);
+        const result = await this.sessionService.queueDaywiseReconciliationExcel(userId, locationId || '', date, endDate);
         return {
             status: true,
             message: "Reconciliation export queued. You'll receive a notification when it is ready.",

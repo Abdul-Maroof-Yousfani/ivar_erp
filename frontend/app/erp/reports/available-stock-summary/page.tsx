@@ -31,7 +31,8 @@ import {
     Search,
     X,
     SlidersHorizontal,
-    Package
+    Package,
+    MapPin
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -71,6 +72,8 @@ export default function ERPAvailableStockSummaryCostingReportPage() {
     const [pdfJobId, setPdfJobId] = useState<string | null>(null);
     const [pdfExportState, setPdfExportState] = useState<"idle" | "queueing" | "processing" | "completed" | "failed">("idle");
     const [pdfExportProgress, setPdfExportProgress] = useState<number>(0);
+
+    const [byLocExportState, setByLocExportState] = useState<"idle" | "loading">("idle");
 
     const summaryOnly = !groupingLevels.variant;
 
@@ -323,6 +326,25 @@ export default function ERPAvailableStockSummaryCostingReportPage() {
             setPdfExportState("failed");
             console.error(err);
             toast.error("Failed to queue export job.");
+        }
+    };
+
+    const handleExportByLocationClick = async () => {
+        setByLocExportState("loading");
+        try {
+            const base = getApiBaseUrl();
+            const params = new URLSearchParams();
+            if (locationParam) params.set("locationId", locationParam);
+            if (warehouseParam) params.set("warehouseId", warehouseParam);
+            if (asOfDate) params.set("asOfDate", asOfDate);
+            const url = `${base}/stock-ledger/available-stock-summary/export-by-location?${params.toString()}`;
+            window.open(url, "_blank");
+            toast.success("Export by Location started — check your downloads.");
+        } catch (err) {
+            console.error(err);
+            toast.error("Failed to export by location.");
+        } finally {
+            setByLocExportState("idle");
         }
     };
 
@@ -581,6 +603,22 @@ export default function ERPAvailableStockSummaryCostingReportPage() {
                             <Download className="h-4 w-4" />
                         )}
                         {getExportButtonText()}
+                    </Button>
+                    <Button
+                        variant="outline"
+                        onClick={handleExportByLocationClick}
+                        disabled={byLocExportState === "loading" || reportData.length === 0}
+                        className={cn(
+                            "gap-2 font-semibold transition-all",
+                            "border-violet-500/40 text-violet-700 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-950/30"
+                        )}
+                    >
+                        {byLocExportState === "loading" ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-violet-600" />
+                        ) : (
+                            <MapPin className="h-4 w-4" />
+                        )}
+                        {byLocExportState === "loading" ? "Generating..." : "Export by Location"}
                     </Button>
                 </div>
             </div>

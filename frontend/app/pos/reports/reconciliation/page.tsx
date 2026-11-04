@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DateRangePicker, DateRange } from "@/components/ui/date-range-picker";
 import { authFetch } from "@/lib/auth";
 import { formatCurrency, getApiBaseUrl } from "@/lib/utils";
 import {
@@ -76,16 +76,20 @@ export default function ReconciliationReportPage() {
         return `${year}-${month}-${day}`;
     };
 
-    const [selectedDate, setSelectedDate] = useState<string>(getTodayString());
+    const [dateRange, setDateRange] = useState<DateRange>({ from: new Date(), to: new Date() });
+    const toDateStr = (d: Date | undefined): string => {
+        if (!d) return getTodayString();
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    };
 
     useEffect(() => {
         setMounted(true);
     }, []);
 
-    const fetchDetails = async (date: string) => {
+    const fetchDetails = async (from: string, to: string) => {
         setLoading(true);
         try {
-            const url = `/pos-session/reconciliation/daywise?date=${date}`;
+            const url = `/pos-session/reconciliation/daywise?date=${from}&endDate=${to}`;
             const res = await authFetch(url);
             if (res.ok) {
                 setData(res.data);
@@ -102,9 +106,9 @@ export default function ReconciliationReportPage() {
     };
 
     useEffect(() => {
-        if (!selectedDate) return;
-        fetchDetails(selectedDate);
-    }, [selectedDate]);
+        if (!dateRange.from) return;
+        fetchDetails(toDateStr(dateRange.from), toDateStr(dateRange.to));
+    }, [dateRange]);
 
     const handlePrint = () => {
         if (!data) return;
@@ -142,7 +146,7 @@ export default function ReconciliationReportPage() {
                 });
 
                 pdf.addImage(dataUrl, "PNG", 0, 0, pdfWidth, pdfHeight);
-                const docName = activeReport?.documentNumber || `reconciliation-${selectedDate}`;
+                const docName = activeReport?.documentNumber || `reconciliation-${toDateStr(dateRange.from)}${dateRange.to && toDateStr(dateRange.to) !== toDateStr(dateRange.from) ? `_to_${toDateStr(dateRange.to)}` : ``}`;
                 pdf.save(`${docName}.pdf`);
                 toast.success("PDF downloaded successfully", { id: toastId });
             } else {
@@ -157,13 +161,13 @@ export default function ReconciliationReportPage() {
     };
 
     const handleDownloadExcel = async () => {
-        if (!selectedDate) return;
+        if (!dateRange.from) return;
         setExportState("queueing");
         setExportProgress(0);
         const toastId = toast.loading("Queueing Excel export job...");
         try {
             const apiBase = getApiBaseUrl();
-            const queueRes = await fetch(`${apiBase}/pos-session/reconciliation/daywise/export/queue?date=${selectedDate}`, {
+            const queueRes = await fetch(`${apiBase}/pos-session/reconciliation/daywise/export/queue?date=${toDateStr(dateRange.from)}&endDate=${toDateStr(dateRange.to)}`, {
                 method: "POST",
                 credentials: "include"
             });
@@ -283,7 +287,7 @@ export default function ReconciliationReportPage() {
                     </div>
                     <div className="flex justify-between text-[7.5px] font-bold tracking-tight">
                         <span>DOC ID: #{activeReport.documentNumber}</span>
-                        <span>DATE: {new Date(selectedDate).toLocaleDateString('en-GB')}</span>
+                        <span>DATE: {new Date(toDateStr(dateRange.from)).toLocaleDateString('en-GB')}{dateRange.to && toDateStr(dateRange.to) !== toDateStr(dateRange.from) ? ' – ' + new Date(toDateStr(dateRange.to)).toLocaleDateString('en-GB') : ''}</span>
                     </div>
                 </div>
 
@@ -570,23 +574,11 @@ export default function ReconciliationReportPage() {
                     </div>
                     <div>
                         <h1 className="text-xl font-bold tracking-tight">Daily Sales Reconciliation Report</h1>
-                        <p className="text-xs text-muted-foreground">Select a date to view full-day location reconciliation summaries.</p>
+                        <p className="text-xs text-muted-foreground">Select a date range to view reconciliation summaries.</p>
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                    {/* Date Picker */}
-                    <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-muted-foreground" />
-                        <DatePicker
-                            value={selectedDate}
-                            onChange={(val) => {
-                                if (val) setSelectedDate(val);
-                            }}
-                            className="w-[180px] h-9 text-xs"
-                        />
-                    </div>
-
+                <div className="flex flex-wrap items-center gap-2.5">
                     {/* Format Switcher */}
                     <div className="flex items-center gap-1 bg-muted p-1 rounded-full border border-border">
                         <Button
@@ -659,6 +651,39 @@ export default function ReconciliationReportPage() {
                         Print Report
                     </Button>
                 </div>
+            </div>
+
+            {/* Filter Controls Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 dark:bg-slate-900/40 border border-border p-3.5 px-4 rounded-xl shadow-xs no-print">
+                <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                        <Calendar className="h-4 w-4 text-primary" />
+                        Date Range:
+                    </span>
+                    <div className="w-[280px]">
+                        <DateRangePicker
+                            onUpdate={(values) => setDateRange(values.range)}
+                            initialDateFrom={dateRange.from}
+                            initialDateTo={dateRange.to}
+                            placeholder="Filter by date range"
+                            align="start"
+                        />
+                    </div>
+                </div>
+
+                {activeReport?.dateRange && (
+                    <div className="text-xs text-muted-foreground font-medium flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 bg-background px-2.5 py-1 rounded-md border border-border text-foreground">
+                            <Clock className="w-3.5 h-3.5 text-primary" />
+                            Period: <strong className="font-semibold">{activeReport.dateRange}</strong>
+                        </span>
+                        {activeReport.documentNumber && (
+                            <span className="inline-flex items-center gap-1 bg-background px-2.5 py-1 rounded-md border border-border text-muted-foreground">
+                                Doc: <strong className="font-mono text-foreground font-semibold">#{activeReport.documentNumber}</strong>
+                            </span>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Preview Sheet Container */}

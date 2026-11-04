@@ -24,7 +24,10 @@ export interface Voucher {
     expiresAt?: string;
     createdAt: string;
     claims?: any[];
-    issuedByLocation?: { name: string; code: string };
+    issuedByLocation?: { id?: string; name: string; code: string } | null;
+    redeemedLocation?: string;
+    redeemedInvoice?: string;
+    invoiceNumber?: string;
     locations: { id: string; location: { id: string; name: string; code: string } }[];
     redemptions?: { amountUsed: number; orderId: string }[];
     paymentMode?: string;
