@@ -3780,6 +3780,9 @@ export class PosSalesService implements OnModuleInit {
         const deliveryCharges = (() => {
           const match = order.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
           if (match && match[1]) return parseFloat(match[1].replace(/,/g, ''));
+          if (Number(order.grandTotal) > lineTotalsSum) {
+            return Number(order.grandTotal) - lineTotalsSum;
+          }
           return 0;
         })();
         const itemsGrandTotal = Math.max(0, Number(order.grandTotal) - deliveryCharges);
@@ -4533,8 +4536,17 @@ export class PosSalesService implements OnModuleInit {
         (s, oi) => s + Number(oi.lineTotal),
         0,
       );
+      const deliveryCharges = (() => {
+        const match = order.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
+        if (match && match[1]) return parseFloat(match[1].replace(/,/g, ''));
+        if (Number(order.grandTotal) > lineTotalsSum) {
+          return Number(order.grandTotal) - lineTotalsSum;
+        }
+        return 0;
+      })();
+      const itemsGrandTotal = Math.max(0, Number(order.grandTotal) - deliveryCharges);
       const globalDiscAmt = Number(order.globalDiscountAmount || 0);
-      const grandTotal = Number(order.grandTotal);
+      const grandTotal = itemsGrandTotal;
 
       // Build details for RETURNED items only
       const returnedItemsList = order.items.filter((oi) =>
@@ -4560,9 +4572,9 @@ export class PosSalesService implements OnModuleInit {
         const taxPercent = Number(oi.taxPercent || 0);
         const lineTotal = Number(oi.lineTotal) * scaleFactor;
 
-        // Proportional coupon deduction
+        // Proportional coupon deduction (excluding delivery charges)
         const isAllianceOrNoGlobalDisc =
-          Math.abs(lineTotalsSum - grandTotal) <= 5;
+          Math.abs(lineTotalsSum - itemsGrandTotal) <= 5;
         const couponDeduction =
           isAllianceOrNoGlobalDisc || lineTotalsSum <= 0
             ? 0
@@ -4575,8 +4587,13 @@ export class PosSalesService implements OnModuleInit {
         } else {
           originalPaidPerUnit =
             lineTotalsSum > 0
-              ? ((lineTotal / lineTotalsSum) * grandTotal) / returnedQty
+              ? ((lineTotal / lineTotalsSum) * itemsGrandTotal) / returnedQty
               : lineTotal / returnedQty;
+        }
+        // An item's paid price per unit can NEVER exceed its retail lineTotal / returnedQty
+        const maxUnitPrice = lineTotal / returnedQty;
+        if (originalPaidPerUnit > maxUnitPrice) {
+          originalPaidPerUnit = maxUnitPrice;
         }
 
         // Current price is already tax-inclusive (retail price)
@@ -4700,6 +4717,26 @@ export class PosSalesService implements OnModuleInit {
               orderBy: { createdAt: 'desc' },
             });
 
+      const totalRefundAmt = enrichedItems.reduce(
+        (sum, item) => sum + (item.refundAmount || 0),
+        0,
+      );
+      const totalWost = enrichedItems.reduce(
+        (sum, item) =>
+          sum +
+          (item.unitPrice * (item.returnableQty || item.quantity || 1)) /
+            (1 + (item.taxPercent || 0) / 100),
+        0,
+      );
+      const totalTaxAmt = enrichedItems.reduce(
+        (sum, item) => sum + (item.taxAmount || 0),
+        0,
+      );
+      const totalDiscAmt = enrichedItems.reduce(
+        (sum, item) => sum + (item.discountAmount || 0),
+        0,
+      );
+
       return {
         status: true,
         data: {
@@ -4708,6 +4745,10 @@ export class PosSalesService implements OnModuleInit {
           returnNumber: (order as any).returnNumber,
           refundNumber: (order as any).refundNumber,
           items: enrichedItems,
+          subtotalWost: Math.round(totalWost * 100) / 100,
+          discountAmount: Math.round(totalDiscAmt * 100) / 100,
+          taxAmount: Math.round(totalTaxAmt * 100) / 100,
+          grandTotal: Math.round(totalRefundAmt * 100) / 100,
           reason: order.notes,
           discountNotes,
           exchangeVoucher: exchangeVoucher || undefined,
@@ -4993,6 +5034,9 @@ export class PosSalesService implements OnModuleInit {
         const deliveryCharges = (() => {
           const match = order.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
           if (match && match[1]) return parseFloat(match[1].replace(/,/g, ''));
+          if (Number(order.grandTotal) > lineTotalsSum) {
+            return Number(order.grandTotal) - lineTotalsSum;
+          }
           return 0;
         })();
         const itemsGrandTotal = Math.max(0, Number(order.grandTotal) - deliveryCharges);
@@ -5541,16 +5585,148 @@ export class PosSalesService implements OnModuleInit {
           }
         }
 
+        // ── Create PosReturn record for audit trail and receipt printing ──
+        const lineTotalsSum = order.items.reduce(
+          (s, i) => s + Number(i.lineTotal),
+          0,
+        );
+        const deliveryCharges = (() => {
+          const match = order.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
+          if (match && match[1]) return parseFloat(match[1].replace(/,/g, ''));
+          if (Number(order.grandTotal) > lineTotalsSum) {
+            return Number(order.grandTotal) - lineTotalsSum;
+          }
+          return 0;
+        })();
+        const itemsGrandTotal = Math.max(0, Number(order.grandTotal) - deliveryCharges);
+        const orderLevelDiscount = Math.max(0, lineTotalsSum - itemsGrandTotal);
+        const isAllianceOrNoGlobalDisc =
+          Math.abs(lineTotalsSum - itemsGrandTotal) <= 5;
+
+        const itemRefundDetails: any[] = [];
+        for (const returnItem of processingItems) {
+          const orderItem = order.items.find(
+            (i) => i.id === returnItem.orderItemId || i.itemId === returnItem.itemId,
+          );
+          if (!orderItem) continue;
+
+          const qty = Number(orderItem.quantity);
+          const lineTotal = Number(orderItem.lineTotal);
+          const retQty = returnItem.quantity;
+
+          const itemCouponDeduction =
+            isAllianceOrNoGlobalDisc || lineTotalsSum <= 0
+              ? 0
+              : (lineTotal / lineTotalsSum) * orderLevelDiscount;
+          const itemShare = lineTotal - itemCouponDeduction;
+
+          const originalPaidPerUnit = isAllianceOrNoGlobalDisc
+            ? lineTotal / qty
+            : itemShare / qty;
+
+          const unitPrice = Number(orderItem.unitPrice);
+          const taxPercent = Number(orderItem.taxPercent || 0);
+          const discountPercent = Number(orderItem.discountPercent || 0);
+          const refundPerUnit = originalPaidPerUnit;
+          const itemRefundTotal = refundPerUnit * retQty;
+
+          const scaleFactor = qty > 0 ? retQty / qty : 1;
+          const taxAmount = Number(orderItem.taxAmount || 0) * scaleFactor;
+          const discountAmount = Number(orderItem.discountAmount || 0) * scaleFactor;
+
+          itemRefundDetails.push({
+            orderItemId: orderItem.id,
+            itemId: returnItem.itemId,
+            quantity: retQty,
+            unitPrice,
+            discountAmount,
+            discountPercent,
+            taxAmount,
+            taxPercent,
+            couponDeduction: itemCouponDeduction * scaleFactor,
+            originalPaidPerUnit,
+            refundPerUnit,
+            refundAmount: itemRefundTotal,
+            priceAdjusted: false,
+          });
+        }
+
+        const subtotalWost = itemRefundDetails.reduce(
+          (sum, d) => sum + (d.unitPrice * d.quantity) / (1 + d.taxPercent / 100),
+          0,
+        );
+        const totalDiscount = itemRefundDetails.reduce(
+          (sum, d) => sum + d.discountAmount,
+          0,
+        );
+        const totalTax = itemRefundDetails.reduce(
+          (sum, d) => sum + d.taxAmount,
+          0,
+        );
+
+        if (itemRefundDetails.length > 0) {
+          await tx.posReturn.create({
+            data: {
+              returnNumber: refundNumber,
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              returnType: 'REFUND',
+              locationId: effectiveLocationId || order.locationId || '',
+              originalLocationId: order.locationId,
+              cashierUserId: ctx?.userId || order.cashierUserId,
+              processedById: ctx?.userId,
+              subtotal: new Prisma.Decimal(Math.round(subtotalWost * 100) / 100),
+              discountAmount: new Prisma.Decimal(Math.round(totalDiscount * 100) / 100),
+              taxAmount: new Prisma.Decimal(Math.round(totalTax * 100) / 100),
+              grandTotal: new Prisma.Decimal(Math.round(refundAmount * 100) / 100),
+              refundMode: 'CASH',
+              voucherCode: refundVoucher?.code || null,
+              reason: reason || null,
+              notes: order.notes || null,
+              items: {
+                create: itemRefundDetails.map((d) => {
+                  const wostPerUnit = d.unitPrice / (1 + d.taxPercent / 100);
+                  return {
+                    orderItemId: d.orderItemId,
+                    itemId: d.itemId,
+                    quantity: d.quantity,
+                    unitPrice: new Prisma.Decimal(d.unitPrice),
+                    wostAmount: new Prisma.Decimal(
+                      Math.round(wostPerUnit * d.quantity * 100) / 100,
+                    ),
+                    discountAmount: new Prisma.Decimal(d.discountAmount),
+                    discountPercent: new Prisma.Decimal(d.discountPercent),
+                    taxAmount: new Prisma.Decimal(d.taxAmount),
+                    taxPercent: new Prisma.Decimal(d.taxPercent),
+                    netTotal: new Prisma.Decimal(d.refundAmount),
+                    couponDeduction: new Prisma.Decimal(d.couponDeduction),
+                    originalPaidPerUnit: new Prisma.Decimal(d.originalPaidPerUnit),
+                    refundPerUnit: new Prisma.Decimal(d.refundPerUnit),
+                    priceAdjusted: d.priceAdjusted,
+                  };
+                }),
+              },
+            },
+          });
+        }
+
+        const refundNote = refundVoucher
+          ? `Cash refunded Rs.${refundAmount} (${newStatus}) - Refund voucher ${refundVoucher.code} (Record only) - Inventory restored${reason ? `: ${reason}` : ''}`
+          : reason
+            ? `Cash refund Rs.${refundAmount} (${newStatus}) - Inventory restored: ${reason}`
+            : `Cash refund Rs.${refundAmount} (${newStatus}) - Inventory restored`;
+
+        const existingNotes = order.notes || '';
+        const updatedNotes = existingNotes
+          ? `${existingNotes} | ${refundNote}`
+          : refundNote;
+
         const updatedOrder = await tx.salesOrder.update({
           where: { id },
           data: {
             status: newStatus,
             refundNumber,
-            notes: refundVoucher
-              ? `Cash refunded Rs.${refundAmount} (${newStatus}) - Refund voucher ${refundVoucher.code} (Record only) - Inventory restored${reason ? `: ${reason}` : ''}`
-              : reason
-                ? `Cash refund Rs.${refundAmount} (${newStatus}) - Inventory restored: ${reason}`
-                : `Cash refund Rs.${refundAmount} (${newStatus}) - Inventory restored`,
+            notes: updatedNotes,
           },
         });
 

@@ -815,7 +815,7 @@ export default function OrderDetailsPage() {
                         originalPaidPerUnit: Number(item.originalPaidPerUnit || item.unitPrice),
                         couponDeduction: Number(item.couponDeduction || 0),
                     }))}
-                    refundTotal={(returnDetails?.items ?? []).reduce((sum: number, item: any) => sum + Number(item.refundAmount || 0), 0)}
+                    refundTotal={returnDetails?.grandTotal != null ? Number(returnDetails.grandTotal) : ((returnDetails?.items ?? []).reduce((sum: number, item: any) => sum + Number(item.refundAmount || 0), 0))}
                     notes={returnDetails?.reason}
                     discountNotes={returnDetails?.discountNotes}
                     returnedAt={returnDetails?.returnedAt}
