@@ -258,7 +258,7 @@ export class ShopifyWebhookController {
           if (newBalance > 0) {
             const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
             const newCode = `CRD-${rand}`;
-            const expiresAt = voucher.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            const expiresAt = undefined; // Credit vouchers do not expire
 
             const creditVoucher = await this.prisma.voucher.create({
               data: {
@@ -269,7 +269,7 @@ export class ShopifyWebhookController {
                 description: `Credit voucher for unused balance of ${voucher.code}`,
                 customerId: voucher.customerId,
                 issuedByLocationId: voucher.issuedByLocationId,
-                expiresAt,
+                expiresAt: null,
                 isActive: true,
                 isRedeemed: false,
                 transactions: {

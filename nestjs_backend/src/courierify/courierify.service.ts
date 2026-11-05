@@ -621,7 +621,7 @@ export class CourierifyService {
           if (remainingBalance > 0) {
             const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
             const newCreditCode = `CRD-${rand}`;
-            const expiresAt = voucher.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            const expiresAt = undefined; // Credit vouchers do not expire
 
             const creditVoucher = await this.prisma.voucher.create({
               data: {
@@ -633,7 +633,7 @@ export class CourierifyService {
                 customerId: voucher.customerId,
                 issuedByLocationId: locationId || voucher.issuedByLocationId,
                 sourceOrderId: posOrderId,
-                expiresAt,
+                expiresAt: null,
                 isActive: true,
                 isRedeemed: false,
                 transactions: {
