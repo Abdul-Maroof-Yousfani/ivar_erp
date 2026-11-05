@@ -1166,7 +1166,7 @@ function ReceiptBody({
           {tenders.map((t, i) => (
             <Row
               key={i}
-              label={`${t.method.replace(/_/g, " ")}${t.cardLast4 ? ` ••••${t.cardLast4}` : ""}${t.slipNo ? (t.method === "voucher" ? ` #${t.slipNo}` : ` (${t.slipNo})`) : ""}`}
+              label={`${t.method.replace(/_/g, " ")}${t.cardLast4 ? ` ••••${t.cardLast4}` : ""}${t.slipNo ? (t.method === "voucher" ? ` #${t.slipNo}${t.voucherFaceValue && t.voucherFaceValue > t.amount ? ` (Total: ${fmt(t.voucherFaceValue)})` : ""}` : ` (${t.slipNo})`) : ""}`}
               value={fmt(t.amount)}
             />
           ))}
@@ -1551,13 +1551,10 @@ function A4InvoiceBody({
                       <span className="capitalize text-zinc-600 font-medium">
                         {t.method.replace(/_/g, " ")}
                         {t.cardLast4 ? ` •••• ${t.cardLast4}` : ""}
-                        {t.slipNo ? ` (${t.slipNo})` : ""}
+                        {t.slipNo ? (t.method === "voucher" ? ` #${t.slipNo}${t.voucherFaceValue && t.voucherFaceValue > t.amount ? ` (Total: Rs. ${fmt(t.voucherFaceValue)})` : ""}` : ` (${t.slipNo})`) : ""}
                       </span>
                       <span className="font-bold text-zinc-800">
-                        Rs.{" "}
-                        {t.method === "voucher" && t.voucherFaceValue
-                          ? fmt(t.voucherFaceValue)
-                          : fmt(t.amount)}
+                        Rs. {fmt(t.amount)}
                       </span>
                     </div>
                   ))}
