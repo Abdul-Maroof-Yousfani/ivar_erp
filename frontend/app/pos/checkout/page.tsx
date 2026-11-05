@@ -353,7 +353,7 @@ export default function CheckoutPage() {
     const [voucherValidating, setVoucherValidating] = useState(false);
     const [validatedVoucher, setValidatedVoucher] = useState<{
         id: string; code: string; voucherType: string;
-        faceValue: number; description?: string;
+        faceValue: number; remainingBalance: number; description?: string;
         customerId?: string; requireCustomerMatch: boolean;
     } | null>(null);
     const [voucherError, setVoucherError] = useState<string | null>(null);
@@ -643,7 +643,7 @@ export default function CheckoutPage() {
             if (res.ok && res.data?.status) {
                 setValidatedVoucher(res.data.data);
                 setVoucherError(null);
-                setTenderAmount(Math.min(res.data.data.faceValue, balanceDue));
+                setTenderAmount(Math.min(res.data.data.remainingBalance, balanceDue));
             } else {
                 setValidatedVoucher(null);
                 setVoucherError(res.data?.message || "Invalid voucher");
@@ -680,14 +680,14 @@ export default function CheckoutPage() {
             toast.error(`Voucher amount exceeds the invoice total of ${fmtCurrency(grandTotal)}. Maximum allowed: ${fmtCurrency(maxAllowed)}.`);
             return;
         }
-        const amount = Math.min(tenderAmount, validatedVoucher.faceValue);
+        const amount = Math.min(tenderAmount, validatedVoucher.remainingBalance);
         setAppliedVouchers(prev => [...prev, { voucherId: validatedVoucher.id, code: validatedVoucher.code, amount }]);
         setTenders(prev => [...prev, { 
             method: "voucher", 
             amount, 
             slipNo: validatedVoucher.code, 
             voucherId: validatedVoucher.id,
-            voucherFaceValue: validatedVoucher.faceValue
+            voucherFaceValue: validatedVoucher.remainingBalance
         }]);
         setVoucherCode("");
         setValidatedVoucher(null);

@@ -769,9 +769,45 @@ export default function SalesHistoryPage() {
         {
             accessorKey: "grandTotal",
             header: () => <div className="text-right">Total</div>,
-            cell: ({ row }) => (
-                <div className="text-right font-bold">{formatCurrency(row.getValue("grandTotal"))}</div>
-            ),
+            cell: ({ row }) => {
+                const order = row.original;
+                const grandTotal = Number(row.getValue("grandTotal") || 0);
+                const isRefunded = order.status === "refunded";
+                const isPartiallyReturned = order.status === "partially_returned";
+
+                const refundMatch = order.notes?.match(/Cash refund(?:ed)?\s*Rs\.?\s*([\d.,]+)/i);
+                const refundedAmount = refundMatch ? parseFloat(refundMatch[1].replace(/,/g, "")) : null;
+
+                if (isRefunded) {
+                    return (
+                        <div className="text-right">
+                            <div className="text-xs text-muted-foreground line-through font-mono">
+                                {formatCurrency(grandTotal)}
+                            </div>
+                            <div className="font-bold text-purple-600 dark:text-purple-400 font-mono">
+                                {formatCurrency(refundedAmount ?? grandTotal)}
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (isPartiallyReturned && refundedAmount != null) {
+                    return (
+                        <div className="text-right">
+                            <div className="font-bold font-mono">
+                                {formatCurrency(grandTotal)}
+                            </div>
+                            <div className="text-[10px] text-purple-600 dark:text-purple-400 font-mono font-medium">
+                                Ref: {formatCurrency(refundedAmount)}
+                            </div>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="text-right font-bold font-mono">{formatCurrency(grandTotal)}</div>
+                );
+            },
         },
         {
             accessorKey: "status",
@@ -1463,7 +1499,7 @@ export default function SalesHistoryPage() {
                         originalPaidPerUnit: Number(item.originalPaidPerUnit || item.unitPrice),
                         couponDeduction: Number(item.couponDeduction || 0),
                     }))}
-                    refundTotal={returnDetails?.items?.reduce((sum: number, item: any) => sum + Number(item.refundAmount || 0), 0) ?? 0}
+                    refundTotal={returnDetails?.grandTotal != null ? Number(returnDetails.grandTotal) : (returnDetails?.items?.reduce((sum: number, item: any) => sum + Number(item.refundAmount || 0), 0) ?? 0)}
                     notes={returnDetails?.reason}
                     discountNotes={returnDetails?.discountNotes}
                     returnedAt={returnDetails?.returnedAt}

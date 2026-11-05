@@ -178,7 +178,11 @@ export class CourierifyService {
    * Get single order details by ID
    */
   async getOrder(id: string): Promise<CourierifyOrder> {
-    return this.request<CourierifyOrder>(`/orders/${id}`);
+    const rawId = String(id || '').trim();
+    // Encode '#' or special characters so fetch URL is not truncated
+    const cleanId = encodeURIComponent(rawId);
+    const res = await this.request<any>(`/orders/${cleanId}`);
+    return res?.order || res;
   }
 
   /**
@@ -540,20 +544,20 @@ export class CourierifyService {
             discountAmount && discountAmount > 0
               ? Math.min(discountAmount, faceVal)
               : faceVal;
+          const remainingBalance = parseFloat((faceVal - usedAmt).toFixed(2));
 
           // 1. Update Voucher status in POS: isRedeemed = true, isActive = false
-          if (!voucher.isRedeemed || voucher.isActive) {
-            await this.prisma.voucher.update({
-              where: { id: voucher.id },
-              data: {
-                isRedeemed: true,
-                isActive: false,
-                shopifySyncStatus: 'REDEEMED_ONLINE',
-                shopifySyncedAt: new Date(),
-              },
-            });
-            this.logger.log(`[Courierify POS] Marked voucher ${code} as REDEEMED in POS`);
-          }
+          await this.prisma.voucher.update({
+            where: { id: voucher.id },
+            data: {
+              isRedeemed: true,
+              isActive: false,
+              remainingBalance: 0,
+              shopifySyncStatus: 'REDEEMED_ONLINE',
+              shopifySyncedAt: new Date(),
+            },
+          });
+          this.logger.log(`[Courierify POS] Marked voucher ${code} as REDEEMED in POS (Used: Rs. ${usedAmt}, Remaining: Rs. ${remainingBalance})`);
 
           // 2. Create Audit Transaction in POS
           await this.prisma.voucherTransaction.create({
@@ -563,7 +567,9 @@ export class CourierifyService {
               locationId: locationId || undefined,
               action: 'REDEEMED_ONLINE',
               amountUsed: new Prisma.Decimal(usedAmt),
-              notes: `Voucher redeemed online via order #${orderRef || posOrderId || 'OMS'}`,
+              notes: remainingBalance > 0
+                ? `Voucher redeemed online via order #${orderRef || posOrderId || 'OMS'}. Used: Rs. ${usedAmt}, Remaining balance: Rs. ${remainingBalance}`
+                : `Voucher redeemed online via order #${orderRef || posOrderId || 'OMS'}`,
             },
           }).catch((err) => {
             this.logger.warn(
@@ -603,12 +609,88 @@ export class CourierifyService {
             this.logger.log(
               `[Courierify POS] Marking price rule ${voucher.shopifyPriceRuleId} as Expired on Shopify for voucher ${code}`,
             );
-            await this.shopifyService.expirePriceRule(voucher.shopifyPriceRuleId);
+            await this.shopifyService.expirePriceRule(voucher.shopifyPriceRuleId).catch(() => {});
           } else {
             this.logger.log(
               `[Courierify POS] Marking price rule by code ${code} as Expired on Shopify`,
             );
-            await this.shopifyService.expirePriceRuleByCode(code);
+            await this.shopifyService.expirePriceRuleByCode(code).catch(() => {});
+          }
+
+          // 5. IF REMAINING BALANCE > 0: AUTOMATICALLY GENERATE NEW CREDIT VOUCHER!
+          if (remainingBalance > 0) {
+            const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+            const newCreditCode = `CRD-${rand}`;
+            const expiresAt = undefined; // Credit vouchers do not expire
+
+            const creditVoucher = await this.prisma.voucher.create({
+              data: {
+                code: newCreditCode,
+                voucherType: 'CREDIT',
+                faceValue: new Prisma.Decimal(remainingBalance),
+                remainingBalance: new Prisma.Decimal(remainingBalance),
+                description: `Credit voucher for unused balance of ${voucher.code}`,
+                customerId: voucher.customerId,
+                issuedByLocationId: locationId || voucher.issuedByLocationId,
+                sourceOrderId: posOrderId,
+                expiresAt: null,
+                isActive: true,
+                isRedeemed: false,
+                transactions: {
+                  create: {
+                    action: 'ISSUED',
+                    amountUsed: 0,
+                    locationId: locationId || undefined,
+                    notes: `Credit voucher issued for unused balance of ${voucher.code} (Order #${orderRef || posOrderId || 'OMS'})`,
+                  },
+                },
+              },
+            });
+            this.logger.log(`[Courierify POS] Created new Credit Voucher ${newCreditCode} for remaining balance Rs. ${remainingBalance}`);
+
+            // Push the new Credit Voucher to Shopify
+            try {
+              const pushRes = await this.shopifyService.pushVoucherToShopify({
+                id: creditVoucher.id,
+                code: creditVoucher.code,
+                voucherType: creditVoucher.voucherType,
+                faceValue: remainingBalance,
+                expiresAt,
+              });
+              if (pushRes.success) {
+                await this.prisma.voucher.update({
+                  where: { id: creditVoucher.id },
+                  data: {
+                    shopifyPriceRuleId: pushRes.priceRuleId,
+                    shopifyDiscountId: pushRes.discountCodeId,
+                    shopifySyncStatus: 'SYNCED',
+                    shopifySyncedAt: new Date(),
+                  },
+                });
+                this.logger.log(`[Courierify POS] Pushed new Credit Voucher ${newCreditCode} to Shopify successfully!`);
+              }
+            } catch (err) {
+              this.logger.error(`[Courierify POS] Failed to push new Credit Voucher ${newCreditCode} to Shopify: ${err.message}`);
+            }
+
+            // Append credit voucher note to order if posOrderId exists
+            if (posOrderId) {
+              try {
+                const existingOrder = await this.prisma.salesOrder.findUnique({
+                  where: { id: posOrderId },
+                  select: { notes: true },
+                });
+                if (existingOrder) {
+                  const updatedNotes = `${existingOrder.notes || ''} | Credit Voucher Issued: ${newCreditCode} (Rs. ${remainingBalance})`.trim();
+                  await this.prisma.salesOrder.update({
+                    where: { id: posOrderId },
+                    data: { notes: updatedNotes },
+                  });
+                }
+              } catch (err) {
+                this.logger.warn(`[Courierify POS] Could not append credit voucher note to order: ${err.message}`);
+              }
+            }
           }
         } else if (voucherPrefixRegex.test(code)) {
           // Has valid POS voucher prefix (e.g. GFT-...) but not found in POS DB:
@@ -707,7 +789,7 @@ export class CourierifyService {
   async processOmsOrderToPos(
     rawOrderData: any,
     occurredAt?: string,
-    options: { createStn?: boolean } = { createStn: true },
+    options: { createStn?: boolean; status?: string } = { createStn: true },
   ): Promise<any> {
     let orderData = rawOrderData || {};
     const orderId = orderData.orderId || orderData.id;
@@ -869,7 +951,7 @@ export class CourierifyService {
     // 2.5 Fallback: If still no prices, distribute COD amount across items to prevent PKR 0 orders
     if (orderData.items?.lines && Array.isArray(orderData.items.lines) && orderData.items.lines.length > 0) {
       const totalItemsQty = orderData.items.lines.reduce((sum: number, line: any) => sum + (Number(line.quantity) || 1), 0);
-      const codTotal = orderData.money?.total || orderData.money?.codToCollect || 0;
+      const codTotal = Number(orderData.money?.subtotal) > 0 ? Number(orderData.money.subtotal) : (orderData.money?.total || orderData.money?.codToCollect || 0);
 
       orderData.items.lines = orderData.items.lines.map((line: any) => {
         if (line.unitPrice === undefined && line.price === undefined) {
@@ -1188,6 +1270,14 @@ export class CourierifyService {
       });
     }
 
+    // Vouchers NEVER cover delivery charges! Cap voucherAmount to items total (orderGrandTotal)
+    if (voucherAmount > orderGrandTotal) {
+      this.logger.log(
+        `[Courierify POS] Order ${primaryRef}: Capping voucher tender from Rs. ${voucherAmount} to items total Rs. ${orderGrandTotal} (DC paid separately)`,
+      );
+      voucherAmount = orderGrandTotal;
+    }
+
     // 7. Transaction: STN Creation & Auto-Acceptance + POS Order Creation
     const rawFinancialStatus = String(
       orderData.payment?.financialStatus || '',
@@ -1429,7 +1519,7 @@ export class CourierifyService {
             customerId,
             paymentMethod: isCardOrOnline ? 'card' : rawPaymentMethod,
             paymentStatus,
-            status: shouldCreateStn ? 'booked' : 'pending',
+            status: options.status || (shouldCreateStn ? 'booked' : 'pending'),
             notes: finalNotes,
             subtotal: new Prisma.Decimal(orderSubtotalWOST),
             discountAmount: new Prisma.Decimal(orderDiscountWOST),
