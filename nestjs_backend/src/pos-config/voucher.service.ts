@@ -122,6 +122,7 @@ export class VoucherService {
                     code,
                     voucherType: data.voucherType,
                     faceValue: data.faceValue,
+                    remainingBalance: isRefundVoucher ? 0 : data.faceValue,
                     discount: data.discount ?? 0,
                     description: data.description,
                     customerId: data.customerId,
@@ -293,6 +294,7 @@ export class VoucherService {
                             code,
                             voucherType: data.voucherType,
                             faceValue: data.faceValue,
+                            remainingBalance: data.faceValue,
                             discount: data.discount ?? 0,
                             description: data.description,
                             companyName: data.companyName,
@@ -416,6 +418,7 @@ export class VoucherService {
                     code: voucher.code,
                     voucherType: voucher.voucherType,
                     faceValue: Number(voucher.faceValue),
+                    remainingBalance: Number(voucher.remainingBalance ?? voucher.faceValue),
                     discount: Number(voucher.discount),
                     description: voucher.description,
                     customerId: voucher.customerId,
@@ -437,130 +440,80 @@ export class VoucherService {
         tx: any,
         ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
     ) {
-        const creditVouchers: { code: string; faceValue: number; expiresAt: Date | null }[] = [];
-
         for (const r of voucherRedemptions) {
             const voucher = await tx.voucher.findUnique({ where: { id: r.voucherId } });
             if (!voucher || !voucher.isActive || voucher.isRedeemed) {
                 throw new Error(`Voucher ${r.voucherId} is no longer valid`);
             }
 
-            const faceValue = Number(voucher.faceValue);
-            const amountUsed = Number(r.amountUsed);
-            const remainingBalance = faceValue - amountUsed;
+            // Use remainingBalance (with fallback to faceValue for migrated records)
+            const currentBalance = Number(voucher.remainingBalance ?? voucher.faceValue);
+            const amountToDeduct = Math.min(Number(r.amountUsed), currentBalance);
+            const newBalance = parseFloat((currentBalance - amountToDeduct).toFixed(2));
+            const isFullyRedeemed = newBalance <= 0;
 
-            // Mark original voucher as redeemed
+            // Update same voucher in-place — partial or full redemption
             await tx.voucher.update({
                 where: { id: r.voucherId },
                 data: {
-                    isRedeemed: true,
-                    isActive: false,
-                    shopifySyncStatus: 'REDEEMED_POS',
+                    remainingBalance: newBalance,
+                    isRedeemed: isFullyRedeemed,
+                    isActive: !isFullyRedeemed,
+                    shopifySyncStatus: isFullyRedeemed ? 'REDEEMED_POS' : 'PARTIAL_POS',
                     shopifySyncedAt: new Date(),
                 },
             });
 
-            // Mark as expired on Shopify so it cannot be reused online (do not delete)
-            if (voucher.shopifyPriceRuleId) {
+            // Shopify sync: update price rule value OR expire if fully used
+            if (isFullyRedeemed) {
+                if (voucher.shopifyPriceRuleId) {
+                    runInBackground(
+                        `Shopify Expire Redeemed Voucher ${voucher.code}`,
+                        this.shopifyService.expirePriceRule(voucher.shopifyPriceRuleId).catch(err => {
+                            console.error(`Failed to expire redeemed voucher ${voucher.code} from Shopify: ${err.message}`);
+                        })
+                    );
+                } else {
+                    runInBackground(
+                        `Shopify Expire Redeemed Voucher by Code ${voucher.code}`,
+                        this.shopifyService.expirePriceRuleByCode(voucher.code).catch(err => {
+                            console.error(`Failed to expire redeemed voucher ${voucher.code} by code from Shopify: ${err.message}`);
+                        })
+                    );
+                }
+            } else if (voucher.shopifyPriceRuleId) {
+                // Update Shopify price rule to reflect new remaining balance
                 runInBackground(
-                    `Shopify Expire Redeemed Voucher ${voucher.code}`,
-                    this.shopifyService.expirePriceRule(voucher.shopifyPriceRuleId).catch(err => {
-                        console.error(`Failed to expire redeemed voucher ${voucher.code} from Shopify: ${err.message}`);
-                    })
-                );
-            } else {
-                runInBackground(
-                    `Shopify Expire Redeemed Voucher by Code ${voucher.code}`,
-                    this.shopifyService.expirePriceRuleByCode(voucher.code).catch(err => {
-                        console.error(`Failed to expire redeemed voucher ${voucher.code} by code from Shopify: ${err.message}`);
+                    `Shopify Update Balance ${voucher.code}`,
+                    this.shopifyService.updatePriceRuleValue(voucher.shopifyPriceRuleId, newBalance).catch(err => {
+                        console.error(`Failed to update Shopify balance for ${voucher.code}: ${err.message}`);
                     })
                 );
             }
 
+            // Audit trail
             await tx.voucherTransaction.create({
                 data: {
                     voucherId: r.voucherId,
                     orderId,
                     locationId,
-                    action: 'REDEEMED',
-                    amountUsed: r.amountUsed,
+                    action: isFullyRedeemed ? 'REDEEMED' : 'PARTIAL_REDEEMED',
+                    amountUsed: amountToDeduct,
+                    notes: isFullyRedeemed
+                        ? `Fully redeemed. Balance: Rs 0`
+                        : `Partial redemption. Used: Rs ${amountToDeduct}. Remaining: Rs ${newBalance}`,
                 },
             });
 
             await tx.voucherRedemption.create({
-                data: { voucherId: r.voucherId, orderId, amountUsed: r.amountUsed },
+                data: { voucherId: r.voucherId, orderId, amountUsed: amountToDeduct },
             });
-
-            // ── Generate remaining balance voucher ──
-            if (remainingBalance > 0) {
-                const isCorporate = voucher.voucherType === 'CORPORATE';
-                const nextType = isCorporate ? 'CORPORATE' : 'CREDIT';
-                const newCode = generateCode(nextType);
-                const expiresAt = voucher.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-                const creditVoucher = await tx.voucher.create({
-                    data: {
-                        code: newCode,
-                        voucherType: nextType,
-                        faceValue: remainingBalance,
-                        description: isCorporate
-                            ? `Corporate voucher for unused balance from ${voucher.code}`
-                            : `Credit voucher for unused balance from ${voucher.code}`,
-                        customerId: isCorporate ? null : voucher.customerId,
-                        companyName: isCorporate ? voucher.companyName : null,
-                        companyGlCode: isCorporate ? voucher.companyGlCode : null,
-                        issuedByLocationId: locationId,
-                        issuedByUserId: ctx?.userId,
-                        sourceOrderId: orderId,
-                        expiresAt,
-                        isActive: true,
-                        isRedeemed: false,
-                    },
-                });
-
-                // Add location restriction (same as original voucher)
-                // Bypass for CREDIT vouchers as they are usable everywhere by default
-                const originalLocations = voucher.voucherType === 'EXCHANGE' || voucher.voucherType === 'CREDIT'
-                    ? []
-                    : await tx.voucherLocation.findMany({
-                        where: { voucherId: voucher.id },
-                        select: { locationId: true },
-                    });
-
-                if (originalLocations.length > 0) {
-                    await tx.voucherLocation.createMany({
-                        data: originalLocations.map(loc => ({
-                            voucherId: creditVoucher.id,
-                            locationId: loc.locationId,
-                        })),
-                    });
-                }
-
-                // Log remaining balance voucher issuance
-                await tx.voucherTransaction.create({
-                    data: {
-                        voucherId: creditVoucher.id,
-                        action: 'ISSUED',
-                        amountUsed: 0,
-                        locationId,
-                        notes: isCorporate
-                            ? `Corporate voucher issued for unused balance of ${voucher.code}`
-                            : `Credit voucher issued for unused balance of ${voucher.code}`,
-                    },
-                });
-
-                creditVouchers.push({
-                    code: creditVoucher.code,
-                    faceValue: remainingBalance,
-                    expiresAt: creditVoucher.expiresAt,
-                });
-            }
         }
 
-        return creditVouchers;
+        // No new credit vouchers are generated — balance stays on the same code
+        return [];
     }
-
-    // Helper to generate credit voucher code
+        // Helper to generate credit voucher code
     private generateCreditVoucherCode(): string {
         const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
         return `CRD-${rand}`;
@@ -735,10 +688,34 @@ export class VoucherService {
 
     // ── Restore voucher on order void/return ──────────────────────
     async restoreVoucher(voucherId: string, orderId: string, locationId: string, tx: any) {
+        // Find how much was actually used in this order
+        const redemption = await tx.voucherRedemption.findFirst({
+            where: { voucherId, orderId },
+        });
+        const amountToRestore = Number(redemption?.amountUsed ?? 0);
+
+        const voucher = await tx.voucher.findUnique({ where: { id: voucherId } });
+        const currentBalance = Number(voucher?.remainingBalance ?? 0);
+        const newBalance = parseFloat((currentBalance + amountToRestore).toFixed(2));
+
         await tx.voucher.update({
             where: { id: voucherId },
-            data: { isRedeemed: false, isActive: true },
+            data: {
+                remainingBalance: newBalance,
+                isRedeemed: false,
+                isActive: true,
+            },
         });
+
+        // Restore Shopify price rule to new balance (non-blocking)
+        if (voucher?.shopifyPriceRuleId) {
+            runInBackground(
+                `Shopify Restore Balance ${voucher.code}`,
+                this.shopifyService.updatePriceRuleValue(voucher.shopifyPriceRuleId, newBalance).catch(err => {
+                    console.error(`Failed to restore Shopify balance for ${voucher.code}: ${err.message}`);
+                })
+            );
+        }
 
         await tx.voucherTransaction.create({
             data: {
@@ -747,12 +724,12 @@ export class VoucherService {
                 locationId,
                 action: 'RESTORED',
                 amountUsed: 0,
-                notes: 'Restored due to order void/return',
+                notes: `Restored Rs ${amountToRestore} due to order void/return. New balance: Rs ${newBalance}`,
             },
         });
     }
 
-    // ── Get voucher detail ────────────────────────────────────────
+        // ── Get voucher detail ────────────────────────────────────────
     async getVoucher(id: string) {
         try {
             const voucher = await this.prisma.voucher.findFirst({

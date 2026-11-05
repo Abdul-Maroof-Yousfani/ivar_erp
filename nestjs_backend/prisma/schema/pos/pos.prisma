@@ -288,10 +288,12 @@ model Voucher {
   sourceOrderId      String? @map("source_order_id") // which return/order triggered this
 
   // Lifecycle
-  isActive   Boolean   @default(true) @map("is_active")
-  isRedeemed Boolean   @default(false) @map("is_redeemed")
-  expiresAt  DateTime? @map("expires_at")
-  discount   Decimal   @default(0) @map("discount") @db.Decimal(15, 2)
+  isActive         Boolean   @default(true) @map("is_active")
+  isRedeemed       Boolean   @default(false) @map("is_redeemed")
+  expiresAt        DateTime? @map("expires_at")
+  discount         Decimal   @default(0) @map("discount") @db.Decimal(15, 2)
+  /// Running remaining balance — starts at faceValue, reduced on each partial redemption
+  remainingBalance Decimal   @default(0) @map("remaining_balance") @db.Decimal(15, 2)
 
   // Shopify sync fields
   /// Shopify PriceRule ID (used to manage/delete the discount rule)

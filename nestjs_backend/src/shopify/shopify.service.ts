@@ -103,7 +103,7 @@ export class ShopifyService {
             allocation_method: 'across',
             starts_at: new Date().toISOString(),
             ...(endsAt ? { ends_at: endsAt } : {}),
-            usage_limit: 1,
+            usage_limit: null,
             once_per_customer: false,
           },
         }),
@@ -393,6 +393,77 @@ export class ShopifyService {
     return orderPayload.discount_codes
       .filter((dc: any) => dc?.code)
       .map((dc: any) => String(dc.code).toUpperCase().trim());
+  }
+
+  /**
+   * Extract the ACTUAL discount amount applied per code from a Shopify order payload.
+   * Shopify includes discount_codes[].amount = the actual amount deducted (not the face value).
+   * For line_item-scoped discounts, this will be the item subtotal discount only (DC excluded).
+   */
+  extractDiscountAmounts(orderPayload: any): Record<string, number> {
+    const result: Record<string, number> = {};
+    if (!Array.isArray(orderPayload?.discount_codes)) return result;
+    for (const dc of orderPayload.discount_codes) {
+      if (dc?.code && dc?.amount !== undefined) {
+        result[String(dc.code).toUpperCase().trim()] = parseFloat(dc.amount) || 0;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Update a Shopify PriceRule's fixed discount value to a new amount.
+   * Used when a voucher is partially redeemed — the remaining balance is pushed back to Shopify
+   * so the customer can use the same code for future purchases with the correct remaining value.
+   *
+   * SAFETY: Only updates rules starting with POS-VOUCHER- prefix.
+   */
+  async updatePriceRuleValue(priceRuleId: string, newValue: number): Promise<boolean> {
+    if (!this.shopDomain) {
+      this.logger.warn('[Shopify] Missing shop domain — skipping updatePriceRuleValue');
+      return false;
+    }
+    try {
+      const token = await this.getAccessToken();
+
+      // Safety check: verify this is a POS voucher rule before updating
+      const verifyRes = await fetch(`${this.baseUrl}/price_rules/${priceRuleId}.json`, {
+        headers: { 'X-Shopify-Access-Token': token },
+      });
+      if (verifyRes.ok) {
+        const verifyData: any = await verifyRes.json();
+        const prTitle = String(verifyData?.price_rule?.title || '');
+        if (!prTitle.startsWith('POS-VOUCHER-')) {
+          this.logger.error(
+            `[Shopify Safety Guard] Refusing to update PriceRule ${priceRuleId} ("${prTitle}"): title does NOT start with "POS-VOUCHER-".`,
+          );
+          return false;
+        }
+      }
+
+      const res = await fetch(`${this.baseUrl}/price_rules/${priceRuleId}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
+        body: JSON.stringify({
+          price_rule: {
+            id: priceRuleId,
+            value: '-' + newValue.toFixed(2),
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        this.logger.error(`[Shopify] Failed to update PriceRule ${priceRuleId} to ${newValue}: ${errText}`);
+        return false;
+      }
+
+      this.logger.log(`[Shopify] PriceRule ${priceRuleId} updated to -${newValue.toFixed(2)} (remaining balance)`);
+      return true;
+    } catch (err: any) {
+      this.logger.error(`[Shopify] Error updating PriceRule value ${priceRuleId}: ${err.message}`);
+      return false;
+    }
   }
 
   async getOrder(orderIdOrName: string): Promise<any> {
