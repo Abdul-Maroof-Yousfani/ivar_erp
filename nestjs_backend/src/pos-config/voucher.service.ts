@@ -566,78 +566,141 @@ export class VoucherService {
         tx: any,
         ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
     ) {
+        const creditVouchers: { code: string; faceValue: number; expiresAt: Date | null }[] = [];
+
         for (const r of voucherRedemptions) {
             const voucher = await tx.voucher.findUnique({ where: { id: r.voucherId } });
             if (!voucher || !voucher.isActive || voucher.isRedeemed) {
                 throw new Error(`Voucher ${r.voucherId} is no longer valid`);
             }
 
-            // Use remainingBalance (with fallback to faceValue for migrated records)
             const currentBalance = Number(voucher.remainingBalance ?? voucher.faceValue);
             const amountToDeduct = Math.min(Number(r.amountUsed), currentBalance);
-            const newBalance = parseFloat((currentBalance - amountToDeduct).toFixed(2));
-            const isFullyRedeemed = newBalance <= 0;
+            const remainingBalance = parseFloat((currentBalance - amountToDeduct).toFixed(2));
 
-            // Update same voucher in-place — partial or full redemption
+            // Mark original voucher as redeemed
             await tx.voucher.update({
                 where: { id: r.voucherId },
                 data: {
-                    remainingBalance: newBalance,
-                    isRedeemed: isFullyRedeemed,
-                    isActive: !isFullyRedeemed,
-                    shopifySyncStatus: isFullyRedeemed ? 'REDEEMED_POS' : 'PARTIAL_POS',
+                    remainingBalance: 0,
+                    isRedeemed: true,
+                    isActive: false,
+                    shopifySyncStatus: 'REDEEMED_POS',
                     shopifySyncedAt: new Date(),
                 },
             });
 
-            // Shopify sync: update price rule value OR expire if fully used
-            if (isFullyRedeemed) {
-                if (voucher.shopifyPriceRuleId) {
-                    runInBackground(
-                        `Shopify Expire Redeemed Voucher ${voucher.code}`,
-                        this.shopifyService.expirePriceRule(voucher.shopifyPriceRuleId).catch(err => {
-                            console.error(`Failed to expire redeemed voucher ${voucher.code} from Shopify: ${err.message}`);
-                        })
-                    );
-                } else {
-                    runInBackground(
-                        `Shopify Expire Redeemed Voucher by Code ${voucher.code}`,
-                        this.shopifyService.expirePriceRuleByCode(voucher.code).catch(err => {
-                            console.error(`Failed to expire redeemed voucher ${voucher.code} by code from Shopify: ${err.message}`);
-                        })
-                    );
-                }
-            } else if (voucher.shopifyPriceRuleId) {
-                // Update Shopify price rule to reflect new remaining balance
+            // Mark as expired on Shopify so it cannot be reused online
+            if (voucher.shopifyPriceRuleId) {
                 runInBackground(
-                    `Shopify Update Balance ${voucher.code}`,
-                    this.shopifyService.updatePriceRuleValue(voucher.shopifyPriceRuleId, newBalance).catch(err => {
-                        console.error(`Failed to update Shopify balance for ${voucher.code}: ${err.message}`);
+                    `Shopify Expire Redeemed Voucher ${voucher.code}`,
+                    this.shopifyService.expirePriceRule(voucher.shopifyPriceRuleId).catch(err => {
+                        console.error(`Failed to expire redeemed voucher ${voucher.code} from Shopify: ${err.message}`);
+                    })
+                );
+            } else {
+                runInBackground(
+                    `Shopify Expire Redeemed Voucher by Code ${voucher.code}`,
+                    this.shopifyService.expirePriceRuleByCode(voucher.code).catch(err => {
+                        console.error(`Failed to expire redeemed voucher ${voucher.code} by code from Shopify: ${err.message}`);
                     })
                 );
             }
 
-            // Audit trail
             await tx.voucherTransaction.create({
                 data: {
                     voucherId: r.voucherId,
                     orderId,
                     locationId,
-                    action: isFullyRedeemed ? 'REDEEMED' : 'PARTIAL_REDEEMED',
+                    action: 'REDEEMED',
                     amountUsed: amountToDeduct,
-                    notes: isFullyRedeemed
-                        ? `Fully redeemed. Balance: Rs 0`
-                        : `Partial redemption. Used: Rs ${amountToDeduct}. Remaining: Rs ${newBalance}`,
+                    notes: remainingBalance > 0
+                        ? `Redeemed at POS. Used: Rs. ${amountToDeduct}, Remaining balance: Rs. ${remainingBalance}`
+                        : `Fully redeemed at POS`,
                 },
             });
 
             await tx.voucherRedemption.create({
                 data: { voucherId: r.voucherId, orderId, amountUsed: amountToDeduct },
             });
+
+            // ── Generate remaining balance credit voucher ──
+            if (remainingBalance > 0) {
+                const isCorporate = voucher.voucherType === 'CORPORATE';
+                const nextType = isCorporate ? 'CORPORATE' : 'CREDIT';
+                const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+                const newCode = `${nextType === 'CORPORATE' ? 'CRP' : 'CRD'}-${rand}`;
+                const expiresAt = voucher.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+                const creditVoucher = await tx.voucher.create({
+                    data: {
+                        code: newCode,
+                        voucherType: nextType,
+                        faceValue: remainingBalance,
+                        remainingBalance,
+                        description: isCorporate
+                            ? `Corporate voucher for unused balance from ${voucher.code}`
+                            : `Credit voucher for unused balance from ${voucher.code}`,
+                        customerId: isCorporate ? null : voucher.customerId,
+                        companyName: isCorporate ? voucher.companyName : null,
+                        companyGlCode: isCorporate ? voucher.companyGlCode : null,
+                        issuedByLocationId: locationId,
+                        issuedByUserId: ctx?.userId,
+                        sourceOrderId: orderId,
+                        expiresAt,
+                        isActive: true,
+                        isRedeemed: false,
+                        transactions: {
+                            create: {
+                                action: 'ISSUED',
+                                amountUsed: 0,
+                                locationId,
+                                notes: isCorporate
+                                    ? `Corporate voucher issued for unused balance of ${voucher.code}`
+                                    : `Credit voucher issued for unused balance of ${voucher.code}`,
+                            },
+                        },
+                    },
+                });
+
+                // Push new credit voucher to Shopify so customer can use online or in store!
+                runInBackground(
+                    `Shopify Push Credit Voucher ${creditVoucher.code}`,
+                    (async () => {
+                        try {
+                            const pushRes = await this.shopifyService.pushVoucherToShopify({
+                                id: creditVoucher.id,
+                                code: creditVoucher.code,
+                                voucherType: creditVoucher.voucherType,
+                                faceValue: Number(creditVoucher.faceValue),
+                                expiresAt: creditVoucher.expiresAt,
+                            });
+                            if (pushRes.success) {
+                                await this.prisma.voucher.update({
+                                    where: { id: creditVoucher.id },
+                                    data: {
+                                        shopifyPriceRuleId: pushRes.priceRuleId,
+                                        shopifyDiscountId: pushRes.discountCodeId,
+                                        shopifySyncStatus: 'SYNCED',
+                                        shopifySyncedAt: new Date(),
+                                    },
+                                });
+                            }
+                        } catch (err: any) {
+                            console.error(`Failed to push credit voucher ${creditVoucher.code} to Shopify: ${err.message}`);
+                        }
+                    })()
+                );
+
+                creditVouchers.push({
+                    code: creditVoucher.code,
+                    faceValue: remainingBalance,
+                    expiresAt: creditVoucher.expiresAt,
+                });
+            }
         }
 
-        // No new credit vouchers are generated — balance stays on the same code
-        return [];
+        return creditVouchers;
     }
         // Helper to generate credit voucher code
     private generateCreditVoucherCode(): string {

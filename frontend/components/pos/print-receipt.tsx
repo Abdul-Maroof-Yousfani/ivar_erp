@@ -452,19 +452,19 @@ export function PrintReceipt({
   );
 
   const totalPaid = tenders.reduce(
-    (s, t) =>
-      s +
-      (t.method === "voucher" && t.voucherFaceValue
-        ? t.voucherFaceValue
-        : t.amount),
+    (s, t) => s + Number(t.amount || 0),
     0,
   );
 
   const deliveryFee = (() => {
     const match = order?.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
     if (match && match[1]) return parseFloat(match[1].replace(/,/g, ""));
-    if (order?.notes?.includes("Source: Courierify") || order?.paymentMethod?.toUpperCase() === "COD") {
-      if (totalPaid > grandTotal) return totalPaid - grandTotal;
+    const itemsTotal = (order?.items || []).reduce(
+      (acc: number, item: any) => acc + Number(item.lineTotal || 0),
+      0,
+    );
+    if (itemsTotal > 0 && grandTotal > itemsTotal) {
+      return grandTotal - itemsTotal;
     }
     return 0;
   })();
@@ -1167,11 +1167,7 @@ function ReceiptBody({
             <Row
               key={i}
               label={`${t.method.replace(/_/g, " ")}${t.cardLast4 ? ` ••••${t.cardLast4}` : ""}${t.slipNo ? (t.method === "voucher" ? ` #${t.slipNo}` : ` (${t.slipNo})`) : ""}`}
-              value={
-                t.method === "voucher" && t.voucherFaceValue
-                  ? fmt(t.voucherFaceValue)
-                  : fmt(t.amount)
-              }
+              value={fmt(t.amount)}
             />
           ))}
           {totalPaid > 0 && totalPaid !== finalGrandTotal && (

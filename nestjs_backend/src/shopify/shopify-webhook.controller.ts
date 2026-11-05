@@ -219,14 +219,14 @@ export class ShopifyWebhookController {
             return;
           }
 
-          // Update voucher balance — partial or full redemption
+          // Always mark original voucher as redeemed
           await this.prisma.voucher.update({
             where: { id: voucher.id },
             data: {
-              remainingBalance: newBalance,
-              isRedeemed: isFullyRedeemed,
-              isActive: !isFullyRedeemed,
-              shopifySyncStatus: isFullyRedeemed ? 'REDEEMED_ONLINE' : 'PARTIAL_ONLINE',
+              remainingBalance: 0,
+              isRedeemed: true,
+              isActive: false,
+              shopifySyncStatus: 'REDEEMED_ONLINE',
               shopifySyncedAt: new Date(),
             },
           });
@@ -235,33 +235,78 @@ export class ShopifyWebhookController {
           await this.prisma.voucherTransaction.create({
             data: {
               voucherId: voucher.id,
-              action: isFullyRedeemed ? 'REDEEMED_ONLINE' : 'PARTIAL_REDEEMED_ONLINE',
+              action: 'REDEEMED_ONLINE',
               amountUsed: amountToDeduct,
-              notes: isFullyRedeemed
-                ? `Fully redeemed on Shopify -- Order ID: ${shopifyOrderId}. Balance: Rs 0`
-                : `Partial redemption on Shopify -- Order ID: ${shopifyOrderId}. Used: Rs ${amountToDeduct}. Remaining: Rs ${newBalance}`,
+              notes: newBalance > 0
+                ? `Redeemed on Shopify -- Order ID: ${shopifyOrderId}. Used: Rs ${amountToDeduct}. Remaining balance: Rs ${newBalance}`
+                : `Fully redeemed on Shopify -- Order ID: ${shopifyOrderId}`,
             },
           });
 
-          // Shopify sync: update price rule OR expire
-          if (isFullyRedeemed) {
-            if ((voucher as any).shopifyPriceRuleId) {
-              await this.shopifyService.expirePriceRule((voucher as any).shopifyPriceRuleId).catch(err => {
-                this.logger.error(`Failed to expire fully redeemed voucher ${code}: ${err.message}`);
-              });
-            } else {
-              await this.shopifyService.expirePriceRuleByCode(code).catch(err => {
-                this.logger.error(`Failed to expire fully redeemed voucher ${code} by code: ${err.message}`);
-              });
-            }
-          } else if ((voucher as any).shopifyPriceRuleId) {
-            // Update price rule to remaining balance so customer can use same code again
-            await this.shopifyService.updatePriceRuleValue(
-              (voucher as any).shopifyPriceRuleId,
-              newBalance,
-            ).catch(err => {
-              this.logger.error(`Failed to update Shopify balance for ${code}: ${err.message}`);
+          // Expire original PriceRule on Shopify
+          if ((voucher as any).shopifyPriceRuleId) {
+            await this.shopifyService.expirePriceRule((voucher as any).shopifyPriceRuleId).catch(err => {
+              this.logger.error(`Failed to expire redeemed voucher ${code}: ${err.message}`);
             });
+          } else {
+            await this.shopifyService.expirePriceRuleByCode(code).catch(err => {
+              this.logger.error(`Failed to expire redeemed voucher ${code} by code: ${err.message}`);
+            });
+          }
+
+          // If remaining balance > 0: AUTOMATICALLY GENERATE NEW CREDIT VOUCHER FOR CUSTOMER!
+          if (newBalance > 0) {
+            const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+            const newCode = `CRD-${rand}`;
+            const expiresAt = voucher.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+            const creditVoucher = await this.prisma.voucher.create({
+              data: {
+                code: newCode,
+                voucherType: 'CREDIT',
+                faceValue: newBalance,
+                remainingBalance: newBalance,
+                description: `Credit voucher for unused balance of ${voucher.code}`,
+                customerId: voucher.customerId,
+                issuedByLocationId: voucher.issuedByLocationId,
+                expiresAt,
+                isActive: true,
+                isRedeemed: false,
+                transactions: {
+                  create: {
+                    action: 'ISSUED',
+                    amountUsed: 0,
+                    notes: `Credit voucher issued for unused balance of ${voucher.code} (Shopify Order ${shopifyOrderId})`,
+                  },
+                },
+              },
+            });
+            this.logger.log(`[Shopify ${topic}] Created new Credit Voucher ${newCode} for remaining balance Rs ${newBalance}`);
+
+            // Push new credit voucher to Shopify so customer can immediately use it online!
+            try {
+              const pushRes = await this.shopifyService.pushVoucherToShopify({
+                id: creditVoucher.id,
+                code: creditVoucher.code,
+                voucherType: 'CREDIT',
+                faceValue: newBalance,
+                expiresAt,
+              });
+              if (pushRes.success) {
+                await this.prisma.voucher.update({
+                  where: { id: creditVoucher.id },
+                  data: {
+                    shopifyPriceRuleId: pushRes.priceRuleId,
+                    shopifyDiscountId: pushRes.discountCodeId,
+                    shopifySyncStatus: 'SYNCED',
+                    shopifySyncedAt: new Date(),
+                  },
+                });
+                this.logger.log(`[Shopify ${topic}] Pushed new Credit Voucher ${newCode} to Shopify`);
+              }
+            } catch (err) {
+              this.logger.error(`Failed to push new Credit Voucher ${newCode} to Shopify: ${err.message}`);
+            }
           }
 
           this.logger.log(
