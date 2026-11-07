@@ -1044,15 +1044,12 @@ export class CourierifyService {
       return null;
     }
 
+    // Match ONLY by barCode — this is the Courierify item identifier
     const skus = rawLines.map((l) => (l.sku || '').trim()).filter(Boolean);
     const matchedItems = await this.prisma.item.findMany({
       where: {
         isActive: true,
-        OR: [
-          { sku: { in: skus, mode: 'insensitive' } },
-          { barCode: { in: skus, mode: 'insensitive' } },
-          { itemId: { in: skus, mode: 'insensitive' } },
-        ],
+        barCode: { in: skus, mode: 'insensitive' },
       },
       select: {
         id: true,
@@ -1068,11 +1065,10 @@ export class CourierifyService {
       },
     });
 
+    // Build lookup by barCode only (Courierify sends barCode as the SKU field)
     const itemLookup = new Map<string, any>();
     for (const it of matchedItems) {
-      if (it.sku) itemLookup.set(it.sku.toLowerCase().trim(), it);
       if (it.barCode) itemLookup.set(it.barCode.toLowerCase().trim(), it);
-      if (it.itemId) itemLookup.set(it.itemId.toLowerCase().trim(), it);
     }
 
     let totalDiscountGross = Math.max(
@@ -1154,34 +1150,17 @@ export class CourierifyService {
 
     for (const line of rawLines) {
       const skuKey = (line.sku || '').toLowerCase().trim();
-      let matched = itemLookup.get(skuKey);
+      const matched = itemLookup.get(skuKey);
 
       if (!matched) {
-        const fallbackSku = line.sku || `ONL-${Date.now()}`;
-        matched = await this.prisma.item.create({
-          data: {
-            itemId: fallbackSku,
-            sku: fallbackSku,
-            barCode: line.sku,
-            description: line.title || `Online Item ${fallbackSku}`,
-            unitPrice: line.unitPrice || 0,
-            unitCost: 0,
-            taxRate1: 18,
-          },
-          select: {
-            id: true,
-            itemId: true,
-            sku: true,
-            barCode: true,
-            description: true,
-            unitPrice: true,
-            unitCost: true,
-            taxRate1: true,
-            hsCodeStr: true,
-            hsCode: { select: { hsCode: true } },
-          },
-        });
-        itemLookup.set(skuKey, matched);
+        // SAFETY: Do NOT auto-create ghost items. barCode mismatch means item is not in ERP.
+        // Log a warning and skip this line — manual mapping required.
+        this.logger.warn(
+          `[Courierify POS] Order ${primaryRef}: barCode "${line.sku}" does not match any active ERP item. ` +
+          `Line skipped (qty: ${line.quantity}, title: "${line.title || 'N/A'}"). ` +
+          `Please map this barCode to an item in IVAR ERP.`,
+        );
+        continue;
       }
 
       const qty = Number(line.quantity) || 1;
@@ -1199,6 +1178,16 @@ export class CourierifyService {
         taxDivisor,
         lineGross,
       });
+    }
+
+    // If ALL line items were skipped due to barCode mismatch, abort order creation
+    if (resolvedLines.length === 0) {
+      this.logger.error(
+        `[Courierify POS] Order ${primaryRef}: ZERO items matched in ERP by barCode. ` +
+        `Order creation ABORTED. Original SKUs: [${rawLines.map((l: any) => l.sku).join(', ')}]. ` +
+        `Please map these barCodes to ERP items and re-process.`,
+      );
+      return null;
     }
 
     // Convert values to WOST and apply promotional discount on WOST (Vouchers are tenders, NOT deducted from items)
