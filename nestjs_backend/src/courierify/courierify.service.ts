@@ -433,8 +433,9 @@ export class CourierifyService {
           // On order.created/placed, record order in POS as pending WITHOUT creating an STN yet
           await this.processOmsOrderToPos(data, occurredAt, { createStn: false });
           break;
+        case 'shipment.book':
         case 'shipment.booked':
-          // On shipment.booked, generate Automatic Transfer Request (STN) and mark booked
+          // On shipment.book / shipment.booked, generate Automatic Transfer Request (STN) and mark booked
           await this.onShipmentBooked(data, occurredAt);
           break;
         case 'shipment.status_changed':
@@ -1028,9 +1029,13 @@ export class CourierifyService {
       }
     }
 
-    // 6. Match Line Items & Calculate WOST (Without Sales Tax) Math
+    // 6. Match Line Items primarily by barCode & Calculate WOST (Without Sales Tax) Math
     const rawLines: Array<{
       sku: string;
+      barcode?: string;
+      barCode?: string;
+      item_barcode?: string;
+      variant_barcode?: string;
       quantity: number;
       title?: string;
       unitPrice?: number;
@@ -1044,12 +1049,26 @@ export class CourierifyService {
       return null;
     }
 
-    // Match ONLY by barCode — this is the Courierify item identifier
-    const skus = rawLines.map((l) => (l.sku || '').trim()).filter(Boolean);
+    // Collect all potential barcode & SKU identifiers sent by Courierify
+    const candidateCodes = rawLines
+      .flatMap((l: any) => [
+        l.barcode,
+        l.barCode,
+        l.item_barcode,
+        l.variant_barcode,
+        l.sku,
+      ])
+      .filter(Boolean)
+      .map((s: any) => String(s).trim());
+
     const matchedItems = await this.prisma.item.findMany({
       where: {
         isActive: true,
-        barCode: { in: skus, mode: 'insensitive' },
+        OR: [
+          { barCode: { in: candidateCodes, mode: 'insensitive' } },
+          { sku: { in: candidateCodes, mode: 'insensitive' } },
+          { itemId: { in: candidateCodes, mode: 'insensitive' } },
+        ],
       },
       select: {
         id: true,
@@ -1065,10 +1084,19 @@ export class CourierifyService {
       },
     });
 
-    // Build lookup by barCode only (Courierify sends barCode as the SKU field)
-    const itemLookup = new Map<string, any>();
+    // Build lookup maps: primary by barCode, fallback by sku and itemId
+    const itemLookupByBarcode = new Map<string, any>();
+    const itemLookupBySku = new Map<string, any>();
     for (const it of matchedItems) {
-      if (it.barCode) itemLookup.set(it.barCode.toLowerCase().trim(), it);
+      if (it.barCode) {
+        itemLookupByBarcode.set(it.barCode.toLowerCase().trim(), it);
+      }
+      if (it.sku) {
+        itemLookupBySku.set(it.sku.toLowerCase().trim(), it);
+      }
+      if (it.itemId) {
+        itemLookupBySku.set(it.itemId.toLowerCase().trim(), it);
+      }
     }
 
     let totalDiscountGross = Math.max(
@@ -1149,16 +1177,40 @@ export class CourierifyService {
     }> = [];
 
     for (const line of rawLines) {
-      const skuKey = (line.sku || '').toLowerCase().trim();
-      const matched = itemLookup.get(skuKey);
+      const explicitBarcode =
+        (line as any).barcode ||
+        (line as any).barCode ||
+        (line as any).item_barcode ||
+        (line as any).variant_barcode;
+
+      const barcodeKey = explicitBarcode
+        ? String(explicitBarcode).toLowerCase().trim()
+        : null;
+      const skuKey = line.sku ? String(line.sku).toLowerCase().trim() : null;
+
+      // 1. Primary: Match explicit barcode sent by Courierify with ERP barCode
+      let matched = barcodeKey ? itemLookupByBarcode.get(barcodeKey) : null;
+
+      // 2. If barcode not matched directly, check if line.sku was actually the ERP barCode
+      if (!matched && skuKey) {
+        matched = itemLookupByBarcode.get(skuKey);
+      }
+
+      // 3. Fallback: If barcode still not found, check if barcode or sku matches ERP SKU
+      if (!matched && barcodeKey) {
+        matched = itemLookupBySku.get(barcodeKey);
+      }
+      if (!matched && skuKey) {
+        matched = itemLookupBySku.get(skuKey);
+      }
 
       if (!matched) {
-        // SAFETY: Do NOT auto-create ghost items. barCode mismatch means item is not in ERP.
+        // SAFETY: Do NOT auto-create ghost items. Barcode mismatch means item is not in ERP.
         // Log a warning and skip this line — manual mapping required.
         this.logger.warn(
-          `[Courierify POS] Order ${primaryRef}: barCode "${line.sku}" does not match any active ERP item. ` +
+          `[Courierify POS] Order ${primaryRef}: Barcode "${explicitBarcode || 'N/A'}" / SKU "${line.sku || 'N/A'}" does not match any active ERP item. ` +
           `Line skipped (qty: ${line.quantity}, title: "${line.title || 'N/A'}"). ` +
-          `Please map this barCode to an item in IVAR ERP.`,
+          `Please map this barcode to an item in IVAR ERP.`,
         );
         continue;
       }
@@ -1180,12 +1232,12 @@ export class CourierifyService {
       });
     }
 
-    // If ALL line items were skipped due to barCode mismatch, abort order creation
+    // If ALL line items were skipped due to barcode/SKU mismatch, abort order creation
     if (resolvedLines.length === 0) {
       this.logger.error(
-        `[Courierify POS] Order ${primaryRef}: ZERO items matched in ERP by barCode. ` +
-        `Order creation ABORTED. Original SKUs: [${rawLines.map((l: any) => l.sku).join(', ')}]. ` +
-        `Please map these barCodes to ERP items and re-process.`,
+        `[Courierify POS] Order ${primaryRef}: ZERO items matched in ERP by barcode/SKU. ` +
+        `Order creation ABORTED. Received lines: [${rawLines.map((l: any) => `barcode: ${l.barcode || l.barCode || l.item_barcode || 'N/A'}, sku: ${l.sku || 'N/A'}`).join('; ')}]. ` +
+        `Please map these barcodes to ERP items and re-process.`,
       );
       return null;
     }
@@ -1710,6 +1762,102 @@ export class CourierifyService {
     }
 
     if (items.length === 0) {
+      // Try to backfill items from payload or Courierify API using barcode matching
+      let rawLines: any[] =
+        shipmentPayload?.items?.lines || shipmentPayload?.lineItems || [];
+      if (rawLines.length === 0) {
+        try {
+          const fetchId =
+            existingOrder.referenceNumber || existingOrder.orderNumber;
+          const fetched: any = await this.getOrder(fetchId);
+          const fOrder = fetched?.order || fetched;
+          if (fOrder?.items?.lines) rawLines = fOrder.items.lines;
+          else if (Array.isArray(fOrder?.lineItems)) rawLines = fOrder.lineItems;
+        } catch (err: any) {
+          this.logger.warn(
+            `[Courierify POS] Could not fetch order ${primaryRef} for items backfill: ${err.message}`,
+          );
+        }
+      }
+
+      if (rawLines.length > 0) {
+        const candidateCodes = rawLines
+          .flatMap((l: any) => [
+            l.barcode,
+            l.barCode,
+            l.item_barcode,
+            l.variant_barcode,
+            l.sku,
+          ])
+          .filter(Boolean)
+          .map((s: any) => String(s).trim());
+
+        const matchedItems = await this.prisma.item.findMany({
+          where: {
+            isActive: true,
+            OR: [
+              { barCode: { in: candidateCodes, mode: 'insensitive' } },
+              { sku: { in: candidateCodes, mode: 'insensitive' } },
+            ],
+          },
+          select: {
+            id: true,
+            sku: true,
+            barCode: true,
+            unitPrice: true,
+            taxRate1: true,
+          },
+        });
+
+        const bcLookup = new Map<string, any>();
+        const skuLookup = new Map<string, any>();
+        for (const mi of matchedItems) {
+          if (mi.barCode) bcLookup.set(mi.barCode.toLowerCase().trim(), mi);
+          if (mi.sku) skuLookup.set(mi.sku.toLowerCase().trim(), mi);
+        }
+
+        const toCreate: any[] = [];
+        for (const line of rawLines) {
+          const bc =
+            (line as any).barcode ||
+            (line as any).barCode ||
+            (line as any).item_barcode ||
+            (line as any).variant_barcode;
+          const bcKey = bc ? String(bc).toLowerCase().trim() : null;
+          const skKey = line.sku ? String(line.sku).toLowerCase().trim() : null;
+          const matched =
+            (bcKey && bcLookup.get(bcKey)) ||
+            (skKey && bcLookup.get(skKey)) ||
+            (skKey && skuLookup.get(skKey));
+          if (matched) {
+            const qty = Number(line.quantity) || 1;
+            const unitPrice = Number(
+              line.unitPrice ?? line.price ?? matched.unitPrice ?? 0,
+            );
+            toCreate.push({
+              salesOrderId: existingOrder.id,
+              itemId: matched.id,
+              quantity: qty,
+              unitPrice: new Prisma.Decimal(unitPrice),
+              lineTotal: new Prisma.Decimal(unitPrice * qty),
+              taxPercent: new Prisma.Decimal(Number(matched.taxRate1 || 18)),
+            });
+          }
+        }
+
+        if (toCreate.length > 0) {
+          await this.prisma.salesOrderItem.createMany({ data: toCreate });
+          items = await this.prisma.salesOrderItem.findMany({
+            where: { salesOrderId: existingOrder.id },
+          });
+          this.logger.log(
+            `[Courierify POS] Successfully backfilled ${items.length} items for order #${primaryRef} via barcode match`,
+          );
+        }
+      }
+    }
+
+    if (items.length === 0) {
       this.logger.warn(
         `[Courierify POS] Cannot create STN: No items found on order #${primaryRef}`,
       );
@@ -2217,13 +2365,26 @@ export class CourierifyService {
       return;
     }
 
+    const cleanRef = String(ref).replace(/^#+/, '').trim();
+    const hashRef = `#${cleanRef}`;
+    const crfClean = `CRF-${cleanRef}`;
+    const crfRaw = `CRF-${ref}`;
+
     const existingOrder = await this.prisma.salesOrder.findFirst({
       where: {
         OR: [
           { orderNumber: String(ref) },
+          { orderNumber: cleanRef },
+          { orderNumber: hashRef },
           { referenceNumber: String(ref) },
-          { orderNumber: `CRF-${ref}` },
-          ...(orderId ? [{ referenceNumber: String(orderId) }] : []),
+          { referenceNumber: cleanRef },
+          { referenceNumber: hashRef },
+          { orderNumber: crfRaw },
+          { orderNumber: crfClean },
+          ...(orderId ? [
+            { referenceNumber: String(orderId) },
+            { referenceNumber: String(orderId).replace(/^#+/, '').trim() }
+          ] : []),
         ],
       },
       include: { items: true },
