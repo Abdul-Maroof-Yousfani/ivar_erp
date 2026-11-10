@@ -423,21 +423,28 @@ export function EmployeeBulkUploadModal({
                                             </div>
                                         </div>
 
-                                        {(data?.failedRecords ?? 0) > 0 && (
-                                            <div className="p-4 border rounded-2xl bg-muted/30 space-y-3">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2 text-amber-600 font-bold text-sm">
-                                                        <AlertCircle className="h-4 w-4" />
-                                                        {data.failedRecords} records were skipped due to errors
-                                                    </div>
+                                {(data?.status === 'completed' || isFailed) && (data?.failedRecords ?? 0) > 0 && (
+                                    <div className="space-y-4">
+                                        <div className="p-4 border rounded-2xl bg-muted/30 space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2 text-amber-600 font-bold text-sm">
+                                                    <AlertCircle className="h-4 w-4" />
+                                                    {data.failedRecords} records were skipped due to errors
+                                                </div>
+                                                <div className="flex gap-2">
                                                     <Button variant="ghost" size="sm" onClick={() => setShowErrors(!showErrors)} className="text-xs h-7">
                                                         {showErrors ? 'Hide Issues' : 'View Issues'}
                                                     </Button>
+                                                    <Button variant="ghost" size="sm" onClick={downloadErrorReport} className="text-destructive text-xs h-7">
+                                                        <Download className="h-3.5 w-3.5 mr-1" /> Error Report
+                                                    </Button>
                                                 </div>
+                                            </div>
 
-                                                {showErrors && data?.errors && data.errors.length > 0 && (
-                                                    <div className="border rounded-xl overflow-hidden bg-background">
-                                                        <ScrollArea className="h-[200px]">
+                                            {showErrors && (
+                                                <div className="border rounded-xl overflow-hidden bg-background">
+                                                    <ScrollArea className="h-[200px]">
+                                                        {data?.errors && data.errors.length > 0 ? (
                                                             <Table>
                                                                 <TableBody>
                                                                     {data.errors.slice(0, 50).map((err: any, i) => (
@@ -449,11 +456,17 @@ export function EmployeeBulkUploadModal({
                                                                     ))}
                                                                 </TableBody>
                                                             </Table>
-                                                        </ScrollArea>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
+                                                        ) : (
+                                                            <div className="p-4 text-center text-xs text-muted-foreground">
+                                                                Click &quot;Error Report&quot; above to download the detailed error file.
+                                                            </div>
+                                                        )}
+                                                    </ScrollArea>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                                     </div>
                                 )}
                             </div>

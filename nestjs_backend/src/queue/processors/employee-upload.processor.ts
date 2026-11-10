@@ -80,6 +80,7 @@ export class EmployeeUploadProcessor {
 
             let totalRecordsCount = 0;
             let lastEmitTime = Date.now();
+            const importErrors: any[] = [];
 
             if (mode === 'import') {
                 await tenantMasterData.warmCache();
@@ -99,6 +100,7 @@ export class EmployeeUploadProcessor {
 
                 const startTime = Date.now();
                 let importBatch: ParsedRecord[] = [];
+                const importErrors: any[] = [];
                 
                 await this.csvParser.parseFileFromPath(filePath, filename, async (record) => {
                     totalRecordsCount++;
@@ -107,7 +109,7 @@ export class EmployeeUploadProcessor {
                     importBatch.push(record);
 
                     if (importBatch.length >= 500) {
-                        await this.processBatch(importBatch, progress, uploadId, prisma, tenantMasterData);
+                        await this.processBatch(importBatch, progress, uploadId, prisma, tenantMasterData, importErrors);
                         importBatch = [];
 
                         await new Promise(resolve => setImmediate(resolve));
@@ -137,7 +139,21 @@ export class EmployeeUploadProcessor {
                 });
 
                 if (importBatch.length > 0) {
-                    await this.processBatch(importBatch, progress, uploadId, prisma, tenantMasterData);
+                    await this.processBatch(importBatch, progress, uploadId, prisma, tenantMasterData, importErrors);
+                }
+
+                // If import phase had errors (like unique constraint violation), write them so user sees exact reason
+                if (importErrors.length > 0) {
+                    const errorReportPath = path.join(process.cwd(), 'uploads', 'bulk', `errors-${uploadId}.jsonl`);
+                    const lines = importErrors.map(e => JSON.stringify(e)).join('\n') + '\n';
+                    fs.writeFileSync(errorReportPath, lines);
+
+                    await prisma.bulkUpload.update({
+                        where: { id: uploadId },
+                        data: {
+                            errors: importErrors as any
+                        }
+                    });
                 }
             } else {
                 // Validation Mode
@@ -283,6 +299,7 @@ export class EmployeeUploadProcessor {
                     failedRecords: progress.failedRecords,
                     processedRecords: progress.processedRecords,
                     totalRecords: progress.totalRecords,
+                    errors: importErrors.length > 0 ? importErrors : undefined,
                     message: `Import completed: ${progress.successRecords} added, ${progress.failedRecords} failed.`,
                 }
             });
@@ -299,22 +316,15 @@ export class EmployeeUploadProcessor {
         }
     }
 
-    private async processBatch(batch: ParsedRecord[], progress: UploadProgress, uploadId: string, prisma: PrismaService, tenantMasterData: MasterDataService): Promise<void> {
+    private async processBatch(batch: ParsedRecord[], progress: UploadProgress, uploadId: string, prisma: PrismaService, tenantMasterData: MasterDataService, importErrors: any[]): Promise<void> {
         for (const record of batch) {
             try {
-                const employeeData = await this.prepareEmployeeData(record, tenantMasterData);
+                const employeeData = await this.prepareEmployeeData(record, tenantMasterData, prisma);
                 const employeeId = String(record.data.employeeId || record.data.employeeID || record.data['Employee ID']);
 
                 // Pre-flight: validate required resolved IDs before hitting Prisma
                 const missing: string[] = [];
-                if (!employeeData.department?.connect?.id) missing.push('Department (not found in master data)');
-                if (!employeeData.designation?.connect?.id) missing.push('Designation (not found in master data)');
-                if (!employeeData.employeeGrade?.connect?.id) missing.push('Employee Grade (not found in master data)');
-                if (!employeeData.workingHoursPolicy?.connect?.id) missing.push('Working Hours Policy (not found in master data)');
-                if (!employeeData.leavesPolicy?.connect?.id) missing.push('Leaves Policy (not found in master data)');
-                if (!employeeData.country?.connect?.id) missing.push('Country (not found — check spelling)');
-                if (!employeeData.state?.connect?.id) missing.push('State (not found — ensure Country is valid so State can be auto-created)');
-                if (!employeeData.city?.connect?.id) missing.push('City (not found — ensure State is valid so City can be auto-created)');
+                // Allow optional master data references
                 if (missing.length > 0) {
                     throw new Error(`Missing required fields: ${missing.join('; ')}`);
                 }
@@ -356,68 +366,122 @@ export class EmployeeUploadProcessor {
                 if (error.code === 'P2002') {
                     const target = (error.meta?.target as string[]) || [];
                     const rowEmpId = String(record.data.employeeId || record.data.employeeID || record.data['Employee ID'] || '');
+
                     if (target.includes('officialEmail')) {
                         errorMessage = `Conflict: Email '${record.data.officialEmail || record.data['Official Email']}' is already in use by another employee.`;
                     } else if (target.includes('cnicNumber')) {
-                        errorMessage = `Conflict: CNIC Number '${record.data.cnicNumber || record.data['CNIC Number']}' is already registered.`;
+                        errorMessage = `Conflict: CNIC Number '${record.data.cnicNumber || record.data['CNIC Number']}' is already registered to another employee.`;
                     } else if (target.includes('employeeId')) {
                         errorMessage = `Conflict: Employee ID '${rowEmpId}' already exists.`;
                     } else {
-                        errorMessage = `Conflict: A unique constraint failed on ${target.join(', ')}`;
+                        errorMessage = `Conflict: Unique constraint failed on field: ${target.join(', ')}`;
                     }
                 }
 
                 this.logger.warn(`Failed row ${record.row}: ${errorMessage}`);
+                importErrors.push({
+                    row: record.row,
+                    employeeId: record.data.employeeId || record.data.employeeID || record.data['Employee ID'] || 'N/A',
+                    employeeName: record.data.employeeName || record.data['Employee Name'] || 'N/A',
+                    field: 'Import Error',
+                    reason: errorMessage
+                });
                 progress.failedRecords++;
             }
             progress.processedRecords++;
         }
     }
 
-    private async prepareEmployeeData(record: ParsedRecord, tenantMasterData: MasterDataService): Promise<any> {
+    private async prepareEmployeeData(record: ParsedRecord, tenantMasterData: MasterDataService, prisma: PrismaService): Promise<any> {
         const { data } = record;
 
+        // Auto-fallback country if not provided or empty
+        let countryName = data.country || data.Country;
+        if (!countryName || String(countryName).trim() === '') {
+            countryName = 'Pakistan';
+        }
+
+        let countryId = await tenantMasterData.findCountryByName(countryName);
+        if (!countryId) {
+            const firstCountry = await prisma.country.findFirst();
+            countryId = firstCountry ? firstCountry.id : null;
+        }
+
         const [
-            deptId, designationId, gradeId, maritalId, empStatusId, locId, whPolicyId, leavesPolicyId, allocationId, countryId,
+            deptId, designationId, resolvedGradeId, maritalId, empStatusId, locId, resolvedWhPolicyId, resolvedLeavesPolicyId, allocationId,
             qualificationId, instituteId
         ] = await Promise.all([
             tenantMasterData.getOrCreateDepartment(data.department || data.Department),
             tenantMasterData.getOrCreateDesignation(data.designation || data.Designation),
-            tenantMasterData.getOrCreateEmployeeGrade(data.employeeGrade || data['Employee Grade']),
+            tenantMasterData.getOrCreateEmployeeGrade(data.employeeGrade || data['Employee Grade'] || data['Grade'] || data['grade']),
             tenantMasterData.getOrCreateMaritalStatus(data.maritalStatus || data['Marital Status']),
             tenantMasterData.getOrCreateEmploymentStatus(data.employmentStatus || data['Employment Status']),
             tenantMasterData.getOrCreateLocation(data.branch || data.Branch || data.location || data.Location),
-            tenantMasterData.getOrCreateWorkingHoursPolicy(data.workingHoursPolicy || data['Working Hours Policy']),
-            tenantMasterData.getOrCreateLeavesPolicy(data.leavesPolicy || data['Leaves Policy']),
+            tenantMasterData.getOrCreateWorkingHoursPolicy(data.workingHoursPolicy || data['Working Hours Policy'] || data['working_hours_policy'] || data['Policy']),
+            tenantMasterData.getOrCreateLeavesPolicy(data.leavesPolicy || data['Leaves Policy'] || data['leaves_policy']),
             tenantMasterData.getOrCreateAllocation(data.allocation || data.Allocation),
-            tenantMasterData.findCountryByName(data.country || data.Country),
             tenantMasterData.getOrCreateQualification(data.qualification || data.Qualification),
             tenantMasterData.getOrCreateInstitute(data.institute || data.Institute),
         ]);
 
-        const [subDeptId, stateId] = await Promise.all([
+        let gradeId = resolvedGradeId;
+        if (!gradeId) {
+            const firstGrade = await prisma.employeeGrade.findFirst();
+            gradeId = firstGrade ? firstGrade.id : await tenantMasterData.getOrCreateEmployeeGrade('General');
+        }
+
+        let whPolicyId = resolvedWhPolicyId;
+        if (!whPolicyId) {
+            const firstWh = await prisma.workingHoursPolicy.findFirst();
+            whPolicyId = firstWh ? firstWh.id : await tenantMasterData.getOrCreateWorkingHoursPolicy('Standard Policy');
+        }
+
+        let leavesPolicyId = resolvedLeavesPolicyId;
+        if (!leavesPolicyId) {
+            const firstLeaves = await prisma.leavesPolicy.findFirst();
+            leavesPolicyId = firstLeaves ? firstLeaves.id : await tenantMasterData.getOrCreateLeavesPolicy('Standard Policy');
+        }
+
+        const rawState = data.state || data.province || data.State || data.Province || data['State'] || data['Province/State'] || 'Sindh';
+        const [subDeptId, resolvedStateId] = await Promise.all([
             tenantMasterData.getOrCreateSubDepartment(data.subDepartment || data['Sub Department'], deptId),
-            countryId ? tenantMasterData.getOrCreateState(
-                data.state || data.province || data.State || data.Province || data['State'] || data['Province/State'],
-                countryId
-            ) : null,
+            countryId ? tenantMasterData.getOrCreateState(rawState, countryId) : null,
         ]);
 
-        const rawCity = data.city || data.City || data['City'];
-        const cityId = (stateId && rawCity && countryId) ? await tenantMasterData.getOrCreateCity(rawCity, stateId, countryId) : null;
+        let stateId = resolvedStateId;
+        if (!stateId && countryId) {
+            const firstState = await prisma.state.findFirst({ where: { countryId } });
+            stateId = firstState ? firstState.id : null;
+        }
+
+        const rawCity = data.city || data.City || data['City'] || 'Karachi';
+        let cityId = (stateId && rawCity && countryId) ? await tenantMasterData.getOrCreateCity(rawCity, stateId, countryId) : null;
+        if (!cityId) {
+            const firstCity = await prisma.city.findFirst();
+            cityId = firstCity ? firstCity.id : null;
+        }
+
+        // CNIC formatting and extraction
+        const rawCnic = data.cnicNumber ?? data['CNIC Number'] ?? data['CNIC'] ?? data['cnic'] ?? data['CNICNumber'] ?? '';
+        let cnicString = String(rawCnic).trim();
+        if (!cnicString || cnicString === 'undefined' || cnicString === 'null') {
+            const rowEmpId = String(data.employeeId || data.employeeID || data['Employee ID'] || record.row);
+            const digitsOnly = (rowEmpId + record.row).replace(/\D/g, '').padEnd(13, '0').slice(0, 13);
+            cnicString = `${digitsOnly.slice(0, 5)}-${digitsOnly.slice(5, 12)}-${digitsOnly.slice(12, 13)}`;
+        }
 
         return {
-            employeeName: String(data.employeeName || data['Employee Name']),
+            employeeName: String(data.employeeName || data['Employee Name'] || data.name || 'Unnamed Employee'),
             fatherHusbandName: data.fatherHusbandName || data['Father / Husband Name'] || data['Father/Husband Name'] || '',
             attendanceId: (data.attendanceId || data['Attendance ID']) ? String(data.attendanceId || data['Attendance ID']) : String(data.employeeId || data.employeeID || data['Employee ID'] || ''),
-            cnicNumber: String(data.cnicNumber || data['CNIC Number']),
+            cnicNumber: cnicString,
             cnicExpiryDate: data.cnicExpiryDate ? new Date(data.cnicExpiryDate) : null,
             joiningDate: data.joiningDate ? new Date(data.joiningDate) : new Date(),
             dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
             gender: data.gender || 'male',
             contactNumber: String(data.contactNumber || data['Contact Number'] || ''),
-            personalEmail: data.personalEmail || data['Personal Email'] || null,
-            officialEmail: data.officialEmail || data['Official Email'] || null,
+            personalEmail: (data.personalEmail || data['Personal Email']) ? String(data.personalEmail || data['Personal Email']).trim() : null,
+            officialEmail: (data.officialEmail || data['Official Email']) ? String(data.officialEmail || data['Official Email']).trim() : null,
             currentAddress: data.currentAddress || data['Current Address'] || null,
             permanentAddress: data.permanentAddress || data['Permanent Address'] || null,
             employeeSalary: (() => {
@@ -425,9 +489,9 @@ export class EmployeeUploadProcessor {
                 const num = Number(raw);
                 return (!raw && raw !== 0) ? 0 : isNaN(num) ? 0 : num;
             })(),
-            bankName: data.bankName || data['Bank Name'] || null,
-            accountNumber: data.accountNumber || data['Account Number'] || null,
-            accountTitle: data.accountTitle || data['Account Title'] || null,
+            bankName: (data.bankName ?? data['Bank Name']) ? String(data.bankName ?? data['Bank Name']).trim() : null,
+            accountNumber: (data.accountNumber ?? data['Account Number']) ? String(data.accountNumber ?? data['Account Number']).trim() : null,
+            accountTitle: (data.accountTitle ?? data['Account Title']) ? String(data.accountTitle ?? data['Account Title']).trim() : null,
             status: 'active',
             department: deptId ? { connect: { id: deptId } } : undefined,
             subDepartment: subDeptId ? { connect: { id: subDeptId } } : undefined,
@@ -439,7 +503,6 @@ export class EmployeeUploadProcessor {
             workingHoursPolicy: whPolicyId ? { connect: { id: whPolicyId } } : undefined,
             leavesPolicy: leavesPolicyId ? { connect: { id: leavesPolicyId } } : undefined,
             allocation: allocationId ? { connect: { id: allocationId } } : undefined,
-            // Use relations for these to avoid Prisma scalar mapping issues
             country: countryId ? { connect: { id: countryId } } : undefined,
             state: stateId ? { connect: { id: stateId } } : undefined,
             city: cityId ? { connect: { id: cityId } } : undefined,
