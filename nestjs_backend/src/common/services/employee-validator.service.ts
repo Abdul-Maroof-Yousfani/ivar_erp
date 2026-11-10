@@ -45,9 +45,10 @@ export class EmployeeValidatorService {
         }
 
         // 6. Salary Validation (only validate format if provided)
-        const salary = data.employeeSalary || data['Employee Salary'];
+        const salary = data.employeeSalary ?? data['Employee Salary'] ?? data['employee_salary'] ?? data['EmployeeSalary'] ?? data['Salary'] ?? data.salary ?? data['salary'];
         if (salary !== undefined && salary !== null && salary !== '') {
-            const numSalary = Number(salary);
+            const cleaned = String(salary).replace(/,/g, '').trim();
+            const numSalary = Number(cleaned);
             if (isNaN(numSalary)) {
                 errors.push(err('EmployeeSalary', salary, 'Employee Salary must be a valid number.'));
             } else if (numSalary < 0) {

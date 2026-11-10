@@ -485,9 +485,12 @@ export class EmployeeUploadProcessor {
             currentAddress: data.currentAddress || data['Current Address'] || null,
             permanentAddress: data.permanentAddress || data['Permanent Address'] || null,
             employeeSalary: (() => {
-                const raw = data.employeeSalary ?? data['Employee Salary'] ?? data['employee_salary'] ?? data['EmployeeSalary'];
-                const num = Number(raw);
-                return (!raw && raw !== 0) ? 0 : isNaN(num) ? 0 : num;
+                const raw = data.employeeSalary ?? data['Employee Salary'] ?? data['employee_salary'] ?? data['EmployeeSalary'] ?? data['Salary'] ?? data.salary ?? data['salary'] ?? data['Compensation'] ?? data['compensation'];
+                if (raw === undefined || raw === null || raw === '') return 0;
+                // Clean formatted strings like "38,000.00" -> 38000.00
+                const cleaned = String(raw).replace(/,/g, '').trim();
+                const num = Number(cleaned);
+                return isNaN(num) ? 0 : num;
             })(),
             bankName: (data.bankName ?? data['Bank Name']) ? String(data.bankName ?? data['Bank Name']).trim() : null,
             accountNumber: (data.accountNumber ?? data['Account Number']) ? String(data.accountNumber ?? data['Account Number']).trim() : null,
