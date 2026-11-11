@@ -790,16 +790,20 @@ export class CourierifyService {
     }
 
     if (!Array.isArray(existingLines) || existingLines.length === 0) {
-      return shopifyLineItems.map((li: any) => ({
-        sku: li.sku,
-        title: li.name || li.title,
-        quantity: li.quantity,
-        unitPrice: Number(li.price),
-      }));
+      return shopifyLineItems
+        .filter((li: any) => li.current_quantity === undefined || li.current_quantity > 0)
+        .map((li: any) => ({
+          sku: li.sku,
+          title: li.name || li.title,
+          quantity: li.current_quantity ?? li.quantity,
+          unitPrice: Number(li.price),
+        }));
     }
 
     const usedShopifyIndices = new Set<number>();
     const normalize = (v: any) => String(v || '').toLowerCase().trim();
+    const isActiveShopifyLine = (li: any) =>
+      li.current_quantity === undefined || Number(li.current_quantity) > 0;
 
     return existingLines.map((line: any, idx: number) => {
       if (line.unitPrice !== undefined || line.price !== undefined) {
@@ -808,23 +812,47 @@ export class CourierifyService {
 
       const lineSku = normalize(line.sku);
       const lineTitle = normalize(line.title);
+      const lineVariant = normalize(line.variantTitle);
 
-      let matchIdx = shopifyLineItems.findIndex(
-        (li: any, sIdx: number) =>
-          !usedShopifyIndices.has(sIdx) &&
-          lineSku &&
-          normalize(li.sku) === lineSku,
-      );
+      const matchesTitle = (li: any) =>
+        Boolean(lineTitle) &&
+        (normalize(li.title) === lineTitle || normalize(li.name).startsWith(lineTitle));
+      const matchesVariant = (li: any) =>
+        !lineVariant ||
+        normalize(li.variant_title) === lineVariant ||
+        (Boolean(li.variant_title) && lineVariant.includes(normalize(li.variant_title)));
 
-      if (matchIdx === -1 && lineTitle) {
-        matchIdx = shopifyLineItems.findIndex(
+      const findMatch = (predicate: (li: any) => boolean) => {
+        const activeIdx = shopifyLineItems.findIndex(
           (li: any, sIdx: number) =>
-            !usedShopifyIndices.has(sIdx) &&
-            (normalize(li.title) === lineTitle ||
-              normalize(li.name).startsWith(lineTitle)),
+            !usedShopifyIndices.has(sIdx) && isActiveShopifyLine(li) && predicate(li),
+        );
+        if (activeIdx !== -1) return activeIdx;
+        return shopifyLineItems.findIndex(
+          (li: any, sIdx: number) => !usedShopifyIndices.has(sIdx) && predicate(li),
+        );
+      };
+
+      let matchIdx = -1;
+      if (lineSku && lineTitle && lineVariant) {
+        matchIdx = findMatch(
+          (li) => normalize(li.sku) === lineSku && matchesTitle(li) && matchesVariant(li),
         );
       }
-
+      if (matchIdx === -1 && lineSku && lineTitle) {
+        matchIdx = findMatch(
+          (li) => normalize(li.sku) === lineSku && matchesTitle(li),
+        );
+      }
+      if (matchIdx === -1 && lineTitle && lineVariant) {
+        matchIdx = findMatch((li) => matchesTitle(li) && matchesVariant(li));
+      }
+      if (matchIdx === -1 && lineSku) {
+        matchIdx = findMatch((li) => normalize(li.sku) === lineSku);
+      }
+      if (matchIdx === -1 && lineTitle) {
+        matchIdx = findMatch((li) => matchesTitle(li));
+      }
       if (
         matchIdx === -1 &&
         existingLines.length === shopifyLineItems.length &&
@@ -854,6 +882,7 @@ export class CourierifyService {
   ): {
     targetPreDiscountGross: number;
     effectiveSubtotal: number;
+    subtotalAlreadyIncludesDiscount: boolean;
     isZeroOrder: boolean;
   } {
     const advanceObj = orderData.payment?.advance || orderData.money?.advance;
@@ -872,6 +901,7 @@ export class CourierifyService {
         orderData.money?.codToCollect ??
         0,
     );
+    const shopifyShipping = Number(orderData._shopifyShipping || 0);
 
     const isZeroOrder =
       Boolean(orderData.money) &&
@@ -885,7 +915,9 @@ export class CourierifyService {
       moneySubtotal > 0 &&
       moneyTotal > 0 &&
       totalDiscountGross > 0 &&
-      Math.abs(moneySubtotal - totalDiscountGross - moneyTotal) <= 5;
+      (Math.abs(moneySubtotal - totalDiscountGross - moneyTotal) <= 5 ||
+        (shopifyShipping > 0 &&
+          Math.abs(moneySubtotal - totalDiscountGross + shopifyShipping - moneyTotal) <= 5));
 
     // On edited Shopify orders (e.g. item removed after order creation), Courierify
     // updates money.total / codToCollect / items.lines, while leaving money.subtotal
@@ -905,15 +937,21 @@ export class CourierifyService {
         : effectiveSubtotal + totalDiscountGross;
     } else {
       const netTotal = moneyTotal > 0 ? moneyTotal : moneyCod + advanceAmt;
-      targetPreDiscountGross = netTotal + totalDiscountGross;
+      targetPreDiscountGross =
+        Math.max(0, netTotal - shopifyShipping) + totalDiscountGross;
     }
 
-    return { targetPreDiscountGross, effectiveSubtotal, isZeroOrder };
+    return {
+      targetPreDiscountGross,
+      effectiveSubtotal,
+      subtotalAlreadyIncludesDiscount,
+      isZeroOrder,
+    };
   }
 
   /**
    * Resolve retail unit prices for matched ERP lines in priority order:
-   * 1. Explicit price on line (Courierify/Shopify)
+   * 1. Explicit price on line (Courierify/Shopify) — restored to pre-discount retail if Shopify returned net discounted prices while discountTotal > 0
    * 2. ERP Item.unitPrice (reconciled proportionally if order subtotal differs due to markdowns)
    * 3. Remaining order total allocated to lines with missing ERP unitPrice
    * 4. Last-resort equal split only when no ERP prices exist
@@ -924,6 +962,7 @@ export class CourierifyService {
     targetPreDiscountGross: number,
     hasSubtotal: boolean,
     isZeroOrder: boolean,
+    totalDiscountGross = 0,
   ): number[] {
     const resolvedPrices = new Array<number>(matchedEntries.length).fill(0);
     const missingIndices: number[] = [];
@@ -947,6 +986,59 @@ export class CourierifyService {
     });
 
     if (missingIndices.length === 0) {
+      // Guard against double-discounting: Shopify/FoxKit line_items[].price can already be
+      // post-discount (matching targetPreDiscountGross - totalDiscountGross) while Courierify
+      // still sends discountTotal > 0. Restore pre-discount retail prices so subtracting
+      // promoDiscountGross (or applying voucher tender) yields the true order total.
+      const expectedPostDiscountGross = Math.max(
+        0,
+        targetPreDiscountGross - totalDiscountGross,
+      );
+      const explicitIsAlreadyPostDiscount =
+        allLinesMatched &&
+        totalDiscountGross > 0 &&
+        targetPreDiscountGross > explicitGrossSum + 5 &&
+        Math.abs(explicitGrossSum - expectedPostDiscountGross) <= 5;
+
+      if (explicitIsAlreadyPostDiscount) {
+        let erpKnownSum = 0;
+        let allErpKnown = true;
+        const erpPrices = matchedEntries.map((entry) => {
+          const p = Number(entry.matched?.unitPrice ?? 0);
+          if (p > 0) {
+            erpKnownSum += p * entry.qty;
+          } else {
+            allErpKnown = false;
+          }
+          return p;
+        });
+
+        if (allErpKnown && Math.abs(erpKnownSum - targetPreDiscountGross) <= 5) {
+          return erpPrices;
+        }
+
+        if (explicitGrossSum > 0) {
+          const ratio = targetPreDiscountGross / explicitGrossSum;
+          return resolvedPrices.map(
+            (price) => Math.round(price * ratio * 100) / 100,
+          );
+        }
+
+        if (allErpKnown && erpKnownSum > 0) {
+          const ratio = targetPreDiscountGross / erpKnownSum;
+          return erpPrices.map(
+            (price) => Math.round(price * ratio * 100) / 100,
+          );
+        }
+
+        const totalQty = matchedEntries.reduce((sum, e) => sum + e.qty, 0);
+        const unitFallback =
+          totalQty > 0
+            ? Math.round((targetPreDiscountGross / totalQty) * 100) / 100
+            : 0;
+        return resolvedPrices.map(() => unitFallback);
+      }
+
       return resolvedPrices;
     }
 
@@ -1132,8 +1224,9 @@ export class CourierifyService {
 
   /**
    * Self-heal an unreturned, non-FBR-synced Courierify order whose line items were
-   * previously split equally or inflated by a stale pre-edit Courierify subtotal
-   * when ERP Item prices match the order total unambiguously.
+   * previously split equally, inflated by a stale pre-edit Courierify subtotal, or
+   * double-discounted (net discounted unitPrice stored while promoDiscountGross was
+   * subtracted again) when the true order total is unambiguous.
    */
   async repairEqualSplitOrderIfNeeded(order: any): Promise<boolean> {
     if (
@@ -1148,18 +1241,13 @@ export class CourierifyService {
     }
 
     const orderUnitPrices = order.items.map((oi: any) => Number(oi.unitPrice));
-    if (new Set(orderUnitPrices).size !== 1) {
-      return false;
-    }
+    const isEqualUnitPrices = new Set(orderUnitPrices).size === 1;
 
     const erpPrices = order.items.map((oi: any) => Number(oi.item?.unitPrice ?? 0));
     const hasDifferentOrderVsErp = order.items.some(
       (_: any, idx: number) =>
         erpPrices[idx] > 0 && Math.abs(orderUnitPrices[idx] - erpPrices[idx]) > 0.01,
     );
-    if (!hasDifferentOrderVsErp) {
-      return false;
-    }
 
     const deliveryMatch = order.notes.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
     const deliveryCharges =
@@ -1176,8 +1264,10 @@ export class CourierifyService {
     let knownErpSum = 0;
     let zeroErpCount = 0;
     let zeroErpQty = 0;
+    let sumOrderRetail = 0;
     for (let i = 0; i < order.items.length; i++) {
       const qty = Number(order.items[i].quantity) || 1;
+      sumOrderRetail += orderUnitPrices[i] * qty;
       const erpPrice = erpPrices[i];
       if (erpPrice > 0) {
         knownErpSum += erpPrice * qty;
@@ -1193,6 +1283,8 @@ export class CourierifyService {
       Number(order.grandTotal) - deliveryCharges + promoDiscountGross,
     );
     const isEqualSplitMatch =
+      isEqualUnitPrices &&
+      hasDifferentOrderVsErp &&
       order.items.length >= 2 &&
       new Set(erpPrices).size > 1 &&
       expectedFromGrandTotal > 0 &&
@@ -1212,6 +1304,8 @@ export class CourierifyService {
       tenderSum - deliveryCharges + promoDiscountGross,
     );
     const isStaleSubtotalMatch =
+      isEqualUnitPrices &&
+      hasDifferentOrderVsErp &&
       order.paymentStatus !== 'paid' &&
       !order.notes.includes('Advance Paid') &&
       tenderSum > 0 &&
@@ -1219,21 +1313,50 @@ export class CourierifyService {
       zeroErpCount === 0 &&
       Math.abs(knownErpSum - expectedFromTenders) <= 5;
 
-    if (!isEqualSplitMatch && !isStaleSubtotalMatch) {
+    // Case C: Double-discounted order (e.g. #132290: unitPrices already post-discount 15345,
+    // promoDiscountGross 1705 subtracted again to grandTotal 13640, while COD tender is 15345)
+    const isDoubleDiscountedMatch =
+      promoDiscountGross > 0 &&
+      Number(order.discountAmount || 0) > 0 &&
+      tenderSum > 0 &&
+      tenderSum > Number(order.grandTotal) + 5 &&
+      Math.abs(tenderSum - Number(order.grandTotal) - promoDiscountGross) <= 5 &&
+      Math.abs(sumOrderRetail - (tenderSum - deliveryCharges)) <= 5;
+
+    if (!isEqualSplitMatch && !isStaleSubtotalMatch && !isDoubleDiscountedMatch) {
       return false;
     }
 
     const targetPreDiscountItemsGross = isStaleSubtotalMatch
       ? expectedFromTenders
-      : expectedFromGrandTotal;
+      : isDoubleDiscountedMatch
+        ? sumOrderRetail + promoDiscountGross
+        : expectedFromGrandTotal;
+
+    const useErpDirectlyForDoubleDiscount =
+      isDoubleDiscountedMatch &&
+      zeroErpCount === 0 &&
+      Math.abs(knownErpSum - targetPreDiscountItemsGross) <= 5;
+
+    const scaleRatioForDoubleDiscount =
+      isDoubleDiscountedMatch && sumOrderRetail > 0
+        ? targetPreDiscountItemsGross / sumOrderRetail
+        : 1;
 
     const resolvedLines = order.items.map((oi: any, i: number) => {
       const qty = Number(oi.quantity) || 1;
       const erpPrice = erpPrices[i];
-      const retailPrice =
-        erpPrice > 0
+      let retailPrice: number;
+      if (isDoubleDiscountedMatch) {
+        retailPrice = useErpDirectlyForDoubleDiscount
           ? erpPrice
-          : Math.round(((targetPreDiscountItemsGross - knownErpSum) / zeroErpQty) * 100) / 100;
+          : Math.round(orderUnitPrices[i] * scaleRatioForDoubleDiscount * 100) / 100;
+      } else {
+        retailPrice =
+          erpPrice > 0
+            ? erpPrice
+            : Math.round(((targetPreDiscountItemsGross - knownErpSum) / zeroErpQty) * 100) / 100;
+      }
       const taxRate = Number(oi.taxPercent || oi.item?.taxRate1 || 18);
       const taxDivisor = 1 + taxRate / 100;
       return {
@@ -1259,9 +1382,13 @@ export class CourierifyService {
       orderItemsData,
     } = this.buildOrderItemsFinancials(resolvedLines, promoDiscountGross);
 
-    const updatedGrandTotal = orderGrandTotal + deliveryCharges;
+    const rawUpdatedGrandTotal = orderGrandTotal + deliveryCharges;
+    const updatedGrandTotal =
+      Math.abs(rawUpdatedGrandTotal - Math.round(rawUpdatedGrandTotal)) <= 0.05
+        ? Math.round(rawUpdatedGrandTotal)
+        : Math.round(rawUpdatedGrandTotal * 100) / 100;
     const updatedNotes =
-      isStaleSubtotalMatch && order.notes
+      (isStaleSubtotalMatch || isDoubleDiscountedMatch) && order.notes
         ? order.notes.replace(
             /Total Order:\s*Rs\.?\s*[\d.,]+/i,
             `Total Order: Rs. ${updatedGrandTotal}`,
@@ -1297,7 +1424,7 @@ export class CourierifyService {
     });
 
     this.logger.log(
-      `[Courierify POS] Repaired item prices for order #${order.orderNumber} (${order.referenceNumber || 'N/A'}) using ERP prices.`,
+      `[Courierify POS] Repaired item prices for order #${order.orderNumber} (${order.referenceNumber || 'N/A'}) (${isDoubleDiscountedMatch ? 'double-discount fix' : 'ERP price reconciliation'}).`,
     );
     return true;
   }
@@ -1353,13 +1480,19 @@ export class CourierifyService {
       this.logger.log(
         `[Courierify POS] Order ${primaryRef} already exists (#${existingOrder.orderNumber}). Updating shipping details.`,
       );
-      if (courierName || trackingNo) {
+      const courierPart = courierName && courierName !== 'Courier' ? `Courier: ${courierName}` : null;
+      const trackPart = trackingNo && trackingNo !== 'Pending' ? `Tracking: ${trackingNo}` : null;
+      const shippingNote =
+        [courierPart, trackPart].filter(Boolean).join(', ') ||
+        (courierName || trackingNo ? `Courier: ${courierName}, Tracking: ${trackingNo}` : '');
+
+      if (shippingNote && !existingOrder.notes?.includes(shippingNote)) {
         await this.prisma.salesOrder.update({
           where: { id: existingOrder.id },
           data: {
             notes: existingOrder.notes
-              ? `${existingOrder.notes} | Courier: ${courierName}, Tracking: ${trackingNo}`
-              : `Courier: ${courierName}, Tracking: ${trackingNo}`,
+              ? `${existingOrder.notes} | ${shippingNote}`
+              : shippingNote,
           },
         });
       }
@@ -1425,15 +1558,44 @@ export class CourierifyService {
           fetchedOrder = fetchedOrder.order;
         }
         if (fetchedOrder) {
-          orderData = { ...fetchedOrder, ...orderData };
+          const hasPayloadDiscounts =
+            Number(orderData.discounts?.total || 0) > 0 ||
+            (Array.isArray(orderData.discounts?.codes) &&
+              orderData.discounts.codes.length > 0) ||
+            (Array.isArray(orderData.discounts?.applications) &&
+              orderData.discounts.applications.length > 0);
+
+          const mergedMoney =
+            fetchedOrder.money || orderData.money
+              ? {
+                  ...(fetchedOrder.money || {}),
+                  ...(orderData.money || {}),
+                  ...(fetchedOrder.money?.subtotal !== undefined &&
+                  orderData.money?.subtotal === undefined
+                    ? { subtotal: fetchedOrder.money.subtotal }
+                    : {}),
+                  ...(fetchedOrder.money?.discountTotal !== undefined &&
+                  orderData.money?.discountTotal === undefined
+                    ? { discountTotal: fetchedOrder.money.discountTotal }
+                    : {}),
+                }
+              : undefined;
+
+          orderData = {
+            ...fetchedOrder,
+            ...orderData,
+            ...(mergedMoney ? { money: mergedMoney } : {}),
+            ...(fetchedOrder.discounts && !hasPayloadDiscounts
+              ? { discounts: fetchedOrder.discounts }
+              : {}),
+          };
           if (fetchedOrder.items?.lines) orderData.items = fetchedOrder.items;
           if (fetchedOrder.customer)
             orderData.customer = {
               ...fetchedOrder.customer,
               ...orderData.customer,
             };
-          if (fetchedOrder.money)
-            orderData.money = { ...fetchedOrder.money, ...orderData.money };
+          discountCodes = this.extractDiscountCodesFromPayload(orderData);
         }
       } catch (err: any) {
         this.logger.warn(
@@ -1466,9 +1628,32 @@ export class CourierifyService {
               ),
             };
           }
-          if (!orderData.discounts?.total && !orderData.money?.discountTotal && shopifyOrder.total_discounts) {
+          const shopifyShipping = Number(
+            shopifyOrder.total_shipping_price_set?.shop_money?.amount ??
+              (Array.isArray(shopifyOrder.shipping_lines)
+                ? shopifyOrder.shipping_lines.reduce(
+                    (s: number, l: any) =>
+                      s + Number(l?.discounted_price ?? l?.price ?? 0),
+                    0,
+                  )
+                : 0),
+          );
+          if (Number.isFinite(shopifyShipping) && shopifyShipping > 0) {
+            orderData._shopifyShipping = shopifyShipping;
+          }
+
+          const shopifyDiscountTotal = Number(
+            shopifyOrder.current_total_discounts ??
+              shopifyOrder.total_discounts ??
+              0,
+          );
+          if (
+            !orderData.discounts?.total &&
+            !orderData.money?.discountTotal &&
+            shopifyDiscountTotal > 0
+          ) {
             orderData.money = orderData.money || {};
-            orderData.money.discountTotal = Number(shopifyOrder.total_discounts || 0);
+            orderData.money.discountTotal = shopifyDiscountTotal;
           }
 
           const shCodes = this.shopifyService.extractDiscountCodesFromOrder(shopifyOrder);
@@ -1742,14 +1927,19 @@ export class CourierifyService {
       return null;
     }
 
-    const { targetPreDiscountGross, effectiveSubtotal, isZeroOrder } =
-      this.computeTargetPreDiscountGross(orderData, totalDiscountGross);
+    const {
+      targetPreDiscountGross,
+      effectiveSubtotal,
+      subtotalAlreadyIncludesDiscount,
+      isZeroOrder,
+    } = this.computeTargetPreDiscountGross(orderData, totalDiscountGross);
     const resolvedUnitPrices = this.resolveMatchedLinePrices(
       matchedEntries,
       matchedEntries.length === rawLines.length,
       targetPreDiscountGross,
       effectiveSubtotal > 0,
       isZeroOrder,
+      totalDiscountGross,
     );
 
     const resolvedLines = matchedEntries.map(({ matched, qty }, idx) => {
@@ -1804,26 +1994,35 @@ export class CourierifyService {
     const advanceMethod = advanceObj?.method || 'bank_transfer';
     const advanceRef = advanceObj?.reference || '';
 
+    const hasMoneyTotal = Number(orderData.money?.total || 0) > 0;
+    const netItemsSubtotal = subtotalAlreadyIncludesDiscount
+      ? Math.max(0, effectiveSubtotal - totalDiscountGross)
+      : effectiveSubtotal;
+    const deliveryCharges =
+      netItemsSubtotal > 0 && hasMoneyTotal
+        ? Math.max(0, Number(orderData.money.total) - netItemsSubtotal)
+        : Math.max(0, Number(orderData._shopifyShipping || 0));
+
+    const rawTotalOrderAmount = orderGrandTotal + deliveryCharges;
+    const totalOrderAmount =
+      Math.abs(rawTotalOrderAmount - Math.round(rawTotalOrderAmount)) <= 0.05
+        ? Math.round(rawTotalOrderAmount)
+        : Math.round(rawTotalOrderAmount * 100) / 100;
+
     // COD Amount to collect (supports cod.amount, codAmount, money.codToCollect)
     const codAmount = Number(
       orderData.cod?.amount ??
       orderData.codAmount ??
       orderData.money?.codToCollect ??
-      (isPaid ? 0 : Math.max(0, orderGrandTotal - voucherAmount - advanceAmount)),
+      (isPaid ? 0 : Math.max(0, totalOrderAmount - voucherAmount - advanceAmount)),
     );
 
     let paymentStatus = 'unpaid';
-    if (isPaid || (advanceAmount > 0 && advanceAmount >= orderGrandTotal)) {
+    if (isPaid || (advanceAmount > 0 && advanceAmount >= totalOrderAmount)) {
       paymentStatus = 'paid';
     } else if (advanceAmount > 0) {
       paymentStatus = 'partially_paid';
     }
-
-    const hasMoneyTotal = Number(orderData.money?.total || 0) > 0;
-    const deliveryCharges =
-      effectiveSubtotal > 0 && hasMoneyTotal
-        ? Math.max(0, Number(orderData.money.total) - effectiveSubtotal)
-        : 0;
 
     const cashMemoNotes = [
       `Online Order: #${primaryRef}`,
@@ -1834,7 +2033,7 @@ export class CourierifyService {
       `Courier: ${courierName}`,
       `Tracking: ${trackingNo}`,
       `Payment: ${rawPaymentMethod} (${paymentStatus.toUpperCase()})`,
-      `Total Order: Rs. ${(orderGrandTotal + deliveryCharges) || orderData.money?.total}`,
+      `Total Order: Rs. ${totalOrderAmount || orderData.money?.total}`,
       deliveryCharges > 0 ? `Delivery Charges: Rs. ${deliveryCharges}` : null,
       advanceAmount > 0 ? `Advance Paid: Rs. ${advanceAmount} (${advanceMethod}${advanceRef ? ' Ref: ' + advanceRef : ''})` : null,
       `COD to Collect: Rs. ${codAmount}`,
@@ -1854,7 +2053,6 @@ export class CourierifyService {
       rawPaymentMethod.includes('PAYFAST') ||
       rawPaymentMethod.includes('SHOPIFY');
 
-    const totalOrderAmount = orderGrandTotal + deliveryCharges;
     let resolvedTenderType = 'cash';
     let resolvedCashAmount: number | undefined = undefined;
     let resolvedCardAmount: number | undefined = undefined;
@@ -2030,7 +2228,7 @@ export class CourierifyService {
             subtotal: new Prisma.Decimal(orderSubtotalWOST),
             discountAmount: new Prisma.Decimal(orderDiscountWOST),
             taxAmount: new Prisma.Decimal(orderTaxAmount),
-            grandTotal: new Prisma.Decimal(orderGrandTotal + deliveryCharges),
+            grandTotal: new Prisma.Decimal(totalOrderAmount),
             voucherAmount:
               voucherAmount > 0
                 ? new Prisma.Decimal(voucherAmount)
@@ -2818,7 +3016,22 @@ export class CourierifyService {
     data: any,
     occurredAt?: string,
   ): Promise<void> {
-    const payload = data?.shipment || data || {};
+    const rootObj = data?.order || data || {};
+    const shipmentObj = data?.shipment || rootObj?.shipment || {};
+    const payload = {
+      ...rootObj,
+      ...shipmentObj,
+      orderName: shipmentObj.orderName || rootObj.orderName || data?.orderName,
+      orderId: shipmentObj.orderId || rootObj.orderId || data?.orderId,
+      customer: shipmentObj.customer || rootObj.customer || data?.customer,
+      money: shipmentObj.money || rootObj.money || data?.money,
+      payment: shipmentObj.payment || rootObj.payment || data?.payment,
+      discounts: shipmentObj.discounts || rootObj.discounts || data?.discounts,
+      items: shipmentObj.items || rootObj.items || data?.items,
+      lineItems: shipmentObj.lineItems || rootObj.lineItems || data?.lineItems,
+      orderedAt: shipmentObj.orderedAt || rootObj.orderedAt || data?.orderedAt,
+      createdAt: shipmentObj.createdAt || rootObj.createdAt || data?.createdAt,
+    };
     const { orderName, orderId, trackingNumber, courier } = payload;
     this.logger.log(
       `[Shipment Booked] Order: ${orderName || orderId}, Tracking: ${trackingNumber}, Courier: ${courier}`,
@@ -2946,35 +3159,45 @@ export class CourierifyService {
       const advanceObj =
         payload.payment?.advance || payload.money?.advance || payload.advancePayment;
       const advanceAmt = Number(advanceObj?.amount ?? advanceObj ?? 0);
-      const codAmt = Number(
-        payload.cod?.amount ?? payload.codAmount ?? payload.money?.codToCollect ?? 0,
-      );
-      const totalAmt = Number(
-        payload.money?.total ?? payload.totalAmount ?? codAmt + advanceAmt,
-      );
+      const rawCodAmt =
+        payload.cod?.amount ?? payload.codAmount ?? payload.money?.codToCollect;
+      const codAmt = Number(rawCodAmt ?? 0);
+      const rawTotalAmt =
+        payload.money?.total ??
+        payload.totalAmount ??
+        (rawCodAmt !== undefined ? codAmt + advanceAmt : undefined);
+
+      const normalizedMoney: Record<string, any> = {
+        currency: payload.money?.currency || 'PKR',
+      };
+      if (rawTotalAmt !== undefined) normalizedMoney.total = Number(rawTotalAmt);
+      if (payload.money?.subtotal !== undefined) {
+        normalizedMoney.subtotal = Number(payload.money.subtotal);
+      }
+      if (
+        payload.money?.discountTotal !== undefined ||
+        payload.discounts?.total !== undefined
+      ) {
+        normalizedMoney.discountTotal = Number(
+          payload.money?.discountTotal ?? payload.discounts?.total ?? 0,
+        );
+      }
+      if (rawCodAmt !== undefined) normalizedMoney.codToCollect = codAmt;
+      if (advanceObj) {
+        normalizedMoney.advance = {
+          amount: advanceAmt,
+          method: advanceObj.method || 'bank_transfer',
+          reference: advanceObj.reference || '',
+          collectedAt: advanceObj.collectedAt || occurredAt,
+        };
+      }
 
       const normalizedData = {
         ...payload,
         items: payload.items?.lines ? payload.items : { lines: payload.lineItems || [] },
         lineItems: payload.lineItems || [],
-        discounts: payload.discounts || { codes: [], total: 0, applications: [] },
-        money: {
-          currency: payload.money?.currency || 'PKR',
-          total: totalAmt,
-          subtotal: Number(payload.money?.subtotal || totalAmt),
-          discountTotal: Number(
-            payload.money?.discountTotal || payload.discounts?.total || 0,
-          ),
-          codToCollect: codAmt,
-          advance: advanceObj
-            ? {
-              amount: advanceAmt,
-              method: advanceObj.method || 'bank_transfer',
-              reference: advanceObj.reference || '',
-              collectedAt: advanceObj.collectedAt || occurredAt,
-            }
-            : undefined,
-        },
+        ...(payload.discounts ? { discounts: payload.discounts } : {}),
+        money: normalizedMoney,
       };
 
       await this.processOmsOrderToPos(normalizedData, occurredAt, { createStn: true });
