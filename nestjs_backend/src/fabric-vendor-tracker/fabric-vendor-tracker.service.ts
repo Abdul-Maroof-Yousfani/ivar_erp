@@ -203,7 +203,7 @@ export class FabricVendorTrackerService {
           select: { id: true, code: true, name: true, contactNo: true },
         },
         item: {
-          select: { id: true, itemId: true, sku: true, description: true, uom: true },
+          select: { id: true, itemId: true, sku: true, description: true, uom: true, unitPrice: true, unitCost: true },
         },
         warehouse: {
           select: { id: true, code: true, name: true },
@@ -224,7 +224,7 @@ export class FabricVendorTrackerService {
           select: { id: true, code: true, name: true, contactNo: true },
         },
         item: {
-          select: { id: true, itemId: true, sku: true, description: true, uom: true },
+          select: { id: true, itemId: true, sku: true, description: true, uom: true, unitPrice: true, unitCost: true },
         },
         warehouse: {
           select: { id: true, code: true, name: true },

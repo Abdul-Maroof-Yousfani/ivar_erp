@@ -74,14 +74,19 @@ export default function ChooseAccountPage() {
         router.push(`/auth/login?${params.toString()}`);
     };
 
-    if (loading) {
+    useEffect(() => {
+        if (!loading && profiles.length === 0) {
+            router.replace("/auth/login?forceLogin=true");
+        }
+    }, [loading, profiles.length, router]);
+
+    if (loading || profiles.length === 0) {
         return (
             <div className="min-h-screen flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
         );
     }
-    if(profiles.length === 0) router.push("/auth/login?forceLogin=true");
     return (
         <Card className="shadow-2xl backdrop-blur-sm bg-card/95">
 

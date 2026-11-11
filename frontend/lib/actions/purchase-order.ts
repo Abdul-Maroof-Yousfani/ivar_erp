@@ -48,6 +48,9 @@ export async function createPurchaseOrder(data: {
             method: "POST",
             body: JSON.stringify(data),
         });
+        if (!response.ok) {
+            throw new Error(response.data?.message || "Failed to create Purchase Order");
+        }
         const result = response.data;
         revalidatePath("/erp/procurement/purchase-order");
         return result;
@@ -95,6 +98,9 @@ export async function createMultiDirectPurchaseOrder(data: {
             method: "POST",
             body: JSON.stringify(data),
         });
+        if (!response.ok) {
+            throw new Error(response.data?.message || "Failed to create Purchase Orders");
+        }
         const result = response.data;
         revalidatePath("/erp/procurement/purchase-order");
         return result;

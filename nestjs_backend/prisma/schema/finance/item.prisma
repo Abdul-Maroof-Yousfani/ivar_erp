@@ -82,6 +82,9 @@ model Item {
   discountCampaignItems DiscountCampaignItem[]
   fabricTrackers        FabricVendorTracker[]
   posReturnItems        PosReturnItem[]
+  fabricProductionBatches  ProductionBatch[] @relation("FabricProductionBatches")
+  articleProductionBatches ProductionBatch[] @relation("ArticleProductionBatches")
+  batchLineProductionItems ProductionBatchItem[] @relation("BatchLineArticleItem")
 }
 
 // ─── Discount Campaign ────────────────────────────────────────────────────────

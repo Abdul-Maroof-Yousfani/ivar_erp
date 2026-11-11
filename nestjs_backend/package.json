@@ -30,7 +30,8 @@
     "prisma:tenant:push": "bun scripts/push-tenants-schema.ts",
     "prisma:tenant:seed": "bun scripts/seed-tenant.ts",
     "prisma:tenant:studio": "bun scripts/studio-tenant.ts",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "seed:admin": "bun scripts/seed-admin.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1123.0",

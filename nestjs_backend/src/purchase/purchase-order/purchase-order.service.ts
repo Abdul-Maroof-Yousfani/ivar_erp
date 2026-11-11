@@ -98,29 +98,41 @@ export class PurchaseOrderService {
 
       const poNumber = `PO-${Date.now()}`;
 
-      let subtotal = new Decimal(0);
-
-      const itemsData = createDto.items.map((item) => {
-        const qty = new Decimal(item.quantity);
-        const price = new Decimal(item.unitPrice);
-
-        const lineTotal = qty.mul(price);
-        subtotal = subtotal.add(lineTotal);
-
-        return {
-          itemId: item.itemId,
-          description: item.description,
-          quantity: qty,
-          unitPrice: price,
-          taxPercent: new Decimal(0),
-          discountPercent: new Decimal(0),
-          lineTotal: lineTotal,
-        };
-      });
-
-      const totalAmount = subtotal;
-
       const createdPo = await this.prisma.$transaction(async (tx) => {
+        let subtotal = new Decimal(0);
+
+        // Resolve item IDs to valid Item UUIDs in case an itemId sequence string or SKU was passed
+        const itemsData = await Promise.all(
+          createDto.items.map(async (item) => {
+            const qty = new Decimal(item.quantity);
+            const price = new Decimal(item.unitPrice);
+            const lineTotal = qty.mul(price);
+            subtotal = subtotal.add(lineTotal);
+
+            const matchedItem = await tx.item.findFirst({
+              where: {
+                OR: [
+                  { id: item.itemId },
+                  { itemId: item.itemId },
+                  { sku: item.itemId },
+                ],
+              },
+              select: { id: true, description: true },
+            });
+
+            return {
+              itemId: matchedItem ? matchedItem.id : item.itemId,
+              description: item.description || matchedItem?.description,
+              quantity: qty,
+              unitPrice: price,
+              taxPercent: new Decimal(0),
+              discountPercent: new Decimal(0),
+              lineTotal: lineTotal,
+            };
+          }),
+        );
+
+        const totalAmount = subtotal;
         let finalOrderType = createDto.orderType;
         let finalGoodsType = createDto.goodsType;
 
@@ -596,23 +608,35 @@ export class PurchaseOrderService {
 
           let subtotal = new Decimal(0);
 
-          const itemsData = group.items.map((item) => {
-            const qty = new Decimal(item.quantity);
-            const price = new Decimal(item.unitPrice);
+          const itemsData = await Promise.all(
+            group.items.map(async (item) => {
+              const qty = new Decimal(item.quantity);
+              const price = new Decimal(item.unitPrice);
+              const lineTotal = qty.mul(price);
+              subtotal = subtotal.add(lineTotal);
 
-            const lineTotal = qty.mul(price);
-            subtotal = subtotal.add(lineTotal);
+              const matchedItem = await tx.item.findFirst({
+                where: {
+                  OR: [
+                    { id: item.itemId },
+                    { itemId: item.itemId },
+                    { sku: item.itemId },
+                  ],
+                },
+                select: { id: true, description: true },
+              });
 
-            return {
-              itemId: item.itemId,
-              description: item.description,
-              quantity: qty,
-              unitPrice: price,
-              taxPercent: new Decimal(0),
-              discountPercent: new Decimal(0),
-              lineTotal,
-            };
-          });
+              return {
+                itemId: matchedItem ? matchedItem.id : item.itemId,
+                description: item.description || matchedItem?.description,
+                quantity: qty,
+                unitPrice: price,
+                taxPercent: new Decimal(0),
+                discountPercent: new Decimal(0),
+                lineTotal,
+              };
+            }),
+          );
 
           const totalAmount = subtotal;
           const poNumber = `PO-${Date.now()}`;

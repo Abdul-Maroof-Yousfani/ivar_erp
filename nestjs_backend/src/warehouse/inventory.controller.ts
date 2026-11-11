@@ -14,8 +14,9 @@ export class InventoryController {
   getStockLevel(
     @Query('itemId') itemId: string,
     @Query('warehouseId') warehouseId: string,
+    @Query('locationId') locationId?: string,
   ) {
-    return this.inventoryService.getStockLevel(itemId, warehouseId);
+    return this.inventoryService.getStockLevel(itemId, warehouseId, locationId);
   }
 
   @Get('details/:itemId')

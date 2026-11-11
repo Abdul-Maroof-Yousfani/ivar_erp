@@ -117,6 +117,7 @@ import { TaskModule } from './task/task.module';
 import { TaskReportsModule } from './task-reports/task-reports.module';
 import { PayeeModule } from './master/payee/payee.module';
 import { FabricVendorTrackerModule } from './fabric-vendor-tracker/fabric-vendor-tracker.module';
+import { ProductionModule } from './production/production.module';
 import { CourierifyModule } from './courierify/courierify.module';
 import { ShopifyModule } from './shopify/shopify.module';
 
@@ -260,6 +261,7 @@ import { ShopifyModule } from './shopify/shopify.module';
     TaskReportsModule,
     PayeeModule,
     FabricVendorTrackerModule,
+    ProductionModule,
     CourierifyModule,
     ShopifyModule, // Shopify POS voucher sync
   ],

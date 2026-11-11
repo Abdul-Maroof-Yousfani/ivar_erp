@@ -37,6 +37,7 @@ model Supplier {
   debitNotes       DebitNote[]
   ledgerEntries    SupplierLedger[]
   fabricTrackers   FabricVendorTracker[]
+  productionBatches ProductionBatch[] @relation("SupplierProductionBatches")
 
   @@index([nature])
   @@index([type])

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   fabricVendorTrackerApi,
@@ -16,7 +17,7 @@ import {
   Warehouse,
 } from '@/lib/api';
 import { toast } from 'sonner';
-import { AlertCircle, CheckCircle, Scale, Package, Clock, History } from 'lucide-react';
+import { AlertCircle, CheckCircle, CheckCircle2, Scale, Package, Clock, History } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 interface FabricVendorFormProps {
@@ -182,76 +183,79 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-5">
       {isEditMode && initialData ? (
-        // Consumption Mode (Step B)
-        <div className="space-y-6">
+        // Consumption / Settlement Mode (Step B)
+        <div className="space-y-4">
           {/* Summary Box */}
-          <div className="bg-muted/40 p-4 rounded-xl border border-border space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Original Issue Details</h4>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-y-3 gap-x-6 text-sm">
+          <div className="bg-muted/40 dark:bg-muted/20 p-3.5 rounded-xl border border-border space-y-2.5">
+            <div className="flex items-center justify-between border-b border-border/60 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Fabric Consignment:</span>
+                <span className="font-mono font-bold text-xs bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/20">
+                  {initialData.trackerNumber}
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                Issued: {new Date(initialData.issueDate).toLocaleDateString()}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               <div>
-                <span className="text-muted-foreground block text-xs">Tracker Ref</span>
-                <span className="font-semibold">{initialData.trackerNumber}</span>
+                <span className="text-muted-foreground block text-[11px]">CMT Vendor</span>
+                <span className="font-semibold text-foreground truncate block">{initialData.supplier?.name}</span>
               </div>
               <div>
-                <span className="text-muted-foreground block text-xs">Vendor (Supplier)</span>
-                <span className="font-semibold">{initialData.supplier?.name}</span>
+                <span className="text-muted-foreground block text-[11px]">Fabric (Item)</span>
+                <span className="font-semibold text-foreground truncate block">{initialData.item?.description || initialData.item?.sku}</span>
               </div>
               <div>
-                <span className="text-muted-foreground block text-xs">Fabric (Item)</span>
-                <span className="font-semibold">{initialData.item?.description || initialData.item?.sku}</span>
+                <span className="text-muted-foreground block text-[11px]">Source Warehouse</span>
+                <span className="font-semibold text-foreground truncate block">{initialData.warehouse?.name}</span>
               </div>
               <div>
-                <span className="text-muted-foreground block text-xs">Source Store / Warehouse</span>
-                <span className="font-semibold">{initialData.warehouse?.name}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block text-xs">Issue Date</span>
-                <span>{new Date(initialData.issueDate).toLocaleDateString()}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block text-xs font-semibold text-indigo-600">Total Qty Issued</span>
-                <span className="font-bold text-indigo-600">{qtyIssuedTotal.toLocaleString()} meters</span>
+                <span className="text-muted-foreground block text-[11px]">Total Issued</span>
+                <span className="font-bold font-mono text-indigo-600 dark:text-indigo-400 block">{qtyIssuedTotal.toLocaleString()} m</span>
               </div>
             </div>
           </div>
 
           {/* Accounted & Remaining Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800">
-              <span className="text-xs font-medium block">Previously Used</span>
-              <span className="text-lg font-bold font-mono">{prevUsed.toLocaleString()} m</span>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 bg-muted/40 dark:bg-muted/20 border border-border rounded-xl">
+              <span className="text-[11px] font-medium text-muted-foreground block">Previously Used</span>
+              <span className="text-base font-bold font-mono text-foreground mt-0.5 block">{prevUsed.toLocaleString()} m</span>
             </div>
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-800">
-              <span className="text-xs font-medium block">Previously Returned</span>
-              <span className="text-lg font-bold font-mono">{prevReturned.toLocaleString()} m</span>
+            <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+              <span className="text-[11px] font-medium text-blue-700 dark:text-blue-300 block">Previously Returned</span>
+              <span className="text-base font-bold font-mono text-blue-700 dark:text-blue-300 mt-0.5 block">{prevReturned.toLocaleString()} m</span>
             </div>
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800">
-              <span className="text-xs font-medium block">Balance Remaining</span>
-              <span className="text-lg font-bold font-mono">{remainingBalance.toLocaleString()} m</span>
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+              <span className="text-[11px] font-medium text-amber-800 dark:text-amber-300 block">Balance Remaining</span>
+              <span className="text-base font-bold font-mono text-amber-800 dark:text-amber-300 mt-0.5 block">{remainingBalance.toLocaleString()} m</span>
             </div>
           </div>
 
           {/* Previous Consumption Logs History Timeline (if any) */}
           {initialData.consumptionLogs && initialData.consumptionLogs.length > 0 && (
-            <div className="space-y-2 border-t pt-3">
+            <div className="space-y-2 border-t border-border pt-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                <History className="h-4 w-4 text-indigo-500" /> Previous Consumption Logs
+                <History className="h-3.5 w-3.5 text-indigo-500" /> Previous Settlement Logs
               </h4>
-              <div className="max-h-36 overflow-y-auto space-y-2 pr-1">
+              <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
                 {initialData.consumptionLogs.map((log, idx) => (
-                  <div key={log.id || idx} className="p-2.5 bg-muted/20 border rounded-lg text-xs flex items-center justify-between">
+                  <div key={log.id || idx} className="p-2 bg-muted/30 border border-border rounded-lg text-xs flex items-center justify-between">
                     <div>
                       <span className="font-semibold text-foreground">
                         Log #{initialData.consumptionLogs!.length - idx} &bull; {new Date(log.consumptionDate || log.createdAt).toLocaleDateString()}
                       </span>
                       {log.notes && <p className="text-muted-foreground italic text-[11px] mt-0.5">{log.notes}</p>}
                     </div>
-                    <div className="flex gap-2 font-mono text-[11px]">
-                      {Number(log.qtyUsed) > 0 && <Badge variant="outline" className="bg-emerald-50 text-emerald-700">Used: {log.qtyUsed}m</Badge>}
-                      {Number(log.qtyReturned) > 0 && <Badge variant="outline" className="bg-blue-50 text-blue-700">Returned: {log.qtyReturned}m</Badge>}
-                      {Number(log.qtyShortage) > 0 && <Badge variant="outline" className="bg-red-50 text-red-700">Shortage: {log.qtyShortage}m</Badge>}
+                    <div className="flex gap-1.5 font-mono text-[11px]">
+                      {Number(log.qtyUsed) > 0 && <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">Used: {log.qtyUsed}m</Badge>}
+                      {Number(log.qtyReturned) > 0 && <Badge variant="outline" className="bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30">Returned: {log.qtyReturned}m</Badge>}
+                      {Number(log.qtyShortage) > 0 && <Badge variant="outline" className="bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30">Shortage: {log.qtyShortage}m</Badge>}
                     </div>
                   </div>
                 ))}
@@ -259,122 +263,138 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
             </div>
           )}
 
-          {/* Form to Log New Batch Consumption */}
-          <div className="border-t pt-4 space-y-4">
-            <h3 className="text-base font-bold flex items-center gap-2 text-indigo-900">
-              <Scale className="h-5 w-5 text-indigo-600" />
-              Log Consumption & Returns (This Batch)
-            </h3>
+          {/* Form to Log New Batch Settlement */}
+          <div className="border-t border-border pt-3.5 space-y-3.5">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                <Scale className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                This Settlement Entry
+              </h4>
+              <span className="text-[11px] text-muted-foreground">
+                Max available: <strong className="font-mono text-foreground">{remainingBalance} m</strong>
+              </span>
+            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold flex items-center gap-1.5">
-                  Qty Used <span className="text-xs text-muted-foreground">(Meters)</span>
-                </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="qtyUsed" className="text-xs font-semibold text-foreground flex items-center justify-between">
+                  <span>Qty Used</span>
+                  <span className="text-[10px] text-muted-foreground font-normal">Meters</span>
+                </Label>
                 <Input
+                  id="qtyUsed"
                   type="number"
                   min="0"
                   max={remainingBalance}
                   step="0.0001"
                   value={newQtyUsed || ''}
-                  onChange={(e) => setNewQtyUsed(Number(e.target.value))}
-                  placeholder="e.g. 50"
-                  className="h-10 font-mono text-base"
+                  onChange={(e) => setNewQtyUsed(e.target.value === '' ? 0 : Number(e.target.value))}
+                  placeholder="0"
+                  className="h-9 font-mono text-sm bg-background border-input"
                 />
+                <p className="text-[10px] text-muted-foreground">Manual cutting / usage</p>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-semibold flex items-center gap-1.5">
-                  Qty Returned <span className="text-xs text-muted-foreground">(Meters)</span>
-                </label>
+              <div className="space-y-1.5">
+                <Label htmlFor="qtyReturned" className="text-xs font-semibold text-foreground flex items-center justify-between">
+                  <span>Qty Returned</span>
+                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold font-mono">Restocked</span>
+                </Label>
                 <Input
+                  id="qtyReturned"
                   type="number"
                   min="0"
                   max={remainingBalance}
                   step="0.0001"
                   value={newQtyReturned || ''}
-                  onChange={(e) => setNewQtyReturned(Number(e.target.value))}
-                  placeholder="e.g. 10"
-                  className="h-10 font-mono text-base"
+                  onChange={(e) => setNewQtyReturned(e.target.value === '' ? 0 : Number(e.target.value))}
+                  placeholder="0"
+                  className="h-9 font-mono text-sm bg-background border-input"
                 />
-                <p className="text-[11px] text-muted-foreground">Auto-restocked in store.</p>
+                <p className="text-[10px] text-blue-600 dark:text-blue-400">Adds back to warehouse</p>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-semibold flex items-center gap-1.5">
-                  Qty Shortage <span className="text-xs text-muted-foreground">(Meters)</span>
-                </label>
+              <div className="space-y-1.5">
+                <Label htmlFor="qtyShortage" className="text-xs font-semibold text-foreground flex items-center justify-between">
+                  <span>Qty Shortage</span>
+                  <span className="text-[10px] text-red-600 dark:text-red-400 font-semibold font-mono">Loss / Defect</span>
+                </Label>
                 <Input
+                  id="qtyShortage"
                   type="number"
                   min="0"
                   max={remainingBalance}
                   step="0.0001"
                   value={newQtyShortage || ''}
-                  onChange={(e) => setNewQtyShortage(Number(e.target.value))}
-                  placeholder="e.g. 2"
-                  className="h-10 font-mono text-base"
+                  onChange={(e) => setNewQtyShortage(e.target.value === '' ? 0 : Number(e.target.value))}
+                  placeholder="0"
+                  className="h-9 font-mono text-sm bg-background border-input"
                 />
+                <p className="text-[10px] text-muted-foreground">Wastage / damaged roll</p>
               </div>
             </div>
 
             {/* Validation & Projected Indicator */}
-            <div className="bg-muted/20 p-4 rounded-xl border border-dashed space-y-3">
-              <div className="flex justify-between items-center text-sm font-medium">
-                <span className="flex items-center gap-2">
-                  Accounted After Entry:{' '}
-                  <span className="font-mono text-lg font-bold">{projectedTotalAccounted}</span> / {qtyIssuedTotal} m
+            <div className="bg-muted/40 dark:bg-muted/20 p-3.5 rounded-xl border border-border space-y-2.5">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground font-medium flex items-center gap-1.5">
+                  Accounted After Entry:
+                  <strong className="font-mono text-sm text-foreground">{projectedTotalAccounted.toFixed(2)}</strong>
+                  <span className="text-muted-foreground font-normal">/ {qtyIssuedTotal} m</span>
                 </span>
                 {thisEntryTotal > remainingBalance + 0.0001 ? (
-                  <span className="text-red-600 flex items-center gap-1 text-xs font-semibold">
-                    <AlertCircle className="h-4 w-4" /> Exceeds Remaining ({remainingBalance}m)
-                  </span>
+                  <Badge variant="outline" className="bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30 text-[11px] font-semibold">
+                    <AlertCircle className="h-3 w-3 mr-1" /> Exceeds Remaining ({remainingBalance}m)
+                  </Badge>
                 ) : isCompleting ? (
-                  <span className="text-emerald-600 flex items-center gap-1 text-xs font-semibold">
-                    <CheckCircle className="h-4 w-4" /> Will Mark COMPLETED
-                  </span>
+                  <Badge variant="outline" className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[11px] font-semibold">
+                    <CheckCircle className="h-3 w-3 mr-1" /> Will Mark COMPLETED
+                  </Badge>
                 ) : (
-                  <span className="text-indigo-600 flex items-center gap-1 text-xs font-semibold">
-                    <Clock className="h-4 w-4" /> Status: PARTIAL ({projectedRemaining.toFixed(2)}m left)
-                  </span>
+                  <Badge variant="outline" className="bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 text-[11px] font-semibold">
+                    <Clock className="h-3 w-3 mr-1" /> Status: PARTIAL ({projectedRemaining.toFixed(2)}m left)
+                  </Badge>
                 )}
               </div>
 
               {/* Progress Visualizer */}
-              <div className="w-full h-3 bg-muted rounded-full overflow-hidden flex">
+              <div className="w-full h-2 bg-muted rounded-full overflow-hidden flex">
                 <div
-                  className="h-full bg-emerald-500 transition-all duration-300"
-                  style={{ width: `${(Math.min(projectedTotalAccounted, qtyIssuedTotal) / qtyIssuedTotal) * 100}%` }}
+                  className={`h-full transition-all duration-300 ${isCompleting ? 'bg-emerald-500' : 'bg-indigo-600'}`}
+                  style={{ width: `${Math.min(100, (projectedTotalAccounted / qtyIssuedTotal) * 100)}%` }}
                   title={`Accounted: ${projectedTotalAccounted}m`}
                 />
               </div>
 
-              <div className="flex justify-between text-[11px] text-muted-foreground">
-                <span>Prev Accounted: {prevTotalAccounted}m</span>
-                <span>This Batch: {thisEntryTotal}m</span>
-                <span>Remaining: {projectedRemaining > 0 ? projectedRemaining.toFixed(2) : 0}m</span>
+              <div className="grid grid-cols-3 text-[11px] text-muted-foreground pt-1 border-t border-border/50 text-center font-mono">
+                <div>Prev: <strong className="text-foreground">{prevTotalAccounted}m</strong></div>
+                <div>This Entry: <strong className="text-indigo-600 dark:text-indigo-400">{thisEntryTotal}m</strong></div>
+                <div>Remaining: <strong className="text-amber-700 dark:text-amber-400">{projectedRemaining > 0 ? projectedRemaining.toFixed(2) : 0}m</strong></div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Consumption Date</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="consumptionDate" className="text-xs font-semibold text-foreground">Settlement Date</Label>
                 <Input
+                  id="consumptionDate"
                   type="date"
                   required
                   value={consumptionDate}
                   onChange={(e) => setConsumptionDate(e.target.value)}
-                  className="h-10"
+                  className="h-9 text-xs bg-background"
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-semibold">Log Remarks / Notes</label>
+              <div className="space-y-1.5">
+                <Label htmlFor="logNotes" className="text-xs font-semibold text-foreground">Settlement Notes / Remarks</Label>
                 <Input
+                  id="logNotes"
                   type="text"
                   value={logNotes}
                   onChange={(e) => setLogNotes(e.target.value)}
-                  placeholder="e.g. First 50m used for cutting batch #1"
-                  className="h-10"
+                  placeholder="e.g. 20m fabric returned to store"
+                  className="h-9 text-xs bg-background"
                 />
               </div>
             </div>
@@ -507,22 +527,33 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
         </div>
       )}
 
-      <div className="flex justify-end gap-3 border-t pt-4">
-        <Button variant="outline" type="button" onClick={onClose} disabled={submitting}>
+      <div className="flex justify-end gap-2.5 border-t border-border pt-4">
+        <Button variant="outline" type="button" size="sm" onClick={onClose} disabled={submitting}>
           Cancel
         </Button>
         <Button
           type="submit"
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm transition-all"
+          size="sm"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-2xs"
           disabled={submitting || (isEditMode && !isValidConsumption)}
         >
-          {submitting
-            ? 'Saving...'
-            : isEditMode
-            ? isCompleting
-              ? 'Log Consumption & Complete'
-              : 'Log Partial Consumption'
-            : 'Issue Fabric'}
+          {submitting ? (
+            'Saving...'
+          ) : isEditMode ? (
+            isCompleting ? (
+              <>
+                <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                Save Settlement & Mark Complete
+              </>
+            ) : (
+              <>
+                <Scale className="h-4 w-4 mr-1.5" />
+                Save Settlement Entry
+              </>
+            )
+          ) : (
+            'Issue Fabric to Vendor'
+          )}
         </Button>
       </div>
     </form>

@@ -1,0 +1,114 @@
+model ProductionBatch {
+  id                String            @id @default(uuid())
+  batchNumber       String            @unique @map("batch_number") // e.g. PB-2026-0001
+  supplierId        String            @map("supplier_id")          // CMT Vendor (Supplier) ID
+  
+  // Fabric Details
+  fabricItemId      String            @map("fabric_item_id")       // Raw Fabric Item ID
+  fabricWarehouseId String            @map("fabric_warehouse_id")  // Warehouse where fabric was held by vendor
+  trackerId         String?           @map("tracker_id")          // Optional Fabric Vendor Tracker ID
+  qtyFabricUsed     Decimal           @db.Decimal(15, 4) @map("qty_fabric_used") // meters used
+  fabricRate        Decimal           @db.Decimal(15, 4) @map("fabric_rate")     // rate per meter
+  
+  // Finished Article Details
+  articleItemId     String            @map("article_item_id")      // Finished Garment Item ID
+  
+  // Quantities Received & Grading
+  qtyTotalReceived  Decimal           @db.Decimal(15, 4) @map("qty_total_received") // Total pieces (A + B)
+  qtyAGrade         Decimal           @db.Decimal(15, 4) @map("qty_a_grade")        // A pieces
+  qtyBGrade         Decimal           @db.Decimal(15, 4) @map("qty_b_grade")        // B pieces
+  qtyRefreshed      Decimal           @default(0.0) @db.Decimal(15, 4) @map("qty_refreshed") // B pieces refreshed so far
+  
+  // Costing Engine Values (Exactly matching COSTING FILE.xlsx)
+  consumption       Decimal           @db.Decimal(15, 6) @map("consumption")         // CONS (meters/pc)
+  fabricCostPerPc   Decimal           @db.Decimal(15, 4) @map("fabric_cost_per_pc")  // CONS * fabricRate
+  cmtCostPerPc      Decimal           @db.Decimal(15, 4) @map("cmt_cost_per_pc")     // Vendor CMT per pc
+  initialNetCost    Decimal           @db.Decimal(15, 4) @map("initial_net_cost")    // fabricCostPerPc + cmtCostPerPc
+  totalBill         Decimal           @db.Decimal(15, 4) @map("total_bill")          // initialNetCost * qtyTotalReceived
+  bUnitValue        Decimal           @db.Decimal(15, 4) @map("b_unit_value")        // initialNetCost * 0.50
+  bTotalValue       Decimal           @db.Decimal(15, 4) @map("b_total_value")       // qtyBGrade * bUnitValue
+  aTotalValue       Decimal           @db.Decimal(15, 4) @map("a_total_value")       // totalBill - bTotalValue
+  aFinalUnitCost    Decimal           @db.Decimal(15, 4) @map("a_final_unit_cost")   // aTotalValue / qtyAGrade
+  
+  // Warehouses
+  aGradeWarehouseId String            @map("a_grade_warehouse_id") // A-Grade Finished Warehouse
+  bGradeWarehouseId String            @map("b_grade_warehouse_id") // B-Grade Warehouse
+  
+  // Financial Links
+  purchaseInvoiceId String?           @unique @map("purchase_invoice_id") // Auto-created CMT Invoice ID
+  isCostingLocked   Boolean           @default(false) @map("is_costing_locked")
+  status            String            @default("COMPLETED") // COMPLETED | DRAFT | CANCELLED
+  
+  // Tracking
+  productionDate    DateTime          @default(now()) @map("production_date")
+  notes             String?
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  
+  // Relations
+  supplier          Supplier          @relation("SupplierProductionBatches", fields: [supplierId], references: [id])
+  fabricItem        Item              @relation("FabricProductionBatches", fields: [fabricItemId], references: [id])
+  articleItem       Item              @relation("ArticleProductionBatches", fields: [articleItemId], references: [id])
+  fabricWarehouse   Warehouse         @relation("FabricWarehouseBatches", fields: [fabricWarehouseId], references: [id])
+  tracker           FabricVendorTracker? @relation(fields: [trackerId], references: [id])
+  batchItems        ProductionBatchItem[]
+  aGradeWarehouse   Warehouse         @relation("AGradeWarehouseBatches", fields: [aGradeWarehouseId], references: [id])
+  bGradeWarehouse   Warehouse         @relation("BGradeWarehouseBatches", fields: [bGradeWarehouseId], references: [id])
+  purchaseInvoice   PurchaseInvoice?  @relation("InvoiceProductionBatch", fields: [purchaseInvoiceId], references: [id])
+  refreshLogs       ProductionRefreshLog[]
+
+  @@index([supplierId])
+  @@index([fabricItemId])
+  @@index([articleItemId])
+  @@map("production_batches")
+}
+
+model ProductionRefreshLog {
+  id                 String            @id @default(uuid())
+  batchId            String            @map("batch_id")
+  qtyRefreshed       Decimal           @db.Decimal(15, 4) @map("qty_refreshed")
+  refreshRate        Decimal           @default(0.0) @db.Decimal(15, 4) @map("refresh_rate")
+  refreshTotalAmount Decimal           @default(0.0) @db.Decimal(15, 4) @map("refresh_total_amount")
+  refreshInvoiceId   String?           @map("refresh_invoice_id")
+  refreshDate        DateTime          @default(now()) @map("refresh_date")
+  notes              String?
+  createdAt          DateTime          @default(now()) @map("created_at")
+
+  batch              ProductionBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@map("production_refresh_logs")
+}
+
+
+
+model ProductionBatchItem {
+  id                String            @id @default(uuid())
+  batchId           String            @map("batch_id")
+  articleItemId     String            @map("article_item_id")
+  sizeName          String?           @map("size_name") // e.g. "32", "L", "Free Size"
+  
+  qtyTotalReceived  Decimal           @db.Decimal(15, 4) @map("qty_total_received")
+  qtyAGrade         Decimal           @db.Decimal(15, 4) @map("qty_a_grade")
+  qtyBGrade         Decimal           @db.Decimal(15, 4) @map("qty_b_grade")
+  qtyRefreshed      Decimal           @default(0.0) @db.Decimal(15, 4) @map("qty_refreshed")
+  
+  qtyFabricUsed     Decimal?          @db.Decimal(15, 4) @map("qty_fabric_used")
+  consumption       Decimal?          @db.Decimal(15, 6) @map("consumption")
+  
+  cmtCostPerPc      Decimal           @db.Decimal(15, 4) @map("cmt_cost_per_pc")
+  fabricCostPerPc   Decimal           @db.Decimal(15, 4) @map("fabric_cost_per_pc")
+  initialNetCost    Decimal           @db.Decimal(15, 4) @map("initial_net_cost")
+  bUnitValue        Decimal           @db.Decimal(15, 4) @map("b_unit_value")
+  aFinalUnitCost    Decimal           @db.Decimal(15, 4) @map("a_final_unit_cost")
+  totalLineAmount   Decimal           @db.Decimal(15, 4) @map("total_line_amount")
+  
+  createdAt         DateTime          @default(now()) @map("created_at")
+
+  batch             ProductionBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  articleItem       Item              @relation("BatchLineArticleItem", fields: [articleItemId], references: [id])
+
+  @@index([batchId])
+  @@index([articleItemId])
+  @@map("production_batch_items")
+}

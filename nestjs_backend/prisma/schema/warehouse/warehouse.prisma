@@ -29,6 +29,9 @@ model Warehouse {
   erpSalesInvoices ERPSalesInvoice[]
   purchaseInvoices PurchaseInvoice[]
   fabricTrackers   FabricVendorTracker[]
+  fabricWarehouseBatches ProductionBatch[] @relation("FabricWarehouseBatches")
+  aGradeWarehouseBatches ProductionBatch[] @relation("AGradeWarehouseBatches")
+  bGradeWarehouseBatches ProductionBatch[] @relation("BGradeWarehouseBatches")
 
   @@index([companyId])
   @@index([type])

@@ -29,6 +29,7 @@ model PurchaseInvoice {
   paymentVouchers     PaymentVoucherToInvoice[]
   debitNotes          DebitNote[]
   purchaseReturns     PurchaseReturn[]
+  productionBatch     ProductionBatch?  @relation("InvoiceProductionBatch")
 
   @@map("purchase_invoices")
 }

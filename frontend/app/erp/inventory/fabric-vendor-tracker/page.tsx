@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +28,7 @@ import {
   Package,
   Printer,
   Download,
+  Sparkles,
 } from "lucide-react";
 import { PermissionGuard } from "@/components/auth/permission-guard";
 
@@ -157,6 +159,12 @@ export default function FabricVendorTrackerPage() {
             </p>
           </div>
           <div className="flex items-center gap-3 w-full md:w-auto">
+            <Link href="/erp/production">
+              <Button variant="outline" className="border-indigo-300 text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100 font-medium">
+                <Sparkles className="h-4 w-4 mr-1.5 text-indigo-600" />
+                Production & Costing
+              </Button>
+            </Link>
             <Button onClick={loadTrackers} variant="outline" size="icon" className="shrink-0" title="Refresh Data">
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             </Button>
@@ -404,16 +412,28 @@ export default function FabricVendorTrackerPage() {
 
         {/* Unified Add/Edit Form Modal */}
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader>
-              <DialogTitle className="text-xl font-bold text-slate-800">
-                {selectedTracker ? "Update Vendor Fabric Consumption" : "Issue Fabric to Vendor"}
-              </DialogTitle>
-              <DialogDescription>
-                {selectedTracker
-                  ? "Enter the exact quantities of fabric used, returned, and shortage."
-                  : "Issue fabric items to a specific supplier (vendor) from a source warehouse."}
-              </DialogDescription>
+          <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto">
+            <DialogHeader className="pb-3 border-b">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+                  {selectedTracker ? <Scale className="h-5 w-5" /> : <Package className="h-5 w-5" />}
+                </div>
+                <div>
+                  <DialogTitle className="text-base font-bold text-foreground flex items-center gap-2">
+                    {selectedTracker ? "Log Vendor Fabric Settlement" : "Issue Fabric to Vendor"}
+                    {selectedTracker && (
+                      <Badge variant="outline" className="text-[11px] font-mono border-indigo-500/30 text-indigo-700 dark:text-indigo-300 bg-indigo-500/10">
+                        Returns & Wastage
+                      </Badge>
+                    )}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                    {selectedTracker
+                      ? "Record fabric returns to warehouse, cutting shortages, or manual usage to reconcile this consignment."
+                      : "Issue fabric items to a specific supplier (vendor) from a source warehouse."}
+                  </DialogDescription>
+                </div>
+              </div>
             </DialogHeader>
             <FabricVendorForm
               initialData={selectedTracker}

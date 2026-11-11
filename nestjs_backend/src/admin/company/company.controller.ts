@@ -10,6 +10,7 @@ import {
   HttpStatus,
   UseGuards,
   Req,
+  SetMetadata,
 } from '@nestjs/common';
 import { CompanyService } from './company.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -58,6 +59,7 @@ export class CompanyController {
    * Check if any companies exist (for initial setup flow)
    */
   @Get('check')
+  @SetMetadata('isOptional', true)
   async checkCompanies() {
     const hasCompanies = await this.companyService.hasCompanies();
     return { status: true, hasCompanies };

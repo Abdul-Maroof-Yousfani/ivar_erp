@@ -327,7 +327,11 @@ export interface MasterItem {
   division?: { name: string };
   itemClass?: { name: string };
   itemSubclass?: { name: string };
+  size?: { id?: string; name?: string };
+  color?: { id?: string; name?: string };
+  uom?: string;
   description?: string;
+  itemType?: string;
 }
 
 export const itemApi = {
@@ -1554,6 +1558,7 @@ export interface FabricVendorTracker {
     sku: string;
     description?: string;
     uom?: string;
+    unitPrice?: number;
   };
   warehouse?: {
     id: string;
@@ -1609,4 +1614,212 @@ export const fabricVendorTrackerApi = {
       { method: 'POST' }
     );
   },
+};
+
+
+// ─── Production & Garment Costing Engine ──────────────────────────────────────
+
+export interface ProductionBatch {
+  id: string;
+  batchNumber: string;
+  supplierId: string;
+  fabricItemId: string;
+  fabricWarehouseId: string;
+  qtyFabricUsed: number;
+  fabricRate: number;
+  articleItemId: string;
+  qtyTotalReceived: number;
+  qtyAGrade: number;
+  qtyBGrade: number;
+  qtyRefreshed: number;
+  consumption: number;
+  fabricCostPerPc: number;
+  cmtCostPerPc: number;
+  initialNetCost: number;
+  totalBill: number;
+  bUnitValue: number;
+  bTotalValue: number;
+  aTotalValue: number;
+  aFinalUnitCost: number;
+  aGradeWarehouseId: string;
+  bGradeWarehouseId: string;
+  trackerId?: string | null;
+  purchaseInvoiceId?: string | null;
+  status: string;
+  productionDate: string;
+  notes?: string | null;
+  createdAt: string;
+  supplier?: { id: string; code: string; name: string };
+  fabricItem?: { id: string; sku: string; description?: string; uom?: string };
+  articleItem?: { id: string; sku: string; description?: string; uom?: string; size?: { id: string; name: string } };
+  tracker?: { id: string; trackerNumber: string; qtyIssued: number; qtyUsed: number; status: string } | null;
+  batchItems?: Array<{
+    id: string;
+    articleItemId: string;
+    sizeName?: string;
+    qtyFabricUsed?: number;
+    consumption?: number;
+    qtyTotalReceived: number;
+    qtyAGrade: number;
+    qtyBGrade: number;
+    cmtCostPerPc: number;
+    fabricCostPerPc: number;
+    initialNetCost: number;
+    bUnitValue: number;
+    aFinalUnitCost: number;
+    totalLineAmount: number;
+    articleItem?: { id: string; sku: string; description?: string; size?: { id: string; name: string } };
+  }>;
+  fabricWarehouse?: { id: string; code: string; name: string };
+  aGradeWarehouse?: { id: string; code: string; name: string };
+  bGradeWarehouse?: { id: string; code: string; name: string };
+  purchaseInvoice?: { id: string; invoiceNumber: string; totalAmount: number; status: string } | null;
+  refreshLogs?: Array<{
+    id: string;
+    qtyRefreshed: number;
+    refreshRate: number;
+    refreshTotalAmount: number;
+    refreshDate: string;
+    notes?: string | null;
+  }>;
+}
+
+export interface ProductionBatchItemInput {
+  articleItemId: string;
+  sizeName?: string;
+  qtyTotalReceived: number;
+  qtyBGrade?: number;
+  cmtRate: number;
+  qtyFabricUsed?: number;
+}
+
+export interface ProductionCostingResult {
+  qtyFabricUsed: number;
+  fabricRate: number;
+  qtyTotalReceived: number;
+  qtyAGrade: number;
+  qtyBGrade: number;
+  cmtRate: number;
+  deductBGradeCmt: boolean;
+  consumption: number;
+  fabricCostPerPc: number;
+  cmtCostPerPc: number;
+  initialNetCost: number;
+  totalBill: number;
+  bUnitValue: number;
+  bTotalValue: number;
+  aTotalValue: number;
+  aFinalUnitCost: number;
+  vendorCmtBillAmount: number;
+  items?: Array<{
+    articleItemId: string;
+    sizeName?: string;
+    qtyFabricUsed?: number;
+    consumption: number;
+    qtyTotalReceived: number;
+    qtyAGrade: number;
+    qtyBGrade: number;
+    cmtRate: number;
+    fabricCostPerPc: number;
+    initialNetCost: number;
+    totalBill: number;
+    bUnitValue: number;
+    bTotalValue: number;
+    aTotalValue: number;
+    aFinalUnitCost: number;
+    vendorCmtBillAmount: number;
+  }>;
+}
+
+export interface BGradeInventoryItem {
+  id?: string;
+  batchId: string;
+  batchItemId?: string | null;
+  batchNumber: string;
+  productionDate: string;
+  supplier?: { id: string; code: string; name: string };
+  articleItem?: { id: string; sku: string; description?: string; uom?: string; size?: { name: string } };
+  sizeName?: string | null;
+  bGradeWarehouse?: { id: string; code: string; name: string };
+  aGradeWarehouse?: { id: string; code: string; name: string };
+  qtyBGradeTotal: number;
+  qtyRefreshed: number;
+  qtyRemainingBGrade: number;
+  bUnitValue: number;
+  remainingValuation: number;
+  aFinalUnitCost: number;
+  refreshLogs?: any[];
+}
+
+export interface ProductionStats {
+  totalBatches: number;
+  totalFabricUsed: number;
+  totalPiecesProduced: number;
+  totalAGradePieces: number;
+  totalBGradePieces: number;
+  totalRefreshedPieces: number;
+  pendingRefreshPieces: number;
+  totalBatchBill: number;
+  avgConsumption: string;
+  bGradeRatio: string;
+}
+
+export const productionApi = {
+  calculateCosting: (data: {
+    qtyFabricUsed: number;
+    fabricRate: number;
+    qtyTotalReceived?: number;
+    qtyBGrade?: number;
+    cmtRate?: number;
+    items?: ProductionBatchItemInput[];
+    deductBGradeCmt?: boolean;
+  }) => fetchApi<ProductionCostingResult>('/production/calculate', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  create: (data: {
+    supplierId: string;
+    fabricItemId: string;
+    fabricWarehouseId: string;
+    trackerId?: string;
+    qtyFabricUsed: number;
+    fabricRate: number;
+    articleItemId?: string;
+    qtyTotalReceived?: number;
+    qtyBGrade?: number;
+    cmtRate?: number;
+    items?: ProductionBatchItemInput[];
+    deductBGradeCmt?: boolean;
+    aGradeWarehouseId: string;
+    bGradeWarehouseId: string;
+    productionDate?: string;
+    notes?: string;
+    autoApproveInvoice?: boolean;
+  }) => fetchApi<ProductionBatch>('/production/create', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  refreshBGrade: (data: {
+    batchId: string;
+    batchItemId?: string;
+    qtyRefreshed: number;
+    refreshRate?: number;
+    notes?: string;
+  }) => fetchApi<{ success: boolean; message: string; refreshedQty: number; remainingBGrade: number }>('/production/refresh-b-grade', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  getBatches: (params?: { supplierId?: string; articleItemId?: string; search?: string; page?: number; limit?: number }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.supplierId) searchParams.append('supplierId', params.supplierId);
+    if (params?.articleItemId) searchParams.append('articleItemId', params.articleItemId);
+    if (params?.search) searchParams.append('search', params.search);
+    if (params?.page) searchParams.append('page', params.page.toString());
+    if (params?.limit) searchParams.append('limit', params.limit.toString());
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return fetchApi<{ batches: ProductionBatch[]; total: number; page: number; limit: number }>(`/production/batches${query}`);
+  },
+  getBatchById: (id: string) => fetchApi<ProductionBatch>(`/production/batches/${id}`),
+  getBGradeInventory: () => fetchApi<BGradeInventoryItem[]>('/production/b-grade-inventory'),
+  getDashboardStats: () => fetchApi<ProductionStats>('/production/dashboard-stats'),
 };

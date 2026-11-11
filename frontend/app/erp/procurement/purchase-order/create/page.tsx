@@ -123,7 +123,7 @@ export default function CreateDirectPurchaseOrder() {
             toast.error('Select vendor for this item first');
             return;
         }
-        const existingIndex = orderItems.findIndex(i => i.itemId === (item.itemId || item.id));
+        const existingIndex = orderItems.findIndex(i => i.itemId === (item.id || item.itemId));
         if (existingIndex >= 0) {
             const updated = [...orderItems];
             updated[existingIndex].quantity += quantity;
@@ -133,7 +133,7 @@ export default function CreateDirectPurchaseOrder() {
         } else {
             const unitPrice = price || resolveItemAvgCost(item);
             setOrderItems(prev => [...prev, {
-                itemId: item.itemId || item.id,
+                itemId: item.id || item.itemId,
                 itemName: item.sku,
                 description: item.description,
                 quantity,

@@ -11,16 +11,20 @@ export class InventoryService {
     private activityLogs: ActivityLogsService,
   ) { }
 
-  async getStockLevel(itemId: string, warehouseId: string): Promise<any> {
+  async getStockLevel(itemId: string, warehouseId: string, locationId?: string): Promise<any> {
     // Use the stock ledger (immutable source of truth) to calculate the net
     // available quantity. This accounts for ALL movements — purchases,
     // fabric vendor issues, returns, adjustments, etc.
+    const where: any = {
+      itemId,
+      warehouseId,
+    };
+    if (locationId) {
+      where.locationId = locationId;
+    }
+
     const ledger = await this.prisma.stockLedger.aggregate({
-      where: {
-        itemId,
-        warehouseId,
-        locationId: null, // warehouse-level stock only
-      },
+      where,
       _sum: {
         qty: true,
       },
@@ -36,6 +40,77 @@ export class InventoryService {
   }
 
   async getDetailedStock(itemId: string): Promise<any[]> {
+    // 1. Query StockLedger (the immutable source of truth for all warehouse & location inventory)
+    const ledgerGroups = await this.prisma.stockLedger.groupBy({
+      by: ['warehouseId', 'locationId'],
+      where: { itemId },
+      _sum: {
+        qty: true,
+      },
+    });
+
+    if (ledgerGroups && ledgerGroups.length > 0) {
+      const warehouseIds = [...new Set(ledgerGroups.map((g) => g.warehouseId).filter(Boolean))] as string[];
+      const locationIds = [...new Set(ledgerGroups.map((g) => g.locationId).filter(Boolean))] as string[];
+
+      const [warehouses, locations] = await Promise.all([
+        warehouseIds.length > 0
+          ? this.prisma.warehouse.findMany({
+              where: { id: { in: warehouseIds } },
+              select: { id: true, name: true, code: true },
+            })
+          : [],
+        locationIds.length > 0
+          ? this.prisma.location.findMany({
+              where: { id: { in: locationIds } },
+              select: { id: true, name: true, code: true, warehouseId: true },
+            })
+          : [],
+      ]);
+
+      const whMap = new Map<string, { id: string; name: string; code: string }>();
+      for (const w of warehouses) {
+        whMap.set(w.id, w);
+      }
+
+      const locMap = new Map<string, { id: string; name: string; code: string; warehouseId: string | null }>();
+      for (const l of locations) {
+        locMap.set(l.id, l);
+      }
+
+      return ledgerGroups.map((g, idx) => {
+        const qty = Number(g._sum.qty || 0);
+        const wh = g.warehouseId ? whMap.get(g.warehouseId) : null;
+        let locationData: any = null;
+
+        if (g.locationId) {
+          const loc = locMap.get(g.locationId);
+          if (loc) {
+            const parentWh = loc.warehouseId ? whMap.get(loc.warehouseId) : wh;
+            locationData = {
+              id: loc.id,
+              name: loc.name,
+              code: loc.code,
+              warehouse: parentWh || wh || { name: 'Warehouse' },
+            };
+          }
+        }
+
+        return {
+          id: `ledger-${g.warehouseId || 'wh'}-${g.locationId || 'loc'}-${idx}`,
+          warehouseId: g.warehouseId,
+          locationId: g.locationId,
+          itemId,
+          quantity: qty,
+          status: 'AVAILABLE',
+          location: locationData || {
+            warehouse: wh || { name: 'Warehouse' },
+          },
+        };
+      });
+    }
+
+    // 2. Fallback to legacy InventoryItem table if item has no ledger movements yet
     const items = await this.prisma.inventoryItem.findMany({
       where: { itemId, status: 'AVAILABLE' },
     });
@@ -44,7 +119,7 @@ export class InventoryService {
       items.map(async (item) => {
         const warehouse = await this.prisma.warehouse.findUnique({
           where: { id: item.warehouseId },
-          select: { id: true, name: true },
+          select: { id: true, name: true, code: true },
         });
 
         let locationData: any = {};
@@ -52,7 +127,7 @@ export class InventoryService {
           // Check Master Location (Shop/Outlet)
           const masterLoc = await this.prisma.location.findUnique({
             where: { id: item.locationId },
-            select: { id: true, name: true },
+            select: { id: true, name: true, code: true },
           });
           if (masterLoc) locationData = masterLoc;
         }
