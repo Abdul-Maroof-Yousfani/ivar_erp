@@ -48,7 +48,13 @@ export interface CourierifyOrderLineItem {
   title: string;
   variantTitle?: string;
   sku: string;
+  barcode?: string;
+  barCode?: string;
+  item_barcode?: string;
+  variant_barcode?: string;
   quantity: number;
+  unitPrice?: number;
+  price?: number;
 }
 
 export interface CourierifyOrderItems {

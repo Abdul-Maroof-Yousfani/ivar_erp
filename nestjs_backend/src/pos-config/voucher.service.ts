@@ -630,7 +630,7 @@ export class VoucherService {
                 const nextType = isCorporate ? 'CORPORATE' : 'CREDIT';
                 const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
                 const newCode = `${nextType === 'CORPORATE' ? 'CRP' : 'CRD'}-${rand}`;
-                const expiresAt = voucher.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+                const expiresAt = isCorporate ? (voucher.expiresAt || undefined) : undefined; // Credit vouchers do not expire
 
                 const creditVoucher = await tx.voucher.create({
                     data: {
@@ -647,7 +647,7 @@ export class VoucherService {
                         issuedByLocationId: locationId,
                         issuedByUserId: ctx?.userId,
                         sourceOrderId: orderId,
-                        expiresAt,
+                        expiresAt: expiresAt || null,
                         isActive: true,
                         isRedeemed: false,
                         transactions: {
