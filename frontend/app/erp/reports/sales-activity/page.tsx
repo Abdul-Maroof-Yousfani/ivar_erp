@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
@@ -74,7 +75,7 @@ export default function ERPSalesActivityReportPage() {
     const [search, setSearch] = useState("");
     const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
     const [activityType, setActivityType] = useState<string>("all");
-    const [locationId, setLocationId] = useState<string>("all");
+    const [locationId, setLocationId] = useState<string[]>([]);
     const [merchantId, setMerchantId] = useState<string>("all");
     const [paymentMethod, setPaymentMethod] = useState<string>("all");
     const [posId, setPosId] = useState<string>("");
@@ -132,7 +133,7 @@ export default function ERPSalesActivityReportPage() {
             startDate: dateRange.from?.toISOString(),
             endDate: dateRange.to?.toISOString(),
             activityType: activityType === "all" ? undefined : activityType,
-            locationId: locationId === "all" ? undefined : locationId,
+            locationId: locationId.length > 0 ? locationId.join(",") : undefined,
             merchantId: merchantId === "all" ? undefined : merchantId,
             paymentMethod: paymentMethod === "all" ? undefined : paymentMethod,
             posId: posId.trim() || undefined,
@@ -195,7 +196,7 @@ export default function ERPSalesActivityReportPage() {
         setSearch("");
         setDateRange({ from: undefined, to: undefined });
         setActivityType("all");
-        setLocationId("all");
+        setLocationId([]);
         setMerchantId("all");
         setPaymentMethod("all");
         setPosId("");
@@ -211,7 +212,7 @@ export default function ERPSalesActivityReportPage() {
                 startDate: dateRange.from?.toISOString(),
                 endDate: dateRange.to?.toISOString(),
                 activityType: activityType === "all" ? undefined : activityType,
-                locationId: locationId === "all" ? undefined : locationId,
+                locationId: locationId.length > 0 ? locationId.join(",") : undefined,
                 merchantId: merchantId === "all" ? undefined : merchantId,
                 paymentMethod: paymentMethod === "all" ? undefined : paymentMethod,
                 posId: posId.trim() || undefined,
@@ -508,22 +509,19 @@ export default function ERPSalesActivityReportPage() {
                     {/* Store Outlet Location Selector */}
                     <div className="space-y-1 col-span-1">
                         <Label className="text-xs font-semibold">Store Outlet</Label>
-                        <Select
+                        <MultiSelect
+                            options={locationsList.map((loc: any) => ({
+                                value: loc.id,
+                                label: `${loc.name} (${loc.code})`,
+                            }))}
                             value={locationId}
-                            onValueChange={v => { setLocationId(v); setCurrentPage(1); }}
-                        >
-                            <SelectTrigger className="h-9 text-xs">
-                                <SelectValue placeholder="All Outlets" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Outlets (Global)</SelectItem>
-                                {locationsList.map((loc: any) => (
-                                    <SelectItem key={loc.id} value={loc.id}>
-                                        {loc.name} ({loc.code})
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                            onValueChange={(vals) => { setLocationId(vals); setCurrentPage(1); }}
+                            placeholder="All Outlets (Global)"
+                            searchPlaceholder="Search outlet..."
+                            emptyMessage="No outlets found"
+                            icon={<Store className="h-3 w-3" />}
+                            className="h-9 text-xs"
+                        />
                     </div>
 
                     {/* Merchant Bank Machine Selector */}
@@ -602,7 +600,7 @@ export default function ERPSalesActivityReportPage() {
                             </Button>
                         </div>
 
-                        {(search || dateRange.from || dateRange.to || activityType !== "all" || locationId !== "all" || merchantId !== "all" || paymentMethod !== "all") && (
+                        {(search || dateRange.from || dateRange.to || activityType !== "all" || locationId.length > 0 || merchantId !== "all" || paymentMethod !== "all") && (
                             <Button
                                 variant="ghost"
                                 size="sm"

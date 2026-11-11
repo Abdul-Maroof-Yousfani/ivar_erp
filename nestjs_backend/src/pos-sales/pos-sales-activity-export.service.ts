@@ -18,7 +18,7 @@ export interface QueuePosSalesActivityExportOptions {
     merchantId?: string;
     paymentMethod?: string;
   };
-  locationId?: string;
+  locationId?: string | string[];
   merchantId?: string;
   paymentMethod?: string;
 }

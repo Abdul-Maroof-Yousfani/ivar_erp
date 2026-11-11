@@ -41,7 +41,12 @@ export class PosSalesActivityExportController {
     @Query('paymentMethod') paymentMethod?: string,
   ) {
     // Resolve effective location and POS filters
-    let effectiveLocationId = locationId && locationId !== 'all' ? locationId : undefined;
+    // Parse locationId — may be a single ID or comma-separated list of IDs
+    let effectiveLocationId: string | string[] | undefined = undefined;
+    if (locationId && locationId !== 'all') {
+      const ids = locationId.split(',').map(id => id.trim()).filter(Boolean);
+      effectiveLocationId = ids.length === 1 ? ids[0] : ids.length > 1 ? ids : undefined;
+    }
     let effectivePosId = posId && posId !== 'all' ? posId : undefined;
 
     // Only restrict to user's location if it's explicitly a terminal/cashier user with no all-locations permission and no explicit location was provided
