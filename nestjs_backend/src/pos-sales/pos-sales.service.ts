@@ -2640,7 +2640,7 @@ export class PosSalesService implements OnModuleInit {
       merchantId?: string;
       paymentMethod?: string;
     },
-    locationId?: string,
+    locationId?: string | string[],
   ) {
     const skip = (page - 1) * limit;
     const where: any = {};
@@ -2652,7 +2652,13 @@ export class PosSalesService implements OnModuleInit {
         where.posId = posId;
       }
     }
-    if (locationId) where.locationId = locationId;
+    if (locationId) {
+      if (Array.isArray(locationId)) {
+        where.locationId = { in: locationId };
+      } else {
+        where.locationId = locationId;
+      }
+    }
 
     if (filters?.merchantId) {
       where.merchantId = filters.merchantId;
@@ -2760,7 +2766,7 @@ export class PosSalesService implements OnModuleInit {
         createdAt: voucherRangeQuery,
         isDeleted: false,
       };
-      if (locationId) voucherWhereRange.issuedByLocationId = locationId;
+      if (locationId) voucherWhereRange.issuedByLocationId = Array.isArray(locationId) ? { in: locationId } : locationId;
 
       const vouchersInRange = await this.prisma.voucher.findMany({
         where: voucherWhereRange,
@@ -3007,7 +3013,7 @@ export class PosSalesService implements OnModuleInit {
         voucherType: { in: ['EXCHANGE', 'REFUND', 'CREDIT'] },
         createdAt: vDateQuery,
       };
-      if (locationId) vLocWhere.issuedByLocationId = locationId;
+      if (locationId) vLocWhere.issuedByLocationId = Array.isArray(locationId) ? { in: locationId } : locationId;
       ORs.push(vLocWhere);
     }
     if (ORs.length > 0) {

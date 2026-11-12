@@ -23,7 +23,7 @@ export interface PosSalesActivityExportJobData {
     merchantId?: string;
     paymentMethod?: string;
   };
-  locationId?: string;
+  locationId?: string | string[];
   merchantId?: string;
   paymentMethod?: string;
 }
@@ -175,7 +175,9 @@ export class PosSalesActivityExportProcessor {
           where.posId = posId;
         }
       }
-      if (locationId && locationId !== 'all') where.locationId = locationId;
+      if (locationId && locationId !== 'all') {
+        where.locationId = Array.isArray(locationId) ? { in: locationId } : locationId;
+      }
       if (effectiveMerchantId && effectiveMerchantId !== 'all') where.merchantId = effectiveMerchantId;
       if (effectivePaymentMethod && effectivePaymentMethod !== 'all') {
         if (effectivePaymentMethod.toLowerCase() === 'split') {
