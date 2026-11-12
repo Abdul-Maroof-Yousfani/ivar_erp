@@ -37,6 +37,8 @@ export interface AutocompleteProps {
   className?: string
   isLoading?: boolean
   onCreate?: (value: string) => void
+  allowClear?: boolean
+  popoverClassName?: string
 }
 
 // Marquee text — infinite loop on hover, only when content overflows
@@ -98,6 +100,8 @@ export function Autocomplete({
   className,
   isLoading = false,
   onCreate,
+  allowClear = false,
+  popoverClassName,
 }: AutocompleteProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
@@ -176,7 +180,7 @@ export function Autocomplete({
       </PopoverTrigger>
 
       <PopoverContent
-        className="w-[var(--radix-popover-trigger-width)] p-0"
+        className={cn("w-[var(--radix-popover-trigger-width)] min-w-[280px] p-0 z-[100]", popoverClassName)}
         align="start"
         sideOffset={4}
       >
@@ -219,7 +223,7 @@ export function Autocomplete({
                             key={option.value}
                             value={searchValue}
                             onSelect={() => {
-                              onValueChange?.(isSelected ? "" : option.value)
+                              onValueChange?.(allowClear && isSelected ? "" : option.value)
                               setOpen(false)
                             }}
                             className={cn(

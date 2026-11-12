@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +27,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableFooter,
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import {
@@ -45,18 +46,12 @@ import {
 import {
   Calculator,
   Layers,
-  ArrowRight,
-  TrendingUp,
   FileCheck2,
   AlertCircle,
-  PackageCheck,
   CheckCircle2,
   Sparkles,
   Scissors,
   Building2,
-  Boxes,
-  ShieldAlert,
-  Package,
   Plus,
   Trash2,
   RotateCcw,
@@ -158,33 +153,35 @@ export function ProductionEntryForm({
   const [loadingStock, setLoadingStock] = useState(false);
 
   // Apply tracker data helper
-  const applyTrackerData = (
-    tracker: FabricVendorTracker,
-    fabricsList?: MasterItem[],
-  ) => {
-    setTrackerId(tracker.id);
-    if (tracker.supplierId) setSupplierId(tracker.supplierId);
-    if (tracker.itemId) setFabricItemId(tracker.itemId);
-    if (tracker.warehouseId) setFabricWarehouseId(tracker.warehouseId);
+  const applyTrackerData = useCallback(
+    (tracker: FabricVendorTracker, fabricsList?: MasterItem[]) => {
+      setTrackerId(tracker.id);
+      if (tracker.supplierId) setSupplierId(tracker.supplierId);
+      if (tracker.itemId) setFabricItemId(tracker.itemId);
+      if (tracker.warehouseId) setFabricWarehouseId(tracker.warehouseId);
 
-    const iss = Number(tracker.qtyIssued || 0);
-    const usd = Number(tracker.qtyUsed || 0);
-    const ret = Number(tracker.qtyReturned || 0);
-    const shrt = Number(tracker.qtyShortage || 0);
-    const remaining = Math.max(0, iss - usd - ret - shrt);
-    setQtyFabricUsed(remaining);
+      const iss = Number(tracker.qtyIssued || 0);
+      const usd = Number(tracker.qtyUsed || 0);
+      const ret = Number(tracker.qtyReturned || 0);
+      const shrt = Number(tracker.qtyShortage || 0);
+      const remaining = Math.max(0, iss - usd - ret - shrt);
+      setQtyFabricUsed(remaining);
 
-    const itemObj = tracker.item as any;
-    const itemRate = Number(itemObj?.unitCost || itemObj?.unitPrice || 0);
-    if (itemRate > 0) {
-      setFabricRate(itemRate);
-    } else {
-      const fl = fabricsList || fabricItems;
-      const match = fl.find((f) => f.id === tracker.itemId);
-      const matchRate = Number(match?.unitCost || match?.unitPrice || 0);
-      if (matchRate > 0) setFabricRate(matchRate);
-    }
-  };
+      const itemObj = tracker.item as
+        | (MasterItem & { unitCost?: number; unitPrice?: number })
+        | undefined;
+      const itemRate = Number(itemObj?.unitCost || itemObj?.unitPrice || 0);
+      if (itemRate > 0) {
+        setFabricRate(itemRate);
+      } else {
+        const fl = fabricsList || fabricItems;
+        const match = fl.find((f) => f.id === tracker.itemId);
+        const matchRate = Number(match?.unitCost || match?.unitPrice || 0);
+        if (matchRate > 0) setFabricRate(matchRate);
+      }
+    },
+    [fabricItems],
+  );
 
   // Handle tracker selection change
   const handleTrackerChange = (selectedId: string) => {
@@ -205,99 +202,129 @@ export function ProductionEntryForm({
 
   // Fetch options on mount
   useEffect(() => {
-    loadOptions();
-  }, []);
+    let ignore = false;
+    const fetchOptions = async () => {
+      try {
+        const [
+          suppliersRes,
+          fabricsRes,
+          allItemsRes,
+          warehousesRes,
+          trackersRes,
+        ] = await Promise.all([
+          supplierApi.getAll(),
+          itemApi.getAll({ itemType: "RAW_FABRIC" }),
+          itemApi.getAll(),
+          warehouseApi.getAll(),
+          fabricVendorTrackerApi.getAll().catch(() => []),
+        ]);
+
+        if (ignore) return;
+        const supps = suppliersRes.data || [];
+        const fabrics = fabricsRes.data || [];
+        const allItems = allItemsRes.data || [];
+        const whs = warehousesRes || [];
+        const trks = Array.isArray(trackersRes) ? trackersRes : [];
+
+        setSuppliers(supps);
+        setFabricItems(fabrics);
+        const garments = allItems.filter((i) => i.itemType !== "RAW_FABRIC");
+        setArticleItems(garments.length > 0 ? garments : allItems);
+        setWarehouses(whs);
+        setTrackers(trks);
+
+        // Pre-select dedicated B-Grade warehouse as per IVAR rules
+        const bWh = whs.find(
+          (w) =>
+            w.type === "B_GRADE" ||
+            w.code === "WH-B-GRADE" ||
+            w.name.toLowerCase().includes("b grade"),
+        );
+        if (bWh) setBGradeWarehouseId(bWh.id);
+
+        // Pre-select primary finished goods warehouse (non B-Grade)
+        const primaryAWh = whs.find(
+          (w) => w.type !== "B_GRADE" && w.code !== "WH-B-GRADE",
+        );
+        if (primaryAWh) setAGradeWarehouseId((prev) => prev || primaryAWh.id);
+
+        // If initialTrackerId was provided, auto-apply it
+        if (initialTrackerId) {
+          const found = trks.find((t) => t.id === initialTrackerId);
+          if (found) {
+            applyTrackerData(found, fabrics);
+            setIsFieldsLocked(true);
+          }
+        }
+      } catch (error) {
+        if (!ignore) {
+          console.error("Failed to load options:", error);
+          toast.error("Failed to load dropdown options");
+        }
+      } finally {
+        if (!ignore) {
+          setLoadingOptions(false);
+        }
+      }
+    };
+
+    void fetchOptions();
+    return () => {
+      ignore = true;
+    };
+  }, [initialTrackerId, applyTrackerData]);
 
   // React to initialTrackerId changes
   useEffect(() => {
     if (initialTrackerId && trackers.length > 0) {
       const found = trackers.find((t) => t.id === initialTrackerId);
       if (found) {
-        applyTrackerData(found);
-        setIsFieldsLocked(true);
-      }
-    }
-  }, [initialTrackerId, trackers]);
-
-  const loadOptions = async () => {
-    setLoadingOptions(true);
-    try {
-      const [
-        suppliersRes,
-        fabricsRes,
-        allItemsRes,
-        warehousesRes,
-        trackersRes,
-      ] = await Promise.all([
-        supplierApi.getAll(),
-        itemApi.getAll({ itemType: "RAW_FABRIC" }),
-        itemApi.getAll(),
-        warehouseApi.getAll(),
-        fabricVendorTrackerApi.getAll().catch(() => []),
-      ]);
-
-      const supps = suppliersRes.data || [];
-      const fabrics = fabricsRes.data || [];
-      const allItems = allItemsRes.data || [];
-      const whs = warehousesRes || [];
-      const trks = Array.isArray(trackersRes) ? trackersRes : [];
-
-      setSuppliers(supps);
-      setFabricItems(fabrics);
-      const garments = allItems.filter((i) => i.itemType !== "RAW_FABRIC");
-      setArticleItems(garments.length > 0 ? garments : allItems);
-      setWarehouses(whs);
-      setTrackers(trks);
-
-      // Pre-select dedicated B-Grade warehouse as per IVAR rules
-      const bWh = whs.find(
-        (w) =>
-          w.type === "B_GRADE" ||
-          w.code === "WH-B-GRADE" ||
-          w.name.toLowerCase().includes("b grade"),
-      );
-      if (bWh) setBGradeWarehouseId(bWh.id);
-
-      // Pre-select primary finished goods warehouse (non B-Grade)
-      const primaryAWh = whs.find(
-        (w) => w.type !== "B_GRADE" && w.code !== "WH-B-GRADE",
-      );
-      if (primaryAWh) setAGradeWarehouseId((prev) => prev || primaryAWh.id);
-
-      // If initialTrackerId was provided, auto-apply it
-      if (initialTrackerId) {
-        const found = trks.find((t) => t.id === initialTrackerId);
-        if (found) {
-          applyTrackerData(found, fabrics);
+        queueMicrotask(() => {
+          applyTrackerData(found);
           setIsFieldsLocked(true);
-        }
+        });
       }
-    } catch (error) {
-      console.error("Failed to load options:", error);
-      toast.error("Failed to load dropdown options");
-    } finally {
-      setLoadingOptions(false);
     }
-  };
+  }, [initialTrackerId, trackers, applyTrackerData]);
 
   // Fetch available stock whenever fabricItemId or fabricWarehouseId changes
   useEffect(() => {
+    let isCancelled = false;
     if (fabricItemId && fabricWarehouseId) {
-      setLoadingStock(true);
-      setAvailableStock(null);
+      queueMicrotask(() => {
+        if (!isCancelled) {
+          setLoadingStock(true);
+          setAvailableStock(null);
+        }
+      });
       inventoryApi
         .getStockLevel(fabricItemId, fabricWarehouseId)
         .then((res) => {
-          setAvailableStock(Number(res.totalQuantity) || 0);
+          if (!isCancelled) {
+            setAvailableStock(Number(res.totalQuantity) || 0);
+          }
         })
         .catch((err) => {
           console.error("Failed to fetch fabric stock level:", err);
-          setAvailableStock(null);
+          if (!isCancelled) {
+            setAvailableStock(null);
+          }
         })
-        .finally(() => setLoadingStock(false));
+        .finally(() => {
+          if (!isCancelled) {
+            setLoadingStock(false);
+          }
+        });
     } else {
-      setAvailableStock(null);
+      queueMicrotask(() => {
+        if (!isCancelled) {
+          setAvailableStock(null);
+        }
+      });
     }
+    return () => {
+      isCancelled = true;
+    };
   }, [fabricItemId, fabricWarehouseId]);
 
   // Handle Fabric change
@@ -368,7 +395,7 @@ export function ProductionEntryForm({
   const handleLineFieldChange = (
     lineId: string,
     field: "qtyTotalReceived" | "qtyBGrade" | "cmtRate" | "qtyFabricUsed",
-    val: any,
+    val: string | number,
   ) => {
     setLines((prev) => {
       const updated = prev.map((l) =>
@@ -738,9 +765,15 @@ export function ProductionEntryForm({
       );
       onSuccess();
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to create production batch:", err);
-      toast.error(err.message || "Failed to record production batch");
+      const errMsg =
+        err instanceof Error
+          ? err.message
+          : typeof err === "object" && err !== null && "message" in err
+            ? String((err as { message: unknown }).message)
+            : "Failed to record production batch";
+      toast.error(errMsg);
     } finally {
       setSubmitting(false);
     }
@@ -795,14 +828,11 @@ export function ProductionEntryForm({
         </div>
       </div>
 
-      {/* ── Main Form Scrollable Workstation ── */}
+      {/* ── Main Form Scrollable Workstation (Full Width) ── */}
       <form
         onSubmit={handleSubmit}
-        className="flex-1 overflow-y-auto px-6 py-5"
+        className="flex-1 overflow-y-auto px-6 py-5 space-y-5"
       >
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          {/* ════════════════ LEFT COLUMN (Inputs & Grid - 8 cols) ════════════════ */}
-          <div className="lg:col-span-8 space-y-5">
             {/* ── Stage 1: Fabric & Vendor Allocation ── */}
             <Card className="border border-border/80 shadow-2xs">
               <CardHeader className="py-3 px-4 border-b bg-muted/15 flex flex-row items-center justify-between">
@@ -1010,11 +1040,15 @@ export function ProductionEntryForm({
                         Raw Fabric Item{" "}
                         <span className="text-destructive">*</span>
                       </Label>
-                      {availableStock !== null && (
+                      {loadingStock ? (
+                        <span className="text-[10px] font-mono text-muted-foreground animate-pulse">
+                          Checking stock...
+                        </span>
+                      ) : availableStock !== null ? (
                         <span className="text-[10px] font-mono text-muted-foreground">
                           WH Stock: {availableStock.toLocaleString()}m
                         </span>
-                      )}
+                      ) : null}
                     </div>
                     <Select
                       value={fabricItemId}
@@ -1209,41 +1243,48 @@ export function ProductionEntryForm({
                 </div>
 
                 {/* Receiving Table Grid */}
+                {/* Receiving & Costing Table Grid (Full Width) */}
                 <div className="overflow-x-auto min-w-full">
-                  <Table className="text-xs min-w-[980px] w-full">
+                  <Table className="text-xs min-w-[1100px] w-full">
                     <TableHeader className="bg-muted/40">
                       <TableRow>
-                        <TableHead className="min-w-[240px] font-bold">
+                        <TableHead className="min-w-[220px] font-bold">
                           Finished Article & Size (Database)
                         </TableHead>
                         <TableHead
-                          className="w-[110px] min-w-[110px] font-bold text-center text-primary whitespace-nowrap"
+                          className="w-[100px] min-w-[100px] font-bold text-center text-primary whitespace-nowrap"
                           title="Fabric meters consumed for this item"
                         >
                           Fabric (m)
                         </TableHead>
                         <TableHead
-                          className="w-[95px] min-w-[95px] font-bold text-center text-primary whitespace-nowrap"
+                          className="w-[90px] min-w-[90px] font-bold text-center text-primary whitespace-nowrap"
                           title="Consumption = Fabric ÷ Total Pcs"
                         >
                           CONS (m/pc)
                         </TableHead>
-                        <TableHead className="w-[105px] min-w-[105px] font-bold text-center whitespace-nowrap">
+                        <TableHead className="w-[95px] min-w-[95px] font-bold text-center whitespace-nowrap">
                           Total (A + B)
                         </TableHead>
-                        <TableHead className="w-[100px] min-w-[100px] font-bold text-center text-amber-700 dark:text-amber-400 whitespace-nowrap">
-                          B-Grade (Defect)
+                        <TableHead className="w-[105px] min-w-[105px] font-bold text-center text-amber-700 dark:text-amber-400 whitespace-nowrap">
+                          Defect (B)
                         </TableHead>
-                        <TableHead className="w-[100px] min-w-[100px] font-bold text-center text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
-                          A-Grade (Sound)
+                        <TableHead className="w-[95px] min-w-[95px] font-bold text-center text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
+                          Sound (A)
                         </TableHead>
-                        <TableHead className="w-[105px] min-w-[105px] font-bold text-right whitespace-nowrap">
+                        <TableHead className="w-[100px] min-w-[100px] font-bold text-right whitespace-nowrap">
                           Vendor CMT
+                        </TableHead>
+                        <TableHead className="w-[105px] min-w-[105px] font-bold text-right text-muted-foreground whitespace-nowrap">
+                          Initial Net
                         </TableHead>
                         <TableHead className="w-[125px] min-w-[125px] font-bold text-right text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
                           Recalc A-Cost
                         </TableHead>
-                        <TableHead className="w-[45px] min-w-[45px] text-center"></TableHead>
+                        <TableHead className="w-[115px] min-w-[115px] font-bold text-right text-foreground whitespace-nowrap pr-3">
+                          Total Line Bill
+                        </TableHead>
+                        <TableHead className="w-[40px] min-w-[40px] text-center"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1255,8 +1296,8 @@ export function ProductionEntryForm({
 
                         return (
                           <TableRow key={line.id} className="hover:bg-muted/20">
-                            {/* Article Selector with Size display */}
-                            <TableCell className="p-2 min-w-[240px]">
+                            {/* 1. Article Selector with Size display */}
+                            <TableCell className="p-2 min-w-[220px]">
                               <Select
                                 value={line.articleItemId}
                                 onValueChange={(val) =>
@@ -1301,8 +1342,8 @@ export function ProductionEntryForm({
                               )}
                             </TableCell>
 
-                            {/* Fabric Used for this Item (Meters) */}
-                            <TableCell className="p-2 w-[110px] min-w-[110px] text-center">
+                            {/* 2. Fabric Used for this Item (Meters) */}
+                            <TableCell className="p-2 w-[100px] min-w-[100px] text-center">
                               <Input
                                 type="number"
                                 min="0"
@@ -1320,17 +1361,17 @@ export function ProductionEntryForm({
                                     e.target.value,
                                   )
                                 }
-                                className="h-8 w-full min-w-[95px] px-2 text-xs tabular-nums text-center font-bold bg-background border-primary/40 focus:border-primary shadow-2xs"
+                                className="h-8 w-full min-w-[85px] px-2 text-xs tabular-nums text-center font-bold bg-background border-primary/40 focus:border-primary shadow-2xs"
                                 title="Fabric meters consumed for this specific article"
                               />
                             </TableCell>
 
-                            {/* Per-Item Live CONS */}
-                            <TableCell className="p-2 w-[95px] min-w-[95px] text-center">
+                            {/* 3. Per-Item Live CONS */}
+                            <TableCell className="p-2 w-[90px] min-w-[90px] text-center">
                               {itemCost && itemCost.qtyTotalReceived > 0 ? (
                                 <Badge
                                   variant="outline"
-                                  className="text-[11px] font-semibold tabular-nums px-2 py-0.5 bg-primary/10 text-primary border-primary/20"
+                                  className="text-[11px] font-semibold tabular-nums px-1.5 py-0.5 bg-primary/10 text-primary border-primary/20"
                                 >
                                   {itemCost.consumption.toFixed(4)}
                                 </Badge>
@@ -1341,8 +1382,8 @@ export function ProductionEntryForm({
                               )}
                             </TableCell>
 
-                            {/* Total Pieces (A + B) */}
-                            <TableCell className="p-2 w-[105px] min-w-[105px] text-center">
+                            {/* 4. Total Pieces (A + B) */}
+                            <TableCell className="p-2 w-[95px] min-w-[95px] text-center">
                               <Input
                                 type="number"
                                 min="1"
@@ -1355,13 +1396,13 @@ export function ProductionEntryForm({
                                     e.target.value,
                                   )
                                 }
-                                className="h-8 w-full min-w-[90px] px-2 text-xs tabular-nums text-center font-bold bg-background shadow-2xs"
+                                className="h-8 w-full min-w-[80px] px-2 text-xs tabular-nums text-center font-bold bg-background shadow-2xs"
                                 required
                               />
                             </TableCell>
 
-                            {/* B-Grade Defective Pieces */}
-                            <TableCell className="p-2 w-[100px] min-w-[100px] text-center">
+                            {/* 5. B-Grade Defective Pieces */}
+                            <TableCell className="p-2 w-[105px] min-w-[105px] text-center">
                               <Input
                                 type="number"
                                 min="0"
@@ -1374,31 +1415,37 @@ export function ProductionEntryForm({
                                     e.target.value,
                                   )
                                 }
-                                className="h-8 w-full min-w-[85px] px-2 text-xs tabular-nums text-center font-semibold text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/30 focus:border-amber-500 shadow-2xs"
+                                className="h-8 w-full min-w-[80px] px-2 text-xs tabular-nums text-center font-semibold text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/30 focus:border-amber-500 shadow-2xs"
                               />
                               {qTot > 0 && qB > 0 && (
-                                <span
-                                  className={`text-[10px] tabular-nums font-semibold block mt-0.5 ${
-                                    qB / qTot > 0.3
-                                      ? "text-destructive font-bold"
-                                      : "text-amber-600 dark:text-amber-400"
-                                  }`}
-                                  title={`${((qB / qTot) * 100).toFixed(1)}% defective pieces absorb loss into sound A-stock`}
-                                >
-                                  {((qB / qTot) * 100).toFixed(0)}% Defect
-                                </span>
+                                <div className="mt-0.5 leading-none">
+                                  <span
+                                    className={`text-[10px] tabular-nums font-semibold ${
+                                      qB / qTot > 0.3
+                                        ? "text-destructive font-bold"
+                                        : "text-amber-600 dark:text-amber-400"
+                                    }`}
+                                  >
+                                    {((qB / qTot) * 100).toFixed(0)}% Defect
+                                  </span>
+                                  {itemCost && (
+                                    <span className="text-[10px] text-muted-foreground block font-mono">
+                                      @ Rs {itemCost.bUnitValue.toFixed(2)}
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </TableCell>
 
-                            {/* A-Grade Sound Pieces (Auto calculated) */}
-                            <TableCell className="p-2 w-[100px] min-w-[100px] text-center font-bold">
+                            {/* 6. A-Grade Sound Pieces (Auto calculated) */}
+                            <TableCell className="p-2 w-[95px] min-w-[95px] text-center font-bold">
                               <Badge className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 tabular-nums font-semibold text-xs px-2 py-0.5 whitespace-nowrap">
                                 {qTot > 0 ? `${qA.toLocaleString()} pcs` : "—"}
                               </Badge>
                             </TableCell>
 
-                            {/* Vendor CMT Stitching Rate */}
-                            <TableCell className="p-2 w-[105px] min-w-[105px] text-right">
+                            {/* 7. Vendor CMT Stitching Rate */}
+                            <TableCell className="p-2 w-[100px] min-w-[100px] text-right">
                               <Input
                                 type="number"
                                 step="0.01"
@@ -1412,16 +1459,32 @@ export function ProductionEntryForm({
                                     e.target.value,
                                   )
                                 }
-                                className="h-8 w-full min-w-[90px] px-2 text-xs tabular-nums text-right font-medium bg-background shadow-2xs"
+                                className="h-8 w-full min-w-[80px] px-2 text-xs tabular-nums text-right font-medium bg-background shadow-2xs"
                                 required
                               />
                             </TableCell>
 
-                            {/* Live Row Recalculated Cost */}
+                            {/* 8. Initial Net Cost */}
+                            <TableCell className="p-2 w-[105px] min-w-[105px] text-right">
+                              {itemCost && itemCost.qtyTotalReceived > 0 ? (
+                                <div className="flex flex-col items-end">
+                                  <span className="tabular-nums font-semibold text-foreground text-xs">
+                                    Rs {itemCost.initialNetCost.toFixed(2)}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground tabular-nums">
+                                    Fab: Rs {itemCost.fabricCostPerPc.toFixed(2)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground text-[11px]">—</span>
+                              )}
+                            </TableCell>
+
+                            {/* 9. Live Row Recalculated Cost */}
                             <TableCell className="p-2 w-[125px] min-w-[125px] text-right">
                               {itemCost && itemCost.qtyAGrade > 0 ? (
                                 <div className="flex flex-col items-end">
-                                  <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 tabular-nums text-xs font-bold py-0.5 whitespace-nowrap">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 tabular-nums whitespace-nowrap">
                                     Rs{" "}
                                     {itemCost.aFinalUnitCost.toLocaleString(
                                       undefined,
@@ -1430,10 +1493,12 @@ export function ProductionEntryForm({
                                         maximumFractionDigits: 2,
                                       },
                                     )}
-                                  </Badge>
-                                  <span className="text-[10px] text-muted-foreground mt-0.5 tabular-nums whitespace-nowrap">
-                                    Net: Rs {itemCost.initialNetCost.toFixed(2)}
                                   </span>
+                                  {qB > 0 && (
+                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5 tabular-nums whitespace-nowrap">
+                                      +Rs {(itemCost.aFinalUnitCost - itemCost.initialNetCost).toFixed(2)} absorbed
+                                    </span>
+                                  )}
                                 </div>
                               ) : (
                                 <span className="text-muted-foreground text-[11px]">
@@ -1442,8 +1507,28 @@ export function ProductionEntryForm({
                               )}
                             </TableCell>
 
-                            {/* Remove row */}
-                            <TableCell className="p-2 w-[45px] min-w-[45px] text-center">
+                            {/* 10. Total Line Bill */}
+                            <TableCell className="p-2 w-[115px] min-w-[115px] text-right pr-3 font-semibold tabular-nums text-foreground">
+                              {itemCost && itemCost.qtyTotalReceived > 0 ? (
+                                <div className="flex flex-col items-end">
+                                  <span className="text-xs font-bold text-foreground">
+                                    Rs{" "}
+                                    {itemCost.totalBill.toLocaleString(undefined, {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground tabular-nums">
+                                    CMT: Rs {itemCost.vendorCmtBillAmount.toFixed(2)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground text-[11px]">—</span>
+                              )}
+                            </TableCell>
+
+                            {/* 11. Remove row */}
+                            <TableCell className="p-2 w-[40px] min-w-[40px] text-center">
                               <Button
                                 type="button"
                                 size="icon"
@@ -1459,12 +1544,90 @@ export function ProductionEntryForm({
                         );
                       })}
                     </TableBody>
+
+                    {/* ── Summary Totals Footer Row (Excel Matching) ── */}
+                    {costing && (
+                      <TableFooter className="bg-muted/40 font-semibold border-t-2 border-border text-xs">
+                        <TableRow className="hover:bg-transparent">
+                          {/* Col 1: Finished Article */}
+                          <TableCell className="p-2 font-bold text-foreground whitespace-nowrap">
+                            Batch Totals & Averages
+                          </TableCell>
+
+                          {/* Col 2: Fabric (m) */}
+                          <TableCell className="p-2 text-center font-bold tabular-nums text-foreground whitespace-nowrap">
+                            {costing.qtyFabricUsed.toLocaleString()} m
+                          </TableCell>
+
+                          {/* Col 3: CONS (m/pc) */}
+                          <TableCell className="p-2 text-center tabular-nums whitespace-nowrap">
+                            <Badge
+                              variant="outline"
+                              className="text-[11px] font-semibold tabular-nums bg-primary/10 text-primary border-primary/30"
+                            >
+                              {costing.consumption.toFixed(4)} m/pc
+                            </Badge>
+                          </TableCell>
+
+                          {/* Col 4: Total (A + B) */}
+                          <TableCell className="p-2 text-center font-bold tabular-nums text-foreground whitespace-nowrap">
+                            {costing.qtyTotalReceived.toLocaleString()} pcs
+                          </TableCell>
+
+                          {/* Col 5: Defect (B) */}
+                          <TableCell className="p-2 text-center font-bold tabular-nums text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                            <div>{costing.qtyBGrade.toLocaleString()} pcs</div>
+                            {costing.qtyBGrade > 0 && (
+                              <div className="text-[10px] text-amber-700 dark:text-amber-400 font-mono font-normal">
+                                -Rs {costing.bTotalValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                              </div>
+                            )}
+                          </TableCell>
+
+                          {/* Col 6: Sound (A) */}
+                          <TableCell className="p-2 text-center font-bold tabular-nums text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                            {costing.qtyAGrade.toLocaleString()} pcs
+                          </TableCell>
+
+                          {/* Col 7: Vendor CMT */}
+                          <TableCell className="p-2 text-right tabular-nums text-muted-foreground whitespace-nowrap">
+                            Rs {costing.cmtCostPerPc.toFixed(2)}
+                          </TableCell>
+
+                          {/* Col 8: Initial Net */}
+                          <TableCell className="p-2 text-right tabular-nums text-muted-foreground whitespace-nowrap">
+                            Rs {costing.initialNetCost.toFixed(2)}
+                          </TableCell>
+
+                          {/* Col 9: Recalc A-Cost */}
+                          <TableCell className="p-2 text-right whitespace-nowrap">
+                            <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 font-bold tabular-nums text-xs">
+                              Rs {costing.aFinalUnitCost.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })} / pc
+                            </Badge>
+                          </TableCell>
+
+                          {/* Col 10: Total Line Bill */}
+                          <TableCell className="p-2 text-right font-bold tabular-nums text-foreground whitespace-nowrap pr-3">
+                            Rs {costing.totalBill.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </TableCell>
+
+                          {/* Col 11: Actions */}
+                          <TableCell className="p-2 text-center"></TableCell>
+                        </TableRow>
+                      </TableFooter>
+                    )}
                   </Table>
                 </div>
 
                 {/* Grid Footer Controls */}
                 <div className="p-3 bg-muted/10 border-t flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 text-xs">
-                  <div className="flex items-start gap-2 max-w-md">
+                  <div className="flex items-start gap-2 max-w-xl">
                     <Checkbox
                       id="deductBGradeCmt"
                       checked={deductBGradeCmt}
@@ -1529,17 +1692,53 @@ export function ProductionEntryForm({
                           Avg CONS:{" "}
                           <strong>{costing.consumption.toFixed(4)} m/pc</strong>
                         </span>
-                        <span>•</span>
-                        <span className="text-emerald-700 dark:text-emerald-300 font-bold">
-                          Avg A-Cost:{" "}
-                          <strong>
-                            Rs {costing.aFinalUnitCost.toFixed(2)}
-                          </strong>
-                        </span>
                       </>
                     )}
                   </div>
                 </div>
+
+                {/* ── Financial Summary Cards (Below Stage 2 Table) ── */}
+                {costing && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 p-3.5 bg-muted/20 border-t border-border">
+                    <div className="p-3 rounded-xl bg-card border border-border shadow-2xs space-y-1">
+                      <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                        <Calculator className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" /> Total Production Gross Value
+                      </span>
+                      <div className="text-lg font-bold text-foreground tabular-nums">
+                        Rs {costing.totalBill.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
+                      <div className="text-[11px] text-amber-700 dark:text-amber-400">
+                        Includes 50% B-loss (- Rs {costing.bTotalValue.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}) absorbed into sound stock
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-blue-500/10 dark:bg-blue-500/15 border border-blue-500/30 shadow-2xs space-y-1">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-blue-900 dark:text-blue-200">
+                        <span className="flex items-center gap-1.5">
+                          <FileCheck2 className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" /> Auto CMT Purchase Invoice
+                        </span>
+                        <Badge variant="outline" className="border-blue-500/30 text-blue-700 dark:text-blue-300 text-[10px] py-0 font-medium">
+                          Status: SUBMITTED
+                        </Badge>
+                      </div>
+                      <div className="text-lg font-bold text-blue-700 dark:text-blue-300 tabular-nums">
+                        Rs {costing.vendorCmtBillAmount.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
+                      <div className="text-[11px] text-blue-800/80 dark:text-blue-300/80">
+                        Billed to vendor for {costing.deductBGradeCmt ? costing.qtyAGrade : costing.qtyTotalReceived} pcs stitching labor (Fabric excluded)
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -1639,299 +1838,15 @@ export function ProductionEntryForm({
                     />
                   </div>
                 </div>
+
+                <div className="p-2.5 rounded-lg bg-muted/40 border border-border/60 text-[11px] text-muted-foreground flex items-start gap-2">
+                  <AlertCircle className="h-3.5 w-3.5 text-indigo-500 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>General Ledger Integration:</strong> On submission, stock will immediately be routed to A-Grade and B-Grade warehouses, and CMT Purchase Invoice will be generated in <code>SUBMITTED</code> status. When Accounts approves it, a Journal Voucher (JV) posts to the General Ledger.
+                  </span>
+                </div>
               </CardContent>
             </Card>
-          </div>
-
-          {/* ════════════════ RIGHT COLUMN (Live Costing Engine - 4 cols) ════════════════ */}
-          <div className="lg:col-span-4 space-y-4 lg:sticky lg:top-0">
-            {costing ? (
-              <Card className="border border-indigo-500/40 dark:border-indigo-500/30 shadow-sm overflow-hidden bg-card">
-                <CardHeader className="bg-gradient-to-r from-indigo-600 to-indigo-800 dark:from-indigo-950 dark:to-slate-900 text-white py-3.5 px-4">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-bold flex items-center gap-2 text-white">
-                      <Calculator className="h-4 w-4" />
-                      Live Costing & Bill Recalculation
-                    </CardTitle>
-                    {/*  */}{" "}
-                  </div>
-                  <CardDescription className="text-indigo-200 text-xs mt-0.5">
-                    Automatic absorption of B-grade 50% discount into sound
-                    A-grade unit cost.
-                  </CardDescription>
-                </CardHeader>
-
-                <CardContent className="p-4 space-y-4 divide-y divide-border/60">
-                  {/* Step A: Consumption & Cost per Piece */}
-                  <div className="space-y-2 text-xs pt-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">
-                        Consumption (CONS):
-                      </span>
-                      <span className="tabular-nums font-bold text-foreground">
-                        {costing.consumption.toFixed(4)} m/pc
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">
-                        Fabric Cost per Piece:
-                      </span>
-                      <span className="tabular-nums font-semibold text-foreground">
-                        Rs{" "}
-                        {costing.fabricCostPerPc.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">
-                        Avg Vendor CMT per Piece:
-                      </span>
-                      <span className="tabular-nums font-semibold text-foreground">
-                        Rs{" "}
-                        {costing.cmtCostPerPc.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between border-t border-dashed pt-1.5 font-medium">
-                      <span className="text-foreground">
-                        Initial Net Garment Cost:
-                      </span>
-                      <span className="tabular-nums font-bold text-indigo-600 dark:text-indigo-400">
-                        Rs{" "}
-                        {costing.initialNetCost.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Step B: Gross Batch Value & 50% B-Grade Value */}
-                  <div className="space-y-2 text-xs pt-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">
-                        Total Production Gross Value:
-                      </span>
-                      <span className="tabular-nums font-bold text-foreground">
-                        Rs{" "}
-                        {costing.totalBill.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-amber-800 dark:text-amber-300 bg-amber-500/10 dark:bg-amber-500/15 p-2.5 rounded-lg border border-amber-500/30">
-                      <div>
-                        <div className="font-semibold">
-                          B-Grade Value (50% Unit Value):
-                        </div>
-                        <div className="text-[11px] text-amber-700 dark:text-amber-400">
-                          {costing.qtyBGrade.toLocaleString()} defective pcs @
-                          Rs{" "}
-                          {costing.bUnitValue.toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}
-                        </div>
-                      </div>
-                      <span className="tabular-nums font-bold">
-                        - Rs{" "}
-                        {costing.bTotalValue.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Step C: Highlighted Recalculated A-Grade Cost */}
-                  <div className="pt-3 space-y-3">
-                    <div className="p-3.5 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/15 border-2 border-emerald-500/60 dark:border-emerald-500/50 shadow-2xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                          {costing.items && costing.items.length > 1
-                            ? "Batch Avg A-Grade Cost"
-                            : "Recalculated A-Grade Cost"}
-                        </span>
-                        <Badge className="bg-emerald-600 text-white text-[10px] py-0 font-medium">
-                          Absorption Applied
-                        </Badge>
-                      </div>
-
-                      <div className="text-2xl font-black tabular-nums text-emerald-700 dark:text-emerald-400 mt-1">
-                        Rs{" "}
-                        {costing.aFinalUnitCost.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                        <span className="text-xs font-normal text-emerald-600 dark:text-emerald-400 ml-1">
-                          / piece
-                        </span>
-                      </div>
-
-                      <p className="text-[11px] text-muted-foreground mt-1">
-                        Total sound value of Rs{" "}
-                        {costing.aTotalValue.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{" "}
-                        spread across {costing.qtyAGrade.toLocaleString()} sound
-                        pieces.
-                      </p>
-                    </div>
-
-                    {/* Per-Item Cost Breakdown Card (When multiple articles or sizes) */}
-                    {costing.items && costing.items.length > 1 && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-foreground">
-                          <span>Article-Wise Recalculated Rates</span>
-                          <span className="text-[10px] tabular-nums text-muted-foreground font-medium">
-                            {costing.items.length} Distinct Lines
-                          </span>
-                        </div>
-                        <div className="space-y-2">
-                          {costing.items.map((it, idx) => {
-                            const art = articleItems.find(
-                              (a) => a.id === it.articleItemId,
-                            );
-                            return (
-                              <div
-                                key={idx}
-                                className="p-2.5 rounded-lg bg-muted/40 dark:bg-muted/20 border border-emerald-500/30 text-xs space-y-1"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-1.5 font-semibold text-foreground">
-                                    <span className="tabular-nums font-bold text-indigo-600 dark:text-indigo-400">
-                                      {art?.sku || `Line #${idx + 1}`}
-                                    </span>
-                                    {it.sizeName &&
-                                      it.sizeName !== "Standard" && (
-                                        <Badge
-                                          variant="outline"
-                                          className="text-[10px] py-0 px-1 tabular-nums font-semibold"
-                                        >
-                                          {it.sizeName}
-                                        </Badge>
-                                      )}
-                                  </div>
-                                  <span className="tabular-nums font-bold text-sm text-emerald-600 dark:text-emerald-400">
-                                    Rs{" "}
-                                    {it.aFinalUnitCost.toLocaleString(
-                                      undefined,
-                                      {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                      },
-                                    )}
-                                    <span className="text-[10px] font-normal text-muted-foreground ml-0.5">
-                                      /pc
-                                    </span>
-                                  </span>
-                                </div>
-                                <div
-                                  className="text-[11px] text-muted-foreground truncate"
-                                  title={art?.description}
-                                >
-                                  {art?.description || "Finished Article"}
-                                </div>
-                                <div className="flex items-center justify-between text-[10px] tabular-nums font-medium text-muted-foreground pt-1 border-t border-border/50">
-                                  <span>
-                                    Recv: {it.qtyTotalReceived} ({it.qtyAGrade}{" "}
-                                    A · {it.qtyBGrade} B)
-                                  </span>
-                                  <span>
-                                    Initial Net: Rs{" "}
-                                    {it.initialNetCost.toFixed(2)}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Step D: Auto Purchase Invoice & Financing Notes */}
-                  <div className="pt-3 space-y-2">
-                    <div className="p-3 rounded-lg bg-blue-500/10 dark:bg-blue-500/15 border border-blue-500/30 text-xs">
-                      <div className="flex items-center justify-between text-blue-900 dark:text-blue-200 font-bold">
-                        <span className="flex items-center gap-1.5">
-                          <FileCheck2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                          Auto Purchase Invoice (CMT Only)
-                        </span>
-                        <span className="tabular-nums font-bold text-sm text-blue-700 dark:text-blue-300">
-                          Rs{" "}
-                          {costing.vendorCmtBillAmount.toLocaleString(
-                            undefined,
-                            {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            },
-                          )}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-blue-800/80 dark:text-blue-300/80 mt-1">
-                        Billed to Vendor for{" "}
-                        {costing.deductBGradeCmt
-                          ? costing.qtyAGrade
-                          : costing.qtyTotalReceived}{" "}
-                        pieces stitching labor. Fabric cost is excluded as raw
-                        fabric is owned by IVAR.
-                      </p>
-                    </div>
-
-                    <div className="p-2.5 rounded bg-muted/40 text-[11px] text-muted-foreground flex items-start gap-2">
-                      <AlertCircle className="h-3.5 w-3.5 text-indigo-500 shrink-0 mt-0.5" />
-                      <span>
-                        <strong>General Ledger:</strong> On submission, invoice
-                        status is <code>SUBMITTED</code>. When Accounts approves
-                        it, a <strong>Journal Voucher (JV)</strong>{" "}
-                        automatically posts to the General Ledger.
-                      </span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="border border-dashed border-border shadow-none bg-muted/20 dark:bg-muted/10">
-                <CardHeader className="py-4 text-center">
-                  <div className="h-12 w-12 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-2">
-                    <Calculator className="h-6 w-6" />
-                  </div>
-                  <CardTitle className="text-sm font-semibold text-foreground">
-                    Live Costing Engine
-                  </CardTitle>
-                  <CardDescription className="text-xs max-w-xs mx-auto text-muted-foreground">
-                    Enter fabric consumed and at least one finished garment
-                    quantity to calculate consumption, B-loss absorption, and
-                    unit costs.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pb-4 text-center">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleLoadSampleData}
-                    className="text-xs text-indigo-600 dark:text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/10 font-medium"
-                  >
-                    <Sparkles className="h-3.5 w-3.5 mr-1 text-indigo-500" />
-                    Load Sample Row 3 Data
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
       </form>
 
       {/* ── Modal Bottom Action Bar ── */}

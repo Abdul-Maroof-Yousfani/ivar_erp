@@ -22,7 +22,7 @@ export class ProductionService {
     private readonly prisma: PrismaService,
     private readonly stockLedgerService: StockLedgerService,
     private readonly purchaseInvoiceService: PurchaseInvoiceService,
-  ) {}
+  ) { }
 
   /**
    * Pure calculation engine matching COSTING FILE.xlsx and Ivar Production Flow Document.
@@ -50,8 +50,8 @@ export class ProductionService {
         cmtRate: Number(it.cmtRate),
         qtyFabricUsed:
           it.qtyFabricUsed !== undefined &&
-          it.qtyFabricUsed !== null &&
-          it.qtyFabricUsed !== ('' as any)
+            it.qtyFabricUsed !== null &&
+            it.qtyFabricUsed !== ('' as any)
             ? Number(it.qtyFabricUsed)
             : undefined,
       }));
@@ -203,9 +203,9 @@ export class ProductionService {
     const avgCmtRate =
       rawItems.length > 0
         ? rawItems.reduce(
-            (acc, it) => acc + it.cmtRate * it.qtyTotalReceived,
-            0,
-          ) / batchQtyTotalReceived
+          (acc, it) => acc + it.cmtRate * it.qtyTotalReceived,
+          0,
+        ) / batchQtyTotalReceived
         : 0;
 
     return {

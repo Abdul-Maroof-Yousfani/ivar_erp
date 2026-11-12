@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Autocomplete, AutocompleteOption } from '@/components/ui/autocomplete';
 import {
   fabricVendorTrackerApi,
   supplierApi,
@@ -53,55 +53,115 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const supplierOptions = useMemo<AutocompleteOption[]>(
+    () =>
+      suppliers.map((s) => ({
+        value: s.id,
+        label: `${s.name} (${s.code})`,
+        description: s.phone || s.email || '',
+      })),
+    [suppliers]
+  );
+
+  const itemOptions = useMemo<AutocompleteOption[]>(
+    () =>
+      items.map((i) => ({
+        value: i.id,
+        label: i.sku,
+        description: i.description || 'No description',
+      })),
+    [items]
+  );
+
+  const warehouseOptions = useMemo<AutocompleteOption[]>(
+    () =>
+      warehouses.map((w) => ({
+        value: w.id,
+        label: w.code ? `${w.name} (${w.code})` : w.name,
+        description: w.code || '',
+      })),
+    [warehouses]
+  );
+
   // Available stock state
   const [availableStock, setAvailableStock] = useState<number | null>(null);
   const [loadingStock, setLoadingStock] = useState(false);
 
+  // Fetch options for new issues
   useEffect(() => {
-    if (!isEditMode) {
-      loadOptions();
-    }
+    let ignore = false;
+    if (isEditMode) return;
+
+    const loadOptions = async () => {
+      try {
+        const [suppliersRes, itemsRes, warehousesRes] = await Promise.all([
+          supplierApi.getAll(),
+          itemApi.getAll({ itemType: 'RAW_FABRIC' }),
+          warehouseApi.getAll(),
+        ]);
+
+        if (!ignore) {
+          setSuppliers(suppliersRes.data || []);
+          setItems(itemsRes.data || []);
+          setWarehouses(warehousesRes || []);
+        }
+      } catch (error) {
+        if (!ignore) {
+          console.error('Failed to load options', error);
+          toast.error('Failed to load form dropdown options');
+        }
+      } finally {
+        if (!ignore) {
+          setLoadingOptions(false);
+        }
+      }
+    };
+
+    void loadOptions();
+    return () => {
+      ignore = true;
+    };
   }, [isEditMode]);
 
   // Fetch available stock when both itemId and warehouseId are selected
   useEffect(() => {
+    let isCancelled = false;
     if (!isEditMode && itemId && warehouseId) {
-      setLoadingStock(true);
-      setAvailableStock(null);
+      queueMicrotask(() => {
+        if (!isCancelled) {
+          setLoadingStock(true);
+          setAvailableStock(null);
+        }
+      });
       inventoryApi
         .getStockLevel(itemId, warehouseId)
         .then((res) => {
-          setAvailableStock(Number(res.totalQuantity) || 0);
+          if (!isCancelled) {
+            setAvailableStock(Number(res.totalQuantity) || 0);
+          }
         })
         .catch((err) => {
-          console.error('Failed to fetch stock level:', err);
-          setAvailableStock(null);
+          if (!isCancelled) {
+            console.error('Failed to fetch stock level:', err);
+            setAvailableStock(null);
+          }
         })
-        .finally(() => setLoadingStock(false));
+        .finally(() => {
+          if (!isCancelled) {
+            setLoadingStock(false);
+          }
+        });
     } else {
-      setAvailableStock(null);
+      queueMicrotask(() => {
+        if (!isCancelled) {
+          setAvailableStock(null);
+        }
+      });
     }
+    return () => {
+      isCancelled = true;
+    };
   }, [itemId, warehouseId, isEditMode]);
-
-  const loadOptions = async () => {
-    setLoadingOptions(true);
-    try {
-      const [suppliersRes, itemsRes, warehousesRes] = await Promise.all([
-        supplierApi.getAll(),
-        itemApi.getAll({ itemType: 'RAW_FABRIC' }),
-        warehouseApi.getAll(),
-      ]);
-
-      setSuppliers(suppliersRes.data || []);
-      setItems(itemsRes.data || []);
-      setWarehouses(warehousesRes || []);
-    } catch (error) {
-      console.error('Failed to load options', error);
-      toast.error('Failed to load form dropdown options');
-    } finally {
-      setLoadingOptions(false);
-    }
-  };
 
   // Calculations for Edit / Consumption Mode
   const qtyIssuedTotal = isEditMode && initialData ? Number(initialData.qtyIssued) : 0;
@@ -174,9 +234,15 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
       }
 
       onSuccess();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
-      toast.error(error.message || 'Something went wrong');
+      const errMsg =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'object' && error !== null && 'message' in error
+            ? String((error as { message: unknown }).message)
+            : 'Something went wrong';
+      toast.error(errMsg);
     } finally {
       setSubmitting(false);
     }
@@ -409,18 +475,14 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
               {loadingOptions ? (
                 <div className="h-10 bg-muted animate-pulse rounded-md" />
               ) : (
-                <Select value={supplierId} onValueChange={setSupplierId} required>
-                  <SelectTrigger className="h-10">
-                    <SelectValue placeholder="Select Vendor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suppliers.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name} ({s.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Autocomplete
+                  options={supplierOptions}
+                  value={supplierId}
+                  onValueChange={setSupplierId}
+                  placeholder="Select Vendor"
+                  searchPlaceholder="Search vendor by name or code..."
+                  className="h-10"
+                />
               )}
             </div>
 
@@ -429,18 +491,14 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
               {loadingOptions ? (
                 <div className="h-10 bg-muted animate-pulse rounded-md" />
               ) : (
-                <Select value={itemId} onValueChange={setItemId} required>
-                  <SelectTrigger className="h-10">
-                    <SelectValue placeholder="Select Fabric" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {items.map((i) => (
-                      <SelectItem key={i.id} value={i.id}>
-                        {i.sku} - {i.description || 'No description'}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Autocomplete
+                  options={itemOptions}
+                  value={itemId}
+                  onValueChange={setItemId}
+                  placeholder="Select Fabric"
+                  searchPlaceholder="Search fabric by SKU or description..."
+                  className="h-10"
+                />
               )}
               {/* Available Stock Indicator */}
               {itemId && warehouseId && (
@@ -451,11 +509,10 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
                   ) : availableStock !== null ? (
                     <Badge
                       variant="outline"
-                      className={`text-xs font-semibold ${
-                        availableStock > 0
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                          : 'border-red-200 bg-red-50 text-red-700'
-                      }`}
+                      className={`text-xs font-semibold ${availableStock > 0
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-red-200 bg-red-50 text-red-700'
+                        }`}
                     >
                       Available: {availableStock.toLocaleString()} meters
                     </Badge>
@@ -471,18 +528,14 @@ export function FabricVendorForm({ initialData, onSuccess, onClose }: FabricVend
               {loadingOptions ? (
                 <div className="h-10 bg-muted animate-pulse rounded-md" />
               ) : (
-                <Select value={warehouseId} onValueChange={setWarehouseId} required>
-                  <SelectTrigger className="h-10">
-                    <SelectValue placeholder="Select Warehouse" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {warehouses.map((w) => (
-                      <SelectItem key={w.id} value={w.id}>
-                        {w.name} ({w.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Autocomplete
+                  options={warehouseOptions}
+                  value={warehouseId}
+                  onValueChange={setWarehouseId}
+                  placeholder="Select Warehouse"
+                  searchPlaceholder="Search warehouse..."
+                  className="h-10"
+                />
               )}
             </div>
 
