@@ -176,7 +176,7 @@ export default function BGradeRefreshPage() {
     [orders],
   );
 
-  const totalReceived = useMemo(
+  const totalFreshReceived = useMemo(
     () =>
       orders.reduce(
         (acc, o) =>
@@ -192,7 +192,23 @@ export default function BGradeRefreshPage() {
     [orders],
   );
 
-  const totalPendingAtVendor = Math.max(0, totalSent - totalReceived);
+  const totalReturnedBGrade = useMemo(
+    () =>
+      orders.reduce(
+        (acc, o) =>
+          o.status !== 'CANCELLED'
+            ? acc +
+              (o.items || []).reduce(
+                (si, i) => si + (Number(i.qtyReturnedBGrade) || 0),
+                0,
+              )
+            : acc,
+        0,
+      ),
+    [orders],
+  );
+
+  const totalPendingAtVendor = Math.max(0, totalSent - (totalFreshReceived + totalReturnedBGrade));
 
   return (
     <div className="flex-1 space-y-6 p-6 max-w-[1600px] mx-auto">
@@ -291,16 +307,22 @@ export default function BGradeRefreshPage() {
         <Card className="border-l-4 border-l-emerald-500 shadow-2xs hover:shadow-sm transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Returned as Sound (A-Grade)
+              Returned From Vendor
             </CardTitle>
             <PackageCheck className="h-4 w-4 text-emerald-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-              {totalReceived.toLocaleString()} pcs
+              {(totalFreshReceived + totalReturnedBGrade).toLocaleString()} pcs
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Successfully inbounded to finished stock
+            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5 flex-wrap">
+              <span className="text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
+                {totalFreshReceived} fresh (A)
+              </span>
+              <span>•</span>
+              <span className="text-amber-600 dark:text-amber-400 font-semibold tabular-nums">
+                {totalReturnedBGrade} returned (B)
+              </span>
             </p>
           </CardContent>
         </Card>
@@ -370,8 +392,9 @@ export default function BGradeRefreshPage() {
                             <TableHead className="font-semibold">B-Grade Source WH</TableHead>
                             <TableHead className="font-semibold">Articles</TableHead>
                             <TableHead className="text-center tabular-nums font-semibold">Sent</TableHead>
-                            <TableHead className="text-center tabular-nums font-semibold">Received</TableHead>
-                            <TableHead className="text-center tabular-nums font-semibold">Pending Return</TableHead>
+                            <TableHead className="text-center tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">Fresh (A)</TableHead>
+                            <TableHead className="text-center tabular-nums font-semibold text-amber-600 dark:text-amber-400">Defective (B)</TableHead>
+                            <TableHead className="text-center tabular-nums font-semibold text-red-600 dark:text-red-400">Pending Return</TableHead>
                             <TableHead className="font-semibold">Status</TableHead>
                             <TableHead className="font-semibold">Date</TableHead>
                             <TableHead className="text-right font-semibold">Actions</TableHead>
@@ -383,11 +406,15 @@ export default function BGradeRefreshPage() {
                               (s, i) => s + (Number(i.qtySent) || 0),
                               0,
                             );
-                            const received = (order.items || []).reduce(
+                            const freshRcvd = (order.items || []).reduce(
                               (s, i) => s + (Number(i.qtyReceived) || 0),
                               0,
                             );
-                            const pending = Math.max(0, sent - received);
+                            const returnedB = (order.items || []).reduce(
+                              (s, i) => s + (Number(i.qtyReturnedBGrade) || 0),
+                              0,
+                            );
+                            const pending = Math.max(0, sent - (freshRcvd + returnedB));
                             const statusInfo =
                               STATUS_MAP[order.status] || STATUS_MAP.PENDING;
                             const StatusIcon = statusInfo.icon;
@@ -432,7 +459,10 @@ export default function BGradeRefreshPage() {
                                   {sent} pcs
                                 </TableCell>
                                 <TableCell className="text-center tabular-nums font-semibold text-emerald-600 dark:text-emerald-400 py-3">
-                                  {received} pcs
+                                  {freshRcvd} pcs
+                                </TableCell>
+                                <TableCell className="text-center tabular-nums font-semibold text-amber-600 dark:text-amber-400 py-3">
+                                  {returnedB} pcs
                                 </TableCell>
                                 <TableCell className="text-center tabular-nums font-semibold text-red-600 dark:text-red-400 py-3">
                                   {pending} pcs

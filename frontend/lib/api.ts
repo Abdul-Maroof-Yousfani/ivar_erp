@@ -1834,6 +1834,7 @@ export interface BGradeRefreshOrderItem {
   itemId: string;
   qtySent: number | string;
   qtyReceived: number | string;
+  qtyReturnedBGrade?: number | string;
   bUnitValue: number | string;
   aFinalUnitCost: number | string;
   createdAt: string;
@@ -1846,7 +1847,10 @@ export interface BGradeRefreshReceivingItem {
   orderItemId: string;
   itemId: string;
   qtyReceived: number | string;
+  qtyReturnedBGrade?: number | string;
   refreshCostPerPc: number | string;
+  bUnitValue?: number | string;
+  item?: { id: string; sku: string; description?: string | null; uom?: string | null };
 }
 
 export interface BGradeRefreshReceiving {
@@ -1917,7 +1921,7 @@ export const bGradeRefreshApi = {
     refreshCostPerPc?: number;
     receivedDate?: string;
     notes?: string;
-    items: { orderItemId: string; itemId: string; qtyReceived: number }[];
+    items: { orderItemId: string; itemId: string; qtyReceived: number; qtyReturnedBGrade?: number }[];
   }) =>
     fetchApi<{ success: boolean; receiving: BGradeRefreshReceiving; orderStatus: string }>(
       '/production/b-grade-refresh-receivings',

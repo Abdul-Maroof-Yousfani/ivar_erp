@@ -1292,10 +1292,12 @@ export class ProductionService {
       for (const ri of dto.items) {
         const orderItem = order.items.find((oi) => oi.id === ri.orderItemId);
         if (!orderItem) throw new NotFoundException(`Order item ${ri.orderItemId} not found.`);
-        const remaining = Number(orderItem.qtySent) - Number(orderItem.qtyReceived);
-        if (Number(ri.qtyReceived) > remaining + 0.0001) {
+        const processedBefore = Number(orderItem.qtyReceived) + Number(orderItem.qtyReturnedBGrade || 0);
+        const remaining = Number(orderItem.qtySent) - processedBefore;
+        const nowProcessing = (Number(ri.qtyReceived) || 0) + (Number(ri.qtyReturnedBGrade) || 0);
+        if (nowProcessing > remaining + 0.0001) {
           throw new BadRequestException(
-            `Cannot receive ${ri.qtyReceived} pcs for item ${orderItem.item?.sku || orderItem.itemId}. Only ${remaining} pcs remain.`,
+            `Cannot receive ${nowProcessing} pcs (${ri.qtyReceived || 0} fresh, ${ri.qtyReturnedBGrade || 0} returned B-grade) for item ${orderItem.item?.sku || orderItem.itemId}. Only ${remaining} pcs remain pending with vendor.`,
           );
         }
       }
@@ -1305,14 +1307,59 @@ export class ProductionService {
       const count = await tx.bGradeRefreshReceiving.count();
       const receivingNumber = `BGR-${year}-${(count + 1).toString().padStart(4, '0')}`;
 
-      const totalQtyReceived = dto.items.reduce((s, i) => s + Number(i.qtyReceived), 0);
-      const totalRefreshCost = totalQtyReceived * refreshCostPerPc;
+      const totalQtyFresh = dto.items.reduce((s, i) => s + (Number(i.qtyReceived) || 0), 0);
+      const totalQtyReturnedBGrade = dto.items.reduce((s, i) => s + (Number(i.qtyReturnedBGrade) || 0), 0);
+
+      if (totalQtyFresh <= 0 && totalQtyReturnedBGrade <= 0) {
+        throw new BadRequestException('Please enter at least 1 piece to receive (either fresh A-grade or returned B-grade).');
+      }
+
+      const bRefreshRatePerPc = refreshCostPerPc * 0.5; // 50% rate for returned B-grade pieces (Rs. 60 when fresh is Rs. 120)
+      const freshCostTotal = totalQtyFresh * refreshCostPerPc;
+      const bCostTotal = totalQtyReturnedBGrade * bRefreshRatePerPc;
+      const totalRefreshCost = freshCostTotal + bCostTotal;
 
       // Create purchase invoice if refresh cost > 0
       let purchaseInvoiceId: string | null = null;
       if (totalRefreshCost > 0) {
         const piCount = await tx.purchaseInvoice.count();
         const invoiceNumber = `PI-REFRESH-${year}-${(piCount + 1).toString().padStart(4, '0')}`;
+
+        // Build separate line items: Fresh (Full Rate) + Returned B-Grade (50% Rate)
+        const invoiceLines: Array<{
+          itemId: string;
+          description: string;
+          quantity: number;
+          unitPrice: number;
+          lineTotal: number;
+        }> = [];
+
+        for (const i of dto.items) {
+          const qRecv = Number(i.qtyReceived) || 0;
+          const qBRet = Number(i.qtyReturnedBGrade) || 0;
+          const oi = order.items.find((x) => x.id === i.orderItemId)!;
+
+          if (qRecv > 0 && refreshCostPerPc > 0) {
+            invoiceLines.push({
+              itemId: i.itemId,
+              description: `Refresh CMT (Fresh A-Grade) — ${oi.item?.sku || oi.itemId} (${qRecv} pcs @ Rs ${refreshCostPerPc}/pc)`,
+              quantity: qRecv,
+              unitPrice: refreshCostPerPc,
+              lineTotal: qRecv * refreshCostPerPc,
+            });
+          }
+
+          if (qBRet > 0 && bRefreshRatePerPc > 0) {
+            invoiceLines.push({
+              itemId: i.itemId,
+              description: `Refresh CMT (Returned B-Grade) — ${oi.item?.sku || oi.itemId} (${qBRet} pcs @ 50% rate Rs ${bRefreshRatePerPc}/pc)`,
+              quantity: qBRet,
+              unitPrice: bRefreshRatePerPc,
+              lineTotal: qBRet * bRefreshRatePerPc,
+            });
+          }
+        }
+
         const inv = await tx.purchaseInvoice.create({
           data: {
             invoiceNumber,
@@ -1329,20 +1376,9 @@ export class ProductionService {
             paidAmount: 0,
             paymentStatus: 'UNPAID',
             status: 'SUBMITTED',
-            notes: `B-Grade Refresh charges — Order ${order.orderNumber}. ${totalQtyReceived} pcs @ Rs ${refreshCostPerPc}/pc`,
+            notes: `B-Grade Refresh charges — Order ${order.orderNumber}. ${totalQtyFresh} fresh pcs @ Rs ${refreshCostPerPc}/pc (Rs ${freshCostTotal}) + ${totalQtyReturnedBGrade} returned B-grade pcs @ Rs ${bRefreshRatePerPc}/pc (Rs ${bCostTotal}) = Total Rs ${totalRefreshCost}`,
             items: {
-              create: dto.items
-                .filter((i) => Number(i.qtyReceived) > 0)
-                .map((i) => {
-                  const oi = order.items.find((x) => x.id === i.orderItemId)!;
-                  return {
-                    itemId: i.itemId,
-                    description: `Refresh CMT — ${oi.item?.sku || oi.itemId} (${i.qtyReceived} pcs @ Rs ${refreshCostPerPc})`,
-                    quantity: Number(i.qtyReceived),
-                    unitPrice: refreshCostPerPc,
-                    lineTotal: Number(i.qtyReceived) * refreshCostPerPc,
-                  };
-                }),
+              create: invoiceLines,
             },
           },
         });
@@ -1362,58 +1398,104 @@ export class ProductionService {
           receivedDate: dto.receivedDate ? new Date(dto.receivedDate) : new Date(),
           notes: dto.notes,
           items: {
-            create: dto.items.map((i) => ({
-              orderItemId: i.orderItemId,
-              itemId: i.itemId,
-              qtyReceived: Number(i.qtyReceived),
-              refreshCostPerPc,
-            })),
+            create: dto.items.map((i) => {
+              const qRecv = Number(i.qtyReceived) || 0;
+              const qBRet = Number(i.qtyReturnedBGrade) || 0;
+              const oi = order.items.find((x) => x.id === i.orderItemId)!;
+              const freshACost = Number(oi.aFinalUnitCost) + refreshCostPerPc;
+              const bUnitVal = freshACost * 0.5;
+              return {
+                orderItemId: i.orderItemId,
+                itemId: i.itemId,
+                qtyReceived: qRecv,
+                qtyReturnedBGrade: qBRet,
+                refreshCostPerPc,
+                bUnitValue: bUnitVal,
+              };
+            }),
           },
         },
         include: { items: true },
       });
 
-      // Update order items qtyReceived & inbound to A-grade warehouse (Option B: aFinalUnitCost + refreshCostPerPc)
+      // Update order items & stock ledgers:
+      // 1. Fresh A-Grade pieces inbound to aGradeWarehouseId at (aFinalUnitCost + refreshCostPerPc)
+      // 2. Returned B-Grade pieces inbound to bGradeWarehouseId at 50% of the fresh A-Grade unit cost
       for (const ri of dto.items) {
-        if (Number(ri.qtyReceived) <= 0) continue;
+        const qRecv = Number(ri.qtyReceived) || 0;
+        const qBRet = Number(ri.qtyReturnedBGrade) || 0;
+        if (qRecv <= 0 && qBRet <= 0) continue;
 
         const orderItem = order.items.find((oi) => oi.id === ri.orderItemId)!;
-        const aFinalUnitCost = Number(orderItem.aFinalUnitCost) + refreshCostPerPc;
+        const freshACost = Number(orderItem.aFinalUnitCost) + refreshCostPerPc;
+        const bUnitVal = freshACost * 0.5;
 
-        // Inbound to A-grade warehouse
-        await this.stockLedgerService.createEntry(
-          {
+        // Inbound Fresh pieces to A-grade warehouse
+        if (qRecv > 0) {
+          await this.stockLedgerService.createEntry(
+            {
+              itemId: ri.itemId,
+              warehouseId: dto.aGradeWarehouseId,
+              qty: qRecv,
+              movementType: MovementType.INBOUND,
+              referenceType: 'B_GRADE_REFRESH_RECEIVE',
+              referenceId: receiving.id,
+              rate: freshACost,
+              allowNegativeStock: true,
+            },
+            tx as any,
+            ctx,
+          );
+
+          await this.syncInventoryItem(tx, {
             itemId: ri.itemId,
             warehouseId: dto.aGradeWarehouseId,
-            qty: Number(ri.qtyReceived),
-            movementType: MovementType.INBOUND,
-            referenceType: 'B_GRADE_REFRESH_RECEIVE',
-            referenceId: receiving.id,
-            rate: aFinalUnitCost,
-            allowNegativeStock: true,
-          },
-          tx as any,
-          ctx,
-        );
+            qty: qRecv,
+          });
+        }
 
-        await this.syncInventoryItem(tx, {
-          itemId: ri.itemId,
-          warehouseId: dto.aGradeWarehouseId,
-          qty: Number(ri.qtyReceived),
-        });
+        // Inbound Defective / Returned pieces back to B-grade warehouse
+        if (qBRet > 0) {
+          await this.stockLedgerService.createEntry(
+            {
+              itemId: ri.itemId,
+              warehouseId: order.bGradeWarehouseId,
+              qty: qBRet,
+              movementType: MovementType.INBOUND,
+              referenceType: 'B_GRADE_REFRESH_RETURN',
+              referenceId: receiving.id,
+              rate: bUnitVal,
+              allowNegativeStock: true,
+            },
+            tx as any,
+            ctx,
+          );
 
-        // Update order item qtyReceived
+          await this.syncInventoryItem(tx, {
+            itemId: ri.itemId,
+            warehouseId: order.bGradeWarehouseId,
+            qty: qBRet,
+          });
+        }
+
+        // Update order item tracked quantities
         await tx.bGradeRefreshOrderItem.update({
           where: { id: ri.orderItemId },
-          data: { qtyReceived: { increment: Number(ri.qtyReceived) } },
+          data: {
+            qtyReceived: { increment: qRecv },
+            qtyReturnedBGrade: { increment: qBRet },
+          },
         });
       }
 
-      // Recalculate order status
+      // Recalculate order status: COMPLETED if all sent pieces are accounted for (Fresh + Returned B-Grade)
       const updatedItems = await tx.bGradeRefreshOrderItem.findMany({ where: { orderId: dto.orderId } });
       const totalSent = updatedItems.reduce((s, i) => s + Number(i.qtySent), 0);
-      const totalRcvd = updatedItems.reduce((s, i) => s + Number(i.qtyReceived), 0);
-      const newStatus = totalRcvd >= totalSent - 0.0001 ? 'COMPLETED' : 'PARTIALLY_RECEIVED';
+      const totalAccounted = updatedItems.reduce(
+        (s, i) => s + Number(i.qtyReceived) + Number(i.qtyReturnedBGrade || 0),
+        0,
+      );
+      const newStatus = totalAccounted >= totalSent - 0.0001 ? 'COMPLETED' : 'PARTIALLY_RECEIVED';
 
       await tx.bGradeRefreshOrder.update({
         where: { id: dto.orderId },

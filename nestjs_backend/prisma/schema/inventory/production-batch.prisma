@@ -135,14 +135,15 @@ model BGradeRefreshOrder {
 }
 
 model BGradeRefreshOrderItem {
-  id              String   @id @default(uuid())
-  orderId         String   @map("order_id")
-  itemId          String   @map("item_id")
-  qtySent         Decimal  @db.Decimal(15, 4) @map("qty_sent")
-  qtyReceived     Decimal  @default(0) @db.Decimal(15, 4) @map("qty_received")
-  bUnitValue      Decimal  @db.Decimal(15, 4) @map("b_unit_value")
-  aFinalUnitCost  Decimal  @db.Decimal(15, 4) @map("a_final_unit_cost")
-  createdAt       DateTime @default(now()) @map("created_at")
+  id                 String   @id @default(uuid())
+  orderId            String   @map("order_id")
+  itemId             String   @map("item_id")
+  qtySent            Decimal  @db.Decimal(15, 4) @map("qty_sent")
+  qtyReceived        Decimal  @default(0) @db.Decimal(15, 4) @map("qty_received")
+  qtyReturnedBGrade  Decimal  @default(0) @db.Decimal(15, 4) @map("qty_returned_b_grade")
+  bUnitValue         Decimal  @db.Decimal(15, 4) @map("b_unit_value")
+  aFinalUnitCost     Decimal  @db.Decimal(15, 4) @map("a_final_unit_cost")
+  createdAt          DateTime @default(now()) @map("created_at")
 
   order           BGradeRefreshOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   item            Item @relation("BGradeRefreshOrderItems", fields: [itemId], references: [id])
@@ -177,13 +178,15 @@ model BGradeRefreshReceiving {
 }
 
 model BGradeRefreshReceivingItem {
-  id               String   @id @default(uuid())
-  receivingId      String   @map("receiving_id")
-  orderItemId      String   @map("order_item_id")
-  itemId           String   @map("item_id")
-  qtyReceived      Decimal  @db.Decimal(15, 4) @map("qty_received")
-  refreshCostPerPc Decimal  @default(0) @db.Decimal(15, 4) @map("refresh_cost_per_pc")
-  createdAt        DateTime @default(now()) @map("created_at")
+  id                 String   @id @default(uuid())
+  receivingId        String   @map("receiving_id")
+  orderItemId        String   @map("order_item_id")
+  itemId             String   @map("item_id")
+  qtyReceived        Decimal  @db.Decimal(15, 4) @map("qty_received")
+  qtyReturnedBGrade  Decimal  @default(0) @db.Decimal(15, 4) @map("qty_returned_b_grade")
+  refreshCostPerPc   Decimal  @default(0) @db.Decimal(15, 4) @map("refresh_cost_per_pc")
+  bUnitValue         Decimal  @default(0) @db.Decimal(15, 4) @map("b_unit_value")
+  createdAt          DateTime @default(now()) @map("created_at")
 
   receiving        BGradeRefreshReceiving @relation(fields: [receivingId], references: [id], onDelete: Cascade)
   orderItem        BGradeRefreshOrderItem @relation(fields: [orderItemId], references: [id])

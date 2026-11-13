@@ -15,6 +15,12 @@ export class BGradeRefreshReceivingItemDto {
   @Min(0)
   @Type(() => Number)
   qtyReceived: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  qtyReturnedBGrade?: number;
 }
 
 export class CreateBGradeRefreshReceivingDto {

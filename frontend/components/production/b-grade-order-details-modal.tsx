@@ -123,7 +123,8 @@ export function BGradeOrderDetailsModal({
   // Aggregate metrics
   const {
     totalSent,
-    totalReceived,
+    totalFreshReceived,
+    totalReturnedBGrade,
     pendingReturn,
     totalDispatchedValue,
     totalRefreshExpense,
@@ -131,7 +132,8 @@ export function BGradeOrderDetailsModal({
     if (!order) {
       return {
         totalSent: 0,
-        totalReceived: 0,
+        totalFreshReceived: 0,
+        totalReturnedBGrade: 0,
         pendingReturn: 0,
         totalDispatchedValue: 0,
         totalRefreshExpense: 0,
@@ -140,8 +142,9 @@ export function BGradeOrderDetailsModal({
 
     const items = order.items || [];
     const sent = items.reduce((s, it) => s + (Number(it.qtySent) || 0), 0);
-    const rcvd = items.reduce((s, it) => s + (Number(it.qtyReceived) || 0), 0);
-    const pending = Math.max(0, sent - rcvd);
+    const freshRcvd = items.reduce((s, it) => s + (Number(it.qtyReceived) || 0), 0);
+    const returnedB = items.reduce((s, it) => s + (Number(it.qtyReturnedBGrade) || 0), 0);
+    const pending = Math.max(0, sent - (freshRcvd + returnedB));
     const val = items.reduce(
       (s, it) => s + (Number(it.qtySent) || 0) * (Number(it.bUnitValue) || 0),
       0,
@@ -153,7 +156,8 @@ export function BGradeOrderDetailsModal({
 
     return {
       totalSent: sent,
-      totalReceived: rcvd,
+      totalFreshReceived: freshRcvd,
+      totalReturnedBGrade: returnedB,
       pendingReturn: pending,
       totalDispatchedValue: val,
       totalRefreshExpense: expense,
@@ -267,7 +271,7 @@ export function BGradeOrderDetailsModal({
         {/* ── Scrollable Body ── */}
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
           {/* Summary Metric Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <Card className="border border-border/80 shadow-2xs bg-card">
               <CardContent className="p-3.5">
                 <div className="flex items-center justify-between text-muted-foreground text-xs mb-1">
@@ -286,14 +290,29 @@ export function BGradeOrderDetailsModal({
             <Card className="border border-border/80 shadow-2xs bg-card">
               <CardContent className="p-3.5">
                 <div className="flex items-center justify-between text-muted-foreground text-xs mb-1">
-                  <span>Received Sound</span>
+                  <span>Received Fresh</span>
                   <PackageCheck className="h-3.5 w-3.5 text-emerald-500" />
                 </div>
                 <div className="text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                  {totalReceived} <span className="text-xs font-normal text-muted-foreground">pcs</span>
+                  {totalFreshReceived} <span className="text-xs font-normal text-muted-foreground">pcs</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Restored to A-Grade stock
+                  Restored to Sound (A) stock
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="border border-border/80 shadow-2xs bg-card">
+              <CardContent className="p-3.5">
+                <div className="flex items-center justify-between text-muted-foreground text-xs mb-1">
+                  <span>Returned Defective</span>
+                  <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
+                </div>
+                <div className="text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
+                  {totalReturnedBGrade} <span className="text-xs font-normal text-muted-foreground">pcs</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Returned to B-Warehouse
                 </p>
               </CardContent>
             </Card>
@@ -308,12 +327,12 @@ export function BGradeOrderDetailsModal({
                   {pendingReturn} <span className="text-xs font-normal text-muted-foreground">pcs</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Still under alteration
+                  {pendingReturn === 0 ? 'Fully resolved' : 'Awaiting 2nd return'}
                 </p>
               </CardContent>
             </Card>
 
-            <Card className="border border-border/80 shadow-2xs bg-card">
+            <Card className="border border-border/80 shadow-2xs bg-card col-span-2 sm:col-span-1">
               <CardContent className="p-3.5">
                 <div className="flex items-center justify-between text-muted-foreground text-xs mb-1">
                   <span>Alteration Expense</span>
@@ -358,8 +377,9 @@ export function BGradeOrderDetailsModal({
                   <TableRow className="text-xs bg-muted/40">
                     <TableHead className="font-semibold">Article / SKU</TableHead>
                     <TableHead className="text-center tabular-nums font-semibold">Sent</TableHead>
-                    <TableHead className="text-center tabular-nums font-semibold">Received</TableHead>
-                    <TableHead className="text-center tabular-nums font-semibold">Pending</TableHead>
+                    <TableHead className="text-center tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">Fresh (A)</TableHead>
+                    <TableHead className="text-center tabular-nums font-semibold text-amber-600 dark:text-amber-400">Defective (B)</TableHead>
+                    <TableHead className="text-center tabular-nums font-semibold text-red-600 dark:text-red-400">Pending</TableHead>
                     <TableHead className="text-right tabular-nums font-semibold">B-Unit Valuation</TableHead>
                     <TableHead className="text-right tabular-nums font-semibold">Target A-Cost</TableHead>
                     <TableHead className="text-right tabular-nums font-semibold">Total Dispatched Value</TableHead>
@@ -369,7 +389,8 @@ export function BGradeOrderDetailsModal({
                   {(order?.items || []).map((it) => {
                     const sent = Number(it.qtySent) || 0;
                     const rcvd = Number(it.qtyReceived) || 0;
-                    const rem = Math.max(0, sent - rcvd);
+                    const retB = Number(it.qtyReturnedBGrade) || 0;
+                    const rem = Math.max(0, sent - (rcvd + retB));
                     const bVal = Number(it.bUnitValue) || 0;
                     const aCost = Number(it.aFinalUnitCost) || 0;
                     const totalLineVal = sent * bVal;
@@ -391,6 +412,9 @@ export function BGradeOrderDetailsModal({
                         </TableCell>
                         <TableCell className="text-center tabular-nums font-semibold text-emerald-600 dark:text-emerald-400 py-2.5">
                           {rcvd} pcs
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums font-semibold text-amber-600 dark:text-amber-400 py-2.5">
+                          {retB} pcs
                         </TableCell>
                         <TableCell className="text-center tabular-nums font-semibold text-red-600 dark:text-red-400 py-2.5">
                           {rem} pcs
@@ -415,7 +439,10 @@ export function BGradeOrderDetailsModal({
                       {totalSent} pcs
                     </TableCell>
                     <TableCell className="text-center tabular-nums text-emerald-600 dark:text-emerald-400 py-2.5">
-                      {totalReceived} pcs
+                      {totalFreshReceived} pcs
+                    </TableCell>
+                    <TableCell className="text-center tabular-nums text-amber-600 dark:text-amber-400 py-2.5">
+                      {totalReturnedBGrade} pcs
                     </TableCell>
                     <TableCell className="text-center tabular-nums text-red-600 dark:text-red-400 py-2.5">
                       {pendingReturn} pcs
@@ -539,25 +566,33 @@ export function BGradeOrderDetailsModal({
                         <TableHeader>
                           <TableRow className="text-xs bg-muted/15 border-b">
                             <TableHead className="font-semibold py-2">Article SKU</TableHead>
-                            <TableHead className="text-center tabular-nums font-semibold py-2">
-                              Qty Received
+                            <TableHead className="text-center tabular-nums font-semibold py-2 text-emerald-600 dark:text-emerald-400">
+                              Fresh (A-Grade)
+                            </TableHead>
+                            <TableHead className="text-center tabular-nums font-semibold py-2 text-amber-600 dark:text-amber-400">
+                              Defective (Return B)
                             </TableHead>
                             <TableHead className="text-right tabular-nums font-semibold py-2">
                               Refresh Cost / pc
                             </TableHead>
                             <TableHead className="text-right tabular-nums font-semibold py-2">
-                              Total Alteration Line
+                              CMT Alteration Line
                             </TableHead>
                             <TableHead className="text-right tabular-nums font-semibold py-2">
-                              Recalculated Sound A-Cost
+                              Sound A-Cost
+                            </TableHead>
+                            <TableHead className="text-right tabular-nums font-semibold py-2">
+                              B-Valuation (50%)
                             </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {(rcv.items || []).map((rit) => {
                             const qRcv = Number(rit.qtyReceived) || 0;
+                            const qBRet = Number(rit.qtyReturnedBGrade) || 0;
                             const unitCost = Number(rit.refreshCostPerPc) || rcvCostPerPc;
-                            const lineTotal = qRcv * unitCost;
+                            const bRate = unitCost * 0.5;
+                            const lineTotal = (qRcv * unitCost) + (qBRet * bRate);
 
                             // Find original order item to get target sound A-Cost or B-Unit Value
                             const originalOrderItem = (order.items || []).find(
@@ -565,6 +600,7 @@ export function BGradeOrderDetailsModal({
                             );
                             const origACost = Number(originalOrderItem?.aFinalUnitCost) || 0;
                             const resultingSoundCost = origACost + unitCost;
+                            const resultingBVal = rit.bUnitValue ? Number(rit.bUnitValue) : resultingSoundCost * 0.5;
 
                             return (
                               <TableRow key={rit.id} className="text-xs hover:bg-muted/10">
@@ -576,17 +612,23 @@ export function BGradeOrderDetailsModal({
                                 <TableCell className="text-center tabular-nums font-semibold text-emerald-600 dark:text-emerald-400 py-2">
                                   {qRcv} pcs
                                 </TableCell>
+                                <TableCell className="text-center tabular-nums font-semibold text-amber-600 dark:text-amber-400 py-2">
+                                  {qBRet} pcs
+                                </TableCell>
                                 <TableCell className="text-right tabular-nums py-2 text-muted-foreground">
-                                  Rs. {unitCost.toFixed(2)}
+                                  <div>Rs. {unitCost.toFixed(2)}</div>
+                                  {qBRet > 0 && (
+                                    <div className="text-[10px] text-amber-600">B: Rs. {bRate.toFixed(2)}</div>
+                                  )}
                                 </TableCell>
                                 <TableCell className="text-right tabular-nums font-semibold text-foreground py-2">
                                   Rs. {lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </TableCell>
                                 <TableCell className="text-right tabular-nums font-semibold text-emerald-600 dark:text-emerald-400 py-2">
                                   Rs. {resultingSoundCost.toFixed(2)}
-                                  <span className="text-[10px] text-muted-foreground ml-1">
-                                    (Orig: Rs. {origACost.toFixed(2)} + Alteration: Rs. {unitCost.toFixed(2)})
-                                  </span>
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums font-semibold text-amber-600 dark:text-amber-400 py-2">
+                                  Rs. {resultingBVal.toFixed(2)}
                                 </TableCell>
                               </TableRow>
                             );
