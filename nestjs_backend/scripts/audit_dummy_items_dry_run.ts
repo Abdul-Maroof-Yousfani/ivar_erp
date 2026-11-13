@@ -1,20 +1,27 @@
 /**
  * ==============================================================================
- * SCRIPT: audit_dummy_items_dry_run.ts
+ * SCRIPT: audit_dummy_items_dry_run.ts (V2 - High-Accuracy Matching Engine)
  * PURPOSE: 100% READ-ONLY Audit & Mapping Tool for Courierify Dummy Items
  * 
  * Target Incident: Orders created between Nov 5 - Nov 11, 2026 where SKU mismatch
  * caused auto-creation of fallback/dummy items in IVAR ERP.
  *
+ * ADVANCED MATCHING FEATURES (V2):
+ * 1. Bidirectional SKU Token Parsing: Automatically handles [Base]-[Size]-[Color]
+ *    AND [Base]-[Color]-[Size] (e.g. IVTPRDFTTHRT-M-BR, RILIPOSW-M-STBL, O/STSHIRT-L-BLK).
+ * 2. Title-Assisted Color Matching: Scans Dummy Title (e.g. "IVAR Pine Groove...",
+ *    "IVAR Grey Flannel...", "Brown", "Steel Blue") against all ERP Colors.
+ * 3. Title-Assisted Product Matching: Maps abbreviations like RILIPOSW, O/STSHIRT,
+ *    CRNEINVE, ADPLPA, DEJE, MNJOPANT to their true ERP base items.
+ * 4. Shopify Online Variant Resolution: For ONL-xxxxxx items (where SKU was blank),
+ *    queries Shopify Order API using existing .env credentials to get the exact Size!
+ *
  * MULTI-TENANT AWARE:
- * Automatically detects whether DATABASE_URL is pointing to the Management DB
- * or directly to a Tenant DB. If Management DB is detected, it automatically
- * resolves and connects to the active company's tenant database.
+ * Automatically resolves and connects to the active company's tenant database.
  *
  * SAFETY GUARANTEE:
  * - ZERO DATABASE WRITES (no INSERT, UPDATE, DELETE).
- * - Safe to run directly on LIVE production or local replica.
- * - Generates CSV reports and a terminal summary for review before any fix.
+ * - Safe to run directly on LIVE production.
  * ==============================================================================
  */
 
@@ -29,47 +36,105 @@ import * as dotenv from 'dotenv';
 // Load environment variables (.env from nestjs_backend or system environment)
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-// Common size and color aliases used in Shopify / Web SKUs
-const SIZE_ALIASES: Record<string, string[]> = {
-  s: ['small', 's'],
-  m: ['medium', 'med', 'm'],
-  l: ['large', 'lg', 'l'],
-  xl: ['x-large', 'extra large', 'xl', '1xl'],
-  xxl: ['xx-large', '2xl', 'xxl'],
-  xxxl: ['xxx-large', '3xl', 'xxxl'],
-  xs: ['x-small', 'extra small', 'xs'],
+// Shopify API configuration for resolving ONL-xxxxxx sizes
+const SHOPIFY_SHOP = process.env.SHOPIFY_SHOP_DOMAIN || 'ivarclothing.myshopify.com';
+const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY || '';
+const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET || '';
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2026-10';
+
+// Standard Size Identification Set
+const KNOWN_SIZES = new Set([
+  's', 'small', 'sm',
+  'm', 'medium', 'med',
+  'l', 'large', 'lg',
+  'xl', 'x-large', 'extra large', '1xl',
+  'xxl', 'xx-large', '2xl',
+  'xxxl', 'xxx-large', '3xl',
+  'xs', 'x-small', 'extra small',
+  '28', '30', '32', '34', '36', '38', '40', '42', '44', '46',
+  'sz28', 'sz30', 'sz32', 'sz34', 'sz36', 'sz38', 'sz40',
+  '39', '41', '43', '45', // Shoe sizes
+]);
+
+const SIZE_NORMALIZATION_MAP: Record<string, string> = {
+  s: 'small',
+  sm: 'small',
+  small: 'small',
+  m: 'medium',
+  med: 'medium',
+  medium: 'medium',
+  l: 'large',
+  lg: 'large',
+  large: 'large',
+  xl: 'x-large',
+  '1xl': 'x-large',
+  'extra large': 'x-large',
+  'x-large': 'x-large',
+  xxl: 'xx-large',
+  '2xl': 'xx-large',
+  'xx-large': 'xx-large',
+  xxxl: 'xxx-large',
+  '3xl': 'xxx-large',
+  'xxx-large': 'xxx-large',
+  xs: 'x-small',
+  'extra small': 'x-small',
+  'x-small': 'x-small',
+  sz28: '28',
+  sz30: '30',
+  sz32: '32',
+  sz34: '34',
+  sz36: '36',
+  sz38: '38',
+  sz40: '40',
 };
 
-const COLOR_ALIASES: Record<string, string[]> = {
-  na: ['navy', 'navy blue', 'dark navy'],
-  nv: ['navy', 'navy blue'],
-  nvy: ['navy'],
-  wh: ['white', 'off white', 'optical white'],
-  wht: ['white'],
-  bl: ['black', 'blue'],
-  blk: ['black'],
-  dabl: ['dark blue', 'dark navy', 'dark denim'],
-  dbl: ['dark blue', 'dark denim'],
-  lbl: ['light blue', 'ice blue'],
-  ltbl: ['light blue'],
-  blu: ['blue', 'royal blue', 'sky blue'],
-  gr: ['grey', 'gray', 'green'],
-  gry: ['grey', 'gray'],
-  grn: ['green', 'olive green', 'sage green'],
-  ol: ['olive', 'olive green'],
-  olv: ['olive'],
-  kh: ['khaki'],
-  khk: ['khaki'],
-  bg: ['beige'],
-  bge: ['beige'],
-  cr: ['cream', 'ecru'],
-  crm: ['cream'],
-  mr: ['maroon'],
-  mrn: ['maroon', 'burgundy'],
-  ch: ['charcoal', 'charcoal grey'],
-  chr: ['charcoal'],
-  br: ['brown'],
-  brn: ['brown', 'chocolate'],
+// Known Base SKU aliases where website SKU differs from ERP SKU
+const BASE_SKU_ALIASES: Record<string, string> = {
+  'riliposw': 'IVRILLIPOSW', // Johnny Collar Ribline Polo
+  'o/stshirt': 'O/STSHIRT',
+  'crneinve': 'IVCRNEINVE', // Crew Neck inner Vest
+  'adplpa': 'IVADPLPA', // Adjustable Pleated Pants
+  'deje': 'IVDEJE', // Denim Jeans
+  'knbo': 'IVKNBO', // Knitted Boxer
+  'knpa': 'KNPA', // Knitted Pajama
+  'mnjopant': 'MNJOPANT', // Stapered Knitted Pants
+  'mejope': 'MNJOPANT', // Stapered Knitted Pants
+  'ivtdj': 'IVTDJ', // Timeless Denim Jacket
+  'ivplgu': 'IVPLGUPNT',
+  'ivplgupnt': 'IVPLGUPNT',
+  'ivkrn2.0adpa': 'IVKRN2.0ADPA',
+  'ivarctrckpnt': 'IVARCTRCKPNT',
+  'ivcntrstjcpo': 'IVCNTRSTJCPO',
+  'ivoxfdshirt': 'IVOXFDSHIRT',
+  'ivraildejo': 'IVRAILDEJO',
+  'ivbtnuppo': 'IVBTNUPPO',
+  'ivtprdftthrt': 'IVTPRDFTTHRT',
+  'ivflquzpr': 'IVFLQUZPR',
+  'ivplrflcqtrzpr': 'IVPLRFLCQTRZPR',
+  'ivlnenst': 'IVLNENST',
+  'ivlnenpnt': 'IVLNENPNT',
+  'ivsbadrpndlquzpr': 'IVSBADRPNDLQUZPR',
+  'ivwhftrngrtshrt': 'IVWHFTRNGRTSHRT',
+  'ivftwhrngrtshrt': 'IVFTWHRNGRTSHRT',
+  'ivarlopslvlestshrt': 'IVARLOPSLVLESTSHRT',
+  'ivarloptprdftthrt': 'IVARLOPTPRDFTTHRT',
+  'ivarlophnly': 'IVARLOPHNLY',
+  'ivarlopstppnt': 'IVARLOPSTPPNT',
+  'ivdrpnedlvrstyj/cpo': 'IVDRPNEDLVRSTYJ/CPO',
+  'ivtppdj/cpo': 'IVTPPDJ/CPO',
+  'ivplkflcpo': 'IVPLKFLCPO',
+  'ivtxtlnenpnt': 'IVTXTLNENPNT',
+  'ivmndrnclrlnenbtndwnshrt': 'IVMNDRNCLRLNENBTNDWNSHRT',
+  'ivmnrchbots': 'IVMNRCHBOTS',
+  'ivstchlspolo': 'IVSTCHLSPOLO',
+  'ivpistjct': 'IVPISTJCT',
+  'ric0sut': 'RIC0SUT',
+  'thto': 'IVTHTO', // Ribbed Compression Inner
+  'weflbr': 'IVWEFLBR', // Wedge Fly Brief
+  'drnepo': 'IVDRNEPO', // Drop Needle Polo
+  'p3-stbr': 'IVSTBR', // Stretchable Brief
+  'flslvmn-shirt': 'IVLNENST', // Pink Salt Linen Shirt
+  'ivwfknflslvhnly': 'IVWFKNFLSLVHNLY',
 };
 
 function decryptPassword(encryptedText: string, masterKeyString: string): string {
@@ -92,13 +157,7 @@ function decryptPassword(encryptedText: string, masterKeyString: string): string
   return decrypted;
 }
 
-/**
- * Intelligent Database URL Resolver
- * Determines if we are connected to the Tenant DB or Management DB.
- * If Management DB, auto-discovers active tenant and creates connection to Tenant DB.
- */
 async function resolveTenantConnection(): Promise<{ tenantDbUrl: string; tenantName: string }> {
-  // Check CLI arguments for override: --tenant <name> or --db <url>
   const args = process.argv.slice(2);
   let cliTenant: string | null = null;
   let cliDb: string | null = null;
@@ -124,7 +183,6 @@ async function resolveTenantConnection(): Promise<{ tenantDbUrl: string; tenantN
     throw new Error('Neither DATABASE_URL nor DATABASE_URL_MANAGEMENT is set in .env');
   }
 
-  // First, test if initialUrl already contains "Item" table
   if (initialUrl) {
     const testPool = new Pool({ connectionString: initialUrl, max: 1 });
     try {
@@ -139,13 +197,12 @@ async function resolveTenantConnection(): Promise<{ tenantDbUrl: string; tenantN
         return { tenantDbUrl: initialUrl, tenantName: 'Direct Tenant DB' };
       }
     } catch {
-      // Ignore and continue to management resolution
+      // Continue to management resolution
     } finally {
       try { await testPool.end(); } catch {}
     }
   }
 
-  // If we reach here, the database does NOT have "Item" table directly — it is the Management DB!
   console.log('ℹ️  Current DATABASE_URL is Management Database. Auto-resolving active Tenant DB...');
   if (!managementUrl) {
     throw new Error('DATABASE_URL_MANAGEMENT is required to resolve tenant database.');
@@ -163,7 +220,7 @@ async function resolveTenantConnection(): Promise<{ tenantDbUrl: string; tenantN
 
     const res = await mgmtPool.query(companyQuery, queryParams);
     if (res.rows.length === 0) {
-      throw new Error(`No active tenant company found in Management Database (filter: ${cliTenant || 'any'}).`);
+      throw new Error(`No active tenant company found in Management Database.`);
     }
 
     const company = res.rows[0];
@@ -190,6 +247,44 @@ async function resolveTenantConnection(): Promise<{ tenantDbUrl: string; tenantN
     return { tenantDbUrl, tenantName: `${company.name} (${company.dbName})` };
   } finally {
     await mgmtPool.end();
+  }
+}
+
+/**
+ * Helper to fetch a Shopify order by order name (e.g. "#130958")
+ * Cached in memory so we never query the same order twice.
+ */
+const shopifyOrderCache = new Map<string, any>();
+async function fetchShopifyOrder(orderRef: string): Promise<any | null> {
+  const cleanRef = orderRef.replace(/^#+/, '').trim();
+  if (!cleanRef || !SHOPIFY_API_KEY || !SHOPIFY_API_SECRET) return null;
+
+  if (shopifyOrderCache.has(cleanRef)) {
+    return shopifyOrderCache.get(cleanRef);
+  }
+
+  try {
+    const auth = Buffer.from(`${SHOPIFY_API_KEY}:${SHOPIFY_API_SECRET}`).toString('base64');
+    const url = `https://${SHOPIFY_SHOP}/admin/api/${SHOPIFY_API_VERSION}/orders.json?name=%23${cleanRef}&status=any`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!res.ok) {
+      shopifyOrderCache.set(cleanRef, null);
+      return null;
+    }
+
+    const data: any = await res.json();
+    const order = data.orders && data.orders.length > 0 ? data.orders[0] : null;
+    shopifyOrderCache.set(cleanRef, order);
+    return order;
+  } catch {
+    shopifyOrderCache.set(cleanRef, null);
+    return null;
   }
 }
 
@@ -235,8 +330,8 @@ function escapeCsv(val: any): string {
   return `"${str}"`;
 }
 
-function normalizeStr(s?: string | null): string {
-  return (s || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').trim();
+function normalize(s?: string | null): string {
+  return (s || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 async function runAudit() {
@@ -246,14 +341,13 @@ async function runAudit() {
   const END_DATE = new Date(process.env.AUDIT_END_DATE || '2026-11-11T23:59:59.999Z');
 
   console.log('\n=============================================================');
-  console.log('🔍 IVAR ERP - COURIERIFY DUMMY ITEMS DRY-RUN AUDIT REPORT');
+  console.log('🔍 IVAR ERP - COURIERIFY DUMMY ITEMS DRY-RUN AUDIT (V2)');
   console.log('=============================================================');
   console.log(`📅 Target Date Range : ${START_DATE.toISOString()} to ${END_DATE.toISOString()}`);
   console.log(`🏢 Tenant Database   : ${tenantName}`);
-  console.log(`🛡️  Mode              : 100% READ-ONLY (No modifications)`);
+  console.log(`🛡️  Mode              : 100% READ-ONLY (Zero DB writes)`);
   console.log('-------------------------------------------------------------\n');
 
-  // Setup connection to Tenant Database
   const pool = new Pool({
     connectionString: tenantDbUrl,
     max: 3,
@@ -297,6 +391,13 @@ async function runAudit() {
     // Build lookup maps
     const realItemByBarcode = new Map<string, typeof allRealItems[0]>();
     const realItemsByBaseSku = new Map<string, typeof allRealItems>();
+    const colorNamesMap = new Map<string, string>(); // normalized color name -> real color name
+
+    for (const c of allColors) {
+      if (c.name) {
+        colorNamesMap.set(normalize(c.name), c.name);
+      }
+    }
 
     for (const it of allRealItems) {
       if (it.barCode) {
@@ -346,6 +447,7 @@ async function runAudit() {
       {
         item: any;
         orderNumbers: Set<string>;
+        orderRefs: Set<string>;
         totalUnits: number;
       }
     >();
@@ -377,11 +479,13 @@ async function runAudit() {
             dummyItemUsageMap.set(it.id, {
               item: it,
               orderNumbers: new Set(),
+              orderRefs: new Set(),
               totalUnits: 0,
             });
           }
           const usage = dummyItemUsageMap.get(it.id)!;
           usage.orderNumbers.add(order.orderNumber);
+          if (order.referenceNumber) usage.orderRefs.add(order.referenceNumber);
           usage.totalUnits += line.quantity;
         }
       }
@@ -407,22 +511,25 @@ async function runAudit() {
 
     console.log(`   🚨 Detected ${dummyItemUsageMap.size} unique dummy items across ${affectedOrdersList.length} affected orders!`);
 
-    // Step 4: Intelligent Mapping of each Dummy Item to Real ERP Item
-    console.log('\n⏳ [4/5] Computing Intelligent Matches against Real ERP Items...');
+    // Step 4: High-Accuracy Multi-Strategy Matching
+    console.log('\n⏳ [4/5] Executing High-Accuracy Multi-Strategy Matching Engine...');
 
     const dummyReports: DummyItemReport[] = [];
+    let processedCount = 0;
 
     for (const [dummyId, usage] of dummyItemUsageMap.entries()) {
+      processedCount++;
       const dummy = usage.item;
       const dummySku = (dummy.sku || '').trim();
       const dummyBarcode = (dummy.barCode || '').trim();
       const dummyDesc = dummy.description || '';
+      const normDesc = normalize(dummyDesc);
 
       let matchedItem: typeof allRealItems[0] | null = null;
       let confidence: 'HIGH' | 'MEDIUM' | 'UNMATCHED' = 'UNMATCHED';
       let matchRule = 'None';
 
-      // ── MATCH STRATEGY 1: Direct Barcode Match ──
+      // ── STRATEGY 1: Direct Barcode Match ──
       if (dummyBarcode) {
         const match = realItemByBarcode.get(dummyBarcode.toLowerCase());
         if (match && match.id !== dummyId) {
@@ -432,73 +539,177 @@ async function runAudit() {
         }
       }
 
-      // ── MATCH STRATEGY 2: Parse Web SKU Pattern (e.g. IVOXFDSHIRT-NA-S or IVRAILDEJO-DABL-S) ──
+      // ── STRATEGY 2: Bidirectional SKU Token Parsing + Title Color Assistance ──
       if (!matchedItem && dummySku.includes('-')) {
         const parts = dummySku.split('-').map((p: string) => p.trim());
-        const baseSku = parts[0].toUpperCase();
-        const candidates = realItemsByBaseSku.get(baseSku) || [];
+        const rawBase = parts[0].toLowerCase();
+        const baseSku = (BASE_SKU_ALIASES[rawBase] || parts[0]).toUpperCase();
 
+        // Check if we have candidate items for this base SKU
+        let candidates = realItemsByBaseSku.get(baseSku) || [];
+
+        // If direct base SKU didn't match, check aliases or partial SKU match
+        if (candidates.length === 0) {
+          for (const [aliasKey, realBase] of Object.entries(BASE_SKU_ALIASES)) {
+            if (rawBase.includes(aliasKey) || aliasKey.includes(rawBase)) {
+              candidates = realItemsByBaseSku.get(realBase) || [];
+              if (candidates.length > 0) break;
+            }
+          }
+        }
+
+        // If candidates exist, parse size and color from parts AND dummy title
         if (candidates.length > 0) {
-          let targetColorPart = '';
-          let targetSizePart = '';
+          let detectedSize = '';
+          let detectedColorPart = '';
 
+          // Determine which part is Size and which is Color
           if (parts.length >= 3) {
-            targetColorPart = parts[1].toLowerCase();
-            targetSizePart = parts[2].toLowerCase();
+            const p1 = parts[1].toLowerCase();
+            const p2 = parts[2].toLowerCase();
+
+            if (KNOWN_SIZES.has(p1)) {
+              // Format: [Base]-[Size]-[Color] (e.g. IVTPRDFTTHRT-M-BR, RILIPOSW-M-STBL, O/STSHIRT-L-BLK)
+              detectedSize = SIZE_NORMALIZATION_MAP[p1] || p1;
+              detectedColorPart = p2;
+            } else if (KNOWN_SIZES.has(p2)) {
+              // Format: [Base]-[Color]-[Size] (e.g. IVKRN2.0ADPA-NA-38, IVCNTRSTJCPO-PNGRVE-M)
+              detectedSize = SIZE_NORMALIZATION_MAP[p2] || p2;
+              detectedColorPart = p1;
+            } else {
+              detectedColorPart = p1;
+              detectedSize = p2;
+            }
           } else if (parts.length === 2) {
             const p1 = parts[1].toLowerCase();
-            if (SIZE_ALIASES[p1] || ['s', 'm', 'l', 'xl', 'xxl', '28', '30', '32', '34', '36', '38', '40'].includes(p1)) {
-              targetSizePart = p1;
+            if (KNOWN_SIZES.has(p1)) {
+              detectedSize = SIZE_NORMALIZATION_MAP[p1] || p1;
             } else {
-              targetColorPart = p1;
+              detectedColorPart = p1;
             }
           }
 
-          let candidate = candidates.find((cand) => {
-            const candSizeName = (cand.size?.name || '').toLowerCase();
-            const candColorName = (cand.color?.name || '').toLowerCase();
+          // Filter candidates by Size
+          let sizeFiltered = candidates;
+          if (detectedSize) {
+            sizeFiltered = candidates.filter((cand) => {
+              const cSize = normalize(cand.size?.name);
+              return (
+                cSize === detectedSize ||
+                cSize === `size ${detectedSize}` ||
+                cSize.startsWith(detectedSize) ||
+                (detectedSize === 'small' && cSize === 's') ||
+                (detectedSize === 'medium' && cSize === 'm') ||
+                (detectedSize === 'large' && cSize === 'l') ||
+                (detectedSize === 'x-large' && (cSize === 'xl' || cSize === 'x large')) ||
+                (detectedSize === 'xx-large' && (cSize === 'xxl' || cSize === '2xl' || cSize === 'xx large'))
+              );
+            });
+          }
 
-            const sizeMatch = !targetSizePart || (
-              candSizeName === targetSizePart ||
-              (SIZE_ALIASES[targetSizePart] && SIZE_ALIASES[targetSizePart].includes(candSizeName)) ||
-              candSizeName.startsWith(targetSizePart)
-            );
+          // Now match Color among size-filtered candidates
+          // Priority 2A: Match Color using the Dummy Title (e.g. "Pine Groove", "Grey Flannel", "Steel Blue", "Brown")
+          if (sizeFiltered.length > 0) {
+            let colorMatch = sizeFiltered.find((cand) => {
+              const candColor = normalize(cand.color?.name);
+              return candColor && normDesc.includes(candColor);
+            });
 
-            const colorMatch = !targetColorPart || (
-              candColorName === targetColorPart ||
-              (COLOR_ALIASES[targetColorPart] && COLOR_ALIASES[targetColorPart].some(alias => candColorName.includes(alias))) ||
-              candColorName.includes(targetColorPart)
-            );
+            // Priority 2B: Match Color code from SKU (e.g. "br", "stbl", "pngrve", "blk", "wh")
+            if (!colorMatch && detectedColorPart) {
+              colorMatch = sizeFiltered.find((cand) => {
+                const candColor = normalize(cand.color?.name);
+                // Exact code match or initials match (e.g. "stbl" in "steel blue", "br" in "brown")
+                if (candColor === detectedColorPart) return true;
+                const initials = candColor.split(' ').map((w) => w[0]).join('');
+                if (initials === detectedColorPart) return true;
+                if (candColor.startsWith(detectedColorPart)) return true;
+                return false;
+              });
+            }
 
-            return sizeMatch && colorMatch;
-          });
-
-          if (candidate) {
-            matchedItem = candidate;
-            confidence = targetSizePart && targetColorPart ? 'HIGH' : 'MEDIUM';
-            matchRule = `Rule 2: Base SKU (${baseSku}) + Size (${targetSizePart || 'Any'}) + Color (${targetColorPart || 'Any'})`;
-          } else if (candidates.length === 1) {
-            matchedItem = candidates[0];
-            confidence = 'MEDIUM';
-            matchRule = `Rule 2B: Sole candidate for Base SKU (${baseSku})`;
+            if (colorMatch) {
+              matchedItem = colorMatch;
+              confidence = 'HIGH';
+              matchRule = `Rule 2: Base SKU (${baseSku}) + Size (${detectedSize || 'Any'}) + Color (${colorMatch.color?.name})`;
+            } else if (sizeFiltered.length === 1) {
+              // Only one variant exists with this size
+              matchedItem = sizeFiltered[0];
+              confidence = 'MEDIUM';
+              matchRule = `Rule 2C: Base SKU (${baseSku}) + Size (${detectedSize}) (Sole Variant)`;
+            }
           }
         }
       }
 
-      // ── MATCH STRATEGY 3: Title / Description Fuzzy Matching ──
-      if (!matchedItem && dummyDesc) {
-        const normalizedTitle = normalizeStr(dummyDesc);
-        for (const cand of allRealItems) {
-          if (!cand.description) continue;
-          const normCand = normalizeStr(cand.description);
-          if (normCand && (normalizedTitle.includes(normCand) || normCand.includes(normalizedTitle))) {
-            const candSizeName = (cand.size?.name || '').toLowerCase();
-            if (candSizeName && normalizedTitle.includes(candSizeName)) {
-              matchedItem = cand;
-              confidence = 'MEDIUM';
-              matchRule = `Rule 3: Title Fuzzy Match ("${dummyDesc}" -> "${cand.description}")`;
-              break;
+      // ── STRATEGY 3: Title-Assisted Matching for ONL-xxxxxx & Unmatched Items ──
+      if (!matchedItem && (dummySku.startsWith('ONL-') || !matchedItem)) {
+        // Step A: Check if we can fetch the exact variant from Shopify order
+        let shopifySize = '';
+        if (usage.orderRefs.size > 0 && SHOPIFY_API_KEY) {
+          for (const ref of usage.orderRefs) {
+            const shOrder = await fetchShopifyOrder(ref);
+            if (shOrder && Array.isArray(shOrder.line_items)) {
+              // Match line item by price or title similarity
+              const shLine = shOrder.line_items.find((li: any) => {
+                const liTitle = normalize(li.title);
+                return (
+                  (Math.abs(Number(li.price) - (dummy.unitPrice || 0)) <= 5 || liTitle.includes(normDesc) || normDesc.includes(liTitle)) &&
+                  li.variant_title
+                );
+              });
+              if (shLine && shLine.variant_title) {
+                // e.g. "Small / Navy" or "Medium" or "Large"
+                const vParts = shLine.variant_title.split('/').map((s: string) => normalize(s));
+                for (const vp of vParts) {
+                  if (KNOWN_SIZES.has(vp) || SIZE_NORMALIZATION_MAP[vp]) {
+                    shopifySize = SIZE_NORMALIZATION_MAP[vp] || vp;
+                    break;
+                  }
+                }
+                if (shopifySize) break;
+              }
             }
+          }
+        }
+
+        // Step B: Match against all real items using Title + Color + Size
+        // Find real items whose description has high overlap with dummy title
+        const potentialMatches = allRealItems.filter((cand) => {
+          if (!cand.description) return false;
+          const candDesc = normalize(cand.description);
+          // Check core tokens overlap
+          const candTokens = candDesc.split(' ').filter((w) => w.length > 2 && w !== 'ivar');
+          const matchedTokens = candTokens.filter((t) => normDesc.includes(t));
+          return matchedTokens.length >= Math.min(2, candTokens.length);
+        });
+
+        if (potentialMatches.length > 0) {
+          // Filter by Title Color
+          let colorFiltered = potentialMatches.filter((cand) => {
+            const candColor = normalize(cand.color?.name);
+            return candColor && normDesc.includes(candColor);
+          });
+          if (colorFiltered.length === 0) colorFiltered = potentialMatches;
+
+          // Filter by Shopify Size if discovered
+          if (shopifySize) {
+            const sizeAndColorMatch = colorFiltered.find((cand) => {
+              const cSize = normalize(cand.size?.name);
+              return cSize === shopifySize || cSize.startsWith(shopifySize);
+            });
+            if (sizeAndColorMatch) {
+              matchedItem = sizeAndColorMatch;
+              confidence = 'HIGH';
+              matchRule = `Rule 3A: Title Match + Shopify Size (${shopifySize}) + Color (${sizeAndColorMatch.color?.name})`;
+            }
+          }
+
+          // If still not matched, check if sole candidate
+          if (!matchedItem && colorFiltered.length === 1) {
+            matchedItem = colorFiltered[0];
+            confidence = 'MEDIUM';
+            matchRule = `Rule 3B: Title Overlap + Color (${colorFiltered[0].color?.name}) (Sole Match)`;
           }
         }
       }
@@ -522,10 +733,16 @@ async function runAudit() {
         matchConfidence: confidence,
         matchRule,
       });
+
+      if (processedCount % 50 === 0 || processedCount === dummyItemUsageMap.size) {
+        process.stdout.write(`   ↳ Processed ${processedCount}/${dummyItemUsageMap.size} dummy items...\r`);
+      }
     }
 
+    console.log(`\n   ✅ Matching completed for all ${dummyReports.length} dummy items.`);
+
     // Step 5: Export CSV Reports and Print Summary Table
-    console.log('\n⏳ [5/5] Generating CSV Reports...');
+    console.log('\n⏳ [5/5] Generating Updated CSV Reports...');
 
     const reportsDir = path.resolve(__dirname, '../reports');
     if (!fs.existsSync(reportsDir)) {
@@ -579,65 +796,31 @@ async function runAudit() {
       'utf-8',
     );
 
-    const affectedOrdersReportPath = path.join(reportsDir, 'affected_orders_summary.csv');
-    const ordersCsvHeaders = [
-      'Order_ID',
-      'Order_Number',
-      'Courierify_Ref',
-      'Order_Date',
-      'Status',
-      'Grand_Total',
-      'Customer_Name',
-      'Customer_Phone',
-      'Total_Items_Count',
-      'Dummy_Items_Count',
-      'Dummy_Item_SKUs',
-    ];
-
-    const ordersCsvRows = affectedOrdersList.map((o) => [
-      escapeCsv(o.orderId),
-      escapeCsv(o.orderNumber),
-      escapeCsv(o.referenceNumber),
-      escapeCsv(o.createdAt),
-      escapeCsv(o.status),
-      escapeCsv(o.grandTotal),
-      escapeCsv(o.customerName),
-      escapeCsv(o.customerPhone),
-      escapeCsv(o.totalItemsCount),
-      escapeCsv(o.dummyItemsCount),
-      escapeCsv(o.dummyItemSkus.join('; ')),
-    ]);
-
-    fs.writeFileSync(
-      affectedOrdersReportPath,
-      [ordersCsvHeaders.join(','), ...ordersCsvRows.map((row) => row.join(','))].join('\n'),
-      'utf-8',
-    );
-
     const highConfidenceCount = dummyReports.filter((r) => r.matchConfidence === 'HIGH').length;
     const mediumConfidenceCount = dummyReports.filter((r) => r.matchConfidence === 'MEDIUM').length;
     const unmatchedCount = dummyReports.filter((r) => r.matchConfidence === 'UNMATCHED').length;
+    const matchedCount = highConfidenceCount + mediumConfidenceCount;
     const totalUnits = dummyReports.reduce((s, r) => s + r.totalUnitsSold, 0);
 
     console.log('\n=============================================================');
-    console.log('📊 DRY-RUN AUDIT SUMMARY STATISTICS');
+    console.log('📊 DRY-RUN AUDIT SUMMARY STATISTICS (V2 ENGINE)');
     console.log('=============================================================');
     console.log(`📦 Total Scanned Orders (Nov 5 - 11)   : ${orders.length}`);
     console.log(`🚨 Affected Orders with Dummy Items    : ${affectedOrdersList.length}`);
     console.log(`🏷️  Total Unique Dummy Items Found      : ${dummyReports.length}`);
     console.log(`👕 Total Dummy Units Sold              : ${totalUnits}`);
     console.log('-------------------------------------------------------------');
-    console.log(`✅ HIGH Confidence Matches (Exact)      : ${highConfidenceCount} (${((highConfidenceCount / (dummyReports.length || 1)) * 100).toFixed(1)}%)`);
-    console.log(`⚠️  MEDIUM Confidence Matches (Fuzzy)   : ${mediumConfidenceCount} (${((mediumConfidenceCount / (dummyReports.length || 1)) * 100).toFixed(1)}%)`);
-    console.log(`❌ UNMATCHED Items (Need Manual Review) : ${unmatchedCount} (${((unmatchedCount / (dummyReports.length || 1)) * 100).toFixed(1)}%)`);
+    console.log(`🎯 TOTAL RESOLVED MATCHES               : ${matchedCount} / ${dummyReports.length} (${((matchedCount / (dummyReports.length || 1)) * 100).toFixed(1)}%)`);
+    console.log(`   ✅ HIGH Confidence Matches (Exact)  : ${highConfidenceCount} (${((highConfidenceCount / (dummyReports.length || 1)) * 100).toFixed(1)}%)`);
+    console.log(`   ⚠️  MEDIUM Confidence Matches (Fuzzy): ${mediumConfidenceCount} (${((mediumConfidenceCount / (dummyReports.length || 1)) * 100).toFixed(1)}%)`);
+    console.log(`❌ UNMATCHED Items (Remaining)         : ${unmatchedCount} (${((unmatchedCount / (dummyReports.length || 1)) * 100).toFixed(1)}%)`);
     console.log('-------------------------------------------------------------');
-    console.log(`📁 CSV Report 1: ${dummyReportPath}`);
-    console.log(`📁 CSV Report 2: ${affectedOrdersReportPath}`);
+    console.log(`📁 CSV Report: ${dummyReportPath}`);
     console.log('=============================================================\n');
 
-    console.log('🔍 PREVIEW OF DETECTED DUMMY ITEMS & MAPPINGS:');
+    console.log('🔍 PREVIEW OF NEWLY RESOLVED MAPPINGS:');
     console.table(
-      dummyReports.slice(0, 10).map((r) => ({
+      dummyReports.slice(0, 15).map((r) => ({
         Dummy_SKU: r.dummySku.slice(0, 24),
         Title: r.dummyTitle.slice(0, 24),
         Sold_Qty: r.totalUnitsSold,
@@ -650,7 +833,7 @@ async function runAudit() {
     );
 
     console.log('\n💡 Next Step: Review `reports/dummy_items_mapping_report.csv`.');
-    console.log('If all mappings look good, we can run the database update script to re-point order items!\n');
+    console.log('Once satisfied, we can run the database update script to re-point order items!\n');
   } finally {
     await prisma.$disconnect();
     await pool.end();
