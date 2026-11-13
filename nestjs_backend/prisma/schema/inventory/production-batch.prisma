@@ -112,3 +112,84 @@ model ProductionBatchItem {
   @@index([articleItemId])
   @@map("production_batch_items")
 }
+
+model BGradeRefreshOrder {
+  id                String    @id @default(uuid())
+  orderNumber       String    @unique @map("order_number")
+  supplierId        String    @map("supplier_id")
+  bGradeWarehouseId String    @map("b_grade_warehouse_id")
+  status            String    @default("PENDING") // PENDING | PARTIALLY_RECEIVED | COMPLETED | CANCELLED
+  sentDate          DateTime  @default(now()) @map("sent_date")
+  notes             String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  supplier          Supplier  @relation("SupplierBGradeRefreshOrders", fields: [supplierId], references: [id])
+  bGradeWarehouse   Warehouse @relation("BGradeRefreshOrderWarehouse", fields: [bGradeWarehouseId], references: [id])
+  items             BGradeRefreshOrderItem[]
+  receivings        BGradeRefreshReceiving[]
+
+  @@index([supplierId])
+  @@index([bGradeWarehouseId])
+  @@map("b_grade_refresh_orders")
+}
+
+model BGradeRefreshOrderItem {
+  id              String   @id @default(uuid())
+  orderId         String   @map("order_id")
+  itemId          String   @map("item_id")
+  qtySent         Decimal  @db.Decimal(15, 4) @map("qty_sent")
+  qtyReceived     Decimal  @default(0) @db.Decimal(15, 4) @map("qty_received")
+  bUnitValue      Decimal  @db.Decimal(15, 4) @map("b_unit_value")
+  aFinalUnitCost  Decimal  @db.Decimal(15, 4) @map("a_final_unit_cost")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  order           BGradeRefreshOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  item            Item @relation("BGradeRefreshOrderItems", fields: [itemId], references: [id])
+  receivingItems  BGradeRefreshReceivingItem[]
+
+  @@index([orderId])
+  @@index([itemId])
+  @@map("b_grade_refresh_order_items")
+}
+
+model BGradeRefreshReceiving {
+  id                String   @id @default(uuid())
+  receivingNumber   String   @unique @map("receiving_number")
+  orderId           String   @map("order_id")
+  supplierId        String   @map("supplier_id")
+  aGradeWarehouseId String   @map("a_grade_warehouse_id")
+  refreshCostPerPc  Decimal  @default(0) @db.Decimal(15, 4) @map("refresh_cost_per_pc")
+  totalRefreshCost  Decimal  @default(0) @db.Decimal(15, 4) @map("total_refresh_cost")
+  purchaseInvoiceId String?  @unique @map("purchase_invoice_id")
+  receivedDate      DateTime @default(now()) @map("received_date")
+  notes             String?
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  order             BGradeRefreshOrder @relation(fields: [orderId], references: [id])
+  supplier          Supplier @relation("SupplierBGradeRefreshReceivings", fields: [supplierId], references: [id])
+  aGradeWarehouse   Warehouse @relation("BGradeRefreshReceivingWarehouse", fields: [aGradeWarehouseId], references: [id])
+  purchaseInvoice   PurchaseInvoice? @relation("BGradeRefreshReceivingInvoice", fields: [purchaseInvoiceId], references: [id])
+  items             BGradeRefreshReceivingItem[]
+
+  @@index([orderId])
+  @@map("b_grade_refresh_receivings")
+}
+
+model BGradeRefreshReceivingItem {
+  id               String   @id @default(uuid())
+  receivingId      String   @map("receiving_id")
+  orderItemId      String   @map("order_item_id")
+  itemId           String   @map("item_id")
+  qtyReceived      Decimal  @db.Decimal(15, 4) @map("qty_received")
+  refreshCostPerPc Decimal  @default(0) @db.Decimal(15, 4) @map("refresh_cost_per_pc")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  receiving        BGradeRefreshReceiving @relation(fields: [receivingId], references: [id], onDelete: Cascade)
+  orderItem        BGradeRefreshOrderItem @relation(fields: [orderItemId], references: [id])
+  item             Item @relation("BGradeRefreshReceivingItems", fields: [itemId], references: [id])
+
+  @@index([receivingId])
+  @@index([orderItemId])
+  @@map("b_grade_refresh_receiving_items")
+}

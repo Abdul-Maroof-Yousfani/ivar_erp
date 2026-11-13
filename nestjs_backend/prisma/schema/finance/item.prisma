@@ -85,6 +85,8 @@ model Item {
   fabricProductionBatches  ProductionBatch[] @relation("FabricProductionBatches")
   articleProductionBatches ProductionBatch[] @relation("ArticleProductionBatches")
   batchLineProductionItems ProductionBatchItem[] @relation("BatchLineArticleItem")
+  bGradeRefreshOrderItems     BGradeRefreshOrderItem[]     @relation("BGradeRefreshOrderItems")
+  bGradeRefreshReceivingItems BGradeRefreshReceivingItem[] @relation("BGradeRefreshReceivingItems")
 }
 
 // ─── Discount Campaign ────────────────────────────────────────────────────────

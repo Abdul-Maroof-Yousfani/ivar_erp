@@ -38,6 +38,8 @@ model Supplier {
   ledgerEntries    SupplierLedger[]
   fabricTrackers   FabricVendorTracker[]
   productionBatches ProductionBatch[] @relation("SupplierProductionBatches")
+  bGradeRefreshOrders     BGradeRefreshOrder[]        @relation("SupplierBGradeRefreshOrders")
+  bGradeRefreshReceivings BGradeRefreshReceiving[]    @relation("SupplierBGradeRefreshReceivings")
 
   @@index([nature])
   @@index([type])

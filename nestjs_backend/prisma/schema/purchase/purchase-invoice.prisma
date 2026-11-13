@@ -30,6 +30,7 @@ model PurchaseInvoice {
   debitNotes          DebitNote[]
   purchaseReturns     PurchaseReturn[]
   productionBatch     ProductionBatch?  @relation("InvoiceProductionBatch")
+  bGradeRefreshReceiving BGradeRefreshReceiving? @relation("BGradeRefreshReceivingInvoice")
 
   @@map("purchase_invoices")
 }

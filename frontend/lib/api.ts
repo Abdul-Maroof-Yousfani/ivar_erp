@@ -1823,3 +1823,104 @@ export const productionApi = {
   getBGradeInventory: () => fetchApi<BGradeInventoryItem[]>('/production/b-grade-inventory'),
   getDashboardStats: () => fetchApi<ProductionStats>('/production/dashboard-stats'),
 };
+
+// ─────────────────────────────────────────────────────────────────
+// B-Grade Refresh Workflow Types & API
+// ─────────────────────────────────────────────────────────────────
+
+export interface BGradeRefreshOrderItem {
+  id: string;
+  orderId: string;
+  itemId: string;
+  qtySent: number | string;
+  qtyReceived: number | string;
+  bUnitValue: number | string;
+  aFinalUnitCost: number | string;
+  createdAt: string;
+  item?: { id: string; sku: string; description?: string | null; uom?: string | null };
+}
+
+export interface BGradeRefreshReceivingItem {
+  id: string;
+  receivingId: string;
+  orderItemId: string;
+  itemId: string;
+  qtyReceived: number | string;
+  refreshCostPerPc: number | string;
+}
+
+export interface BGradeRefreshReceiving {
+  id: string;
+  receivingNumber: string;
+  orderId: string;
+  supplierId: string;
+  aGradeWarehouseId: string;
+  refreshCostPerPc: number | string;
+  totalRefreshCost: number | string;
+  purchaseInvoiceId?: string | null;
+  receivedDate: string;
+  notes?: string | null;
+  createdAt: string;
+  aGradeWarehouse?: { id: string; code: string; name: string };
+  purchaseInvoice?: { id: string; invoiceNumber: string; totalAmount: number; paymentStatus: string } | null;
+  items?: BGradeRefreshReceivingItem[];
+}
+
+export interface BGradeRefreshOrder {
+  id: string;
+  orderNumber: string;
+  supplierId: string;
+  bGradeWarehouseId: string;
+  status: 'PENDING' | 'PARTIALLY_RECEIVED' | 'COMPLETED' | 'CANCELLED';
+  sentDate: string;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  supplier?: { id: string; code: string; name: string };
+  bGradeWarehouse?: { id: string; code: string; name: string };
+  items: BGradeRefreshOrderItem[];
+  receivings?: BGradeRefreshReceiving[];
+}
+
+export const bGradeRefreshApi = {
+  createOrder: (data: {
+    supplierId: string;
+    bGradeWarehouseId: string;
+    sentDate?: string;
+    notes?: string;
+    items: { itemId: string; qtySent: number; bUnitValue: number; aFinalUnitCost: number }[];
+  }) =>
+    fetchApi<BGradeRefreshOrder>('/production/b-grade-refresh-orders', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getOrders: (params?: { status?: string; supplierId?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.append('status', params.status);
+    if (params?.supplierId) q.append('supplierId', params.supplierId);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return fetchApi<BGradeRefreshOrder[]>(`/production/b-grade-refresh-orders${qs}`);
+  },
+
+  getOrderById: (id: string) =>
+    fetchApi<BGradeRefreshOrder>(`/production/b-grade-refresh-orders/${id}`),
+
+  cancelOrder: (id: string) =>
+    fetchApi<BGradeRefreshOrder>(`/production/b-grade-refresh-orders/${id}/cancel`, {
+      method: 'PATCH',
+    }),
+
+  createReceiving: (data: {
+    orderId: string;
+    aGradeWarehouseId: string;
+    refreshCostPerPc?: number;
+    receivedDate?: string;
+    notes?: string;
+    items: { orderItemId: string; itemId: string; qtyReceived: number }[];
+  }) =>
+    fetchApi<{ success: boolean; receiving: BGradeRefreshReceiving; orderStatus: string }>(
+      '/production/b-grade-refresh-receivings',
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+};

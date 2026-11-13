@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,12 +12,10 @@ import {
   productionApi,
   fabricVendorTrackerApi,
   ProductionBatch,
-  BGradeInventoryItem,
   ProductionStats,
   FabricVendorTracker,
 } from '@/lib/api';
 import { ProductionEntryForm } from '@/components/production/production-entry-form';
-import { BGradeRefreshModal } from '@/components/production/b-grade-refresh-modal';
 import { BatchDetailsModal } from '@/components/production/batch-details-modal';
 import { FabricVendorForm } from '@/components/inventory/fabric-vendor-form';
 import { toast } from 'sonner';
@@ -26,21 +24,15 @@ import {
   Search,
   RefreshCw,
   Layers,
-  Sparkles,
-  TrendingUp,
-  Package,
-  PackageCheck,
   Scissors,
   CheckCircle2,
   AlertTriangle,
-  Receipt,
-  ArrowRight,
-  ShieldAlert,
   ArrowUpRight,
   Link2,
   Trash2,
-  ArrowDownLeft,
   Scale,
+  Package,
+  PackageCheck,
   Eye,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -48,7 +40,6 @@ import Link from 'next/link';
 export default function ProductionPage() {
   const [batches, setBatches] = useState<ProductionBatch[]>([]);
   const [trackers, setTrackers] = useState<FabricVendorTracker[]>([]);
-  const [bGradeStock, setBGradeStock] = useState<BGradeInventoryItem[]>([]);
   const [stats, setStats] = useState<ProductionStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -56,8 +47,6 @@ export default function ProductionPage() {
   // Modals
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [activeTrackerIdForProduction, setActiveTrackerIdForProduction] = useState<string | undefined>(undefined);
-  const [selectedBGradeItem, setSelectedBGradeItem] = useState<BGradeInventoryItem | null>(null);
-  const [isRefreshOpen, setIsRefreshOpen] = useState(false);
   const [selectedBatchForView, setSelectedBatchForView] = useState<ProductionBatch | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
 
@@ -65,22 +54,16 @@ export default function ProductionPage() {
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [selectedTracker, setSelectedTracker] = useState<FabricVendorTracker | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [batchesRes, bStockRes, statsRes, trackersRes] = await Promise.all([
+      const [batchesRes, statsRes, trackersRes] = await Promise.all([
         productionApi.getBatches({ search }),
-        productionApi.getBGradeInventory(),
         productionApi.getDashboardStats(),
         fabricVendorTrackerApi.getAll({ search }).catch(() => []),
       ]);
 
       setBatches(batchesRes.batches || []);
-      setBGradeStock(bStockRes || []);
       setStats(statsRes);
       setTrackers(Array.isArray(trackersRes) ? trackersRes : []);
     } catch (error) {
@@ -89,17 +72,24 @@ export default function ProductionPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [search]);
+
+  useEffect(() => {
+    let ignore = false;
+    queueMicrotask(() => {
+      if (!ignore) {
+        loadData();
+      }
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [loadData]);
 
   const handleSearchKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       loadData();
     }
-  };
-
-  const handleOpenRefresh = (item: BGradeInventoryItem) => {
-    setSelectedBGradeItem(item);
-    setIsRefreshOpen(true);
   };
 
   const handleOpenIssueFabric = () => {
@@ -118,8 +108,9 @@ export default function ProductionPage() {
       await fabricVendorTrackerApi.delete(id);
       toast.success('Fabric tracking record deleted successfully.');
       loadData();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete fabric tracker');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete fabric tracker';
+      toast.error(msg);
     }
   };
 
@@ -230,9 +221,17 @@ export default function ProductionPage() {
             <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
               {stats ? `${stats.pendingRefreshPieces.toLocaleString()} pcs` : '—'}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stats?.totalRefreshedPieces || 0} pieces already refreshed to A-stock
-            </p>
+            <div className="flex items-center justify-between mt-1">
+              <p className="text-xs text-muted-foreground">
+                {stats?.totalRefreshedPieces || 0} pcs refreshed
+              </p>
+              <Link
+                href="/erp/production/b-grade-refresh"
+                className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline inline-flex items-center gap-0.5"
+              >
+                Manage <ArrowUpRight className="h-3 w-3" />
+              </Link>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -255,16 +254,6 @@ export default function ProductionPage() {
               <Badge variant="secondary" className="ml-1 text-[11px] py-0 px-1.5">
                 {trackers.length}
               </Badge>
-            </TabsTrigger>
-
-            <TabsTrigger value="b-grade" className="flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-amber-600" />
-              <span>B-Grade Warehouse Stock</span>
-              {bGradeStock.some((b) => b.qtyRemainingBGrade > 0) && (
-                <Badge className="ml-1 bg-amber-500 text-white text-[10px] py-0 px-1.5">
-                  Action
-                </Badge>
-              )}
             </TabsTrigger>
           </TabsList>
 
@@ -318,7 +307,7 @@ export default function ProductionPage() {
                     <TableRow>
                       <TableCell colSpan={11} className="text-center py-12 text-muted-foreground">
                         <Package className="h-8 w-8 mx-auto mb-2 text-muted-foreground/60" />
-                        No production batches recorded yet. Click <strong>"New Production Entry"</strong> to create your first batch!
+                        No production batches recorded yet. Click <strong>&quot;New Production Entry&quot;</strong> to create your first batch!
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -520,7 +509,7 @@ export default function ProductionPage() {
                     <TableRow>
                       <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
                         <Scissors className="h-8 w-8 mx-auto mb-2 text-muted-foreground/60" />
-                        No fabric vendor tracking records found. Click <strong>"Issue Fabric"</strong> to track fabric issues.
+                        No fabric vendor tracking records found. Click <strong>&quot;Issue Fabric&quot;</strong> to track fabric issues.
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -646,129 +635,6 @@ export default function ProductionPage() {
             </div>
           </Card>
         </TabsContent>
-
-        {/* ── Tab 3: B-Grade Warehouse Stock ── */}
-        <TabsContent value="b-grade" className="space-y-4">
-          <Card className="shadow-2xs">
-            <CardHeader className="pb-3 border-b border-border bg-amber-500/10 dark:bg-amber-500/15">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
-                    <ShieldAlert className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-                    B-Grade Stock Management & Refresh Center
-                  </CardTitle>
-                  <CardDescription className="text-xs text-muted-foreground mt-0.5">
-                    Track defective pieces isolated in B-Grade Warehouse (valued at 50% cost). Send pieces for refresh/repair and return them to A-grade stock.
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40 hover:bg-muted/40">
-                    <TableHead className="font-bold">Batch Reference</TableHead>
-                    <TableHead className="font-bold">Garment / SKU</TableHead>
-                    <TableHead className="font-bold">CMT Vendor</TableHead>
-                    <TableHead className="font-bold text-center">B-Grade Received</TableHead>
-                    <TableHead className="font-bold text-center">Already Refreshed</TableHead>
-                    <TableHead className="font-bold text-center text-amber-600 dark:text-amber-400">Remaining in B-Warehouse</TableHead>
-                    <TableHead className="font-bold text-right">Unit Valuation (50%)</TableHead>
-                    <TableHead className="font-bold text-right">Remaining Valuation</TableHead>
-                    <TableHead className="font-bold text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">
-                        <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2 text-indigo-600" />
-                        Loading B-Grade inventory...
-                      </TableCell>
-                    </TableRow>
-                  ) : bGradeStock.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
-                        <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-emerald-500" />
-                        No B-grade stock on record! All production pieces are 100% first quality.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    bGradeStock.map((item) => (
-                      <TableRow key={item.id || `${item.batchId}-${item.batchItemId || item.articleItem?.id || ''}`} className="hover:bg-muted/30 transition-colors">
-                        <TableCell className="tabular-nums font-bold text-indigo-600 dark:text-indigo-400">
-                          {item.batchNumber}
-                          <div className="text-[11px] font-normal text-muted-foreground">
-                            {new Date(item.productionDate).toLocaleDateString()}
-                          </div>
-                        </TableCell>
-
-                        <TableCell>
-                          <div className="flex items-center gap-1.5 font-semibold text-foreground">
-                            <span>{item.articleItem?.sku}</span>
-                            {item.sizeName && item.sizeName !== 'Standard' && (
-                              <Badge variant="outline" className="text-[10px] py-0 px-1 tabular-nums font-semibold">
-                                {item.sizeName}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate max-w-[220px]">
-                            {item.articleItem?.description}
-                          </div>
-                        </TableCell>
-
-                        <TableCell>
-                          <div className="font-medium text-xs">{item.supplier?.name}</div>
-                        </TableCell>
-
-                        <TableCell className="text-center tabular-nums font-semibold">
-                          {item.qtyBGradeTotal} pcs
-                        </TableCell>
-
-                        <TableCell className="text-center tabular-nums font-medium text-emerald-600 dark:text-emerald-400">
-                          {item.qtyRefreshed} pcs
-                        </TableCell>
-
-                        <TableCell className="text-center tabular-nums">
-                          {item.qtyRemainingBGrade > 0 ? (
-                            <Badge variant="outline" className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 tabular-nums font-bold">
-                              {item.qtyRemainingBGrade} pcs
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-muted-foreground">
-                              0 (All Cleared)
-                            </Badge>
-                          )}
-                        </TableCell>
-
-                        <TableCell className="text-right tabular-nums text-xs">
-                          Rs {Number(item.bUnitValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-
-                        <TableCell className="text-right tabular-nums font-semibold text-amber-700 dark:text-amber-400">
-                          Rs {Number(item.remainingValuation).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            disabled={item.qtyRemainingBGrade <= 0}
-                            onClick={() => handleOpenRefresh(item)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-8"
-                          >
-                            <RefreshCw className="h-3 w-3 mr-1" />
-                            Send for Refresh
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </Card>
-        </TabsContent>
       </Tabs>
 
       {/* ── Single Clean Production Entry Modal (NO Duplicate Header) ── */}
@@ -795,23 +661,6 @@ export default function ProductionPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── B-Grade Refresh Modal ── */}
-      {selectedBGradeItem && (
-        <BGradeRefreshModal
-          item={selectedBGradeItem}
-          isOpen={isRefreshOpen}
-          onClose={() => {
-            setIsRefreshOpen(false);
-            setSelectedBGradeItem(null);
-          }}
-          onSuccess={() => {
-            setIsRefreshOpen(false);
-            setSelectedBGradeItem(null);
-            loadData();
-          }}
-        />
-      )}
-
       {/* ── View Batch Costing & Multi-Item Details Modal ── */}
       <BatchDetailsModal
         batch={selectedBatchForView}
@@ -820,7 +669,6 @@ export default function ProductionPage() {
           setIsViewOpen(false);
           setSelectedBatchForView(null);
         }}
-        onOpenRefresh={handleOpenRefresh}
       />
 
       {/* ── Issue Fabric / Consumption Settlement Modal ── */}

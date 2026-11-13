@@ -32,6 +32,8 @@ model Warehouse {
   fabricWarehouseBatches ProductionBatch[] @relation("FabricWarehouseBatches")
   aGradeWarehouseBatches ProductionBatch[] @relation("AGradeWarehouseBatches")
   bGradeWarehouseBatches ProductionBatch[] @relation("BGradeWarehouseBatches")
+  bGradeRefreshOrders     BGradeRefreshOrder[]    @relation("BGradeRefreshOrderWarehouse")
+  bGradeRefreshReceivings BGradeRefreshReceiving[] @relation("BGradeRefreshReceivingWarehouse")
 
   @@index([companyId])
   @@index([type])

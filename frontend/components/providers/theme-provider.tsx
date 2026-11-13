@@ -5,20 +5,38 @@ import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes";
 import Cookies from "js-cookie";
 import { getCookieDomain } from "@/lib/utils";
 
+// Suppress React 19 false-positive warning for next-themes script tag in development
+if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    if (
+      typeof args[0] === "string" &&
+      args[0].includes("Encountered a script tag while rendering React component")
+    ) {
+      return;
+    }
+    originalError.apply(console, args);
+  };
+}
+
 function ThemeSync() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
-    // On mount, check cookie
-    const savedTheme = Cookies.get("app-theme");
-    // If cookie exists and is valid, and differs from what next-themes initialized (from localStorage), sync it.
-    // However, next-themes might have already read from localStorage.
-    // We want the cookie to be the source of truth for cross-domain.
-    if (savedTheme && (savedTheme === "dark" || savedTheme === "light" || savedTheme === "system")) {
-      setTheme(savedTheme);
-    }
-    setMounted(true);
+    let ignore = false;
+    queueMicrotask(() => {
+      if (ignore) return;
+      // On mount, check cookie
+      const savedTheme = Cookies.get("app-theme");
+      if (savedTheme && (savedTheme === "dark" || savedTheme === "light" || savedTheme === "system")) {
+        setTheme(savedTheme);
+      }
+      setMounted(true);
+    });
+    return () => {
+      ignore = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

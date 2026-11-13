@@ -900,6 +900,11 @@ export const menuData: MenuItem[] = [
         href: "/erp/production",
         permissions: ["inventory.read"],
       },
+      {
+        title: "B-Grade Refresh",
+        href: "/erp/production/b-grade-refresh",
+        permissions: ["inventory.read"],
+      },
     ],
   },
   {

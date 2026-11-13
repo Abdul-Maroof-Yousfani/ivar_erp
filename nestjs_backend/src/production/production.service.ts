@@ -9,6 +9,8 @@ import { PurchaseInvoiceService } from '../purchase/purchase-invoice/purchase-in
 import { CalculateCostingDto } from './dto/calculate-costing.dto';
 import { CreateProductionBatchDto } from './dto/create-production-batch.dto';
 import { RefreshBGradeDto } from './dto/refresh-b-grade.dto';
+import { CreateBGradeRefreshOrderDto } from './dto/create-b-grade-refresh-order.dto';
+import { CreateBGradeRefreshReceivingDto } from './dto/create-b-grade-refresh-receiving.dto';
 import {
   MovementType,
   FabricStatus,
@@ -1193,5 +1195,325 @@ export class ProductionService {
     } catch (e) {
       console.warn('syncInventoryItem warning:', e);
     }
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  // B-GRADE REFRESH WORKFLOW (Two-Phase: Send Out → Receive Back)
+  // ───────────────────────────────────────────────────────────────
+
+  async createBGradeRefreshOrder(
+    dto: CreateBGradeRefreshOrderDto,
+    ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    if (!dto.items || dto.items.length === 0) {
+      throw new BadRequestException('At least one item is required.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Generate order number
+      const year = new Date().getFullYear();
+      const count = await tx.bGradeRefreshOrder.count();
+      const orderNumber = `BGO-${year}-${(count + 1).toString().padStart(4, '0')}`;
+
+      // Create the order
+      const order = await tx.bGradeRefreshOrder.create({
+        data: {
+          orderNumber,
+          supplierId: dto.supplierId,
+          bGradeWarehouseId: dto.bGradeWarehouseId,
+          sentDate: dto.sentDate ? new Date(dto.sentDate) : new Date(),
+          notes: dto.notes,
+          status: 'PENDING',
+          items: {
+            create: dto.items.map((item) => ({
+              itemId: item.itemId,
+              qtySent: item.qtySent,
+              qtyReceived: 0,
+              bUnitValue: item.bUnitValue,
+              aFinalUnitCost: item.aFinalUnitCost,
+            })),
+          },
+        },
+        include: {
+          items: true,
+          supplier: true,
+          bGradeWarehouse: true,
+        },
+      });
+
+      // Deduct from B-grade warehouse immediately (stock leaves warehouse on send)
+      for (const item of dto.items) {
+        await this.stockLedgerService.createEntry(
+          {
+            itemId: item.itemId,
+            warehouseId: dto.bGradeWarehouseId,
+            qty: -Number(item.qtySent),
+            movementType: MovementType.OUTBOUND,
+            referenceType: 'B_GRADE_REFRESH_SEND',
+            referenceId: order.id,
+            rate: Number(item.bUnitValue),
+            allowNegativeStock: true,
+          },
+          tx as any,
+          ctx,
+        );
+
+        await this.syncInventoryItem(tx, {
+          itemId: item.itemId,
+          warehouseId: dto.bGradeWarehouseId,
+          qty: -Number(item.qtySent),
+        });
+      }
+
+      return order;
+    });
+  }
+
+  async createBGradeRefreshReceiving(
+    dto: CreateBGradeRefreshReceivingDto,
+    ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    const refreshCostPerPc = Number(dto.refreshCostPerPc || 0);
+
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.bGradeRefreshOrder.findUnique({
+        where: { id: dto.orderId },
+        include: {
+          items: { include: { item: true } },
+          supplier: true,
+        },
+      });
+
+      if (!order) throw new NotFoundException(`Refresh order ${dto.orderId} not found.`);
+      if (order.status === 'CANCELLED') throw new BadRequestException('Cannot receive against a cancelled order.');
+      if (order.status === 'COMPLETED') throw new BadRequestException('This refresh order is already fully completed.');
+
+      // Validate qty constraints
+      for (const ri of dto.items) {
+        const orderItem = order.items.find((oi) => oi.id === ri.orderItemId);
+        if (!orderItem) throw new NotFoundException(`Order item ${ri.orderItemId} not found.`);
+        const remaining = Number(orderItem.qtySent) - Number(orderItem.qtyReceived);
+        if (Number(ri.qtyReceived) > remaining + 0.0001) {
+          throw new BadRequestException(
+            `Cannot receive ${ri.qtyReceived} pcs for item ${orderItem.item?.sku || orderItem.itemId}. Only ${remaining} pcs remain.`,
+          );
+        }
+      }
+
+      // Generate receiving number
+      const year = new Date().getFullYear();
+      const count = await tx.bGradeRefreshReceiving.count();
+      const receivingNumber = `BGR-${year}-${(count + 1).toString().padStart(4, '0')}`;
+
+      const totalQtyReceived = dto.items.reduce((s, i) => s + Number(i.qtyReceived), 0);
+      const totalRefreshCost = totalQtyReceived * refreshCostPerPc;
+
+      // Create purchase invoice if refresh cost > 0
+      let purchaseInvoiceId: string | null = null;
+      if (totalRefreshCost > 0) {
+        const piCount = await tx.purchaseInvoice.count();
+        const invoiceNumber = `PI-REFRESH-${year}-${(piCount + 1).toString().padStart(4, '0')}`;
+        const inv = await tx.purchaseInvoice.create({
+          data: {
+            invoiceNumber,
+            invoiceDate: dto.receivedDate ? new Date(dto.receivedDate) : new Date(),
+            supplierId: order.supplierId,
+            warehouseId: dto.aGradeWarehouseId,
+            invoiceType: 'PRODUCTION_REFRESH',
+            purchaseType: 'REFRESH_CMT',
+            subtotal: totalRefreshCost,
+            taxAmount: 0,
+            discountAmount: 0,
+            totalAmount: totalRefreshCost,
+            remainingAmount: totalRefreshCost,
+            paidAmount: 0,
+            paymentStatus: 'UNPAID',
+            status: 'SUBMITTED',
+            notes: `B-Grade Refresh charges — Order ${order.orderNumber}. ${totalQtyReceived} pcs @ Rs ${refreshCostPerPc}/pc`,
+            items: {
+              create: dto.items
+                .filter((i) => Number(i.qtyReceived) > 0)
+                .map((i) => {
+                  const oi = order.items.find((x) => x.id === i.orderItemId)!;
+                  return {
+                    itemId: i.itemId,
+                    description: `Refresh CMT — ${oi.item?.sku || oi.itemId} (${i.qtyReceived} pcs @ Rs ${refreshCostPerPc})`,
+                    quantity: Number(i.qtyReceived),
+                    unitPrice: refreshCostPerPc,
+                    lineTotal: Number(i.qtyReceived) * refreshCostPerPc,
+                  };
+                }),
+            },
+          },
+        });
+        purchaseInvoiceId = inv.id;
+      }
+
+      // Create receiving record
+      const receiving = await tx.bGradeRefreshReceiving.create({
+        data: {
+          receivingNumber,
+          orderId: dto.orderId,
+          supplierId: order.supplierId,
+          aGradeWarehouseId: dto.aGradeWarehouseId,
+          refreshCostPerPc,
+          totalRefreshCost,
+          purchaseInvoiceId,
+          receivedDate: dto.receivedDate ? new Date(dto.receivedDate) : new Date(),
+          notes: dto.notes,
+          items: {
+            create: dto.items.map((i) => ({
+              orderItemId: i.orderItemId,
+              itemId: i.itemId,
+              qtyReceived: Number(i.qtyReceived),
+              refreshCostPerPc,
+            })),
+          },
+        },
+        include: { items: true },
+      });
+
+      // Update order items qtyReceived & inbound to A-grade warehouse (Option B: aFinalUnitCost + refreshCostPerPc)
+      for (const ri of dto.items) {
+        if (Number(ri.qtyReceived) <= 0) continue;
+
+        const orderItem = order.items.find((oi) => oi.id === ri.orderItemId)!;
+        const aFinalUnitCost = Number(orderItem.aFinalUnitCost) + refreshCostPerPc;
+
+        // Inbound to A-grade warehouse
+        await this.stockLedgerService.createEntry(
+          {
+            itemId: ri.itemId,
+            warehouseId: dto.aGradeWarehouseId,
+            qty: Number(ri.qtyReceived),
+            movementType: MovementType.INBOUND,
+            referenceType: 'B_GRADE_REFRESH_RECEIVE',
+            referenceId: receiving.id,
+            rate: aFinalUnitCost,
+            allowNegativeStock: true,
+          },
+          tx as any,
+          ctx,
+        );
+
+        await this.syncInventoryItem(tx, {
+          itemId: ri.itemId,
+          warehouseId: dto.aGradeWarehouseId,
+          qty: Number(ri.qtyReceived),
+        });
+
+        // Update order item qtyReceived
+        await tx.bGradeRefreshOrderItem.update({
+          where: { id: ri.orderItemId },
+          data: { qtyReceived: { increment: Number(ri.qtyReceived) } },
+        });
+      }
+
+      // Recalculate order status
+      const updatedItems = await tx.bGradeRefreshOrderItem.findMany({ where: { orderId: dto.orderId } });
+      const totalSent = updatedItems.reduce((s, i) => s + Number(i.qtySent), 0);
+      const totalRcvd = updatedItems.reduce((s, i) => s + Number(i.qtyReceived), 0);
+      const newStatus = totalRcvd >= totalSent - 0.0001 ? 'COMPLETED' : 'PARTIALLY_RECEIVED';
+
+      await tx.bGradeRefreshOrder.update({
+        where: { id: dto.orderId },
+        data: { status: newStatus },
+      });
+
+      return { success: true, receiving, orderStatus: newStatus };
+    });
+  }
+
+  async getBGradeRefreshOrders(filters?: { status?: string; supplierId?: string }) {
+    return this.prisma.bGradeRefreshOrder.findMany({
+      where: {
+        ...(filters?.status && { status: filters.status }),
+        ...(filters?.supplierId && { supplierId: filters.supplierId }),
+      },
+      include: {
+        supplier: { select: { id: true, code: true, name: true } },
+        bGradeWarehouse: { select: { id: true, code: true, name: true } },
+        items: {
+          include: { item: { select: { id: true, sku: true, description: true } } },
+        },
+        receivings: { select: { id: true, receivingNumber: true, receivedDate: true, totalRefreshCost: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async getBGradeRefreshOrderById(id: string) {
+    const order = await this.prisma.bGradeRefreshOrder.findUnique({
+      where: { id },
+      include: {
+        supplier: true,
+        bGradeWarehouse: true,
+        items: {
+          include: {
+            item: { select: { id: true, sku: true, description: true, uom: true } },
+            receivingItems: true,
+          },
+        },
+        receivings: {
+          include: {
+            items: {
+              include: {
+                item: { select: { id: true, sku: true, description: true, uom: true } },
+              },
+            },
+            aGradeWarehouse: { select: { id: true, code: true, name: true } },
+            purchaseInvoice: { select: { id: true, invoiceNumber: true, totalAmount: true, paymentStatus: true } },
+          },
+          orderBy: { receivedDate: 'desc' },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException(`Refresh order ${id} not found.`);
+    return order;
+  }
+
+  async cancelBGradeRefreshOrder(
+    id: string,
+    ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.bGradeRefreshOrder.findUnique({
+        where: { id },
+        include: { items: true },
+      });
+      if (!order) throw new NotFoundException(`Refresh order ${id} not found.`);
+      if (order.status !== 'PENDING') {
+        throw new BadRequestException('Only PENDING orders can be cancelled.');
+      }
+
+      // Reverse stock deductions
+      for (const item of order.items) {
+        await this.stockLedgerService.createEntry(
+          {
+            itemId: item.itemId,
+            warehouseId: order.bGradeWarehouseId,
+            qty: Number(item.qtySent),
+            movementType: MovementType.INBOUND,
+            referenceType: 'B_GRADE_REFRESH_CANCEL',
+            referenceId: order.id,
+            rate: Number(item.bUnitValue),
+            allowNegativeStock: true,
+          },
+          tx as any,
+          ctx,
+        );
+
+        await this.syncInventoryItem(tx, {
+          itemId: item.itemId,
+          warehouseId: order.bGradeWarehouseId,
+          qty: Number(item.qtySent),
+        });
+      }
+
+      return tx.bGradeRefreshOrder.update({
+        where: { id },
+        data: { status: 'CANCELLED' },
+      });
+    });
   }
 }

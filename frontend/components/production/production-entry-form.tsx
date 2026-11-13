@@ -669,6 +669,10 @@ export function ProductionEntryForm({
       toast.error("Please select the Dedicated B-Grade Warehouse.");
       return;
     }
+    if (aGradeWarehouseId === bGradeWarehouseId) {
+      toast.error("A-Grade and B-Grade warehouses cannot be the same.");
+      return;
+    }
 
     // Validate receiving lines
     const validLines = lines.filter(
@@ -1767,15 +1771,17 @@ export function ProductionEntryForm({
                         <SelectValue placeholder="Select Finished Goods Warehouse..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {warehouses.map((w) => (
-                          <SelectItem
-                            key={w.id}
-                            value={w.id}
-                            className="text-xs"
-                          >
-                            [{w.code}] {w.name}
-                          </SelectItem>
-                        ))}
+                        {warehouses
+                          .filter((w) => !bGradeWarehouseId || w.id !== bGradeWarehouseId)
+                          .map((w) => (
+                            <SelectItem
+                              key={w.id}
+                              value={w.id}
+                              className="text-xs"
+                            >
+                              [{w.code}] {w.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1799,15 +1805,17 @@ export function ProductionEntryForm({
                         <SelectValue placeholder="Select B-Grade Warehouse..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {warehouses.map((w) => (
-                          <SelectItem
-                            key={w.id}
-                            value={w.id}
-                            className="text-xs"
-                          >
-                            [{w.code}] {w.name}
-                          </SelectItem>
-                        ))}
+                        {warehouses
+                          .filter((w) => !aGradeWarehouseId || w.id !== aGradeWarehouseId)
+                          .map((w) => (
+                            <SelectItem
+                              key={w.id}
+                              value={w.id}
+                              className="text-xs"
+                            >
+                              [{w.code}] {w.name}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
