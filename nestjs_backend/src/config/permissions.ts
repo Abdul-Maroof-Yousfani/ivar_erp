@@ -1995,6 +1995,11 @@ export const PERMISSIONS = [
   { name: 'erp.sales.dc.deliver', description: 'Mark Delivery Challan as Delivered' },
   { name: 'erp.sales.dc.cancel', description: 'Cancel Delivery Challan' },
 
+  // ── ERP Sales — Reports ──────────────────────────────────────────
+  { name: 'erp.sales.report.out-of-stock', description: 'View Out of Stock Report' },
+  { name: 'erp.sales.report.sales-activity', description: 'View Sales Activity' },
+
+
    // ── POS Inventory ──────────────────────────────────────────────────────────
   { name: 'pos.inventory.view', description: 'View POS Inventory Stock' },
   { name: 'pos.inventory.receiving.view', description: 'View POS Stock Receiving (Warehouse → Outlet)' },
