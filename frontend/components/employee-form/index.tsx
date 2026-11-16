@@ -84,25 +84,32 @@ const employeeFormSchema = z.object({
   // Basic Information
   employeeId: z
     .string()
-    .min(1, "Employee ID is required")
-    .min(5, "Employee ID must be at least 5 characters")
-    .max(20, "Employee ID must not exceed 20 characters"),
+    .optional()
+    .refine(
+      (val) => !val || (val.length >= 5 && val.length <= 20),
+      "Employee ID must be between 5-20 characters"
+    ),
 
   employeeName: z
     .string()
-    .min(1, "Employee Name is required")
-    .min(3, "Employee Name must be at least 3 characters")
-    .max(100, "Employee Name must not exceed 100 characters"),
+    .optional()
+    .refine(
+      (val) => !val || (val.length >= 3 && val.length <= 100),
+      "Employee Name must be between 3-100 characters"
+    ),
 
   fatherHusbandName: z
     .string()
-    .min(1, "Father/Husband Name is required")
-    .min(3, "Father/Husband Name must be at least 3 characters")
-    .max(100, "Father/Husband Name must not exceed 100 characters"),
+    .optional()
+    .refine(
+      (val) => !val || (val.length >= 3 && val.length <= 100),
+      "Father/Husband Name must be between 3-100 characters"
+    ),
 
   department: z
     .string()
-    .min(1, "Department is required"),
+    .optional()
+    .or(z.literal("")),
 
   subDepartment: z
     .string()
@@ -110,17 +117,21 @@ const employeeFormSchema = z.object({
 
   employeeGrade: z
     .string()
-    .min(1, "Employee Grade is required"),
+    .optional()
+    .or(z.literal("")),
 
   attendanceId: z
     .string()
-    .min(1, "Attendance ID is required")
-    .min(3, "Attendance ID must be at least 3 characters")
-    .max(20, "Attendance ID must not exceed 20 characters"),
+    .optional()
+    .refine(
+      (val) => !val || (val.length >= 3 && val.length <= 20),
+      "Attendance ID must be between 3-20 characters"
+    ),
 
   designation: z
     .string()
-    .min(1, "Designation is required"),
+    .optional()
+    .or(z.literal("")),
 
   maritalStatus: z
     .string()
@@ -138,9 +149,9 @@ const employeeFormSchema = z.object({
 
   cnicNumber: z
     .string()
-    .min(1, "CNIC Number is required")
+    .optional()
     .refine(
-      (value) => validateCNIC(value),
+      (value) => !value || validateCNIC(value),
       "CNIC must be in format: 00000-0000000-0"
     ),
 
@@ -180,17 +191,19 @@ const employeeFormSchema = z.object({
 
   nationality: z
     .string()
-    .min(1, "Nationality is required"),
+    .optional()
+    .or(z.literal("")),
 
   gender: z
     .string()
-    .min(1, "Gender is required"),
+    .optional()
+    .or(z.literal("")),
 
   contactNumber: z
     .string()
-    .min(1, "Contact Number is required")
+    .optional()
     .refine(
-      (value) => /^03\d{2}-\d{7}$|^\+92\d{10}$/.test(value.replace(/\s/g, "")),
+      (value) => !value || /^03\d{2}-\d{7}$|^\+92\d{10}$/.test(value.replace(/\s/g, "")),
       "Contact Number must be in format: 03XX-XXXXXXX"
     ),
 
@@ -221,21 +234,25 @@ const employeeFormSchema = z.object({
 
   country: z
     .string()
-    .min(1, "Country is required"),
+    .optional()
+    .or(z.literal("")),
 
   state: z
     .string()
-    .min(1, "State is required"),
+    .optional()
+    .or(z.literal("")),
 
   city: z
     .string()
-    .min(1, "City is required"),
+    .optional()
+    .or(z.literal("")),
 
   employeeSalary: z
     .string()
-    .min(1, "Employee Salary is required")
+    .optional()
     .refine(
       (value) => {
+        if (!value) return true;
         const num = parseFloat(value);
         return !isNaN(num) && num > 0;
       },
@@ -287,7 +304,8 @@ const employeeFormSchema = z.object({
 
   workingHoursPolicy: z
     .string()
-    .min(1, "Working Hours Policy is required"),
+    .optional()
+    .or(z.literal("")),
 
   location: z
     .string()
@@ -295,7 +313,8 @@ const employeeFormSchema = z.object({
 
   leavesPolicy: z
     .string()
-    .min(1, "Leaves Policy is required"),
+    .optional()
+    .or(z.literal("")),
 
   allocation: z
     .string()
@@ -347,7 +366,7 @@ const employeeFormSchema = z.object({
   socialSecurityRegistrations: z
     .array(
       z.object({
-        institutionId: z.string().min(1, "Institution is required"),
+        institutionId: z.string().optional(),
         registrationNumber: z.string().optional(),
         cardNumber: z.string().optional(),
         registrationDate: z.string().optional(),
@@ -363,7 +382,7 @@ const employeeFormSchema = z.object({
   equipmentAssignments: z
     .array(
       z.object({
-        equipmentId: z.string().min(1, "Item type is required"),
+        equipmentId: z.string().optional(),
         productId: z.string().optional(),
         assignedDate: z.string().optional(),
         notes: z.string().optional(),

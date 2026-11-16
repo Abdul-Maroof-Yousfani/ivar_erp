@@ -155,7 +155,7 @@ export class ShopifyWebhookController {
     }
   }
 
-  // ── orders/create or orders/paid: mark voucher as REDEEMED_ONLINE ──
+  // ── orders/create or orders/paid: partial or full voucher redemption ──
   private async handleOrderWebhook(payload: any, topic: string): Promise<void> {
     const shopifyOrderId = String(payload?.id || '');
     const discountCodes = this.shopifyService.extractDiscountCodesFromOrder(payload);
@@ -167,6 +167,10 @@ export class ShopifyWebhookController {
       return;
     }
 
+    // Extract actual per-code discount amounts from Shopify payload.
+    // For line_item-scoped discounts, DC is excluded automatically.
+    const discountAmountMap = this.shopifyService.extractDiscountAmounts(payload);
+
     this.logger.log(
       `[Shopify ${topic}] Order ${shopifyOrderId} -- codes: ${discountCodes.join(', ')}`,
     );
@@ -175,46 +179,141 @@ export class ShopifyWebhookController {
       runInBackground(
         `Shopify redeem ${code}`,
         (async () => {
-        const voucher = await this.prisma.voucher.findFirst({
-          where: { code, isDeleted: false },
-        });
+          const voucher = await this.prisma.voucher.findFirst({
+            where: { code, isDeleted: false },
+          });
 
-        if (!voucher) {
-          this.logger.warn(`[Shopify orders/paid] No ERP voucher found for code: ${code}`);
-          return;
-        }
+          if (!voucher) {
+            this.logger.warn(`[Shopify orders/paid] No ERP voucher found for code: ${code}`);
+            return;
+          }
 
-        if (voucher.isRedeemed) {
-          this.logger.warn(`[Shopify orders/paid] Voucher ${code} already redeemed -- skipping`);
-          return;
-        }
+          if (voucher.isRedeemed) {
+            this.logger.warn(`[Shopify orders/paid] Voucher ${code} already fully redeemed -- skipping`);
+            return;
+          }
 
-        // Mark voucher as redeemed
-        await this.prisma.voucher.update({
-          where: { id: voucher.id },
-          data: {
-            isRedeemed: true,
-            isActive: false,
-            shopifySyncStatus: 'REDEEMED_ONLINE',
-          },
-        });
+          // Use actual Shopify discount amount (item total only — DC excluded by target_type: line_item).
+          // Fall back to remainingBalance if Shopify didn't send amount (shouldn't happen).
+          const currentBalance = Number((voucher as any).remainingBalance ?? voucher.faceValue);
+          const shopifyActualAmount = discountAmountMap[code];
+          const amountToDeduct = shopifyActualAmount !== undefined
+            ? Math.min(shopifyActualAmount, currentBalance)
+            : currentBalance; // fallback: treat as full balance use
 
-        // Audit trail
-        await this.prisma.voucherTransaction.create({
-          data: {
-            voucherId: voucher.id,
-            action: 'REDEEMED_ONLINE',
-            amountUsed: voucher.faceValue,
-            notes: `Redeemed on Shopify -- Order ID: ${shopifyOrderId}`,
-          },
-        });
+          const newBalance = parseFloat((currentBalance - amountToDeduct).toFixed(2));
+          const isFullyRedeemed = newBalance <= 0;
 
-        this.logger.log(
-          `[Shopify ${topic}] Voucher ${code} -> REDEEMED_ONLINE (Shopify Order: ${shopifyOrderId})`,
-        );
-      })(),
+          // Idempotency: check if this order was already processed for this voucher
+          const existingRedemption = await this.prisma.voucherTransaction.findFirst({
+            where: {
+              voucherId: voucher.id,
+              notes: { contains: shopifyOrderId },
+              action: { in: ['REDEEMED_ONLINE', 'PARTIAL_REDEEMED_ONLINE'] },
+            },
+          });
+          if (existingRedemption) {
+            this.logger.warn(
+              `[Shopify ${topic}] Voucher ${code} already processed for Shopify Order ${shopifyOrderId} -- skipping duplicate webhook`,
+            );
+            return;
+          }
+
+          // Always mark original voucher as redeemed
+          await this.prisma.voucher.update({
+            where: { id: voucher.id },
+            data: {
+              remainingBalance: 0,
+              isRedeemed: true,
+              isActive: false,
+              shopifySyncStatus: 'REDEEMED_ONLINE',
+              shopifySyncedAt: new Date(),
+            },
+          });
+
+          // Audit trail
+          await this.prisma.voucherTransaction.create({
+            data: {
+              voucherId: voucher.id,
+              action: 'REDEEMED_ONLINE',
+              amountUsed: amountToDeduct,
+              notes: newBalance > 0
+                ? `Redeemed on Shopify -- Order ID: ${shopifyOrderId}. Used: Rs ${amountToDeduct}. Remaining balance: Rs ${newBalance}`
+                : `Fully redeemed on Shopify -- Order ID: ${shopifyOrderId}`,
+            },
+          });
+
+          // Expire original PriceRule on Shopify
+          if ((voucher as any).shopifyPriceRuleId) {
+            await this.shopifyService.expirePriceRule((voucher as any).shopifyPriceRuleId).catch(err => {
+              this.logger.error(`Failed to expire redeemed voucher ${code}: ${err.message}`);
+            });
+          } else {
+            await this.shopifyService.expirePriceRuleByCode(code).catch(err => {
+              this.logger.error(`Failed to expire redeemed voucher ${code} by code: ${err.message}`);
+            });
+          }
+
+          // If remaining balance > 0: AUTOMATICALLY GENERATE NEW CREDIT VOUCHER FOR CUSTOMER!
+          if (newBalance > 0) {
+            const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+            const newCode = `CRD-${rand}`;
+            const expiresAt = undefined; // Credit vouchers do not expire
+
+            const creditVoucher = await this.prisma.voucher.create({
+              data: {
+                code: newCode,
+                voucherType: 'CREDIT',
+                faceValue: newBalance,
+                remainingBalance: newBalance,
+                description: `Credit voucher for unused balance of ${voucher.code}`,
+                customerId: voucher.customerId,
+                issuedByLocationId: voucher.issuedByLocationId,
+                expiresAt: null,
+                isActive: true,
+                isRedeemed: false,
+                transactions: {
+                  create: {
+                    action: 'ISSUED',
+                    amountUsed: 0,
+                    notes: `Credit voucher issued for unused balance of ${voucher.code} (Shopify Order ${shopifyOrderId})`,
+                  },
+                },
+              },
+            });
+            this.logger.log(`[Shopify ${topic}] Created new Credit Voucher ${newCode} for remaining balance Rs ${newBalance}`);
+
+            // Push new credit voucher to Shopify so customer can immediately use it online!
+            try {
+              const pushRes = await this.shopifyService.pushVoucherToShopify({
+                id: creditVoucher.id,
+                code: creditVoucher.code,
+                voucherType: 'CREDIT',
+                faceValue: newBalance,
+                expiresAt,
+              });
+              if (pushRes.success) {
+                await this.prisma.voucher.update({
+                  where: { id: creditVoucher.id },
+                  data: {
+                    shopifyPriceRuleId: pushRes.priceRuleId,
+                    shopifyDiscountId: pushRes.discountCodeId,
+                    shopifySyncStatus: 'SYNCED',
+                    shopifySyncedAt: new Date(),
+                  },
+                });
+                this.logger.log(`[Shopify ${topic}] Pushed new Credit Voucher ${newCode} to Shopify`);
+              }
+            } catch (err) {
+              this.logger.error(`Failed to push new Credit Voucher ${newCode} to Shopify: ${err.message}`);
+            }
+          }
+
+          this.logger.log(
+            `[Shopify ${topic}] Voucher ${code} -- ${isFullyRedeemed ? 'FULLY REDEEMED' : `PARTIAL (Rs ${amountToDeduct} used, Rs ${newBalance} remaining)`} (Shopify Order: ${shopifyOrderId})`,
+          );
+        })(),
       );
     }
   }
 }
-

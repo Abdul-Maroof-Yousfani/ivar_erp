@@ -452,19 +452,23 @@ export function PrintReceipt({
   );
 
   const totalPaid = tenders.reduce(
-    (s, t) =>
-      s +
-      (t.method === "voucher" && t.voucherFaceValue
-        ? t.voucherFaceValue
-        : t.amount),
+    (s, t) => s + Number(t.amount || 0),
     0,
   );
+
+  const fbrPosFee = hasFbrInfo ? Number(order?.fbrPosFee ?? 0) || 1 : 0;
+  const isCourierifyOrder = Boolean(order?.notes?.includes("Source: Courierify"));
 
   const deliveryFee = (() => {
     const match = order?.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
     if (match && match[1]) return parseFloat(match[1].replace(/,/g, ""));
-    if (order?.notes?.includes("Source: Courierify") || order?.paymentMethod?.toUpperCase() === "COD") {
-      if (totalPaid > grandTotal) return totalPaid - grandTotal;
+    const itemsTotal = (order?.items || []).reduce(
+      (acc: number, item: any) => acc + Number(item.lineTotal || 0),
+      0,
+    );
+    const savedFbrFee = isSavedOrder && order?.fbrInvoiceNumber ? fbrPosFee : 0;
+    if (isCourierifyOrder && itemsTotal > 0 && grandTotal > itemsTotal + savedFbrFee + 1) {
+      return grandTotal - itemsTotal - savedFbrFee;
     }
     return 0;
   })();
@@ -473,7 +477,6 @@ export function PrintReceipt({
     grandTotal,
     valueForSales + totalTax + deliveryFee,
   );
-  const fbrPosFee = hasFbrInfo ? Number(order?.fbrPosFee ?? 0) || 1 : 0;
   const finalGrandTotal = isSavedOrder
     ? effectiveGrandTotal
     : effectiveGrandTotal + fbrPosFee;
@@ -1166,15 +1169,11 @@ function ReceiptBody({
           {tenders.map((t, i) => (
             <Row
               key={i}
-              label={`${t.method.replace(/_/g, " ")}${t.cardLast4 ? ` ••••${t.cardLast4}` : ""}${t.slipNo ? (t.method === "voucher" ? ` #${t.slipNo}` : ` (${t.slipNo})`) : ""}`}
-              value={
-                t.method === "voucher" && t.voucherFaceValue
-                  ? fmt(t.voucherFaceValue)
-                  : fmt(t.amount)
-              }
+              label={`${t.method.replace(/_/g, " ")}${t.cardLast4 ? ` ••••${t.cardLast4}` : ""}${t.slipNo ? (t.method === "voucher" ? ` #${t.slipNo}${t.voucherFaceValue && t.voucherFaceValue > t.amount ? ` (Total: ${fmt(t.voucherFaceValue)})` : ""}` : ` (${t.slipNo})`) : ""}`}
+              value={fmt(t.amount)}
             />
           ))}
-          {totalPaid > 0 && totalPaid !== finalGrandTotal && (
+          {totalPaid > 0 && Math.round(totalPaid) !== Math.round(finalGrandTotal) && (
             <Row label="Total Paid" value={fmt(totalPaid)} />
           )}
           {changeAmount > 0 && (
@@ -1555,13 +1554,10 @@ function A4InvoiceBody({
                       <span className="capitalize text-zinc-600 font-medium">
                         {t.method.replace(/_/g, " ")}
                         {t.cardLast4 ? ` •••• ${t.cardLast4}` : ""}
-                        {t.slipNo ? ` (${t.slipNo})` : ""}
+                        {t.slipNo ? (t.method === "voucher" ? ` #${t.slipNo}${t.voucherFaceValue && t.voucherFaceValue > t.amount ? ` (Total: Rs. ${fmt(t.voucherFaceValue)})` : ""}` : ` (${t.slipNo})`) : ""}
                       </span>
                       <span className="font-bold text-zinc-800">
-                        Rs.{" "}
-                        {t.method === "voucher" && t.voucherFaceValue
-                          ? fmt(t.voucherFaceValue)
-                          : fmt(t.amount)}
+                        Rs. {fmt(t.amount)}
                       </span>
                     </div>
                   ))}

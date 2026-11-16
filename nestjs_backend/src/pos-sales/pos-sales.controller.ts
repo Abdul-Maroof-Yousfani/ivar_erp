@@ -454,9 +454,20 @@ export class PosSalesController {
     ) {
         // Determine effective filtering context
         let effectivePosId = posId;
-        let effectiveLocationId: string | undefined = locationId;
+        // Parse locationId — may be a single ID or comma-separated list of IDs
+        let effectiveLocationId: string | undefined = undefined;
+        let effectiveLocationIds: string[] | undefined = undefined;
 
-        if (!effectiveLocationId) {
+        if (locationId) {
+            const ids = locationId.split(',').map(id => id.trim()).filter(Boolean);
+            if (ids.length === 1) {
+                effectiveLocationId = ids[0];
+            } else if (ids.length > 1) {
+                effectiveLocationIds = ids;
+            }
+        }
+
+        if (!effectiveLocationId && !effectiveLocationIds) {
             // 1. Context from logged-in user
             if (req.user?.isPosUser || req.user?.isTerminal) {
                 if (!effectivePosId && !search) effectivePosId = req.user.posId || req.user.terminalId;
@@ -485,7 +496,7 @@ export class PosSalesController {
             effectivePosId,
             activityType,
             { startDate, endDate, search, merchantId, paymentMethod },
-            effectiveLocationId,
+            effectiveLocationIds ?? effectiveLocationId,
         );
     }
 

@@ -1,0 +1,251 @@
+{"row":3,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0001","employeeName":"Muhammad Saad"}
+{"row":3,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0001","employeeName":"Muhammad Saad"}
+{"row":3,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0001","employeeName":"Muhammad Saad"}
+{"row":4,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0002","employeeName":"Muhammad Kamil"}
+{"row":4,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0002","employeeName":"Muhammad Kamil"}
+{"row":4,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0002","employeeName":"Muhammad Kamil"}
+{"row":5,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0003","employeeName":"Kashan Ali"}
+{"row":5,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0003","employeeName":"Kashan Ali"}
+{"row":5,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0003","employeeName":"Kashan Ali"}
+{"row":6,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0004","employeeName":"Muhammad Qasim"}
+{"row":6,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0004","employeeName":"Muhammad Qasim"}
+{"row":6,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0004","employeeName":"Muhammad Qasim"}
+{"row":6,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0004","employeeName":"Muhammad Qasim"}
+{"row":6,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0004","employeeName":"Muhammad Qasim"}
+{"row":7,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0005","employeeName":"Muhammad Siddique"}
+{"row":7,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0005","employeeName":"Muhammad Siddique"}
+{"row":7,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0005","employeeName":"Muhammad Siddique"}
+{"row":8,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0006","employeeName":"Fareed Akhter Sheikh"}
+{"row":8,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0006","employeeName":"Fareed Akhter Sheikh"}
+{"row":8,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0006","employeeName":"Fareed Akhter Sheikh"}
+{"row":9,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0007","employeeName":"Abdul Rehman"}
+{"row":9,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0007","employeeName":"Abdul Rehman"}
+{"row":9,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0007","employeeName":"Abdul Rehman"}
+{"row":10,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0008","employeeName":"Faisal Khan"}
+{"row":10,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0008","employeeName":"Faisal Khan"}
+{"row":10,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0008","employeeName":"Faisal Khan"}
+{"row":11,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0009","employeeName":"Muhammad Kamran"}
+{"row":11,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0009","employeeName":"Muhammad Kamran"}
+{"row":11,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0009","employeeName":"Muhammad Kamran"}
+{"row":12,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0010","employeeName":"Areesh"}
+{"row":12,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0010","employeeName":"Areesh"}
+{"row":12,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0010","employeeName":"Areesh"}
+{"row":13,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0011","employeeName":"Hashir ullah khan"}
+{"row":13,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0011","employeeName":"Hashir ullah khan"}
+{"row":13,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0011","employeeName":"Hashir ullah khan"}
+{"row":14,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0012","employeeName":"Abdul rafay"}
+{"row":14,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0012","employeeName":"Abdul rafay"}
+{"row":14,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0012","employeeName":"Abdul rafay"}
+{"row":15,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0013","employeeName":"Babar ali"}
+{"row":15,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0013","employeeName":"Babar ali"}
+{"row":15,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0013","employeeName":"Babar ali"}
+{"row":16,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0014","employeeName":"Shazil"}
+{"row":16,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0014","employeeName":"Shazil"}
+{"row":16,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0014","employeeName":"Shazil"}
+{"row":17,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0015","employeeName":"Furqan"}
+{"row":17,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0015","employeeName":"Furqan"}
+{"row":17,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0015","employeeName":"Furqan"}
+{"row":18,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0016","employeeName":"Osama Afzal"}
+{"row":18,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0016","employeeName":"Osama Afzal"}
+{"row":18,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0016","employeeName":"Osama Afzal"}
+{"row":19,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0017","employeeName":"Muhammad Ejaz"}
+{"row":19,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0017","employeeName":"Muhammad Ejaz"}
+{"row":19,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0017","employeeName":"Muhammad Ejaz"}
+{"row":20,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0018","employeeName":"Niyaz Muhammad"}
+{"row":20,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0018","employeeName":"Niyaz Muhammad"}
+{"row":20,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0018","employeeName":"Niyaz Muhammad"}
+{"row":21,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0019","employeeName":"Muhammad Zeeshan"}
+{"row":21,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0019","employeeName":"Muhammad Zeeshan"}
+{"row":21,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0019","employeeName":"Muhammad Zeeshan"}
+{"row":22,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0020","employeeName":"Amir Abbas"}
+{"row":22,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0020","employeeName":"Amir Abbas"}
+{"row":22,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0020","employeeName":"Amir Abbas"}
+{"row":23,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0021","employeeName":"Zeeshan"}
+{"row":23,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0021","employeeName":"Zeeshan"}
+{"row":23,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0021","employeeName":"Zeeshan"}
+{"row":24,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0022","employeeName":"Muhammad Hammad"}
+{"row":24,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0022","employeeName":"Muhammad Hammad"}
+{"row":24,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0022","employeeName":"Muhammad Hammad"}
+{"row":25,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0023","employeeName":"Muhammad Shadab"}
+{"row":25,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0023","employeeName":"Muhammad Shadab"}
+{"row":25,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0023","employeeName":"Muhammad Shadab"}
+{"row":26,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0024","employeeName":"Rizwan Memon"}
+{"row":26,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0024","employeeName":"Rizwan Memon"}
+{"row":26,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0024","employeeName":"Rizwan Memon"}
+{"row":27,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0025","employeeName":"Muhammad Salman"}
+{"row":27,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0025","employeeName":"Muhammad Salman"}
+{"row":27,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0025","employeeName":"Muhammad Salman"}
+{"row":28,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0026","employeeName":"Shuraim"}
+{"row":28,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0026","employeeName":"Shuraim"}
+{"row":28,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0026","employeeName":"Shuraim"}
+{"row":29,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0027","employeeName":"Osama"}
+{"row":29,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0027","employeeName":"Osama"}
+{"row":29,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0027","employeeName":"Osama"}
+{"row":30,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0028","employeeName":"Umer Farooq"}
+{"row":30,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0028","employeeName":"Umer Farooq"}
+{"row":30,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0028","employeeName":"Umer Farooq"}
+{"row":31,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0029","employeeName":"Muhammad Saad Ahmed"}
+{"row":31,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0029","employeeName":"Muhammad Saad Ahmed"}
+{"row":31,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0029","employeeName":"Muhammad Saad Ahmed"}
+{"row":32,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0030","employeeName":"Abdul Raheem"}
+{"row":32,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0030","employeeName":"Abdul Raheem"}
+{"row":32,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0030","employeeName":"Abdul Raheem"}
+{"row":33,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0031","employeeName":"Muhammad  Rehman"}
+{"row":33,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0031","employeeName":"Muhammad  Rehman"}
+{"row":33,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0031","employeeName":"Muhammad  Rehman"}
+{"row":34,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0032","employeeName":"Tahir Ali"}
+{"row":34,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0032","employeeName":"Tahir Ali"}
+{"row":34,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0032","employeeName":"Tahir Ali"}
+{"row":35,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0033","employeeName":"Noor"}
+{"row":35,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0033","employeeName":"Noor"}
+{"row":35,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0033","employeeName":"Noor"}
+{"row":36,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0101","employeeName":"Saad Zulfiqar Ali"}
+{"row":36,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0101","employeeName":"Saad Zulfiqar Ali"}
+{"row":36,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0101","employeeName":"Saad Zulfiqar Ali"}
+{"row":36,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0101","employeeName":"Saad Zulfiqar Ali"}
+{"row":36,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0101","employeeName":"Saad Zulfiqar Ali"}
+{"row":37,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0102","employeeName":"Muhammad Shoaib Abbasi"}
+{"row":37,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0102","employeeName":"Muhammad Shoaib Abbasi"}
+{"row":37,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0102","employeeName":"Muhammad Shoaib Abbasi"}
+{"row":37,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0102","employeeName":"Muhammad Shoaib Abbasi"}
+{"row":37,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0102","employeeName":"Muhammad Shoaib Abbasi"}
+{"row":38,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0103","employeeName":"Syed Muhammad Usman"}
+{"row":38,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0103","employeeName":"Syed Muhammad Usman"}
+{"row":38,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0103","employeeName":"Syed Muhammad Usman"}
+{"row":38,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0103","employeeName":"Syed Muhammad Usman"}
+{"row":38,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0103","employeeName":"Syed Muhammad Usman"}
+{"row":39,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0104","employeeName":"Samad Ali"}
+{"row":39,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0104","employeeName":"Samad Ali"}
+{"row":39,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0104","employeeName":"Samad Ali"}
+{"row":39,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0104","employeeName":"Samad Ali"}
+{"row":39,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0104","employeeName":"Samad Ali"}
+{"row":40,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0105","employeeName":"Rahul Roy"}
+{"row":40,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0105","employeeName":"Rahul Roy"}
+{"row":40,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0105","employeeName":"Rahul Roy"}
+{"row":40,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0105","employeeName":"Rahul Roy"}
+{"row":40,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0105","employeeName":"Rahul Roy"}
+{"row":41,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0106","employeeName":"Ali Ahmed"}
+{"row":41,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0106","employeeName":"Ali Ahmed"}
+{"row":41,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0106","employeeName":"Ali Ahmed"}
+{"row":41,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0106","employeeName":"Ali Ahmed"}
+{"row":41,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0106","employeeName":"Ali Ahmed"}
+{"row":42,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0107","employeeName":"Irtiza Mehmood"}
+{"row":42,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0107","employeeName":"Irtiza Mehmood"}
+{"row":42,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0107","employeeName":"Irtiza Mehmood"}
+{"row":42,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0107","employeeName":"Irtiza Mehmood"}
+{"row":42,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0107","employeeName":"Irtiza Mehmood"}
+{"row":43,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0108","employeeName":"M Zaheer Khan"}
+{"row":43,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0108","employeeName":"M Zaheer Khan"}
+{"row":43,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0108","employeeName":"M Zaheer Khan"}
+{"row":43,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0108","employeeName":"M Zaheer Khan"}
+{"row":43,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0108","employeeName":"M Zaheer Khan"}
+{"row":44,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0109","employeeName":"Muhammad Ali"}
+{"row":44,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0109","employeeName":"Muhammad Ali"}
+{"row":44,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0109","employeeName":"Muhammad Ali"}
+{"row":44,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0109","employeeName":"Muhammad Ali"}
+{"row":44,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0109","employeeName":"Muhammad Ali"}
+{"row":45,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0110","employeeName":"Usama Rehman"}
+{"row":45,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0110","employeeName":"Usama Rehman"}
+{"row":45,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0110","employeeName":"Usama Rehman"}
+{"row":45,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0110","employeeName":"Usama Rehman"}
+{"row":45,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0110","employeeName":"Usama Rehman"}
+{"row":46,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0111","employeeName":"Muhammad Adil"}
+{"row":46,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0111","employeeName":"Muhammad Adil"}
+{"row":46,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0111","employeeName":"Muhammad Adil"}
+{"row":46,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0111","employeeName":"Muhammad Adil"}
+{"row":46,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0111","employeeName":"Muhammad Adil"}
+{"row":47,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0112","employeeName":"Uzair Inayat"}
+{"row":47,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0112","employeeName":"Uzair Inayat"}
+{"row":47,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0112","employeeName":"Uzair Inayat"}
+{"row":47,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0112","employeeName":"Uzair Inayat"}
+{"row":47,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0112","employeeName":"Uzair Inayat"}
+{"row":48,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0113","employeeName":"Sheikh Abdul Rafay"}
+{"row":48,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0113","employeeName":"Sheikh Abdul Rafay"}
+{"row":48,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0113","employeeName":"Sheikh Abdul Rafay"}
+{"row":48,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0113","employeeName":"Sheikh Abdul Rafay"}
+{"row":48,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0113","employeeName":"Sheikh Abdul Rafay"}
+{"row":49,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0114","employeeName":"Rizwan"}
+{"row":49,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0114","employeeName":"Rizwan"}
+{"row":49,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0114","employeeName":"Rizwan"}
+{"row":49,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0114","employeeName":"Rizwan"}
+{"row":49,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0114","employeeName":"Rizwan"}
+{"row":50,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0115","employeeName":"Simon Riaz"}
+{"row":50,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0115","employeeName":"Simon Riaz"}
+{"row":50,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0115","employeeName":"Simon Riaz"}
+{"row":50,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0115","employeeName":"Simon Riaz"}
+{"row":50,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0115","employeeName":"Simon Riaz"}
+{"row":51,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0116","employeeName":"Farman"}
+{"row":51,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0116","employeeName":"Farman"}
+{"row":51,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0116","employeeName":"Farman"}
+{"row":51,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0116","employeeName":"Farman"}
+{"row":51,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0116","employeeName":"Farman"}
+{"row":52,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0117","employeeName":"Ehtisham"}
+{"row":52,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0117","employeeName":"Ehtisham"}
+{"row":52,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0117","employeeName":"Ehtisham"}
+{"row":52,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0117","employeeName":"Ehtisham"}
+{"row":52,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0117","employeeName":"Ehtisham"}
+{"row":53,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0118","employeeName":"Rana Akash Perviaz"}
+{"row":53,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0118","employeeName":"Rana Akash Perviaz"}
+{"row":53,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0118","employeeName":"Rana Akash Perviaz"}
+{"row":53,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0118","employeeName":"Rana Akash Perviaz"}
+{"row":53,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0118","employeeName":"Rana Akash Perviaz"}
+{"row":54,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0119","employeeName":"M Umar Ali"}
+{"row":54,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0119","employeeName":"M Umar Ali"}
+{"row":54,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0119","employeeName":"M Umar Ali"}
+{"row":54,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0119","employeeName":"M Umar Ali"}
+{"row":54,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0119","employeeName":"M Umar Ali"}
+{"row":55,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0120","employeeName":"Ameer Hamza"}
+{"row":55,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0120","employeeName":"Ameer Hamza"}
+{"row":55,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0120","employeeName":"Ameer Hamza"}
+{"row":55,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0120","employeeName":"Ameer Hamza"}
+{"row":55,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0120","employeeName":"Ameer Hamza"}
+{"row":56,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0121","employeeName":"Farukh"}
+{"row":56,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0121","employeeName":"Farukh"}
+{"row":56,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0121","employeeName":"Farukh"}
+{"row":56,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0121","employeeName":"Farukh"}
+{"row":56,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0121","employeeName":"Farukh"}
+{"row":57,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0122","employeeName":"Shahzaib"}
+{"row":57,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0122","employeeName":"Shahzaib"}
+{"row":57,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0122","employeeName":"Shahzaib"}
+{"row":57,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0122","employeeName":"Shahzaib"}
+{"row":57,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0122","employeeName":"Shahzaib"}
+{"row":58,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0123","employeeName":"Saim"}
+{"row":58,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0123","employeeName":"Saim"}
+{"row":58,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0123","employeeName":"Saim"}
+{"row":58,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0123","employeeName":"Saim"}
+{"row":58,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0123","employeeName":"Saim"}
+{"row":59,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0124","employeeName":"Muhammad Zaheer"}
+{"row":59,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0124","employeeName":"Muhammad Zaheer"}
+{"row":59,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0124","employeeName":"Muhammad Zaheer"}
+{"row":59,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0124","employeeName":"Muhammad Zaheer"}
+{"row":59,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0124","employeeName":"Muhammad Zaheer"}
+{"row":60,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0125","employeeName":"Ali Raza"}
+{"row":60,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0125","employeeName":"Ali Raza"}
+{"row":60,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0125","employeeName":"Ali Raza"}
+{"row":60,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0125","employeeName":"Ali Raza"}
+{"row":60,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0125","employeeName":"Ali Raza"}
+{"row":61,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0126","employeeName":"Salman Ali"}
+{"row":61,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0126","employeeName":"Salman Ali"}
+{"row":61,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0126","employeeName":"Salman Ali"}
+{"row":61,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0126","employeeName":"Salman Ali"}
+{"row":61,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0126","employeeName":"Salman Ali"}
+{"row":62,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0127","employeeName":"Zohaib"}
+{"row":62,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0127","employeeName":"Zohaib"}
+{"row":62,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0127","employeeName":"Zohaib"}
+{"row":62,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0127","employeeName":"Zohaib"}
+{"row":62,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0127","employeeName":"Zohaib"}
+{"row":63,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0128","employeeName":"Saad"}
+{"row":63,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0128","employeeName":"Saad"}
+{"row":63,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0128","employeeName":"Saad"}
+{"row":63,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0128","employeeName":"Saad"}
+{"row":63,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0128","employeeName":"Saad"}
+{"row":64,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0129","employeeName":"Hamza"}
+{"row":64,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0129","employeeName":"Hamza"}
+{"row":64,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0129","employeeName":"Hamza"}
+{"row":64,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0129","employeeName":"Hamza"}
+{"row":64,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0129","employeeName":"Hamza"}
+{"row":65,"field":"CNICNumber","reason":"CNIC Number is required.","employeeId":"IVAR-0130","employeeName":"Rahul"}
+{"row":65,"field":"EmployeeGrade","reason":"Employee Grade is required.","employeeId":"IVAR-0130","employeeName":"Rahul"}
+{"row":65,"field":"State","reason":"State/Province is required.","employeeId":"IVAR-0130","employeeName":"Rahul"}
+{"row":65,"field":"WorkingHoursPolicy","reason":"Working Hours Policy is required.","employeeId":"IVAR-0130","employeeName":"Rahul"}
+{"row":65,"field":"LeavesPolicy","reason":"Leaves Policy is required.","employeeId":"IVAR-0130","employeeName":"Rahul"}

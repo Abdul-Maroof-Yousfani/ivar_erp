@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 import { PosSalesController } from './pos-sales.controller';
 import { PosSalesService } from './pos-sales.service';
@@ -45,6 +45,7 @@ import { CreditVoucherExportProcessor } from './credit-voucher-export.processor'
 import { VoucherRegisterExportService } from './voucher-register-export.service';
 import { VoucherRegisterExportProcessor } from './voucher-register-export.processor';
 import { WarehouseModule } from '../warehouse/warehouse.module';
+import { CourierifyModule } from '../courierify/courierify.module';
 
 @Module({
     imports: [
@@ -53,6 +54,7 @@ import { WarehouseModule } from '../warehouse/warehouse.module';
         WarehouseModule,
         CustomerModule,
         PosConfigModule,
+        forwardRef(() => CourierifyModule),
         NotificationsModule,
         ExportHistoryModule,
         UploadModule,

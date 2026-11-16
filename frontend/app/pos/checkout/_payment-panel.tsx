@@ -31,6 +31,7 @@ interface ValidatedVoucher {
     code: string;
     voucherType: string;
     faceValue: number;
+    remainingBalance: number;
     description?: string;
     customerId?: string;
     requireCustomerMatch: boolean;
@@ -304,7 +305,12 @@ export function PaymentPanel({
                                     </div>
                                     <div className="flex items-center justify-between text-xs text-emerald-700">
                                         <span>{validatedVoucher.description || "Voucher"}</span>
-                                        <span className="font-mono font-bold">{fmtCurrency(validatedVoucher.faceValue)}</span>
+                                        <div className="text-right">
+                                            {validatedVoucher.remainingBalance < validatedVoucher.faceValue && (
+                                                <div className="text-[10px] text-emerald-500/60 line-through">{fmtCurrency(validatedVoucher.faceValue)}</div>
+                                            )}
+                                            <span className="font-mono font-bold">{fmtCurrency(validatedVoucher.remainingBalance)}</span>
+                                        </div>
                                     </div>
                                     {validatedVoucher.requireCustomerMatch && (
                                         <p className="text-[10px] text-amber-600">Customer-bound — verified ✓</p>

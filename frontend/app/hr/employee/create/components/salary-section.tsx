@@ -10,7 +10,7 @@ export function SalarySection({ form, isPending, errors }: { form: any; isPendin
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div className="space-y-2">
-        <Label>Employee Salary (Compensation) <span className="text-destructive">*</span></Label>
+        <Label>Employee Salary (Compensation)</Label>
         <Controller
           name="employeeSalary"
           control={control}
