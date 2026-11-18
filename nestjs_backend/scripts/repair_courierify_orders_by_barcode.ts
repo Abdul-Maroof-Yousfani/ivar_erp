@@ -186,6 +186,7 @@ function loadCsvBarcodeFallback(): Map<string, string> {
     path.resolve(__dirname, '../reports/dummy_items_mapping_report_(updated).csv'),
     path.resolve(__dirname, '../reports/dummy_items_mapping_report.csv'),
     path.resolve(__dirname, '../../reports/dummy_items_mapping_report_(updated).csv'),
+    path.resolve(__dirname, '../../reports/dummy_items_mapping_report.csv'),
   ];
 
   for (const filePath of candidateFiles) {
@@ -193,16 +194,22 @@ function loadCsvBarcodeFallback(): Map<string, string> {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
       const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      if (lines.length < 2) continue;
+
+      const header = lines[0].split(',').map((h) => h.replace(/^["'\s]+|["'\s]+$/g, '').toLowerCase());
+      const barIdx = header.findIndex((h) => h === 'barcode' || h === 'barcode new' || h === 'matched_real_barcode');
+      const idIdx = header.findIndex((h) => h === 'dummy_item_id');
+      const skuIdx = header.findIndex((h) => h === 'dummy_sku');
+
       for (let i = 1; i < lines.length; i++) {
-        const parts = lines[i].split(',');
-        if (parts.length >= 3) {
-          const dummyId = parts[0]?.trim();
-          const dummySku = parts[1]?.trim();
-          const barcode = parts[2]?.trim();
-          if (barcode && /^\d+$/.test(barcode)) {
-            if (dummyId) mapping.set(dummyId, barcode);
-            if (dummySku) mapping.set(dummySku, barcode);
-          }
+        const matches = [...lines[i].matchAll(/"([^"]*)"|([^,]+)/g)].map((m) => (m[1] !== undefined ? m[1] : m[2])).map((s) => s?.trim());
+        const barcode = barIdx >= 0 ? matches[barIdx] : null;
+        const dummyId = idIdx >= 0 ? matches[idIdx] : null;
+        const dummySku = skuIdx >= 0 ? matches[skuIdx] : null;
+
+        if (barcode && /^[A-Za-z0-9_-]+$/.test(barcode) && barcode !== 'NONE') {
+          if (dummyId) mapping.set(dummyId, barcode);
+          if (dummySku) mapping.set(dummySku, barcode);
         }
       }
     } catch {
@@ -320,21 +327,36 @@ async function runRepair() {
 
     console.log('\n⏳ [3/5] Querying Courierify API & calculating true barcode mappings...');
 
+    function isItemDummy(item: any): boolean {
+      if (!item) return true;
+      const sku = item.sku || '';
+      const desc = item.description || '';
+      if (sku.startsWith('ONL-') || desc.includes('ONL-')) return true;
+      const hasMissingBarcode = !item.barCode || item.barCode === sku || item.barCode === 'NONE';
+      const hasCompositeSku = sku.includes('-') && sku.split('-').length >= 2;
+      if (hasMissingBarcode && hasCompositeSku) return true;
+      if (!item.size?.name && !item.color?.name && hasCompositeSku) return true;
+      return false;
+    }
+
     for (let i = 0; i < orders.length; i++) {
       const order = orders[i];
       const cleanRef = (order.referenceNumber || '').replace(/^#/, '').trim();
       const progressPrefix = `[${i + 1}/${orders.length}] Order #${order.orderNumber} (Ref: ${order.referenceNumber || 'N/A'}): `;
 
-      // Check if order has any dummy items (ONL-xxx or unverified) OR if user specified single order
+      // Check if order has any dummy items OR unverified variants
       const hasDummyItem = order.items.some((it) => {
         const dbIt = itemById.get(it.itemId);
-        return !dbIt || it.itemId.startsWith('ONL-') || dbIt.sku.startsWith('ONL-') || (dbIt.description || '').includes('ONL-');
+        return isItemDummy(dbIt);
       });
 
       if (!hasDummyItem && !TARGET_SINGLE_ORDER) {
-        // Skip orders that don't need repair unless single order mode
+        // Skip orders that have no dummy items
         continue;
       }
+
+      // Small throttle to be gentle on Courierify API (50ms)
+      await new Promise((r) => setTimeout(r, 50));
 
       // Fetch official order from Courierify API
       const courierifyOrder = await fetchCourierifyOrder(cleanRef);
@@ -348,7 +370,7 @@ async function runRepair() {
         const currentSku = currentItem?.sku || 'UNKNOWN';
         const currentBarcode = currentItem?.barCode || 'NONE';
         const currentDesc = currentItem?.description || '';
-        const isDummy = currentSku.startsWith('ONL-') || currentDesc.includes('ONL-') || !currentItem;
+        const isDummy = isItemDummy(currentItem);
 
         if (isDummy) {
           dummyItemIdsToDeactivate.add(orderLine.itemId);
