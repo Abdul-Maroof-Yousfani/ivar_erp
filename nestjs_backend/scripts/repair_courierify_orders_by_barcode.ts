@@ -106,7 +106,7 @@ async function resolveTenantConnection(): Promise<{ tenantDbUrl: string; tenantN
     const res = await mgmtPool.query(`
       SELECT "name", "dbName", "dbUser", "dbPassword", "dbHost", "dbPort", "dbUrl" 
       FROM "Company" 
-      WHERE "isActive" = true 
+      WHERE status = 'active'
       ORDER BY "createdAt" DESC 
       LIMIT 1;
     `);
