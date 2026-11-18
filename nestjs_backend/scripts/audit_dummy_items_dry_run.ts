@@ -137,6 +137,54 @@ const BASE_SKU_ALIASES: Record<string, string> = {
   'ivwfknflslvhnly': 'IVWFKNFLSLVHNLY',
 };
 
+// Known Color abbreviations to full standardized color names
+const COLOR_ALIASES: Record<string, string> = {
+  blk: 'black',
+  wh: 'white',
+  na: 'navy',
+  br: 'brown',
+  ch: 'charcoal',
+  chbr: 'chocolate brown',
+  stbl: 'steel blue',
+  olgr: 'olive green',
+  tegre: 'teal green',
+  ofwh: 'off white',
+  pngrve: 'pine groove',
+  dabl: 'dark blue',
+  robl: 'royal blue',
+  dtolv: 'dusty olive',
+  miol: 'military olive',
+  dpfrst: 'deep forest',
+  mlkmch: 'milk macha',
+  brwh: 'bright white',
+  pisa: 'pink salt',
+  fn: 'fawn',
+  glgr: 'glacier grey',
+  mubr: 'mud brown',
+  brtbr: 'burnt brown',
+  sil: 'silver',
+  kh: 'khaki',
+  crml: 'caramel',
+  htgr: 'heather grey',
+  msbl: 'mist blue',
+  pasbl: 'pastel blue',
+  sm: 'grey',
+  sgr: 'smoke grey',
+  rstbr: 'rust brown',
+  stbg: 'stone beige',
+  cocoa: 'cocoa',
+  whwiwhth: 'white',
+  pi: 'pistachio',
+  be: 'beige',
+  ma: 'maroon',
+  sky: 'sky',
+  skbl: 'sky blue',
+  gry: 'grey',
+  dplgn: 'deep lagoon',
+  mlia: 'militia',
+  bur: 'burgundy',
+};
+
 function decryptPassword(encryptedText: string, masterKeyString: string): string {
   if (!masterKeyString || masterKeyString.length < 32) {
     throw new Error('MASTER_ENCRYPTION_KEY must be at least 32 characters');
@@ -250,6 +298,42 @@ async function resolveTenantConnection(): Promise<{ tenantDbUrl: string; tenantN
   }
 }
 
+let shopifyToken: string | null = null;
+let shopifyTokenExpiresAt = 0;
+
+async function getShopifyToken(): Promise<string | null> {
+  if (shopifyToken && Date.now() < shopifyTokenExpiresAt - 60000) {
+    return shopifyToken;
+  }
+  if (!SHOPIFY_API_KEY || !SHOPIFY_API_SECRET || !SHOPIFY_SHOP) {
+    return null;
+  }
+  try {
+    const tokenUrl = `https://${SHOPIFY_SHOP}/admin/oauth/access_token`;
+    const params = new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: SHOPIFY_API_KEY,
+      client_secret: SHOPIFY_API_SECRET,
+    });
+    const res = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
+    if (!res.ok) {
+      console.warn(`⚠️  Shopify OAuth token request failed (${res.status} ${res.statusText})`);
+      return null;
+    }
+    const data: any = await res.json();
+    shopifyToken = data.access_token;
+    shopifyTokenExpiresAt = Date.now() + ((data.expires_in || 86400) * 1000);
+    return shopifyToken;
+  } catch (err: any) {
+    console.warn(`⚠️  Shopify OAuth error: ${err.message}`);
+    return null;
+  }
+}
+
 /**
  * Helper to fetch a Shopify order by order name (e.g. "#130958")
  * Cached in memory so we never query the same order twice.
@@ -257,18 +341,23 @@ async function resolveTenantConnection(): Promise<{ tenantDbUrl: string; tenantN
 const shopifyOrderCache = new Map<string, any>();
 async function fetchShopifyOrder(orderRef: string): Promise<any | null> {
   const cleanRef = orderRef.replace(/^#+/, '').trim();
-  if (!cleanRef || !SHOPIFY_API_KEY || !SHOPIFY_API_SECRET) return null;
+  if (!cleanRef) return null;
 
   if (shopifyOrderCache.has(cleanRef)) {
     return shopifyOrderCache.get(cleanRef);
   }
 
+  const token = await getShopifyToken();
+  if (!token) {
+    shopifyOrderCache.set(cleanRef, null);
+    return null;
+  }
+
   try {
-    const auth = Buffer.from(`${SHOPIFY_API_KEY}:${SHOPIFY_API_SECRET}`).toString('base64');
     const url = `https://${SHOPIFY_SHOP}/admin/api/${SHOPIFY_API_VERSION}/orders.json?name=%23${cleanRef}&status=any`;
     const res = await fetch(url, {
       headers: {
-        Authorization: `Basic ${auth}`,
+        'X-Shopify-Access-Token': token,
         'Content-Type': 'application/json',
       },
     });
@@ -540,10 +629,39 @@ async function runAudit() {
       }
 
       // ── STRATEGY 2: Bidirectional SKU Token Parsing + Title Color Assistance ──
+      let detectedTokenSize = '';
+      let detectedTokenColor = '';
+
       if (!matchedItem && dummySku.includes('-')) {
         const parts = dummySku.split('-').map((p: string) => p.trim());
         const rawBase = parts[0].toLowerCase();
         const baseSku = (BASE_SKU_ALIASES[rawBase] || parts[0]).toUpperCase();
+
+        // Parse size and color parts regardless of whether direct base SKU candidates exist yet
+        if (parts.length >= 3) {
+          const p1 = parts[1].toLowerCase();
+          const p2 = parts[2].toLowerCase();
+
+          if (KNOWN_SIZES.has(p1)) {
+            // Format: [Base]-[Size]-[Color] (e.g. IVTPRDFTTHRT-M-BR, RILIPOSW-M-STBL, O/STSHIRT-L-BLK, DEJE-SZ30-WHWIWHTH)
+            detectedTokenSize = SIZE_NORMALIZATION_MAP[p1] || p1;
+            detectedTokenColor = p2;
+          } else if (KNOWN_SIZES.has(p2)) {
+            // Format: [Base]-[Color]-[Size] (e.g. IVKRN2.0ADPA-NA-38, IVCNTRSTJCPO-PNGRVE-M)
+            detectedTokenSize = SIZE_NORMALIZATION_MAP[p2] || p2;
+            detectedTokenColor = p1;
+          } else {
+            detectedTokenColor = p1;
+            detectedTokenSize = SIZE_NORMALIZATION_MAP[p2] || p2;
+          }
+        } else if (parts.length === 2) {
+          const p1 = parts[1].toLowerCase();
+          if (KNOWN_SIZES.has(p1)) {
+            detectedTokenSize = SIZE_NORMALIZATION_MAP[p1] || p1;
+          } else {
+            detectedTokenColor = p1;
+          }
+        }
 
         // Check if we have candidate items for this base SKU
         let candidates = realItemsByBaseSku.get(baseSku) || [];
@@ -558,72 +676,63 @@ async function runAudit() {
           }
         }
 
-        // If candidates exist, parse size and color from parts AND dummy title
+        // Fallback: If still no candidates by base SKU, find candidates by Title Keyword Overlap!
+        if (candidates.length === 0 && normDesc) {
+          const candTokens = normDesc.split(' ').filter((w) => w.length > 2 && w !== 'ivar');
+          candidates = allRealItems.filter((cand) => {
+            if (!cand.description) return false;
+            const candDesc = normalize(cand.description);
+            const tokens = candDesc.split(' ').filter((w) => w.length > 2 && w !== 'ivar');
+            const matched = tokens.filter((t) => normDesc.includes(t));
+            return matched.length >= Math.min(2, tokens.length);
+          });
+        }
+
+        // If candidates exist, match Size and Color
         if (candidates.length > 0) {
-          let detectedSize = '';
-          let detectedColorPart = '';
-
-          // Determine which part is Size and which is Color
-          if (parts.length >= 3) {
-            const p1 = parts[1].toLowerCase();
-            const p2 = parts[2].toLowerCase();
-
-            if (KNOWN_SIZES.has(p1)) {
-              // Format: [Base]-[Size]-[Color] (e.g. IVTPRDFTTHRT-M-BR, RILIPOSW-M-STBL, O/STSHIRT-L-BLK)
-              detectedSize = SIZE_NORMALIZATION_MAP[p1] || p1;
-              detectedColorPart = p2;
-            } else if (KNOWN_SIZES.has(p2)) {
-              // Format: [Base]-[Color]-[Size] (e.g. IVKRN2.0ADPA-NA-38, IVCNTRSTJCPO-PNGRVE-M)
-              detectedSize = SIZE_NORMALIZATION_MAP[p2] || p2;
-              detectedColorPart = p1;
-            } else {
-              detectedColorPart = p1;
-              detectedSize = p2;
-            }
-          } else if (parts.length === 2) {
-            const p1 = parts[1].toLowerCase();
-            if (KNOWN_SIZES.has(p1)) {
-              detectedSize = SIZE_NORMALIZATION_MAP[p1] || p1;
-            } else {
-              detectedColorPart = p1;
-            }
-          }
-
           // Filter candidates by Size
           let sizeFiltered = candidates;
-          if (detectedSize) {
+          if (detectedTokenSize) {
             sizeFiltered = candidates.filter((cand) => {
               const cSize = normalize(cand.size?.name);
               return (
-                cSize === detectedSize ||
-                cSize === `size ${detectedSize}` ||
-                cSize.startsWith(detectedSize) ||
-                (detectedSize === 'small' && cSize === 's') ||
-                (detectedSize === 'medium' && cSize === 'm') ||
-                (detectedSize === 'large' && cSize === 'l') ||
-                (detectedSize === 'x-large' && (cSize === 'xl' || cSize === 'x large')) ||
-                (detectedSize === 'xx-large' && (cSize === 'xxl' || cSize === '2xl' || cSize === 'xx large'))
+                cSize === detectedTokenSize ||
+                cSize === `size ${detectedTokenSize}` ||
+                cSize.startsWith(detectedTokenSize) ||
+                (detectedTokenSize === 'small' && cSize === 's') ||
+                (detectedTokenSize === 'medium' && cSize === 'm') ||
+                (detectedTokenSize === 'large' && cSize === 'l') ||
+                (detectedTokenSize === 'x-large' && (cSize === 'xl' || cSize === 'x large')) ||
+                (detectedTokenSize === 'xx-large' && (cSize === 'xxl' || cSize === '2xl' || cSize === 'xx large'))
               );
             });
           }
 
-          // Now match Color among size-filtered candidates
-          // Priority 2A: Match Color using the Dummy Title (e.g. "Pine Groove", "Grey Flannel", "Steel Blue", "Brown")
+          // Match Color among size-filtered candidates
           if (sizeFiltered.length > 0) {
+            const cleanNormDesc = normDesc.replace(/\s+/g, '');
+            const colorAliasName = COLOR_ALIASES[detectedTokenColor] || detectedTokenColor;
+
             let colorMatch = sizeFiltered.find((cand) => {
               const candColor = normalize(cand.color?.name);
-              return candColor && normDesc.includes(candColor);
+              if (!candColor) return false;
+              const cleanCandColor = candColor.replace(/\s+/g, '');
+              // Match color in dummy title (with spaces or stripped)
+              if (normDesc.includes(candColor) || cleanNormDesc.includes(cleanCandColor)) return true;
+              // Match color alias from SKU token
+              if (colorAliasName && candColor === colorAliasName) return true;
+              return false;
             });
 
-            // Priority 2B: Match Color code from SKU (e.g. "br", "stbl", "pngrve", "blk", "wh")
-            if (!colorMatch && detectedColorPart) {
+            // Fallback Priority 2B: Match Color code initials / startsWith from SKU
+            if (!colorMatch && detectedTokenColor) {
               colorMatch = sizeFiltered.find((cand) => {
                 const candColor = normalize(cand.color?.name);
-                // Exact code match or initials match (e.g. "stbl" in "steel blue", "br" in "brown")
-                if (candColor === detectedColorPart) return true;
+                if (!candColor) return false;
+                if (candColor === detectedTokenColor) return true;
                 const initials = candColor.split(' ').map((w) => w[0]).join('');
-                if (initials === detectedColorPart) return true;
-                if (candColor.startsWith(detectedColorPart)) return true;
+                if (initials === detectedTokenColor) return true;
+                if (candColor.startsWith(detectedTokenColor)) return true;
                 return false;
               });
             }
@@ -631,22 +740,23 @@ async function runAudit() {
             if (colorMatch) {
               matchedItem = colorMatch;
               confidence = 'HIGH';
-              matchRule = `Rule 2: Base SKU (${baseSku}) + Size (${detectedSize || 'Any'}) + Color (${colorMatch.color?.name})`;
+              matchRule = `Rule 2: Base SKU/Title + Size (${detectedTokenSize || 'Any'}) + Color (${colorMatch.color?.name})`;
             } else if (sizeFiltered.length === 1) {
               // Only one variant exists with this size
               matchedItem = sizeFiltered[0];
               confidence = 'MEDIUM';
-              matchRule = `Rule 2C: Base SKU (${baseSku}) + Size (${detectedSize}) (Sole Variant)`;
+              matchRule = `Rule 2C: Base SKU/Title + Size (${detectedTokenSize}) (Sole Variant)`;
             }
           }
         }
       }
 
-      // ── STRATEGY 3: Title-Assisted Matching for ONL-xxxxxx & Unmatched Items ──
-      if (!matchedItem && (dummySku.startsWith('ONL-') || !matchedItem)) {
+      // ── STRATEGY 3: Title & Shopify Order Assisted Matching (for ONL-xxxxxx & Remaining) ──
+      if (!matchedItem) {
         // Step A: Check if we can fetch the exact variant from Shopify order
         let shopifySize = '';
-        if (usage.orderRefs.size > 0 && SHOPIFY_API_KEY) {
+        let shopifyColor = '';
+        if (usage.orderRefs.size > 0) {
           for (const ref of usage.orderRefs) {
             const shOrder = await fetchShopifyOrder(ref);
             if (shOrder && Array.isArray(shOrder.line_items)) {
@@ -654,17 +764,20 @@ async function runAudit() {
               const shLine = shOrder.line_items.find((li: any) => {
                 const liTitle = normalize(li.title);
                 return (
-                  (Math.abs(Number(li.price) - (dummy.unitPrice || 0)) <= 5 || liTitle.includes(normDesc) || normDesc.includes(liTitle)) &&
+                  (Math.abs(Number(li.price) - (dummy.unitPrice || 0)) <= 5 ||
+                    liTitle.includes(normDesc) ||
+                    normDesc.includes(liTitle)) &&
                   li.variant_title
                 );
               });
               if (shLine && shLine.variant_title) {
-                // e.g. "Small / Navy" or "Medium" or "Large"
+                // e.g. "Small / Navy" or "32 / Black" or "Medium"
                 const vParts = shLine.variant_title.split('/').map((s: string) => normalize(s));
                 for (const vp of vParts) {
                   if (KNOWN_SIZES.has(vp) || SIZE_NORMALIZATION_MAP[vp]) {
                     shopifySize = SIZE_NORMALIZATION_MAP[vp] || vp;
-                    break;
+                  } else {
+                    shopifyColor = vp;
                   }
                 }
                 if (shopifySize) break;
@@ -673,39 +786,54 @@ async function runAudit() {
           }
         }
 
+        const targetSize = shopifySize || detectedTokenSize;
+        const targetColor = shopifyColor || (COLOR_ALIASES[detectedTokenColor] || detectedTokenColor);
+
         // Step B: Match against all real items using Title + Color + Size
-        // Find real items whose description has high overlap with dummy title
+        const cleanNormDesc = normDesc.replace(/\s+/g, '');
         const potentialMatches = allRealItems.filter((cand) => {
           if (!cand.description) return false;
           const candDesc = normalize(cand.description);
-          // Check core tokens overlap
           const candTokens = candDesc.split(' ').filter((w) => w.length > 2 && w !== 'ivar');
           const matchedTokens = candTokens.filter((t) => normDesc.includes(t));
           return matchedTokens.length >= Math.min(2, candTokens.length);
         });
 
         if (potentialMatches.length > 0) {
-          // Filter by Title Color
+          // Filter by Color (Title color OR Shopify variant color OR SKU token color)
           let colorFiltered = potentialMatches.filter((cand) => {
             const candColor = normalize(cand.color?.name);
-            return candColor && normDesc.includes(candColor);
+            if (!candColor) return false;
+            const cleanCandColor = candColor.replace(/\s+/g, '');
+            if (normDesc.includes(candColor) || cleanNormDesc.includes(cleanCandColor)) return true;
+            if (targetColor && (candColor === targetColor || cleanCandColor === targetColor.replace(/\s+/g, ''))) return true;
+            return false;
           });
           if (colorFiltered.length === 0) colorFiltered = potentialMatches;
 
-          // Filter by Shopify Size if discovered
-          if (shopifySize) {
+          // Filter by Size if discovered from Shopify or SKU token
+          if (targetSize) {
             const sizeAndColorMatch = colorFiltered.find((cand) => {
               const cSize = normalize(cand.size?.name);
-              return cSize === shopifySize || cSize.startsWith(shopifySize);
+              return (
+                cSize === targetSize ||
+                cSize === `size ${targetSize}` ||
+                cSize.startsWith(targetSize) ||
+                (targetSize === 'small' && cSize === 's') ||
+                (targetSize === 'medium' && cSize === 'm') ||
+                (targetSize === 'large' && cSize === 'l') ||
+                (targetSize === 'x-large' && (cSize === 'xl' || cSize === 'x large')) ||
+                (targetSize === 'xx-large' && (cSize === 'xxl' || cSize === '2xl' || cSize === 'xx large'))
+              );
             });
             if (sizeAndColorMatch) {
               matchedItem = sizeAndColorMatch;
               confidence = 'HIGH';
-              matchRule = `Rule 3A: Title Match + Shopify Size (${shopifySize}) + Color (${sizeAndColorMatch.color?.name})`;
+              matchRule = `Rule 3A: Title Match + Variant Size (${targetSize}) + Color (${sizeAndColorMatch.color?.name})`;
             }
           }
 
-          // If still not matched, check if sole candidate
+          // If still not matched, check if sole candidate for that color
           if (!matchedItem && colorFiltered.length === 1) {
             matchedItem = colorFiltered[0];
             confidence = 'MEDIUM';
