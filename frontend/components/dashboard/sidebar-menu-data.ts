@@ -886,7 +886,10 @@ export const menuData: MenuItem[] = [
           {
             title: "Available Stock Summary",
             href: "/erp/reports/available-stock-summary",
-            permissions: ["erp.report.available-stock-summary", "erp.report.view"],
+            permissions: [
+              "erp.report.available-stock-summary",
+              "erp.report.view",
+            ],
           },
           {
             title: "Out-of-Stock Report",
@@ -1035,10 +1038,15 @@ export const menuData: MenuItem[] = [
       {
         title: "Reports",
         children: [
-          { title: "Out-of-Stock Report", href: "/erp/reports/out-of-stock" },
+          {
+            title: "Out-of-Stock Report",
+            href: "/erp/reports/out-of-stock",
+            permissions: ["erp.sales.report.out-of-stock"],
+          },
           {
             title: "Sales & Stock Activity",
             href: "/erp/reports/sales-activity",
+            permissions: ["erp.sales.report.sales-activity"],
           },
           { title: "Sales Summary", href: "/erp/sales/reports/summary" },
           {
