@@ -254,6 +254,11 @@ async function runRepair() {
   const csvFallback = loadCsvBarcodeFallback();
   console.log(`📋 Loaded CSV Fallback Barcodes: ${csvFallback.size} entries`);
 
+  const repairPlans: OrderRepairPlan[] = [];
+  let dummyItemsRepointedCount = 0;
+  let wrongSizeRepointedCount = 0;
+  const dummyItemIdsToDeactivate = new Set<string>();
+
   try {
     await prisma.$connect();
 
@@ -314,10 +319,6 @@ async function runRepair() {
     console.log(`📦 Found ${orders.length} orders in scope to inspect`);
 
     console.log('\n⏳ [3/5] Querying Courierify API & calculating true barcode mappings...');
-    const repairPlans: OrderRepairPlan[] = [];
-    let dummyItemsRepointedCount = 0;
-    let wrongSizeRepointedCount = 0;
-    const dummyItemIdsToDeactivate = new Set<string>();
 
     for (let i = 0; i < orders.length; i++) {
       const order = orders[i];
