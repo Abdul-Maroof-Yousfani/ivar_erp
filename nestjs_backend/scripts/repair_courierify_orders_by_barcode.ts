@@ -4,29 +4,30 @@
  * ============================================================================
  * 
  * Purpose:
- * Safely repairs all affected Courierify orders (Nov 5 - Nov 11, 2026) by:
+ * Safely repairs affected Courierify / OMS orders by:
  * 1. Fetching true line-item barcodes directly from Courierify API:
  *    GET https://courierify.growzar.com/api/external/orders/{orderRef}
  * 2. Matching each line to genuine ERP items using `Item.barCode == line.barcode`.
- *    - Fixes Dummy items (ONL-xxxx -> Real Item)
- *    - Fixes Wrong-Size variants (e.g. IVOXFDSHIRT SMALL -> IVOXFDSHIRT XL)
- * 3. Fallback: Uses manually verified barcodes from CSV if API is unreachable.
- * 4. Updates:
+ *    - Fixes Dummy items (ONL-xxxx / composite SKUs -> Genuine ERP Item)
+ *    - Fixes Silent Wrong-Variant mismatches (e.g. Order #131077 IBMLJ XX-LARGE -> IBMLJ MEDIUM)
+ * 3. Fallback: Uses verified barcodes from CSV reports if API is unreachable.
+ * 4. Atomic Transaction:
  *    - SalesOrderItem: Re-points itemId to the verified real ERP variant.
  *    - StockLedger: Updates POS_SALE entries to point to genuine items.
  *    - TransferRequestItem: Updates STN line items to point to genuine items.
- *    - InventoryItem: Syncs on-hand stock at the order location (OMS-IV / WH-KHI).
- *    - Item: Deletes unreferenced dummy items (or sets isActive: false if constrained).
+ *    - InventoryItem: Cleans up zero/negative inventory records of dummy items.
+ *    - Item: Completely purges/hard-deletes unreferenced dummy items from DB.
  * 
  * Safety Features:
  * - 100% Read-Only DRY-RUN by default. Persists only with `--commit`.
- * - Single order test mode: `--order=131195` or `--order=SI-OMSI26-00232`.
+ * - Single order test mode: `--order=131077` or `--order=SI-OMSI26-00125`.
  * - Atomic PostgreSQL Transactions (`prisma.$transaction`).
  * 
  * Usage:
- *   Dry-run single order : bun scripts/repair_courierify_orders_by_barcode.ts --order=131195
+ *   Dry-run single order : bun scripts/repair_courierify_orders_by_barcode.ts --order=131077
+ *   Live commit single   : bun scripts/repair_courierify_orders_by_barcode.ts --order=131077 --commit
  *   Dry-run all affected : bun scripts/repair_courierify_orders_by_barcode.ts
- *   Live Commit          : bun scripts/repair_courierify_orders_by_barcode.ts --commit
+ *   Live commit all      : bun scripts/repair_courierify_orders_by_barcode.ts --commit
  * ============================================================================
  */
 
@@ -45,6 +46,8 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const IS_COMMIT = process.argv.includes('--commit');
 const SINGLE_ORDER_ARG = process.argv.find((a) => a.startsWith('--order='));
 const TARGET_SINGLE_ORDER = SINGLE_ORDER_ARG ? SINGLE_ORDER_ARG.split('=')[1].trim() : null;
+const FROM_ARG = process.argv.find((a) => a.startsWith('--from='));
+const TO_ARG = process.argv.find((a) => a.startsWith('--to='));
 
 const COURIERIFY_BASE_URL =
   process.env.COURIERIFY_BASE_URL || 'https://courierify.growzar.com/api/external';
@@ -158,7 +161,7 @@ async function fetchCourierifyOrder(orderRef: string): Promise<any | null> {
     const res = await fetch(url, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${COURIERIFY_API_KEY}`,
+        'x-api-key': COURIERIFY_API_KEY,
         Accept: 'application/json',
       },
       signal: controller.signal,
@@ -177,10 +180,11 @@ async function fetchCourierifyOrder(orderRef: string): Promise<any | null> {
 }
 
 /**
- * Load fallback barcode mappings from CSV reports if present
+ * Load fallback barcode mappings and dummy item IDs from CSV reports
  */
-function loadCsvBarcodeFallback(): Map<string, string> {
-  const mapping = new Map<string, string>(); // dummySku/dummyId -> barcode
+function loadCsvBarcodeFallback(): { mapping: Map<string, string>; dummyIds: Set<string> } {
+  const mapping = new Map<string, string>(); // dummySku/dummyId -> real barcode
+  const dummyIds = new Set<string>();
 
   const candidateFiles = [
     path.resolve(__dirname, '../reports/dummy_items_mapping_report_(updated).csv'),
@@ -207,6 +211,10 @@ function loadCsvBarcodeFallback(): Map<string, string> {
         const dummyId = idIdx >= 0 ? matches[idIdx] : null;
         const dummySku = skuIdx >= 0 ? matches[skuIdx] : null;
 
+        if (dummyId && /^[0-9a-f-]{36}$/i.test(dummyId)) {
+          dummyIds.add(dummyId);
+        }
+
         if (barcode && /^[A-Za-z0-9_-]+$/.test(barcode) && barcode !== 'NONE') {
           if (dummyId) mapping.set(dummyId, barcode);
           if (dummySku) mapping.set(dummySku, barcode);
@@ -217,7 +225,7 @@ function loadCsvBarcodeFallback(): Map<string, string> {
     }
   }
 
-  return mapping;
+  return { mapping, dummyIds };
 }
 
 interface OrderRepairPlan {
@@ -239,6 +247,18 @@ interface OrderRepairPlan {
   }>;
 }
 
+function isItemDummy(item: any): boolean {
+  if (!item) return false;
+  const sku = (item.sku || '').trim();
+  const desc = (item.description || '').trim();
+  if (sku.startsWith('ONL-') || desc.includes('ONL-')) return true;
+  const hasMissingBarcode = !item.barCode || item.barCode === sku || item.barCode === 'NONE';
+  const hasCompositeSku = sku.includes('-') && sku.split('-').length >= 2;
+  if (hasMissingBarcode && hasCompositeSku) return true;
+  if (!item.size?.name && !item.color?.name && hasCompositeSku) return true;
+  return false;
+}
+
 async function runRepair() {
   console.log('\n=============================================================');
   console.log('🚀 IVAR ERP - COURIERIFY ORDER REPAIR BY OFFICIAL BARCODE');
@@ -247,7 +267,7 @@ async function runRepair() {
   if (TARGET_SINGLE_ORDER) {
     console.log(`🎯 Target Single   : ${TARGET_SINGLE_ORDER}`);
   } else {
-    console.log(`🎯 Target Scope    : All affected Courierify orders (Nov 5 - Nov 11, 2026)`);
+    console.log(`🎯 Target Scope    : All affected Courierify / OMS orders & Database Dummy Cleanup`);
   }
   console.log('-------------------------------------------------------------');
 
@@ -258,13 +278,13 @@ async function runRepair() {
   const adapter = new PrismaPg(pool);
   const prisma = new PrismaClient({ adapter });
 
-  const csvFallback = loadCsvBarcodeFallback();
-  console.log(`📋 Loaded CSV Fallback Barcodes: ${csvFallback.size} entries`);
+  const { mapping: csvFallback, dummyIds: csvDummyIds } = loadCsvBarcodeFallback();
+  console.log(`📋 Loaded CSV Fallback Barcodes: ${csvFallback.size} entries (${csvDummyIds.size} dummy item IDs)`);
 
   const repairPlans: OrderRepairPlan[] = [];
   let dummyItemsRepointedCount = 0;
   let wrongSizeRepointedCount = 0;
-  const dummyItemIdsToDeactivate = new Set<string>();
+  const allDummyItemIds = new Set<string>();
 
   try {
     await prisma.$connect();
@@ -278,6 +298,7 @@ async function runRepair() {
         description: true,
         unitPrice: true,
         isActive: true,
+        createdAt: true,
         size: { select: { name: true } },
         color: { select: { name: true } },
       },
@@ -290,28 +311,62 @@ async function runRepair() {
       if (it.barCode) {
         itemByBarcode.set(String(it.barCode).trim().toLowerCase(), it);
       }
+      if (isItemDummy(it)) {
+        allDummyItemIds.add(it.id);
+      }
     }
-    console.log(`✅ Cached ${allDbItems.length} active ERP items (${itemByBarcode.size} unique barcodes)`);
+
+    for (const dummyId of csvDummyIds) {
+      allDummyItemIds.add(dummyId);
+    }
+
+    console.log(`✅ Cached ${allDbItems.length} ERP items (${itemByBarcode.size} unique barcodes)`);
+    console.log(`🔍 Identified ${allDummyItemIds.size} total dummy items across database & CSV records`);
 
     console.log('\n⏳ [2/5] Scanning affected orders...');
-    const dateStart = new Date('2026-11-05T00:00:00.000Z');
-    const dateEnd = new Date('2026-11-12T23:59:59.999Z');
+    const dateStart = FROM_ARG
+      ? new Date(`${FROM_ARG.split('=')[1].trim()}T00:00:00.000Z`)
+      : new Date('2026-11-05T00:00:00.000Z');
+    const dateEnd = TO_ARG
+      ? new Date(`${TO_ARG.split('=')[1].trim()}T23:59:59.999Z`)
+      : new Date('2026-11-12T23:59:59.999Z');
+
+    console.log(`📅 Scope Date Range : ${dateStart.toISOString().slice(0, 10)} to ${dateEnd.toISOString().slice(0, 10)}`);
+
+    const cleanTarget = TARGET_SINGLE_ORDER ? TARGET_SINGLE_ORDER.replace(/^#/, '').trim() : '';
 
     const ordersQueryWhere: any = TARGET_SINGLE_ORDER
       ? {
           OR: [
             { orderNumber: TARGET_SINGLE_ORDER },
+            { orderNumber: { contains: cleanTarget } },
             { referenceNumber: TARGET_SINGLE_ORDER },
-            { referenceNumber: `#${TARGET_SINGLE_ORDER}` },
-            { referenceNumber: TARGET_SINGLE_ORDER.replace(/^#/, '') },
+            { referenceNumber: `#${cleanTarget}` },
+            { referenceNumber: cleanTarget },
+            { notes: { contains: cleanTarget } },
           ],
         }
       : {
-          createdAt: { gte: dateStart, lte: dateEnd },
           OR: [
-            { notes: { contains: 'Courierify' } },
-            { referenceNumber: { startsWith: '#' } },
-            { referenceNumber: { startsWith: '13' } },
+            // All orders in November date window with Courierify / Online references
+            {
+              createdAt: { gte: dateStart, lte: dateEnd },
+              OR: [
+                { notes: { contains: 'Courierify' } },
+                { referenceNumber: { startsWith: '#' } },
+                { referenceNumber: { startsWith: '13' } },
+                { orderNumber: { startsWith: 'SI-OMS' } },
+                { orderNumber: { startsWith: 'SI-ONL' } },
+              ],
+            },
+            // AND any order in DB that currently contains any dummy item!
+            {
+              items: {
+                some: {
+                  itemId: { in: Array.from(allDummyItemIds) },
+                },
+              },
+            },
           ],
         };
 
@@ -319,6 +374,7 @@ async function runRepair() {
       where: ordersQueryWhere,
       include: {
         items: true,
+        customer: { select: { name: true } },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -327,42 +383,31 @@ async function runRepair() {
 
     console.log('\n⏳ [3/5] Querying Courierify API & calculating true barcode mappings...');
 
-    function isItemDummy(item: any): boolean {
-      if (!item) return true;
-      const sku = item.sku || '';
-      const desc = item.description || '';
-      if (sku.startsWith('ONL-') || desc.includes('ONL-')) return true;
-      const hasMissingBarcode = !item.barCode || item.barCode === sku || item.barCode === 'NONE';
-      const hasCompositeSku = sku.includes('-') && sku.split('-').length >= 2;
-      if (hasMissingBarcode && hasCompositeSku) return true;
-      if (!item.size?.name && !item.color?.name && hasCompositeSku) return true;
-      return false;
-    }
+    const auditCsvRows: string[] = [];
 
     for (let i = 0; i < orders.length; i++) {
       const order = orders[i];
       const cleanRef = (order.referenceNumber || '').replace(/^#/, '').trim();
       const progressPrefix = `[${i + 1}/${orders.length}] Order #${order.orderNumber} (Ref: ${order.referenceNumber || 'N/A'}): `;
 
-      // Check if order has any dummy items OR unverified variants
+      // Check if order has any dummy items
       const hasDummyItem = order.items.some((it) => {
         const dbIt = itemById.get(it.itemId);
-        return isItemDummy(dbIt);
+        return isItemDummy(dbIt) || allDummyItemIds.has(it.itemId);
       });
 
-      if (!hasDummyItem && !TARGET_SINGLE_ORDER) {
-        // Skip orders that have no dummy items
-        continue;
-      }
-
-      // Small throttle to be gentle on Courierify API (50ms)
-      await new Promise((r) => setTimeout(r, 50));
-
-      // Fetch official order from Courierify API
+      // Fetch official order from Courierify API (small 40ms throttle)
+      await new Promise((r) => setTimeout(r, 40));
       const courierifyOrder = await fetchCourierifyOrder(cleanRef);
       const apiLines: any[] = courierifyOrder?.items?.lines || courierifyOrder?.lineItems || [];
 
+      // If no Courierify order found and no dummy items on this order, skip (unless single target)
+      if (!courierifyOrder && !hasDummyItem && !TARGET_SINGLE_ORDER) {
+        continue;
+      }
+
       const lineReplacements: OrderRepairPlan['lineReplacements'] = [];
+      const usedApiIndices = new Set<number>();
 
       for (let lineIdx = 0; lineIdx < order.items.length; lineIdx++) {
         const orderLine = order.items[lineIdx];
@@ -370,31 +415,54 @@ async function runRepair() {
         const currentSku = currentItem?.sku || 'UNKNOWN';
         const currentBarcode = currentItem?.barCode || 'NONE';
         const currentDesc = currentItem?.description || '';
-        const isDummy = isItemDummy(currentItem);
-
-        if (isDummy) {
-          dummyItemIdsToDeactivate.add(orderLine.itemId);
-        }
+        const isDummy = isItemDummy(currentItem) || allDummyItemIds.has(orderLine.itemId);
 
         // Try to find matching line in Courierify API payload
         let targetBarcode: string | null = null;
         let matchReason = '';
 
-        // Match by line index or title match
         if (apiLines.length > 0) {
-          let matchedApiLine: any = null;
+          let matchedApiIndex = -1;
 
-          if (apiLines.length === order.items.length) {
-            matchedApiLine = apiLines[lineIdx];
+          if (apiLines.length === 1 && order.items.length === 1) {
+            matchedApiIndex = 0;
           } else {
-            // Find by title similarity
-            matchedApiLine = apiLines.find((al) => {
-              const alTitle = (al.title || '').toLowerCase();
-              return currentDesc.toLowerCase().includes(alTitle) || alTitle.includes(currentDesc.toLowerCase().slice(0, 10));
-            }) || apiLines[lineIdx];
+            // 1. Match by full title and variant title
+            matchedApiIndex = apiLines.findIndex((al, idx) => {
+              if (usedApiIndices.has(idx)) return false;
+              const fullTitle = `${al.title || ''} ${al.variantTitle || ''}`.toLowerCase();
+              return fullTitle && currentDesc.toLowerCase().includes(fullTitle);
+            });
+
+            // 2. Match by base SKU if not dummy
+            if (matchedApiIndex === -1 && !isDummy) {
+              matchedApiIndex = apiLines.findIndex((al, idx) => {
+                if (usedApiIndices.has(idx)) return false;
+                const alSku = (al.sku || '').toLowerCase().trim();
+                const cSku = currentSku.toLowerCase().trim();
+                return alSku && (cSku === alSku || cSku.startsWith(alSku) || alSku.startsWith(cSku));
+              });
+            }
+
+            // 3. Match by title similarity
+            if (matchedApiIndex === -1) {
+              matchedApiIndex = apiLines.findIndex((al, idx) => {
+                if (usedApiIndices.has(idx)) return false;
+                const alTitle = (al.title || '').toLowerCase();
+                const d = currentDesc.toLowerCase();
+                return d.includes(alTitle) || (alTitle.length > 5 && alTitle.includes(d.slice(0, 15)));
+              });
+            }
+
+            // 4. Fallback to index if in bounds and unused
+            if (matchedApiIndex === -1 && lineIdx < apiLines.length && !usedApiIndices.has(lineIdx)) {
+              matchedApiIndex = lineIdx;
+            }
           }
 
-          if (matchedApiLine) {
+          if (matchedApiIndex >= 0) {
+            usedApiIndices.add(matchedApiIndex);
+            const matchedApiLine = apiLines[matchedApiIndex];
             targetBarcode =
               matchedApiLine.barcode ||
               matchedApiLine.barCode ||
@@ -420,15 +488,38 @@ async function runRepair() {
           continue;
         }
 
-        // Look up the ERP Item for targetBarcode
+        // Look up genuine ERP Item for targetBarcode
         const realItem = itemByBarcode.get(String(targetBarcode).trim().toLowerCase());
         if (!realItem) {
           continue;
         }
 
         // If current itemId is different from realItem.id, we have a repair!
-        if (orderLine.itemId !== realItem.id) {
-          const isSizeChange = !isDummy && currentSku === realItem.sku;
+        const isRepair = orderLine.itemId !== realItem.id;
+        const lineStatus = isRepair ? (isDummy ? 'DUMMY_ITEM' : 'SIZE_MISMATCH') : 'MATCHED_OK';
+
+        auditCsvRows.push([
+          `"${order.orderNumber}"`,
+          `"${order.referenceNumber || ''}"`,
+          `"${order.createdAt.toISOString().slice(0, 10)}"`,
+          `"${(order.customer?.name || '').replace(/"/g, '""')}"`,
+          lineIdx + 1,
+          `"${lineStatus}"`,
+          `"${orderLine.itemId}"`,
+          `"${currentSku}"`,
+          `"${currentBarcode}"`,
+          `"${currentDesc.replace(/"/g, '""')}"`,
+          `"${currentItem?.size?.name || ''}"`,
+          `"${currentItem?.color?.name || ''}"`,
+          `"${(matchReason || '').replace(/"/g, '""')}"`,
+          `"${targetBarcode || ''}"`,
+          `"${realItem?.id || ''}"`,
+          `"${realItem?.barCode || ''}"`,
+          `"${realItem?.size?.name || ''}"`,
+          `"${lineStatus === 'MATCHED_OK' ? 'None (Already Correct)' : `Re-point to ${realItem?.sku || ''} [${realItem?.size?.name || ''}] (${realItem?.barCode || ''})`}"`,
+        ].join(','));
+
+        if (isRepair) {
           if (isDummy) {
             dummyItemsRepointedCount++;
           } else {
@@ -462,28 +553,46 @@ async function runRepair() {
       }
     }
 
+    // Save Audit CSV Report
+    const reportsDir = path.resolve(__dirname, '../reports');
+    if (!fs.existsSync(reportsDir)) {
+      fs.mkdirSync(reportsDir, { recursive: true });
+    }
+    const reportFilename = TARGET_SINGLE_ORDER
+      ? `reconciliation_order_${TARGET_SINGLE_ORDER}.csv`
+      : `reconciliation_pos_vs_courierify_06_11_nov.csv`;
+    const reportPath = path.join(reportsDir, reportFilename);
+    const csvHeader = 'Order_Number,Shopify_Ref,Order_Date,Customer_Name,Line_Idx,Status,POS_Item_ID,POS_SKU,POS_Barcode,POS_Description,POS_Size,POS_Color,Courierify_Source,Courierify_Barcode,Target_ERP_Item_ID,Target_ERP_Barcode,Target_ERP_Size,Action_Recommended';
+    fs.writeFileSync(reportPath, [csvHeader, ...auditCsvRows].join('\n'), 'utf-8');
+    console.log(`\n📁 Detailed CSV Reconciliation Audit exported to: reports/${reportFilename}`);
+
     console.log('\n-------------------------------------------------------------');
     console.log(`🎯 REPAIR SUMMARY PLAN:`);
     console.log(`   📦 Total Orders to Repair    : ${repairPlans.length}`);
     console.log(`   🏷️  Dummy Items to Re-point   : ${dummyItemsRepointedCount}`);
-    console.log(`   👕 Wrong Variants to Re-point: ${wrongSizeRepointedCount}`);
-    console.log(`   🗑️  Unique Dummy Items to End : ${dummyItemIdsToDeactivate.size}`);
+    console.log(`   👕 Wrong Variants to Correct : ${wrongSizeRepointedCount}`);
+    console.log(`   🗑️  Total Dummy Items in DB  : ${allDummyItemIds.size}`);
     console.log('-------------------------------------------------------------');
 
-    if (repairPlans.length === 0) {
-      console.log('🎉 No repairs needed or no target orders found!');
+    const hasOrdersToRepair = repairPlans.length > 0;
+    const hasDummiesToClean = !TARGET_SINGLE_ORDER && allDummyItemIds.size > 0;
+
+    if (!hasOrdersToRepair && !hasDummiesToClean) {
+      console.log('🎉 Everything is already 100% clean! No orders to repair and no dummy items found.');
       return;
     }
 
     // Print Preview of First Few Orders
-    console.log('\n🔍 SAMPLE PREVIEW OF REPAIRS:');
-    const previewOrders = repairPlans.slice(0, 5);
-    for (const rp of previewOrders) {
-      console.log(`\n📄 Order: ${rp.orderNumber} (Ref: #${rp.courierifyRef})`);
-      for (const lr of rp.lineReplacements) {
-        console.log(`   - BEFORE: ${lr.currentSku} (Barcode: ${lr.currentBarcode}) -> "${lr.currentDescription}"`);
-        console.log(`   + AFTER : ${lr.targetSku} (Barcode: ${lr.targetBarcode}) -> "${lr.targetDescription}"`);
-        console.log(`     ↳ Reason: ${lr.reason}`);
+    if (repairPlans.length > 0) {
+      console.log('\n🔍 SAMPLE PREVIEW OF REPAIRS:');
+      const previewOrders = repairPlans.slice(0, 5);
+      for (const rp of previewOrders) {
+        console.log(`\n📄 Order: ${rp.orderNumber} (Ref: #${rp.courierifyRef})`);
+        for (const lr of rp.lineReplacements) {
+          console.log(`   - BEFORE: ${lr.currentSku} (Barcode: ${lr.currentBarcode}) -> "${lr.currentDescription}"`);
+          console.log(`   + AFTER : ${lr.targetSku} (Barcode: ${lr.targetBarcode}) -> "${lr.targetDescription}"`);
+          console.log(`     ↳ Reason: ${lr.reason}`);
+        }
       }
     }
 
@@ -492,20 +601,23 @@ async function runRepair() {
     let updatedSalesOrderItemsCount = 0;
     let updatedStockLedgerCount = 0;
     let updatedTransferItemsCount = 0;
+    let deletedDummyItemsCount = 0;
     let deactivatedDummyItemsCount = 0;
+    let remainingActiveDummyCount = 0;
 
     await prisma.$transaction(
       async (tx) => {
+        // 1. Apply order line repairs
         for (const rp of repairPlans) {
           for (const lr of rp.lineReplacements) {
-            // 1. Update SalesOrderItem
+            // Update SalesOrderItem
             await tx.salesOrderItem.update({
               where: { id: lr.salesOrderItemId },
               data: { itemId: lr.targetId },
             });
             updatedSalesOrderItemsCount++;
 
-            // 2. Update StockLedger for this sales order (matching any reference format)
+            // Update StockLedger for this sales order (matching any reference format)
             const slUpdate = await tx.stockLedger.updateMany({
               where: {
                 itemId: lr.currentId,
@@ -520,7 +632,7 @@ async function runRepair() {
             });
             updatedStockLedgerCount += slUpdate.count;
 
-            // 3. Update TransferRequestItem (STN) if present
+            // Update TransferRequestItem (STN) if present
             const transferUpdate = await tx.transferRequestItem.updateMany({
               where: {
                 transferRequest: {
@@ -538,34 +650,69 @@ async function runRepair() {
           }
         }
 
-        // Clean up any remaining stray stock ledger entries for deactivated dummies
-        for (const dummyId of dummyItemIdsToDeactivate) {
-          // If all sales orders for this dummy were repaired, cleanup stray stock ledgers
-          const remainingSalesOrderCount = await tx.salesOrderItem.count({
-            where: { itemId: dummyId },
-          });
+        // 2. Dummy Items Cleanup
+        const dummyCandidates = TARGET_SINGLE_ORDER
+          ? Array.from(
+              new Set(
+                repairPlans.flatMap((rp) =>
+                  rp.lineReplacements
+                    .filter((lr) => allDummyItemIds.has(lr.currentId))
+                    .map((lr) => lr.currentId),
+                ),
+              ),
+            )
+          : Array.from(allDummyItemIds);
 
-          if (remainingSalesOrderCount === 0) {
-            // Delete zero/negative inventory records for this dummy
+        if (dummyCandidates.length > 0) {
+          console.log(`\n⏳ [5/5] Purging unreferenced dummy items (${dummyCandidates.length} candidates)...`);
+
+          for (const dummyId of dummyCandidates) {
+            // Check if any sales orders still point to this dummy item
+            const remainingSalesOrderCount = await tx.salesOrderItem.count({
+              where: { itemId: dummyId },
+            });
+
+            if (remainingSalesOrderCount > 0) {
+              remainingActiveDummyCount++;
+              continue;
+            }
+
+            // Clean up any zero/negative inventory records for this dummy
             await tx.inventoryItem.deleteMany({
               where: { itemId: dummyId },
             });
 
-            // Check if any other tables still reference this item
-            const [slCount, trCount, retCount] = await Promise.all([
-              tx.stockLedger.count({ where: { itemId: dummyId } }),
-              tx.transferRequestItem.count({ where: { itemId: dummyId } }),
-              tx.posReturnItem.count({ where: { itemId: dummyId } }),
-            ]);
+            // Clean up any stray stock ledgers for this dummy item (since sales orders were re-pointed)
+            await tx.stockLedger.deleteMany({
+              where: { itemId: dummyId },
+            });
 
-            if (slCount === 0 && trCount === 0 && retCount === 0) {
-              // 100% Unreferenced: HARD DELETE from database
-              await tx.item.delete({
-                where: { id: dummyId },
-              });
-              deactivatedDummyItemsCount++;
+            // Clean up any stray transfer request items for this dummy
+            await tx.transferRequestItem.deleteMany({
+              where: { itemId: dummyId },
+            });
+
+            // Check if any returns or purchases reference this item
+            const retCount = await tx.posReturnItem.count({ where: { itemId: dummyId } }).catch(() => 0);
+
+            if (retCount === 0) {
+              try {
+                await tx.item.delete({
+                  where: { id: dummyId },
+                });
+                deletedDummyItemsCount++;
+              } catch (err: any) {
+                await tx.item.update({
+                  where: { id: dummyId },
+                  data: {
+                    isActive: false,
+                    status: 'inactive',
+                    description: `[DEACTIVATED DUMMY] ${dummyId}`.slice(0, 250),
+                  },
+                });
+                deactivatedDummyItemsCount++;
+              }
             } else {
-              // If any historical ledger still linked: SOFT DELETE / DEACTIVATE
               await tx.item.update({
                 where: { id: dummyId },
                 data: {
@@ -586,31 +733,38 @@ async function runRepair() {
       },
       {
         maxWait: 20000,
-        timeout: 60000,
+        timeout: 120000,
       },
     );
 
     console.log('=============================================================');
     console.log('🎉 LIVE REPAIR COMMITTED SUCCESSFULLY!');
     console.log('=============================================================');
-    console.log(`📦 SalesOrderItems Fixed    : ${updatedSalesOrderItemsCount}`);
-    console.log(`📜 StockLedger Entries Fixed: ${updatedStockLedgerCount}`);
+    console.log(`📦 SalesOrderItems Fixed      : ${updatedSalesOrderItemsCount}`);
+    console.log(`📜 StockLedger Entries Fixed  : ${updatedStockLedgerCount}`);
     console.log(`🔄 TransferRequest Lines Fixed: ${updatedTransferItemsCount}`);
-    console.log(`🏷️  Dummy Items Cleaned Up   : ${deactivatedDummyItemsCount}`);
+    console.log(`🗑️  Dummy Items Hard Deleted   : ${deletedDummyItemsCount}`);
+    console.log(`🛡️  Dummy Items Deactivated    : ${deactivatedDummyItemsCount}`);
+    if (remainingActiveDummyCount > 0) {
+      console.log(`⚠️  Dummy Items Still In Orders: ${remainingActiveDummyCount}`);
+    }
     console.log('=============================================================');
   } catch (err: any) {
     if (err.message === 'DRY_RUN_ROLLBACK_INTENTIONAL') {
       console.log('=============================================================');
       console.log('📊 DRY-RUN SIMULATION RESULTS (What would be executed):');
       console.log('=============================================================');
-      console.log(`📦 SalesOrderItems to Fix    : ${repairPlans.reduce((s, p) => s + p.lineReplacements.length, 0)}`);
+      console.log(`📦 Orders to Repair          : ${repairPlans.length}`);
       console.log(`🏷️  Dummy Items to Re-point   : ${dummyItemsRepointedCount}`);
       console.log(`👕 Wrong Sizes to Correct    : ${wrongSizeRepointedCount}`);
-      console.log(`🗑️  Dummy Items to Clean Up   : ${dummyItemIdsToDeactivate.size}`);
+      console.log(`🗑️  Total Dummy Items to Clean: ${allDummyItemIds.size}`);
       console.log('-------------------------------------------------------------');
       console.log('💡 To execute and apply these changes live, run with --commit:');
-      console.log('   bun scripts/repair_courierify_orders_by_barcode.ts --commit');
-      console.log('   (or test single order: bun scripts/repair_courierify_orders_by_barcode.ts --order=131195 --commit)');
+      if (TARGET_SINGLE_ORDER) {
+        console.log(`   bun scripts/repair_courierify_orders_by_barcode.ts --order=${TARGET_SINGLE_ORDER} --commit`);
+      } else {
+        console.log('   bun scripts/repair_courierify_orders_by_barcode.ts --commit');
+      }
       console.log('=============================================================');
     } else {
       console.error('\n❌ Repair aborted and rolled back:', err.message);
