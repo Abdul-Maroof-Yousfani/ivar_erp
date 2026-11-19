@@ -116,29 +116,44 @@ async function fetchCourierifyOrder(orderRef: string): Promise<any | null> {
   const cleanRef = String(orderRef || '').replace(/^#/, '').trim();
   if (!cleanRef) return null;
 
-  const url = `${COURIERIFY_BASE_URL}/orders/${encodeURIComponent(cleanRef)}`;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+  const candidateUrls: string[] = [
+    `${COURIERIFY_BASE_URL}/orders/${encodeURIComponent('#' + cleanRef)}`,
+    `${COURIERIFY_BASE_URL}/orders/${encodeURIComponent(cleanRef)}`,
+    `${COURIERIFY_BASE_URL}/orders?search=${encodeURIComponent(cleanRef)}`,
+    `${COURIERIFY_BASE_URL}/orders?orderName=${encodeURIComponent('#' + cleanRef)}`,
+    `${COURIERIFY_BASE_URL}/orders?orderName=${encodeURIComponent(cleanRef)}`,
+  ];
 
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${COURIERIFY_API_KEY}`,
-        'x-api-key': COURIERIFY_API_KEY,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
+  for (const url of candidateUrls) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
 
-    if (!res.ok) return null;
-    const json: any = await res.json();
-    return json?.order || json;
-  } catch {
-    return null;
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${COURIERIFY_API_KEY}`,
+          'x-api-key': COURIERIFY_API_KEY,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const json: any = await res.json();
+        const found = json?.order || (Array.isArray(json?.orders) ? json.orders[0] : null) || json;
+        if (found && (found.items || found.lineItems)) {
+          return found;
+        }
+      }
+    } catch {
+      // try next candidate
+    }
   }
+
+  return null;
 }
 
 function isItemDummy(item: any): boolean {
@@ -298,10 +313,52 @@ async function runCheck() {
       console.log(`⚠️  Dummy Items Linked to Orders : ${linkedDummyCount}`);
       console.log(`🗑️  Unlinked Dummies to Purge     : ${unlinkedDummyCount}`);
 
-      if (dummyItems.length > 0) {
-        console.log('\n🔍 Sample Remaining Dummy Items:');
-        for (const d of dummyItems.slice(0, 5)) {
-          console.log(`   - ID: ${d.id} | SKU: ${d.sku} | Barcode: ${d.barCode || 'NONE'} | "${d.description}"`);
+      // Query linked orders for each dummy item
+      const linkedOrderItems = await prisma.salesOrderItem.findMany({
+        where: { itemId: { in: dummyIds } },
+        select: {
+          itemId: true,
+          salesOrder: {
+            select: {
+              orderNumber: true,
+              referenceNumber: true,
+              createdAt: true,
+              customer: { select: { name: true } },
+            },
+          },
+        },
+      });
+
+      const orderMapByDummyId = new Map<string, any[]>();
+      for (const oi of linkedOrderItems) {
+        if (!orderMapByDummyId.has(oi.itemId)) {
+          orderMapByDummyId.set(oi.itemId, []);
+        }
+        orderMapByDummyId.get(oi.itemId)!.push(oi.salesOrder);
+      }
+
+      console.log(`\n📋 Breakdown of ALL Remaining Dummy Items (${dummyItems.length}):`);
+      for (const [idx, d] of dummyItems.entries()) {
+        const orders = orderMapByDummyId.get(d.id) || [];
+        const isDeactivated = !d.isActive || (d.description || '').startsWith('[DEACTIVATED DUMMY]');
+        const orderSummary = orders
+          .map((o) => `#${o.orderNumber} (Ref: ${o.referenceNumber || 'N/A'}, ${o.createdAt ? new Date(o.createdAt).toISOString().slice(0, 10) : 'N/A'}, ${o.customer?.name || 'No Name'})`)
+          .join(', ');
+
+        const statusTag = isDeactivated
+          ? '🛡️  [DEACTIVATED / HARMLESS]'
+          : orders.length > 0
+          ? '⚠️  [ACTIVE IN ORDER]'
+          : '🗑️  [ACTIVE BUT UNLINKED]';
+
+        console.log(`   [${idx + 1}] ${statusTag}`);
+        console.log(`       ID     : ${d.id}`);
+        console.log(`       SKU    : ${d.sku} | Barcode: ${d.barCode || 'NONE'} | Active: ${d.isActive}`);
+        console.log(`       Desc   : "${d.description || ''}"`);
+        if (orders.length > 0) {
+          console.log(`       Orders : ${orderSummary}`);
+        } else {
+          console.log(`       Orders : None (Ready to delete)`);
         }
       }
     }
