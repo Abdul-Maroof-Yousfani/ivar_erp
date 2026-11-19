@@ -11,12 +11,10 @@
 
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import pg from 'pg';
+import { Pool } from 'pg';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as dotenv from 'dotenv';
-
-const { Pool } = pg;
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 

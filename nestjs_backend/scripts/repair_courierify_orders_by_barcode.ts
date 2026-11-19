@@ -33,13 +33,11 @@
 
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import pg from 'pg';
+import { Pool } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as dotenv from 'dotenv';
-
-const { Pool } = pg;
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
@@ -306,10 +304,21 @@ async function runRepair() {
 
     const itemByBarcode = new Map<string, any>();
     const itemById = new Map<string, any>();
+    const itemBySkuAndSize = new Map<string, any>();
     for (const it of allDbItems) {
       itemById.set(it.id, it);
       if (it.barCode) {
         itemByBarcode.set(String(it.barCode).trim().toLowerCase(), it);
+      }
+      if (it.sku && it.size?.name) {
+        const skuKey = it.sku.trim().toUpperCase();
+        const sizeKey = it.size.name.trim().toLowerCase();
+        itemBySkuAndSize.set(`${skuKey}__${sizeKey}`, it);
+        if (sizeKey === 'medium') itemBySkuAndSize.set(`${skuKey}__m`, it);
+        if (sizeKey === 'large') itemBySkuAndSize.set(`${skuKey}__l`, it);
+        if (sizeKey === 'small') itemBySkuAndSize.set(`${skuKey}__s`, it);
+        if (sizeKey === 'x-large') itemBySkuAndSize.set(`${skuKey}__xl`, it);
+        if (sizeKey === 'xx-large') itemBySkuAndSize.set(`${skuKey}__xxl`, it);
       }
       if (isItemDummy(it)) {
         allDummyItemIds.add(it.id);
@@ -420,6 +429,7 @@ async function runRepair() {
         // Try to find matching line in Courierify API payload
         let targetBarcode: string | null = null;
         let matchReason = '';
+        let matchedApiLine: any = null;
 
         if (apiLines.length > 0) {
           let matchedApiIndex = -1;
@@ -462,7 +472,7 @@ async function runRepair() {
 
           if (matchedApiIndex >= 0) {
             usedApiIndices.add(matchedApiIndex);
-            const matchedApiLine = apiLines[matchedApiIndex];
+            matchedApiLine = apiLines[matchedApiIndex];
             targetBarcode =
               matchedApiLine.barcode ||
               matchedApiLine.barCode ||
@@ -484,12 +494,24 @@ async function runRepair() {
           }
         }
 
-        if (!targetBarcode) {
-          continue;
+        // Look up genuine ERP Item for targetBarcode
+        let realItem = targetBarcode ? itemByBarcode.get(String(targetBarcode).trim().toLowerCase()) : null;
+
+        // Fallback: If barcode not matched in ERP, match by Base SKU + Size from Courierify (e.g. IBMLJ M)
+        if (!realItem && matchedApiLine) {
+          const apiSku = (matchedApiLine.sku || currentSku || '').trim().toUpperCase();
+          const apiVar = (matchedApiLine.variantTitle || '').toLowerCase();
+          const sizeMatch = apiVar.match(/\b(xx-large|xxl|2xl|x-large|xl|large|medium|small|xs|s|m|l|\d{2})\b/i);
+          if (sizeMatch) {
+            const rawSize = sizeMatch[1].toLowerCase();
+            realItem = itemBySkuAndSize.get(`${apiSku}__${rawSize}`);
+            if (realItem) {
+              targetBarcode = realItem.barCode;
+              matchReason = `Courierify SKU + Size (${apiSku} [${realItem.size?.name || rawSize}])`;
+            }
+          }
         }
 
-        // Look up genuine ERP Item for targetBarcode
-        const realItem = itemByBarcode.get(String(targetBarcode).trim().toLowerCase());
         if (!realItem) {
           continue;
         }
