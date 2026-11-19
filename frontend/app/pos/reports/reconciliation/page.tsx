@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -18,6 +18,23 @@ import { cn } from "@/lib/utils";
 import { printThermal } from "@/lib/utils/print";
 import { usePosSettings } from "@/hooks/use-pos-settings";
 import { useAuth } from "@/components/providers/auth-provider";
+
+// Renders outlet branch name — cross-outlet shows original on line 1, physical outlet in grey on line 2.
+const BranchCell = ({ value, physicalBranch }: { value?: string | null; physicalBranch?: string | null }) => {
+    if (!value || value === "-") return <span>-</span>;
+    const parts = value.split("\n");
+    const line1 = parts[0];
+    const line2 = parts.length === 2 ? parts[1] : (physicalBranch ? `(${physicalBranch})` : null);
+    if (line2) {
+        return (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.3, width: "100%" }}>
+                <div style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{line1}</div>
+                <div style={{ color: "#9ca3af", fontSize: "8.5px", whiteSpace: "nowrap" }}>{line2}</div>
+            </div>
+        );
+    }
+    return <span>{value}</span>;
+};
 
 // Exact static figures for reference fallback
 const SAMPLE_DATA = {
@@ -737,17 +754,17 @@ export default function ReconciliationReportPage() {
 
                                     {/* Financial Ledger Table */}
                                     <div className="flex-1">
-                                        <table className="w-full text-[10.5px] leading-tight border-collapse">
+                                        <table className="w-full text-[10.5px] leading-tight border-collapse table-fixed">
                                             <thead>
                                                 <tr className="border-b-2 border-black font-extrabold text-gray-800">
                                                     <th className="py-2 px-1 text-left w-[22%]">Description</th>
                                                     <th className="py-2 px-1 text-right w-[12%]">Amount (Rs.)</th>
                                                     <th className="py-2 px-1 text-right w-[9%]">Rate %</th>
-                                                    <th className="py-2 px-1 text-right w-[12%]">Bank Comm.</th>
+                                                    <th className="py-2 px-1 text-right w-[10%]">Bank Comm.</th>
                                                     <th className="py-2 px-1 text-center w-[12%]">From</th>
-                                                    <th className="py-2 px-1 text-center w-[11%]">To</th>
-                                                    <th className="py-2 px-1 text-center w-[11%]">Issue from</th>
-                                                    <th className="py-2 px-1 text-center w-[11%]">Redeemed at</th>
+                                                    <th className="py-2 px-1 text-center w-[7%]">To</th>
+                                                    <th className="py-2 px-1 text-center w-[16%]">Issue from</th>
+                                                    <th className="py-2 px-1 text-center w-[12%]">Redeemed at</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -837,8 +854,8 @@ export default function ReconciliationReportPage() {
                                                         <td className="py-1 px-1 text-right">-</td>
                                                         <td className="py-1 px-1 text-center font-mono">{v.from && v.from !== "-" ? v.from : "-"}</td>
                                                         <td className="py-1 px-1 text-center">-</td>
-                                                        <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.createdBranch || "-"}>{v.createdBranch || "-"}</td>
-                                                        <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.redeemedBranch || "-"}>{v.redeemedBranch || "-"}</td>
+                                                        <td className="py-1 px-1 text-center align-top"><BranchCell value={v.createdBranch} physicalBranch={v.physicalBranch} /></td>
+                                                        <td className="py-1 px-1 text-center"><BranchCell value={v.redeemedBranch} /></td>
                                                     </tr>
                                                 ))}
                                                 <tr className="font-bold border-b border-gray-200">
@@ -895,8 +912,8 @@ export default function ReconciliationReportPage() {
                                                         <td className="py-1 px-1 text-right">-</td>
                                                         <td className="py-1 px-1 text-center font-mono">{v.from || "-"}</td>
                                                         <td className="py-1 px-1 text-center">-</td>
-                                                        <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.createdBranch || "-"}>{v.createdBranch || "-"}</td>
-                                                        <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.redeemedBranch || "-"}>{v.redeemedBranch || "-"}</td>
+                                                        <td className="py-1 px-1 text-center align-top"><BranchCell value={v.createdBranch} physicalBranch={v.physicalBranch} /></td>
+                                                        <td className="py-1 px-1 text-center"><BranchCell value={v.redeemedBranch} /></td>
                                                     </tr>
                                                 ))}
                                                 {activeReport.issuedVouchers?.creditVouchers?.map((v: any, i: number) => (
@@ -907,8 +924,8 @@ export default function ReconciliationReportPage() {
                                                         <td className="py-1 px-1 text-right">-</td>
                                                         <td className="py-1 px-1 text-center font-mono">{v.from || "-"}</td>
                                                         <td className="py-1 px-1 text-center font-mono">{v.to || "-"}</td>
-                                                        <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.createdBranch || "-"}>{v.createdBranch || "-"}</td>
-                                                        <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.redeemedBranch || "-"}>{v.redeemedBranch || "-"}</td>
+                                                        <td className="py-1 px-1 text-center align-top"><BranchCell value={v.createdBranch} physicalBranch={v.physicalBranch} /></td>
+                                                        <td className="py-1 px-1 text-center"><BranchCell value={v.redeemedBranch} /></td>
                                                     </tr>
                                                 ))}
                                                 {activeReport.issuedVouchers?.creditVouchers?.length > 0 && (
@@ -931,8 +948,8 @@ export default function ReconciliationReportPage() {
                                                         <td className="py-1 px-1 text-right">-</td>
                                                         <td className="py-1 px-1 text-center font-mono">{v.from || "-"}</td>
                                                         <td className="py-1 px-1 text-center font-mono">{v.to || "-"}</td>
-                                                        <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.createdBranch || "-"}>{v.createdBranch || "-"}</td>
-                                                        <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.redeemedBranch || "-"}>{v.redeemedBranch || "-"}</td>
+                                                        <td className="py-1 px-1 text-center align-top"><BranchCell value={v.createdBranch} physicalBranch={v.physicalBranch} /></td>
+                                                        <td className="py-1 px-1 text-center"><BranchCell value={v.redeemedBranch} /></td>
                                                     </tr>
                                                 ))}
                                                 {totalGiftVoucherDiscount > 0 && (
@@ -967,8 +984,8 @@ export default function ReconciliationReportPage() {
                                                         <td className="py-1 px-1 text-right">-</td>
                                                         <td className="py-1 px-1 text-center font-mono">{v.from || "-"}</td>
                                                         <td className="py-1 px-1 text-center">-</td>
-                                                        <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.createdBranch || "-"}>{v.createdBranch || "-"}</td>
-                                                        <td className="py-1 px-1 text-center text-xs truncate max-w-[80px]" title={v.redeemedBranch || "-"}>{v.redeemedBranch || "-"}</td>
+                                                        <td className="py-1 px-1 text-center align-top"><BranchCell value={v.createdBranch} physicalBranch={v.physicalBranch} /></td>
+                                                        <td className="py-1 px-1 text-center"><BranchCell value={v.redeemedBranch} /></td>
                                                     </tr>
                                                 ))}
 

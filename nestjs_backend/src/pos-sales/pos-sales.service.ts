@@ -5612,6 +5612,7 @@ export class PosSalesService implements OnModuleInit {
     items?: { orderItemId: string; itemId: string; quantity: number }[],
     reason?: string,
     ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
+    returnLocationId?: string,
   ) {
     try {
       const order = await this.prisma.salesOrder.findUnique({
@@ -5647,7 +5648,9 @@ export class PosSalesService implements OnModuleInit {
         });
         if (!warehouse) throw new Error('No active warehouse found');
 
-        const effectiveLocationId = order.locationId;
+        // Determine effective location: where the refund is being processed
+        // (Bukhari branch), not necessarily the original sale location (SFD2).
+        const effectiveLocationId = returnLocationId || order.locationId;
 
         // Generate sequential refund number
         const refundNumber = await this.generateRefundNumber(
@@ -5739,13 +5742,15 @@ export class PosSalesService implements OnModuleInit {
         const newStatus = allItemsReturned ? 'refunded' : 'partially_returned';
 
         // ── Generate REFUND Voucher (record-only, cash refunded to customer) ──
+        // issuedByLocationId = effectiveLocationId (where refund was processed, e.g. Bukhari)
+        // NOT order.locationId (original sale location, e.g. SFD2-KHI)
         let refundVoucher: any = null;
         if (refundAmount > 0) {
           const voucherResult = await this.voucherService.issueRefundVoucher(
             {
               faceValue: Math.round(refundAmount * 100) / 100,
               sourceOrderId: id,
-              issuedByLocationId: order.locationId || '',
+              issuedByLocationId: effectiveLocationId || order.locationId || '',
               issuedByUserId: ctx?.userId,
               customerId: order.customerId || undefined,
             },
