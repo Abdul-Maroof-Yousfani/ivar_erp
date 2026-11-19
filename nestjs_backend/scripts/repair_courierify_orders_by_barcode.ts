@@ -396,7 +396,15 @@ async function runRepair() {
 
     for (let i = 0; i < orders.length; i++) {
       const order = orders[i];
-      const cleanRef = (order.referenceNumber || '').replace(/^#/, '').trim();
+      let cleanRef = (order.referenceNumber || '').replace(/^#/, '').trim();
+      if (!cleanRef && TARGET_SINGLE_ORDER) {
+        cleanRef = cleanTarget;
+      }
+      if (!cleanRef && order.notes) {
+        const notesMatch = order.notes.match(/#?(\d{5,7})/);
+        if (notesMatch) cleanRef = notesMatch[1];
+      }
+
       const progressPrefix = `[${i + 1}/${orders.length}] Order #${order.orderNumber} (Ref: ${order.referenceNumber || 'N/A'}): `;
 
       // Check if order has any dummy items
@@ -409,6 +417,26 @@ async function runRepair() {
       await new Promise((r) => setTimeout(r, 40));
       const courierifyOrder = await fetchCourierifyOrder(cleanRef);
       const apiLines: any[] = courierifyOrder?.items?.lines || courierifyOrder?.lineItems || [];
+
+      if (TARGET_SINGLE_ORDER) {
+        console.log(`\n🔎 [DEBUG] Target Order Details:`);
+        console.log(`   Order Number   : ${order.orderNumber}`);
+        console.log(`   Reference No   : ${order.referenceNumber || '(empty)'}`);
+        console.log(`   Resolved Ref   : ${cleanRef}`);
+        console.log(`   Notes          : ${order.notes || '(none)'}`);
+        console.log(`   Current Items  : ${order.items.length}`);
+        for (const it of order.items) {
+          const dbIt = itemById.get(it.itemId);
+          console.log(`     - Item ID: ${it.itemId} | SKU: ${dbIt?.sku || 'UNKNOWN'} [${dbIt?.size?.name || 'No Size'}] Barcode: ${dbIt?.barCode || 'NONE'}`);
+        }
+        console.log(`   Courierify API : ${courierifyOrder ? '✅ Fetched' : '❌ Failed / Null'}`);
+        if (courierifyOrder) {
+          console.log(`   Courierify Lines: ${apiLines.length}`);
+          for (const al of apiLines) {
+            console.log(`     - Title: "${al.title}" | Variant: "${al.variantTitle}" | SKU: "${al.sku}" | Barcode: "${al.barcode || al.barCode || 'NONE'}"`);
+          }
+        }
+      }
 
       // If no Courierify order found and no dummy items on this order, skip (unless single target)
       if (!courierifyOrder && !hasDummyItem && !TARGET_SINGLE_ORDER) {
@@ -500,8 +528,8 @@ async function runRepair() {
         // Fallback: If barcode not matched in ERP, match by Base SKU + Size from Courierify (e.g. IBMLJ M)
         if (!realItem && matchedApiLine) {
           const apiSku = (matchedApiLine.sku || currentSku || '').trim().toUpperCase();
-          const apiVar = (matchedApiLine.variantTitle || '').toLowerCase();
-          const sizeMatch = apiVar.match(/\b(xx-large|xxl|2xl|x-large|xl|large|medium|small|xs|s|m|l|\d{2})\b/i);
+          const fullVariantStr = `${matchedApiLine.variantTitle || ''} ${matchedApiLine.title || ''}`.toLowerCase();
+          const sizeMatch = fullVariantStr.match(/\b(xx-large|xxl|2xl|x-large|xl|large|medium|small|xs|s|m|l|\d{2})\b/i);
           if (sizeMatch) {
             const rawSize = sizeMatch[1].toLowerCase();
             realItem = itemBySkuAndSize.get(`${apiSku}__${rawSize}`);
@@ -512,12 +540,22 @@ async function runRepair() {
           }
         }
 
+        if (TARGET_SINGLE_ORDER) {
+          console.log(`\n   🔍 [DEBUG Line ${lineIdx + 1} Comparison]:`);
+          console.log(`      Current Item : ${currentSku} [Size: ${currentItem?.size?.name || 'NONE'}] (Barcode: ${currentBarcode})`);
+          console.log(`      Target Barcode: ${targetBarcode || '(none)'}`);
+          console.log(`      Resolved Real: ${realItem ? `${realItem.sku} [Size: ${realItem.size?.name || ''}] (Barcode: ${realItem.barCode})` : '❌ NOT FOUND IN ERP'}`);
+        }
+
         if (!realItem) {
           continue;
         }
 
         // If current itemId is different from realItem.id, we have a repair!
         const isRepair = orderLine.itemId !== realItem.id;
+        if (TARGET_SINGLE_ORDER) {
+          console.log(`      Is Repair?   : ${isRepair ? 'YES (Will be replaced)' : 'NO (Already matches target item)'}`);
+        }
         const lineStatus = isRepair ? (isDummy ? 'DUMMY_ITEM' : 'SIZE_MISMATCH') : 'MATCHED_OK';
 
         auditCsvRows.push([
