@@ -153,8 +153,8 @@ async function fetchCourierifyOrder(orderRef: string, trackingNumber?: string): 
 
   const candidateUrls: string[] = [];
   if (cleanRef) {
-    candidateUrls.push(`${COURIERIFY_BASE_URL}/orders/${encodeURIComponent(cleanRef)}`);
     candidateUrls.push(`${COURIERIFY_BASE_URL}/orders/${encodeURIComponent('#' + cleanRef)}`);
+    candidateUrls.push(`${COURIERIFY_BASE_URL}/orders/${encodeURIComponent(cleanRef)}`);
     candidateUrls.push(`${COURIERIFY_BASE_URL}/orders?search=${encodeURIComponent(cleanRef)}`);
     candidateUrls.push(`${COURIERIFY_BASE_URL}/orders?orderName=${encodeURIComponent('#' + cleanRef)}`);
     candidateUrls.push(`${COURIERIFY_BASE_URL}/orders?orderName=${encodeURIComponent(cleanRef)}`);
@@ -173,7 +173,9 @@ async function fetchCourierifyOrder(orderRef: string, trackingNumber?: string): 
       const res = await fetch(url, {
         method: 'GET',
         headers: {
+          Authorization: `Bearer ${COURIERIFY_API_KEY}`,
           'x-api-key': COURIERIFY_API_KEY,
+          'Content-Type': 'application/json',
           Accept: 'application/json',
         },
         signal: controller.signal,

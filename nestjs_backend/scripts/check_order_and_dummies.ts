@@ -124,7 +124,9 @@ async function fetchCourierifyOrder(orderRef: string): Promise<any | null> {
     const res = await fetch(url, {
       method: 'GET',
       headers: {
+        Authorization: `Bearer ${COURIERIFY_API_KEY}`,
         'x-api-key': COURIERIFY_API_KEY,
+        'Content-Type': 'application/json',
         Accept: 'application/json',
       },
       signal: controller.signal,
