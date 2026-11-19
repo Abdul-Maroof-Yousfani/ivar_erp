@@ -782,6 +782,16 @@ async function runRepair() {
           console.log(`\n⏳ [5/5] Purging unreferenced dummy items (${dummyCandidates.length} candidates)...`);
 
           for (const dummyId of dummyCandidates) {
+            // Check if item exists in database at all
+            const itemRecord = await tx.item.findUnique({
+              where: { id: dummyId },
+              select: { id: true },
+            });
+            if (!itemRecord) {
+              // Item was already deleted or doesn't exist
+              continue;
+            }
+
             // Check if any sales orders still point to this dummy item
             const remainingSalesOrderCount = await tx.salesOrderItem.count({
               where: { itemId: dummyId },
@@ -817,7 +827,8 @@ async function runRepair() {
                 });
                 deletedDummyItemsCount++;
               } catch (err: any) {
-                await tx.item.update({
+                // If foreign key constraint blocks hard delete, safely deactivate
+                await tx.item.updateMany({
                   where: { id: dummyId },
                   data: {
                     isActive: false,
@@ -828,7 +839,7 @@ async function runRepair() {
                 deactivatedDummyItemsCount++;
               }
             } else {
-              await tx.item.update({
+              await tx.item.updateMany({
                 where: { id: dummyId },
                 data: {
                   isActive: false,
