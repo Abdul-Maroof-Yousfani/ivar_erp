@@ -587,15 +587,16 @@ export class PosSalesController {
     @ApiOperation({ summary: 'Refund only — money back, no stock movement' })
     async refundOrder(
         @Param('id') id: string,
-        @Body() body: { refundAmount: number; items?: { orderItemId: string; itemId: string; quantity: number }[]; reason?: string; managerUserId?: string },
+        @Body() body: { refundAmount: number; items?: { orderItemId: string; itemId: string; quantity: number }[]; reason?: string; managerUserId?: string; returnLocationId?: string; locationId?: string },
         @Req() req: any,
     ) {
+        const returnLocationId = body.returnLocationId || body.locationId || req.user?.locationId || req.headers?.['x-location-id'] || req.headers?.['location-id'];
         const ctx = {
             userId: body.managerUserId || req.user?.id,
             ipAddress: req.ip,
             userAgent: req.headers['user-agent'],
         };
-        return this.posSalesService.refundOnly(id, body.refundAmount, body.items, body.reason, ctx);
+        return this.posSalesService.refundOnly(id, body.refundAmount, body.items, body.reason, ctx, returnLocationId);
     }
 
     // ─── Void order ───────────────────────────────────────────────────
