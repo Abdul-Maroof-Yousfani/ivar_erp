@@ -443,11 +443,16 @@ async function runRepair() {
         return isItemDummy(dbIt) || allDummyItemIds.has(it.itemId);
       });
 
+      // Focus sweep on remaining orders that still contain dummy items
+      if (!hasDummyItem && !TARGET_SINGLE_ORDER) {
+        continue;
+      }
+
       const trackingMatch = (order.notes || '').match(/tracking:\s*([^\s|,]+)/i);
       const trackingNumber = trackingMatch ? trackingMatch[1].trim() : undefined;
 
-      // Fetch official order from Courierify API (small 40ms throttle)
-      await new Promise((r) => setTimeout(r, 40));
+      // Fetch official order from Courierify API (healthy 120ms throttle to prevent rate limits)
+      await new Promise((r) => setTimeout(r, 120));
       let courierifyOrder = await fetchCourierifyOrder(cleanRef, trackingNumber);
 
       // Dedicated fallback for Order #131077 if API endpoint is unreachable
@@ -591,6 +596,22 @@ async function runRepair() {
             if (realItem) {
               targetBarcode = realItem.barCode;
               matchReason = `Courierify SKU + Size (${apiSku} [${realItem.size?.name || rawSize}])`;
+            }
+          }
+        }
+
+        // Fallback: Composite SKU direct parsing (e.g. KNBO-XL-WH, RILIPOSW-S-STBL, DRNEPO-M-DPFRST)
+        if (!realItem && currentSku.includes('-')) {
+          const skuParts = currentSku.split('-');
+          const baseSku = skuParts[0].trim().toUpperCase();
+          for (const part of skuParts.slice(1)) {
+            const sizeLower = part.toLowerCase();
+            const candidate = itemBySkuAndSize.get(`${baseSku}__${sizeLower}`);
+            if (candidate) {
+              realItem = candidate;
+              targetBarcode = candidate.barCode;
+              matchReason = `Composite SKU Parsing (${baseSku} [${candidate.size?.name || part}])`;
+              break;
             }
           }
         }
