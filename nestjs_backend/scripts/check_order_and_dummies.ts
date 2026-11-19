@@ -361,6 +361,16 @@ async function runCheck() {
           console.log(`       Orders : None (Ready to delete)`);
         }
       }
+
+      console.log('\n-------------------------------------------------------------');
+      console.log('🏁 FINAL AUDIT VERDICT:');
+      if (linkedDummyCount === 0) {
+        console.log('🎉 100% CLEAN! Zero active dummy items exist in any sales orders!');
+        console.log(`🛡️  All remaining items (${dummyItems.length}) are safely deactivated / neutralized.`);
+      } else {
+        console.log(`⚠️  Action Required: ${linkedDummyCount} dummy item(s) are still active in sales orders.`);
+      }
+      console.log('-------------------------------------------------------------');
     }
 
     console.log('=============================================================\n');

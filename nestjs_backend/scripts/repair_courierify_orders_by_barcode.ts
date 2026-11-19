@@ -214,6 +214,32 @@ function loadCsvBarcodeFallback(): { mapping: Map<string, string>; dummyIds: Set
   const mapping = new Map<string, string>(); // dummySku/dummyId -> real barcode
   const dummyIds = new Set<string>();
 
+  // Direct hardcoded fallback for remaining 4 dummy items & edge-case exchange orders
+  const DIRECT_FALLBACKS: Record<string, string> = {
+    // 1. Order #SI-OMSI26-00015 (Ref: M-1720, Junaid Khan) -> IVAR Off White Classic Fleece Quarter Zipper
+    'a1dda194-318b-488b-b074-0b12578a167e': 'IVCFQZ63569009',
+    'ONL-1793971648437': 'IVCFQZ63569009',
+
+    // 2. Order #SI-OMSI26-00075 (Ref: #131129, umair) -> IVAR Chocolate Brown Oversized Tshirt
+    'f4ab3736-bcef-4340-a1b1-a57d8c6f0eaa': '106469',
+    'ONL-1793980858837': '106469',
+
+    // 3. Order #SI-OMSI26-00404 (Ref: M-1724, Kamran Afridi) -> IVAR Grey Drop Needle full Sleeve Henley
+    'bee18d69-1731-433e-a019-6ff99345e2e4': 'IVDRPN020376',
+    'ONL-1794053438096': 'IVDRPN020376',
+
+    // 4. Order #SI-OMSI26-00417 (Ref: M-1737, Lubna Imran) -> IVAR Olive Oxford Shirt
+    '7ed4974e-fee5-4c4b-8356-9732d1ef11b8': 'IVOXFD830159',
+    'ONL-1794053909104': 'IVOXFD830159',
+  };
+
+  for (const [k, v] of Object.entries(DIRECT_FALLBACKS)) {
+    mapping.set(k, v);
+    if (/^[0-9a-f-]{36}$/i.test(k)) {
+      dummyIds.add(k);
+    }
+  }
+
   const candidateFiles = [
     path.resolve(__dirname, '../reports/dummy_items_mapping_report_(updated).csv'),
     path.resolve(__dirname, '../reports/dummy_items_mapping_report.csv'),
@@ -261,6 +287,7 @@ interface OrderRepairPlan {
   orderNumber: string;
   referenceNumber: string;
   courierifyRef: string;
+  orderDate?: Date;
   lineReplacements: Array<{
     salesOrderItemId: string;
     currentId: string;
@@ -616,6 +643,26 @@ async function runRepair() {
           }
         }
 
+        // Fallback: If 106469 or Chocolate Brown Oversized T-shirt was not matched by barcode alone
+        if (!realItem && (targetBarcode === '106469' || orderLine.itemId === 'f4ab3736-bcef-4340-a1b1-a57d8c6f0eaa' || currentSku === 'ONL-1793980858837')) {
+          for (const it of allDbItems) {
+            const skuU = (it.sku || '').toUpperCase();
+            const descL = (it.description || '').toLowerCase();
+            const colorL = (it.color?.name || '').toLowerCase();
+            if (
+              skuU.includes('O/STSHIRT') &&
+              (colorL.includes('chocolate') || descL.includes('chocolate') || skuU.includes('CHBR')) &&
+              it.barCode &&
+              it.barCode !== 'NONE'
+            ) {
+              realItem = it;
+              targetBarcode = it.barCode;
+              matchReason = `Matched Chocolate Brown Oversized Tshirt (${it.sku} [${it.size?.name || ''}] Barcode: ${it.barCode})`;
+              break;
+            }
+          }
+        }
+
         if (TARGET_SINGLE_ORDER) {
           console.log(`\n   🔍 [DEBUG Line ${lineIdx + 1} Comparison]:`);
           console.log(`      Current Item : ${currentSku} [Size: ${currentItem?.size?.name || 'NONE'}] (Barcode: ${currentBarcode})`);
@@ -683,6 +730,7 @@ async function runRepair() {
           orderNumber: order.orderNumber,
           referenceNumber: order.referenceNumber || '',
           courierifyRef: cleanRef,
+          orderDate: order.createdAt,
           lineReplacements,
         });
         console.log(`   ✅ ${progressPrefix}Found ${lineReplacements.length} line(s) to fix`);
@@ -769,20 +817,28 @@ async function runRepair() {
             updatedStockLedgerCount += slUpdate.count;
 
             // Update TransferRequestItem (STN) if present
-            const transferUpdate = await tx.transferRequestItem.updateMany({
-              where: {
-                transferRequest: {
-                  OR: [
-                    { notes: { contains: rp.orderId } },
-                    { notes: { contains: rp.orderNumber } },
-                    { notes: { contains: `#${rp.courierifyRef}` } },
-                  ],
+            // Rule: Pre-Nov 6 and Exchange orders (M-) NEVER have STNs created or touched
+            const isPreNov6OrExchange =
+              rp.courierifyRef.startsWith('M-') ||
+              rp.referenceNumber.startsWith('M-') ||
+              (rp.orderDate && new Date(rp.orderDate) < new Date('2026-11-06T00:00:00.000Z'));
+
+            if (!isPreNov6OrExchange) {
+              const transferUpdate = await tx.transferRequestItem.updateMany({
+                where: {
+                  transferRequest: {
+                    OR: [
+                      { notes: { contains: rp.orderId } },
+                      { notes: { contains: rp.orderNumber } },
+                      { notes: { contains: `#${rp.courierifyRef}` } },
+                    ],
+                  },
+                  itemId: lr.currentId,
                 },
-                itemId: lr.currentId,
-              },
-              data: { itemId: lr.targetId },
-            });
-            updatedTransferItemsCount += transferUpdate.count;
+                data: { itemId: lr.targetId },
+              });
+              updatedTransferItemsCount += transferUpdate.count;
+            }
           }
         }
 
