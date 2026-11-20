@@ -27,9 +27,9 @@ const BranchCell = ({ value, physicalBranch }: { value?: string | null; physical
     const line2 = parts.length === 2 ? parts[1] : (physicalBranch ? `(${physicalBranch})` : null);
     if (line2) {
         return (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.3, width: "100%" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.25, width: "100%" }}>
                 <div style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{line1}</div>
-                <div style={{ color: "#9ca3af", fontSize: "8.5px", whiteSpace: "nowrap" }}>{line2}</div>
+                <div style={{ color: "#4b5563", fontSize: "9px", fontWeight: 600, whiteSpace: "nowrap" }}>{line2}</div>
             </div>
         );
     }
@@ -720,10 +720,10 @@ export default function ReconciliationReportPage() {
                     </div>
                 ) : (
                     /* A4 / Thermal Sheet Display */
-                    <div className={cn(
-                        "transition-all duration-300",
-                        layout === "thermal" ? "w-[320px]" : "w-full max-w-[210mm]"
-                    )}>
+                    <div
+                        style={layout === "thermal" ? { width: "320px" } : { width: "100%", maxWidth: "210mm" }}
+                        className="transition-all duration-300"
+                    >
                         {layout === "thermal" ? (
                             <div className="shadow-2xl border border-gray-200/60 rounded-md overflow-hidden bg-white">
                                 <div 
@@ -757,14 +757,14 @@ export default function ReconciliationReportPage() {
                                         <table className="w-full text-[10.5px] leading-tight border-collapse table-fixed">
                                             <thead>
                                                 <tr className="border-b-2 border-black font-extrabold text-gray-800">
-                                                    <th className="py-2 px-1 text-left w-[22%]">Description</th>
-                                                    <th className="py-2 px-1 text-right w-[12%]">Amount (Rs.)</th>
-                                                    <th className="py-2 px-1 text-right w-[9%]">Rate %</th>
-                                                    <th className="py-2 px-1 text-right w-[10%]">Bank Comm.</th>
-                                                    <th className="py-2 px-1 text-center w-[12%]">From</th>
-                                                    <th className="py-2 px-1 text-center w-[7%]">To</th>
-                                                    <th className="py-2 px-1 text-center w-[16%]">Issue from</th>
-                                                    <th className="py-2 px-1 text-center w-[12%]">Redeemed at</th>
+                                                    <th style={{ width: "22%" }} className="py-2 px-1 text-left">Description</th>
+                                                    <th style={{ width: "12%" }} className="py-2 px-1 text-right">Amount (Rs.)</th>
+                                                    <th style={{ width: "9%" }} className="py-2 px-1 text-right">Rate %</th>
+                                                    <th style={{ width: "10%" }} className="py-2 px-1 text-right">Bank Comm.</th>
+                                                    <th style={{ width: "12%" }} className="py-2 px-1 text-center">From</th>
+                                                    <th style={{ width: "7%" }} className="py-2 px-1 text-center">To</th>
+                                                    <th style={{ width: "16%" }} className="py-2 px-1 text-center">Issue from</th>
+                                                    <th style={{ width: "12%" }} className="py-2 px-1 text-center">Redeemed at</th>
                                                 </tr>
                                             </thead>
                                             <tbody>

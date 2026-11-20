@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState, useRef, useMemo } from "react";
-import { createPortal } from "react-dom";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getLocations, Location } from "@/lib/actions/location";
 import { MultiSelect, MultiSelectOption } from "@/components/ui/multi-select";
@@ -36,9 +35,9 @@ const BranchCell = ({ value, physicalBranch }: { value?: string | null; physical
     const line2 = parts.length === 2 ? parts[1] : (physicalBranch ? `(${physicalBranch})` : null);
     if (line2) {
         return (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.3, width: "100%" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.25, width: "100%" }}>
                 <div style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{line1}</div>
-                <div style={{ color: "#9ca3af", fontSize: "8.5px", whiteSpace: "nowrap" }}>{line2}</div>
+                <div style={{ color: "#4b5563", fontSize: "9px", fontWeight: 600, whiteSpace: "nowrap" }}>{line2}</div>
             </div>
         );
     }
@@ -393,14 +392,14 @@ const ReconciliationSheet = ({
                 <table className="w-full text-[10.5px] leading-tight border-collapse table-fixed">
                     <thead>
                         <tr className="border-b-2 border-black font-extrabold text-gray-800">
-                            <th className="py-2 px-1 text-left w-[22%]">Description</th>
-                            <th className="py-2 px-1 text-right w-[12%]">Amount (Rs.)</th>
-                            <th className="py-2 px-1 text-right w-[9%]">Rate %</th>
-                            <th className="py-2 px-1 text-right w-[10%]">Bank Comm.</th>
-                            <th className="py-2 px-1 text-center w-[12%]">From</th>
-                            <th className="py-2 px-1 text-center w-[7%]">To</th>
-                            <th className="py-2 px-1 text-center w-[16%]">Issue from</th>
-                            <th className="py-2 px-1 text-center w-[12%]">Redeemed at</th>
+                            <th style={{ width: "22%" }} className="py-2 px-1 text-left">Description</th>
+                            <th style={{ width: "12%" }} className="py-2 px-1 text-right">Amount (Rs.)</th>
+                            <th style={{ width: "9%" }} className="py-2 px-1 text-right">Rate %</th>
+                            <th style={{ width: "10%" }} className="py-2 px-1 text-right">Bank Comm.</th>
+                            <th style={{ width: "12%" }} className="py-2 px-1 text-center">From</th>
+                            <th style={{ width: "7%" }} className="py-2 px-1 text-center">To</th>
+                            <th style={{ width: "16%" }} className="py-2 px-1 text-center">Issue from</th>
+                            <th style={{ width: "12%" }} className="py-2 px-1 text-center">Redeemed at</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -444,6 +443,8 @@ const ReconciliationSheet = ({
                                     <td className="py-1 px-1 text-right">{formatVal(p.commission)}</td>
                                     <td className="py-1 px-1 text-center">-</td>
                                     <td className="py-1 px-1 text-center">-</td>
+                                    <td className="py-1 px-1 text-center">-</td>
+                                    <td className="py-1 px-1 text-center">-</td>
                                 </tr>
                             ))
                         ) : (
@@ -457,6 +458,8 @@ const ReconciliationSheet = ({
                                 <td className="py-1 px-1 text-right border-t border-dashed border-black/60">{formatVal(cardGiftVouchersCommSum)}</td>
                                 <td className="py-1 px-1 text-center"></td>
                                 <td className="py-1 px-1 text-center"></td>
+                                <td className="py-1 px-1 text-center"></td>
+                                <td className="py-1 px-1 text-center"></td>
                             </tr>
                         )}
 
@@ -466,6 +469,8 @@ const ReconciliationSheet = ({
                             <td className="py-1.5 px-1 text-right">{formatVal(totalCardsAmount)}</td>
                             <td className="py-1.5 px-1 text-right"></td>
                             <td className="py-1.5 px-1 text-right">{formatVal(totalCardsComm)}</td>
+                            <td className="py-1.5 px-1 text-center"></td>
+                            <td className="py-1.5 px-1 text-center"></td>
                             <td className="py-1.5 px-1 text-center"></td>
                             <td className="py-1.5 px-1 text-center"></td>
                         </tr>
@@ -566,6 +571,8 @@ const ReconciliationSheet = ({
                                 <td className="py-1 px-1 text-right"></td>
                                 <td className="py-1 px-1 text-center"></td>
                                 <td className="py-1 px-1 text-center"></td>
+                                <td className="py-1 px-1 text-center"></td>
+                                <td className="py-1 px-1 text-center"></td>
                             </tr>
                         )}
                         {activeReport.issuedVouchers?.giftVouchers?.map((v: any, i: number) => (
@@ -588,6 +595,8 @@ const ReconciliationSheet = ({
                                 <td className="py-1 px-1 text-right">-</td>
                                 <td className="py-1 px-1 text-center font-mono">-</td>
                                 <td className="py-1 px-1 text-center font-mono">-</td>
+                                <td className="py-1 px-1 text-center font-mono">-</td>
+                                <td className="py-1 px-1 text-center font-mono">-</td>
                             </tr>
                         )}
                         {activeReport.issuedVouchers?.giftVouchers?.length > 0 && (
@@ -596,6 +605,8 @@ const ReconciliationSheet = ({
                                 <td className="py-1 px-1 text-right border-t border-dashed border-black/60">{formatVal(issuedGiftSubtotal)}</td>
                                 <td className="py-1 px-1 text-right"></td>
                                 <td className="py-1 px-1 text-right"></td>
+                                <td className="py-1 px-1 text-center"></td>
+                                <td className="py-1 px-1 text-center"></td>
                                 <td className="py-1 px-1 text-center"></td>
                                 <td className="py-1 px-1 text-center"></td>
                             </tr>
@@ -619,6 +630,8 @@ const ReconciliationSheet = ({
                             <td className="py-1.5 px-1 text-right">{formatVal(totalIssuedSubtotal)}</td>
                             <td className="py-1.5 px-1 text-right"></td>
                             <td className="py-1.5 px-1 text-right"></td>
+                            <td className="py-1.5 px-1 text-center"></td>
+                            <td className="py-1.5 px-1 text-center"></td>
                             <td className="py-1.5 px-1 text-center"></td>
                             <td className="py-1.5 px-1 text-center"></td>
                         </tr>
@@ -682,6 +695,8 @@ const ReconciliationSheet = ({
                             <td className="py-2 px-1 text-right">-</td>
                             <td className="py-2 px-1 text-center"></td>
                             <td className="py-2 px-1 text-center"></td>
+                            <td className="py-2 px-1 text-center"></td>
+                            <td className="py-2 px-1 text-center"></td>
                         </tr>
 
                         <tr className="h-2"></tr>
@@ -697,6 +712,8 @@ const ReconciliationSheet = ({
                             <td className="py-1 px-1 text-right">-</td>
                             <td className="py-1 px-1 text-center">-</td>
                             <td className="py-1 px-1 text-center">-</td>
+                            <td className="py-1 px-1 text-center">-</td>
+                            <td className="py-1 px-1 text-center">-</td>
                         </tr>
                         <tr className="border-b border-gray-100 text-gray-700 hover:bg-gray-50/50">
                             <td className="py-1 px-1 text-left pl-4 font-medium">Sales | Gift Vouchers</td>
@@ -705,12 +722,16 @@ const ReconciliationSheet = ({
                             <td className="py-1 px-1 text-right">-</td>
                             <td className="py-1 px-1 text-center">-</td>
                             <td className="py-1 px-1 text-center">-</td>
+                            <td className="py-1 px-1 text-center">-</td>
+                            <td className="py-1 px-1 text-center">-</td>
                         </tr>
                         <tr className="border-b border-gray-100 text-gray-700 hover:bg-gray-50/50">
                             <td className="py-1 px-1 text-left pl-4 font-medium">Refund Vouchers</td>
                             <td className="py-1 px-1 text-right text-red-600 font-bold">({formatVal(activeReport.cashBreakdown?.refundVouchers)})</td>
                             <td className="py-1 px-1 text-right">-</td>
                             <td className="py-1 px-1 text-right">-</td>
+                            <td className="py-1 px-1 text-center">-</td>
+                            <td className="py-1 px-1 text-center">-</td>
                             <td className="py-1 px-1 text-center">-</td>
                             <td className="py-1 px-1 text-center">-</td>
                         </tr>
@@ -738,6 +759,8 @@ const ReconciliationSheet = ({
                             <td className="py-1 px-1 text-right">-</td>
                             <td className="py-1 px-1 text-center">-</td>
                             <td className="py-1 px-1 text-center">-</td>
+                            <td className="py-1 px-1 text-center">-</td>
+                            <td className="py-1 px-1 text-center">-</td>
                         </tr>
                         <tr className="border-b border-gray-100 text-gray-700 hover:bg-gray-50/50">
                             <td className="py-1 px-1 text-left pl-4 font-medium">Sales | Gift Vouchers</td>
@@ -746,12 +769,16 @@ const ReconciliationSheet = ({
                             <td className="py-1 px-1 text-right">-</td>
                             <td className="py-1 px-1 text-center">-</td>
                             <td className="py-1 px-1 text-center">-</td>
+                            <td className="py-1 px-1 text-center">-</td>
+                            <td className="py-1 px-1 text-center">-</td>
                         </tr>
                         <tr className="font-bold border-b-2 border-black">
                             <td className="py-1 px-1 text-left pl-4 uppercase">Total Cards</td>
                             <td className="py-1 px-1 text-right border-t border-dashed border-black/60">{formatVal(activeReport.cardBreakdown?.total)}</td>
                             <td className="py-1 px-1 text-right"></td>
                             <td className="py-1 px-1 text-right"></td>
+                            <td className="py-1 px-1 text-center"></td>
+                            <td className="py-1 px-1 text-center"></td>
                             <td className="py-1 px-1 text-center"></td>
                             <td className="py-1 px-1 text-center"></td>
                         </tr>
@@ -968,8 +995,6 @@ export default function ErpReconciliationReportPage() {
         }
     };
 
-    if (!mounted) return null;
-
     const reportsList = data?.locations && Array.isArray(data.locations) && data.locations.length > 0
         ? data.locations
         : (data ? [data] : []);
@@ -1139,7 +1164,7 @@ export default function ErpReconciliationReportPage() {
             </div>
 
             {/* Main Sheet Display Container */}
-            <div className="flex-1 flex flex-col items-center justify-start bg-muted/20 rounded-2xl border border-border/60 p-6 md:p-10 shadow-inner min-h-[60vh] relative no-print">
+            <div className="flex-1 flex flex-col items-center justify-start bg-muted/20 rounded-2xl border border-border/60 p-6 md:p-10 shadow-inner min-h-[60vh] relative print:p-0 print:border-none print:shadow-none print:bg-white">
                 {loading ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-center bg-background/50 backdrop-blur-xs rounded-2xl">
                         <Loader2 className="w-8 h-8 text-primary animate-spin" />
@@ -1156,16 +1181,16 @@ export default function ErpReconciliationReportPage() {
                 ) : (
                     <div ref={reportRef} className="w-full flex flex-col items-center gap-8">
                         {viewMode === "merged" ? (
-                            <div className={cn(
-                                "transition-all duration-300",
-                                layout === "thermal" ? "w-[320px]" : "w-full max-w-[210mm]"
-                            )}>
+                            <div
+                                style={layout === "thermal" ? { width: "320px" } : { width: "100%", maxWidth: "210mm" }}
+                                className="transition-all duration-300 mx-auto w-full flex justify-center"
+                            >
                                 {layout === "thermal" ? (
-                                    <div className="shadow-2xl border border-gray-200/60 rounded-md overflow-hidden bg-white">
+                                    <div className="shadow-2xl border border-gray-200/60 rounded-md overflow-hidden bg-white print-sheet-wrapper w-full">
                                         <ReconciliationSheet activeReport={data?.merged || data} layout="thermal" selectedDateFrom={toDateStr(dateRange.from)} selectedDateTo={toDateStr(dateRange.to)} />
                                     </div>
                                 ) : (
-                                    <div className="shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-gray-200/70 rounded-sm overflow-hidden w-full bg-white">
+                                    <div className="shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-gray-200/70 rounded-sm overflow-hidden w-full bg-white print-sheet-wrapper">
                                         <ReconciliationSheet activeReport={data?.merged || data} layout="desktop" selectedDateFrom={toDateStr(dateRange.from)} selectedDateTo={toDateStr(dateRange.to)} />
                                     </div>
                                 )}
@@ -1174,17 +1199,15 @@ export default function ErpReconciliationReportPage() {
                             reportsList.map((rep: any, idx: number) => (
                                 <div
                                     key={rep.locationId || idx}
-                                    className={cn(
-                                        "transition-all duration-300",
-                                        layout === "thermal" ? "w-[320px]" : "w-full max-w-[210mm]"
-                                    )}
+                                    style={layout === "thermal" ? { width: "320px" } : { width: "100%", maxWidth: "210mm" }}
+                                    className="transition-all duration-300 mx-auto w-full flex justify-center"
                                 >
                                     {layout === "thermal" ? (
-                                        <div className="shadow-2xl border border-gray-200/60 rounded-md overflow-hidden bg-white">
+                                        <div className="shadow-2xl border border-gray-200/60 rounded-md overflow-hidden bg-white print-sheet-wrapper w-full">
                                             <ReconciliationSheet activeReport={rep} layout="thermal" selectedDateFrom={toDateStr(dateRange.from)} selectedDateTo={toDateStr(dateRange.to)} />
                                         </div>
                                     ) : (
-                                        <div className="shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-gray-200/70 rounded-sm overflow-hidden w-full bg-white">
+                                        <div className="shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-gray-200/70 rounded-sm overflow-hidden w-full bg-white print-sheet-wrapper">
                                             <ReconciliationSheet activeReport={rep} layout="desktop" selectedDateFrom={toDateStr(dateRange.from)} selectedDateTo={toDateStr(dateRange.to)} />
                                         </div>
                                     )}
@@ -1195,96 +1218,35 @@ export default function ErpReconciliationReportPage() {
                 )}
             </div>
 
-            {/* Print Stylesheet injection */}
-            <style jsx global>{`
+            {/* Print Stylesheet */}
+            <style dangerouslySetInnerHTML={{ __html: `
                 @media print {
-                    html, body {
-                        height: auto !important;
-                        overflow: visible !important;
-                        background: white !important;
+                    @page {
+                        size: ${layout === "thermal" ? "80mm auto" : "A4 portrait"};
+                        margin: ${layout === "thermal" ? "0" : "10mm"};
                     }
-
-                    body > *:not(#reconciliation-print-container) {
+                    header, aside, .no-print, [role="navigation"], [data-sidebar], .impersonation-banner {
                         display: none !important;
                     }
-                    
-                    #reconciliation-print-container,
-                    #reconciliation-print-container * {
-                        visibility: visible !important;
-                    }
-                    
-                    #reconciliation-print-container {
-                        display: block !important;
-                        position: relative !important;
-                        left: 0 !important;
-                        top: 0 !important;
-                        width: 100% !important;
+                    body, main {
                         background: white !important;
-                        color: black !important;
-                        margin: 0 !important;
                         padding: 0 !important;
-                        -webkit-print-color-adjust: exact !important;
-                        print-color-adjust: exact !important;
+                        margin: 0 !important;
                     }
-
-                    .print-layout-thermal {
-                        width: 72.1mm !important;
-                        margin: 0 auto !important;
-                        padding: 2mm 1mm !important;
-                    }
-
-                    .print-layout-desktop {
+                    .print-sheet-wrapper {
+                        box-shadow: none !important;
+                        border: none !important;
                         width: 100% !important;
-                        max-width: 210mm !important;
+                        max-width: ${layout === "thermal" ? "72mm" : "210mm"} !important;
                         margin: 0 auto !important;
-                        padding: 12mm !important;
+                        padding: 0 !important;
                     }
-
-                    .print-layout-desktop > div {
-                        page-break-inside: avoid;
-                        break-inside: avoid;
-                    }
-
-                    @page {
-                        size: ${layout === "thermal" ? "80mm auto" : "A4"};
-                        margin: ${layout === "thermal" ? "0" : "15mm"};
-                    }
-
                     tr {
-                        page-break-inside: avoid;
-                        break-inside: avoid;
+                        page-break-inside: avoid !important;
+                        break-inside: avoid !important;
                     }
                 }
-            `}</style>
-
-            {/* Print Container Portal */}
-            {mounted && createPortal(
-                <div
-                    id="reconciliation-print-container"
-                    style={{
-                        position: "fixed",
-                        left: "-9999px",
-                        top: 0,
-                        pointerEvents: "none",
-                    }}
-                    aria-hidden="true"
-                >
-                    {printReportsList.map((rep: any, idx: number) => (
-                        <div key={rep?.locationId || idx} className={cn("mb-8", idx > 0 && "page-break-before")}>
-                            {layout === "thermal" ? (
-                                <div className="print-layout-thermal font-mono text-[9px] text-black">
-                                    <ReconciliationSheet activeReport={rep} layout="thermal" selectedDateFrom={toDateStr(dateRange.from)} selectedDateTo={toDateStr(dateRange.to)} isPrint={true} />
-                                </div>
-                            ) : (
-                                <div className="print-layout-desktop text-black bg-white font-sans text-[10px] leading-tight">
-                                    <ReconciliationSheet activeReport={rep} layout="desktop" selectedDateFrom={toDateStr(dateRange.from)} selectedDateTo={toDateStr(dateRange.to)} isPrint={true} />
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                </div>,
-                document.body
-            )}
+            `}} />
         </div>
     );
 }

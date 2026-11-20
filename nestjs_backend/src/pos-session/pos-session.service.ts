@@ -1720,11 +1720,14 @@ export class PosSessionService {
           const originalSaleLocId = v.sourceOrderId
             ? (sourceOrderLocationMap.get(v.sourceOrderId) || v.issuedByLocationId)
             : v.issuedByLocationId;
+          const origName = locationMap.get(originalSaleLocId || '') || '-';
+          const physName = locationMap.get(v.issuedByLocationId || '') || undefined;
           exchangeAndClaims.push({
             type,
             amount: faceValue,
             from: v.code,
-            createdBranch: locationMap.get(originalSaleLocId || '') || '-',
+            createdBranch: origName,
+            physicalBranch: (physName && physName !== origName) ? physName : undefined,
             redeemedBranch: '-',
           });
         } else if (v.voucherType === 'CREDIT') {
@@ -1751,11 +1754,14 @@ export class PosSessionService {
           const originalSaleLocId = v.sourceOrderId
             ? (sourceOrderLocationMap.get(v.sourceOrderId) || v.issuedByLocationId)
             : v.issuedByLocationId;
+          const origName = locationMap.get(originalSaleLocId || '') || '-';
+          const physName = locationMap.get(v.issuedByLocationId || '') || undefined;
           refundVouchers.push({
             type: 'Refund Vouchers',
             amount: faceValue,
             from: v.code,
-            createdBranch: locationMap.get(originalSaleLocId || '') || '-',
+            createdBranch: origName,
+            physicalBranch: (physName && physName !== origName) ? physName : undefined,
             redeemedBranch: '-',
           });
         } else if (v.voucherType === 'GIFT' || v.voucherType === 'CORPORATE') {
