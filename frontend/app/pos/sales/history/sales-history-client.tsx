@@ -21,7 +21,7 @@ import {
     Printer, Eye,
     PauseCircle, RotateCcw, Pencil, Plus, Trash2, Loader2,
     Banknote, CreditCard, Building2, Ticket, BookOpen,
-    AlertCircle, CheckCircle, XCircle, Upload, Globe, ShoppingCart,
+    AlertCircle, CheckCircle, XCircle, Upload, Globe, ShoppingCart, Download,
 } from "lucide-react";
 import DataTable from "@/components/common/data-table";
 import { DateRangePicker, DateRange } from "@/components/ui/date-range-picker";
@@ -52,11 +52,11 @@ function isSameDay(date: Date) {
 }
 
 const TENDER_OPTIONS = [
-    { value: "cash",           label: "Cash",           icon: Banknote  },
-    { value: "card",           label: "Card",           icon: CreditCard },
-    { value: "bank_transfer",  label: "Bank Transfer",  icon: Building2 },
-    { value: "voucher",        label: "Voucher",        icon: Ticket    },
-    { value: "credit_account", label: "Credit Account", icon: BookOpen  },
+    { value: "cash", label: "Cash", icon: Banknote },
+    { value: "card", label: "Card", icon: CreditCard },
+    { value: "bank_transfer", label: "Bank Transfer", icon: Building2 },
+    { value: "voucher", label: "Voucher", icon: Ticket },
+    { value: "credit_account", label: "Credit Account", icon: BookOpen },
 ];
 
 interface Tender { method: string; amount: number; cardLast4?: string; slipNo?: string; }
@@ -69,20 +69,20 @@ function UpdateTenderModal({ order, open, onOpenChange, onSuccess }: {
     onOpenChange: (v: boolean) => void;
     onSuccess: () => void;
 }) {
-    const [tenders, setTenders]     = useState<Tender[]>([]);
-    const [method, setMethod]       = useState("cash");
-    const [amount, setAmount]       = useState<number>(0);
+    const [tenders, setTenders] = useState<Tender[]>([]);
+    const [method, setMethod] = useState("cash");
+    const [amount, setAmount] = useState<number>(0);
     const [cardLast4, setCardLast4] = useState("");
-    const [slipNo, setSlipNo]       = useState("");
-    const [isSaving, setIsSaving]   = useState(false);
+    const [slipNo, setSlipNo] = useState("");
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         if (open && order) setTenders(order.tenders ?? []);
     }, [open, order]);
 
-    const grandTotal   = Number(order?.grandTotal ?? 0);
-    const totalPaid    = tenders.reduce((s, t) => s + t.amount, 0);
-    const balanceDue   = Math.max(0, grandTotal - totalPaid);
+    const grandTotal = Number(order?.grandTotal ?? 0);
+    const totalPaid = tenders.reduce((s, t) => s + t.amount, 0);
+    const balanceDue = Math.max(0, grandTotal - totalPaid);
     const changeAmount = Math.max(0, totalPaid - grandTotal);
 
     const addTender = () => {
@@ -139,7 +139,7 @@ function UpdateTenderModal({ order, open, onOpenChange, onSuccess }: {
                                         <span className="capitalize flex-1">
                                             {t.method.replace("_", " ")}
                                             {t.cardLast4 && <span className="font-mono text-xs text-muted-foreground ml-1">••{t.cardLast4}</span>}
-                                            {t.slipNo    && <span className="font-mono text-xs text-muted-foreground ml-1">#{t.slipNo}</span>}
+                                            {t.slipNo && <span className="font-mono text-xs text-muted-foreground ml-1">#{t.slipNo}</span>}
                                         </span>
                                         <span className="font-mono font-semibold">Rs. {fmtCurrency(t.amount)}</span>
                                         <button
@@ -228,25 +228,25 @@ interface Props {
 export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPages }: Props) {
     const router = useRouter();
     const { hasPermission } = useAuth();
-    const canPrint        = hasPermission("pos.sales.history.print");
+    const canPrint = hasPermission("pos.sales.history.print");
     const canUpdateTender = hasPermission("pos.sales.history.update-tender");
-    const canResumeHold   = hasPermission("pos.hold.resume");
-    const canImport       = hasPermission("pos.sales.history.import");
+    const canResumeHold = hasPermission("pos.hold.resume");
+    const canImport = hasPermission("pos.sales.history.import");
 
     // ── Table state ────────────────────────────────────────────────────────────
-    const [orders,    setOrders]    = useState<SalesOrder[]>(initialOrders);
+    const [orders, setOrders] = useState<SalesOrder[]>(initialOrders);
     const [isLoading, setIsLoading] = useState(false);
-    const [rowCount,  setRowCount]  = useState(initialTotal);
+    const [rowCount, setRowCount] = useState(initialTotal);
     const [pageCount, setPageCount] = useState(initialTotalPages);
-    const [search,    setSearch]    = useState("");
+    const [search, setSearch] = useState("");
     const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
     const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 100 });
 
     // ── Dialog / modal state ───────────────────────────────────────────────────
-    const [selectedOrder,   setSelectedOrder]   = useState<any>(null);
-    const [returnDetails,   setReturnDetails]   = useState<any>(null);
-    const [showPrint,       setShowPrint]       = useState(false);
-    const [showGiftPrint,   setShowGiftPrint]   = useState(false);
+    const [selectedOrder, setSelectedOrder] = useState<any>(null);
+    const [returnDetails, setReturnDetails] = useState<any>(null);
+    const [showPrint, setShowPrint] = useState(false);
+    const [showGiftPrint, setShowGiftPrint] = useState(false);
     const [showReturnPrint, setShowReturnPrint] = useState(false);
     const [showUpdateTender, setShowUpdateTender] = useState(false);
     const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
@@ -274,9 +274,9 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
     }, []);
 
     // ── Bulk-upload modal state ────────────────────────────────────────────────
-    const [isBulkUploadOpen,       setIsBulkUploadOpen]       = useState(false);
+    const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
     const [isOnlineSalesUploadOpen, setIsOnlineSalesUploadOpen] = useState(false);
-    const [activeUploadId,         setActiveUploadId]         = useState<string | null>(null);
+    const [activeUploadId, setActiveUploadId] = useState<string | null>(null);
 
     // Track upload progress for the floating progress button (mirrors item-list pattern)
     const { data: uploadProgress } = useUploadProgress(activeUploadId, "sales-history");
@@ -286,11 +286,11 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
         setIsLoading(true);
         try {
             const result = await listSalesOrders({
-                page:      pagination.pageIndex + 1,
-                limit:     pagination.pageSize,
-                search:    search.trim() || undefined,
+                page: pagination.pageIndex + 1,
+                limit: pagination.pageSize,
+                search: search.trim() || undefined,
                 startDate: dateRange.from?.toISOString(),
-                endDate:   dateRange.to?.toISOString(),
+                endDate: dateRange.to?.toISOString(),
             });
             if (result.status) {
                 setOrders(result.data);
@@ -323,6 +323,361 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
         }
     }, [uploadProgress?.status]);
 
+    const [isExporting, setIsExporting] = useState(false);
+
+    const handleExportCSV = async () => {
+        setIsExporting(true);
+        try {
+            let exportOrders = orders;
+            if (rowCount > orders.length || pagination.pageIndex > 0) {
+                const res = await authFetch("/pos-sales/orders", {
+                    params: {
+                        page: 1,
+                        limit: Math.max(rowCount, 1000),
+                        search: search.trim() || undefined,
+                        startDate: dateRange.from?.toISOString(),
+                        endDate: (dateRange.to || dateRange.from)?.toISOString(),
+                        locationId: user?.locationId || undefined,
+                    }
+                });
+                if (res.ok && res.data?.status && Array.isArray(res.data.data)) {
+                    exportOrders = res.data.data;
+                }
+            }
+
+            if (!exportOrders || exportOrders.length === 0) {
+                toast.error("No sales records found to export");
+                return;
+            }
+
+            const headers = [
+                "Order #",
+                "Ref #",
+                "Date & Time",
+                "Status",
+                "Customer Name",
+                "Customer Number",
+                "Items Count",
+                "Total Qty",
+                "Items Summary",
+                "Subtotal",
+                "Discount",
+                "Tax",
+                "Delivery Charges",
+                "Grand Total",
+                "Refunded Amount",
+                "Net Total",
+                "Payment Status",
+                "Payment Method",
+                "Cash Paid",
+                "Card Paid",
+                "Bank Transfer",
+                "Voucher Amount",
+                "Advance Paid",
+                "COD to Collect",
+                "Payment Details",
+                "Payment Status",
+                "Cash Paid",
+                "Card Paid",
+                "Voucher Amount",
+                "Advance Paid",
+                "COD Amount",
+                "Payment Details",
+                "FBR Invoice #",
+                "FBR Status",
+                "Notes",
+            ];
+
+            const rows = exportOrders.map((order) => {
+                const date = order.createdAt ? new Date(order.createdAt) : null;
+                const formattedDate = date
+                    ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                    : "-";
+
+                const isRefunded = order.status === "refunded";
+                const isPartiallyReturned = order.status === "partially_returned";
+                const refundMatch = order.notes?.match(/Cash refund(?:ed)?\s*Rs\.?\s*([\d.,]+)/i);
+                const matchedRefund = refundMatch ? parseFloat(refundMatch[1].replace(/,/g, "")) : null;
+
+                const grandTotal = Number(order.grandTotal ?? 0);
+                let actualRefunded = 0;
+                if (isRefunded) {
+                    actualRefunded = matchedRefund ?? grandTotal;
+                } else if (isPartiallyReturned && matchedRefund != null) {
+                    actualRefunded = matchedRefund;
+                }
+
+                const netTotal = isRefunded ? 0 : Math.max(0, grandTotal - actualRefunded);
+                const refNo = order.referenceNumber ? String(order.referenceNumber).replace("#", "") : "";
+
+                // ── Customer Name & Phone Extraction ──
+                let custName = order.customer?.name || order.customerName || "";
+                let custPhone = order.customer?.contactNo || order.customerPhone || "";
+
+                if (order.notes) {
+                    const matchWithPhone = order.notes.match(/Customer:\s*([^()|]+?)\s*\(([^()|]+)\)/i);
+                    if (matchWithPhone) {
+                        if (!custName) custName = matchWithPhone[1].trim();
+                        if (!custPhone) {
+                            const p = matchWithPhone[2].trim();
+                            if (p.toUpperCase() !== "N/A") custPhone = p;
+                        }
+                    } else {
+                        const matchNameOnly = order.notes.match(/Customer:\s*([^|]+)/i);
+                        if (matchNameOnly && !custName) {
+                            custName = matchNameOnly[1].trim();
+                        }
+                    }
+                    if (!custPhone) {
+                        const phoneMatch = order.notes.match(/(?:Contact|Phone|Mobile):\s*([0-9+ -]+)/i);
+                        if (phoneMatch) custPhone = phoneMatch[1].trim();
+                    }
+                }
+                if (!custName) custName = "-";
+                if (!custPhone) custPhone = "-";
+
+                // ── Quantity & Items Summary ──
+                // ── Items & Total Qty ──
+                const itemsCount = order.items?.length || 0;
+                const totalQty = (order.items || []).reduce((sum: number, oi: any) => {
+                    const q = Number(oi.quantity ?? oi.qty ?? 1);
+                    return sum + (isNaN(q) ? 1 : q);
+                }, 0);
+
+                const itemsSummary = (order.items || []).map((oi: any) => {
+                    const desc = oi.item?.description || oi.item?.sku || "Item";
+                    const q = oi.quantity ?? oi.qty ?? 1;
+                    return `${desc} (x${q})`;
+                }).join("; ");
+
+                // ── Payment Information Extraction ──
+                let paymentStatus = order.paymentStatus || "";
+                if (!paymentStatus && order.notes) {
+                    const psMatch = order.notes.match(/Payment:\s*[^(|]+\s*\(([^)]+)\)/i);
+                    if (psMatch) paymentStatus = psMatch[1].trim();
+                }
+                if (!paymentStatus) {
+                    paymentStatus = (order.status === "completed" || order.status === "refunded") ? "PAID" : "PENDING";
+                }
+                paymentStatus = paymentStatus.toUpperCase();
+
+                let paymentMethod = order.paymentMethod || order.tenderType || "";
+                if (!paymentMethod && order.notes) {
+                    const pmMatch = order.notes.match(/Payment:\s*([^(|]+)/i);
+                    if (pmMatch) paymentMethod = pmMatch[1].trim();
+                }
+                paymentMethod = paymentMethod ? paymentMethod.toUpperCase() : "CASH";
+
+                // Advance Paid & COD from notes
+                const advMatch = order.notes?.match(/Advance Paid:\s*Rs\.?\s*([\d.,]+)(?:\s*\(([^)]+)\))?/i);
+                const advanceAmount = advMatch ? parseFloat(advMatch[1].replace(/,/g, "")) : 0;
+                const advanceDetail = advMatch && advMatch[2] ? advMatch[2].trim() : "";
+
+                const codMatch = order.notes?.match(/COD to Collect:\s*Rs\.?\s*([\d.,]+)/i);
+                const codAmount = codMatch ? parseFloat(codMatch[1].replace(/,/g, "")) : (paymentMethod === "COD" ? grandTotal : 0);
+
+                // Tender amounts breakdown
+                let cashPaid = Number(order.cashAmount ?? 0);
+                let cardPaid = Number(order.cardAmount ?? 0);
+                let voucherPaid = Number(order.voucherAmount ?? 0);
+                let bankTransferPaid = 0;
+
+                if (Array.isArray(order.tenders) && order.tenders.length > 0) {
+                    for (const t of order.tenders) {
+                        const m = String(t.method || "").toLowerCase();
+                        const amt = Number(t.amount ?? 0);
+                        if (m.includes("cash")) {
+                            if (cashPaid === 0) cashPaid = amt;
+                        } else if (m.includes("card")) {
+                            if (cardPaid === 0) cardPaid = amt;
+                        } else if (m.includes("bank")) {
+                            bankTransferPaid += amt;
+                        } else if (m.includes("voucher")) {
+                            if (voucherPaid === 0) voucherPaid = amt;
+                        }
+                    }
+                }
+
+                // Advance paid method attribution
+                if (advanceAmount > 0) {
+                    const advLower = advanceDetail.toLowerCase();
+                    if (advLower.includes("bank") && bankTransferPaid === 0) {
+                        bankTransferPaid = advanceAmount;
+                    } else if (advLower.includes("card") && cardPaid === 0) {
+                        cardPaid = advanceAmount;
+                    } else if (advLower.includes("cash") && cashPaid === 0) {
+                        cashPaid = advanceAmount;
+                    }
+                }
+
+                // Fallback for simple orders
+                if (cashPaid === 0 && cardPaid === 0 && bankTransferPaid === 0 && voucherPaid === 0 && paymentMethod !== "COD") {
+                    const pmLower = paymentMethod.toLowerCase();
+                    if (pmLower === "cash") cashPaid = grandTotal;
+                    else if (pmLower === "card") cardPaid = grandTotal;
+                    else if (pmLower === "bank_transfer" || pmLower.includes("bank")) bankTransferPaid = grandTotal;
+                    else if (pmLower === "voucher") voucherPaid = grandTotal;
+                }
+
+                // Payment Details summary
+                const pDetails: string[] = [];
+                if (paymentMethod) pDetails.push(`Method: ${paymentMethod}`);
+                if (paymentStatus) pDetails.push(`Status: ${paymentStatus}`);
+                if (cashPaid > 0) pDetails.push(`Cash: ${cashPaid.toFixed(2)}`);
+                if (cardPaid > 0) pDetails.push(`Card: ${cardPaid.toFixed(2)}`);
+                if (bankTransferPaid > 0) pDetails.push(`Bank Transfer: ${bankTransferPaid.toFixed(2)}`);
+                if (voucherPaid > 0) pDetails.push(`Voucher: ${voucherPaid.toFixed(2)}`);
+                if (advanceAmount > 0) pDetails.push(`Advance: ${advanceAmount.toFixed(2)}${advanceDetail ? ` (${advanceDetail})` : ""}`);
+                if (codAmount > 0) pDetails.push(`COD: ${codAmount.toFixed(2)}`);
+                const paymentDetails = pDetails.join(" | ");
+
+                // ── Delivery Charges ──
+                const dcMatch = order.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
+                const deliveryCharges = dcMatch ? parseFloat(dcMatch[1].replace(/,/g, "")) : 0;
+
+                // ── Payment Information ──
+                const advMatch = order.notes?.match(/Advance Paid:\s*Rs\.?\s*([\d.,]+)(?:\s*\(([^)]+)\))?/i);
+                const advancePaid = advMatch ? parseFloat(advMatch[1].replace(/,/g, "")) : 0;
+                const advanceDetails = advMatch && advMatch[2] ? advMatch[2].trim() : "";
+
+                const codMatch = order.notes?.match(/COD to Collect:\s*Rs\.?\s*([\d.,]+)/i);
+                let codAmount = codMatch ? parseFloat(codMatch[1].replace(/,/g, "")) : 0;
+
+                let cashPaid = Number(order.cashAmount ?? 0);
+                let cardPaid = Number(order.cardAmount ?? 0);
+                let voucherPaid = Number(order.voucherAmount ?? 0);
+
+                if (Array.isArray(order.tenders)) {
+                    for (const t of order.tenders) {
+                        const method = String(t.method || "").toLowerCase();
+                        const amt = Number(t.amount ?? 0);
+                        if (method === "cash" && cashPaid === 0) cashPaid = amt;
+                        if ((method === "card" || method === "bank_transfer") && cardPaid === 0) cardPaid = amt;
+                        if (method === "voucher" && voucherPaid === 0) voucherPaid = amt;
+                        if (method === "cod" && codAmount === 0) codAmount = amt;
+                    }
+                }
+                if (voucherPaid === 0 && Array.isArray(order.voucherRedemptions)) {
+                    voucherPaid = order.voucherRedemptions.reduce((s: number, r: any) => s + (Number(r.amountUsed) || 0), 0);
+                }
+
+                let paymentMethod = "";
+                if (order.tenders && order.tenders.length > 0) {
+                    paymentMethod = order.tenders.map((t: any) => t.method).join(", ");
+                }
+                if (!paymentMethod && order.notes) {
+                    const payMatch = order.notes.match(/Payment:\s*([^(|\r\n]+)/i);
+                    if (payMatch) paymentMethod = payMatch[1].trim();
+                }
+                if (!paymentMethod) {
+                    paymentMethod = order.paymentMethod || order.tenderType || (codAmount > 0 ? "COD" : "Cash");
+                }
+
+                let paymentStatus = order.paymentStatus || "";
+                if (!paymentStatus || paymentStatus === "unpaid") {
+                    const payStatusMatch = order.notes?.match(/Payment:\s*[^(\r\n]+\(([^)]+)\)/i);
+                    if (payStatusMatch) paymentStatus = payStatusMatch[1].trim();
+                }
+                if (!paymentStatus) {
+                    paymentStatus = (order.status === "completed" || order.status === "delivered") ? "PAID" : "UNPAID";
+                }
+
+                const payParts: string[] = [];
+                if (advancePaid > 0) payParts.push(`Advance: Rs. ${advancePaid.toFixed(2)}${advanceDetails ? ` (${advanceDetails})` : ''}`);
+                if (codAmount > 0) payParts.push(`COD: Rs. ${codAmount.toFixed(2)}`);
+                if (cashPaid > 0) payParts.push(`Cash: Rs. ${cashPaid.toFixed(2)}`);
+                if (cardPaid > 0) payParts.push(`Card: Rs. ${cardPaid.toFixed(2)}`);
+                if (voucherPaid > 0) payParts.push(`Voucher: Rs. ${voucherPaid.toFixed(2)}`);
+                if (order.changeAmount && Number(order.changeAmount) > 0) payParts.push(`Change: Rs. ${Number(order.changeAmount).toFixed(2)}`);
+                const paymentDetails = payParts.length > 0 ? payParts.join(" | ") : `${paymentMethod.toUpperCase()} (${paymentStatus.toUpperCase()})`;
+
+                const fbrStatus = order.fbrInvoiceNumber ? "Synced" : (order.fbrStatus || "Unsynced");
+
+                return [
+                    order.orderNumber || "",
+                    refNo,
+                    formattedDate,
+                    order.status || "-",
+                    custName,
+                    custPhone,
+                    itemsCount,
+                    totalQty,
+                    itemsSummary,
+                    Number(order.subtotal ?? 0).toFixed(2),
+                    Number(order.discountAmount ?? 0).toFixed(2),
+                    Number(order.taxAmount ?? 0).toFixed(2),
+                    deliveryCharges > 0 ? deliveryCharges.toFixed(2) : "0.00",
+                    grandTotal.toFixed(2),
+                    actualRefunded > 0 ? actualRefunded.toFixed(2) : "0.00",
+                    netTotal.toFixed(2),
+                    paymentStatus,
+                    paymentMethod,
+                    cashPaid > 0 ? cashPaid.toFixed(2) : "0.00",
+                    cardPaid > 0 ? cardPaid.toFixed(2) : "0.00",
+                    bankTransferPaid > 0 ? bankTransferPaid.toFixed(2) : "0.00",
+                    voucherPaid > 0 ? voucherPaid.toFixed(2) : "0.00",
+                    advanceAmount > 0 ? `${advanceAmount.toFixed(2)}${advanceDetail ? ` (${advanceDetail})` : ""}` : "0.00",
+                    codAmount > 0 ? codAmount.toFixed(2) : "0.00",
+                    paymentDetails,
+                    order.fbrInvoiceNumber || "-",
+                    fbrStatus,
+                    order.notes || "",
+                ];
+            });
+
+            const escapeCsv = (val: any) => {
+                if (val === null || val === undefined) return '""';
+                const str = String(val).replace(/"/g, '""').replace(/[\r\n]+/g, ' ');
+                return `"${str}"`;
+            };
+
+            const csvContent = [
+                headers.map(escapeCsv).join(","),
+                ...rows.map(row => row.map(escapeCsv).join(","))
+            ].join("\r\n");
+
+            const formatLocalYMD = (d: Date) => {
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, "0");
+                const day = String(d.getDate()).padStart(2, "0");
+                return `${year}-${month}-${day}`;
+            };
+
+            let fileName = "sales-history";
+            if (dateRange.from && dateRange.to) {
+                const fromStr = formatLocalYMD(dateRange.from);
+                const toStr = formatLocalYMD(dateRange.to);
+                fileName += fromStr === toStr ? `_${fromStr}` : `_${fromStr}_to_${toStr}`;
+            } else if (dateRange.from) {
+                fileName += `_${formatLocalYMD(dateRange.from)}`;
+            } else {
+                fileName += `_all_${formatLocalYMD(new Date())}`;
+            }
+
+            if (search.trim()) {
+                fileName += `_${search.trim().replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+            }
+            fileName += ".csv";
+
+            const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.setAttribute("download", fileName);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            toast.success(`Exported ${exportOrders.length} order(s) successfully`);
+        } catch (error) {
+            console.error("Export CSV error:", error);
+            toast.error("Failed to export sales history");
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     // ── Print helpers ──────────────────────────────────────────────────────────
     const openPrintDialog = useCallback(async (listOrder: any, mode: "sales" | "gift" | "return" | "refund") => {
         setIsLoadingReceipt(true);
@@ -347,8 +702,8 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
             const res = await authFetch(`/pos-sales/orders/${listOrder.id}`);
             if (res.ok && res.data?.status) {
                 const full = res.data.data;
-                if (mode === "sales")  setSelectedOrder({ ...full, isGiftReceipt: false });
-                if (mode === "gift")   setSelectedOrder({ ...full, isGiftReceipt: true });
+                if (mode === "sales") setSelectedOrder({ ...full, isGiftReceipt: false });
+                if (mode === "gift") setSelectedOrder({ ...full, isGiftReceipt: true });
                 if (mode === "return" || mode === "refund") {
                     setSelectedOrder(full);
                     const typeParam = mode === "refund" ? "refund" : "return";
@@ -380,10 +735,10 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
                     quantity: oi.quantity,
                     price: Number(oi.unitPrice),
                     discountPercent: Number(oi.discountPercent),
-                    discountAmount:  Number(oi.discountAmount),
-                    taxPercent:      Number(oi.taxPercent),
-                    taxAmount:       Number(oi.taxAmount),
-                    total:           Number(oi.lineTotal),
+                    discountAmount: Number(oi.discountAmount),
+                    taxPercent: Number(oi.taxPercent),
+                    taxAmount: Number(oi.taxAmount),
+                    total: Number(oi.lineTotal),
                     inStock: true, stockQty: 999,
                 }));
                 sessionStorage.setItem("pos_resume_cart", JSON.stringify(cartItems));
@@ -400,13 +755,13 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
 
     // ── Status badge map ───────────────────────────────────────────────────────
     const STATUS_BADGE: Record<string, string> = {
-        completed:         "bg-emerald-500/10 text-emerald-700 border-emerald-300",
-        hold:              "bg-amber-500/10 text-amber-700 border-amber-300",
-        hold_expired:      "bg-muted text-muted-foreground border-border",
-        voided:            "bg-destructive/10 text-destructive border-destructive/30",
-        partially_returned:"bg-blue-500/10 text-blue-700 border-blue-300",
-        refunded:          "bg-purple-500/10 text-purple-700 border-purple-300",
-        exchanged:         "bg-cyan-500/10 text-cyan-700 border-cyan-300",
+        completed: "bg-emerald-500/10 text-emerald-700 border-emerald-300",
+        hold: "bg-amber-500/10 text-amber-700 border-amber-300",
+        hold_expired: "bg-muted text-muted-foreground border-border",
+        voided: "bg-destructive/10 text-destructive border-destructive/30",
+        partially_returned: "bg-blue-500/10 text-blue-700 border-blue-300",
+        refunded: "bg-purple-500/10 text-purple-700 border-purple-300",
+        exchanged: "bg-cyan-500/10 text-cyan-700 border-cyan-300",
     };
 
     // ── Columns ────────────────────────────────────────────────────────────────
@@ -490,8 +845,8 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
 
                 let claimBadge: React.ReactNode = null;
                 if (claims.length > 0) {
-                    const pending  = claims.filter((c: any) => c.status === "SUBMITTED" || c.status === "UNDER_REVIEW");
-                    const approved = claims.filter((c: any) => c.status === "APPROVED"  || c.status === "PARTIALLY_APPROVED");
+                    const pending = claims.filter((c: any) => c.status === "SUBMITTED" || c.status === "UNDER_REVIEW");
+                    const approved = claims.filter((c: any) => c.status === "APPROVED" || c.status === "PARTIALLY_APPROVED");
                     const rejected = claims.filter((c: any) => c.status === "REJECTED");
 
                     if (pending.length > 0) {
@@ -648,6 +1003,19 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
                         onChange={e => setSearch(e.target.value)}
                         className="h-9 w-52 rounded-md border border-input bg-background px-3 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     />
+                    <Button
+                        variant="outline"
+                        onClick={handleExportCSV}
+                        disabled={isExporting}
+                        className="gap-2 h-9"
+                    >
+                        {isExporting ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                            <Download className="h-4 w-4" />
+                        )}
+                        Export CSV
+                    </Button>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -655,12 +1023,12 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
                     {activeUploadId && !isBulkUploadOpen && (
                         <Button
                             variant={
-                                uploadProgress?.status === "failed"    ? "destructive" :
-                                uploadProgress?.status === "completed" ? "default"     : "outline"
+                                uploadProgress?.status === "failed" ? "destructive" :
+                                    uploadProgress?.status === "completed" ? "default" : "outline"
                             }
                             className={cn(
                                 "relative overflow-hidden min-w-48 border-primary text-primary transition-colors",
-                                uploadProgress?.status === "failed"    && "border-destructive! text-destructive-foreground! bg-destructive!",
+                                uploadProgress?.status === "failed" && "border-destructive! text-destructive-foreground! bg-destructive!",
                                 uploadProgress?.status === "completed" && "text-primary-foreground! bg-primary!",
                             )}
                             onClick={() => setIsBulkUploadOpen(true)}
@@ -672,16 +1040,16 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
                             />
                             <div className="relative flex items-center gap-2">
                                 {(uploadProgress?.status === "validating" ||
-                                  uploadProgress?.status === "processing" ||
-                                  uploadProgress?.status === "pending") && (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                )}
+                                    uploadProgress?.status === "processing" ||
+                                    uploadProgress?.status === "pending") && (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    )}
                                 <span className="font-bold">
-                                    {uploadProgress?.status === "failed"    ? "Import Failed"       :
-                                     uploadProgress?.status === "completed" ? "Import Complete"     :
-                                     uploadProgress?.status === "validated" ? "Validation Complete" :
-                                     uploadProgress?.status === "validating"? "Validating"          :
-                                                                              "Importing"}
+                                    {uploadProgress?.status === "failed" ? "Import Failed" :
+                                        uploadProgress?.status === "completed" ? "Import Complete" :
+                                            uploadProgress?.status === "validated" ? "Validation Complete" :
+                                                uploadProgress?.status === "validating" ? "Validating" :
+                                                    "Importing"}
                                     {!["failed", "completed", "validated"].includes(uploadProgress?.status || "")
                                         ? ` ${uploadProgress?.progress ?? 0}%`
                                         : ""}
@@ -784,21 +1152,21 @@ export function SalesHistoryClient({ initialOrders, initialTotal, initialTotalPa
                     originalOrders={[{ orderNumber: selectedOrder?.orderNumber ?? "", grandTotal: Number(selectedOrder?.grandTotal ?? 0) }]}
                     returnedLines={
                         (returnDetails?.items ?? []).map((item: any) => ({
-                            name:            item.item?.description ?? "Item",
-                            sku:             item.item?.sku ?? "",
-                            size:            item.item?.size?.name ?? "",
-                            brand:           item.item?.brand?.name ?? "",
-                            returnQty:       item.returnableQty ?? item.quantity ?? 1,
-                            paidPerUnit:     item.originalPaidPerUnit ?? Number(item.unitPrice ?? 0),
-                            refundAmount:    item.refundAmount ?? 0,
-                            orderNumber:     selectedOrder?.orderNumber ?? "",
-                            unitPrice:       Number(item.unitPrice ?? 0),
-                            discountAmount:  Number(item.discountAmount ?? 0),
+                            name: item.item?.description ?? "Item",
+                            sku: item.item?.sku ?? "",
+                            size: item.item?.size?.name ?? "",
+                            brand: item.item?.brand?.name ?? "",
+                            returnQty: item.returnableQty ?? item.quantity ?? 1,
+                            paidPerUnit: item.originalPaidPerUnit ?? Number(item.unitPrice ?? 0),
+                            refundAmount: item.refundAmount ?? 0,
+                            orderNumber: selectedOrder?.orderNumber ?? "",
+                            unitPrice: Number(item.unitPrice ?? 0),
+                            discountAmount: Number(item.discountAmount ?? 0),
                             discountPercent: Number(item.discountPercent ?? 0),
-                            taxAmount:       Number(item.taxAmount ?? 0),
-                            taxPercent:      Number(item.taxPercent ?? 0),
-                            refundPerUnit:   item.refundPerUnit,
-                            priceAdjusted:   item.priceAdjusted,
+                            taxAmount: Number(item.taxAmount ?? 0),
+                            taxPercent: Number(item.taxPercent ?? 0),
+                            refundPerUnit: item.refundPerUnit,
+                            priceAdjusted: item.priceAdjusted,
                             originalPaidPerUnit: item.originalPaidPerUnit,
                             couponDeduction: item.couponDeduction,
                         }))

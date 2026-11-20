@@ -2335,6 +2335,14 @@ export class PosSalesService implements OnModuleInit {
               voucher: { select: { code: true, faceValue: true } },
             },
           },
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              contactNo: true,
+              email: true,
+            },
+          },
         },
       }),
       this.prisma.salesOrder.count({ where }),
