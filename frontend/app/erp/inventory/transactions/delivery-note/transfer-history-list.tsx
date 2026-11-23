@@ -69,7 +69,7 @@ interface StockTransferHistoryListProps {
     };
 }
 
-export function StockTransferHistoryList({ 
+export function StockTransferHistoryList({
     initialEntries,
     warehouses = [],
     initialFilters
@@ -116,7 +116,7 @@ export function StockTransferHistoryList({
             if (res.status) {
                 setEntries(res.data || []);
                 setCurrentPage(1);
-                
+
                 const params = new URLSearchParams();
                 if (activeFilters.search) params.set("search", activeFilters.search);
                 if (activeFilters.status) params.set("status", activeFilters.status);
@@ -124,7 +124,7 @@ export function StockTransferHistoryList({
                 if (activeFilters.warehouseId) params.set("warehouseId", activeFilters.warehouseId);
                 if (activeFilters.dateFrom) params.set("dateFrom", activeFilters.dateFrom);
                 if (activeFilters.dateTo) params.set("dateTo", activeFilters.dateTo);
-                
+
                 const qs = params.toString();
                 router.replace(`/erp/inventory/transactions/delivery-note${qs ? `?${qs}` : ""}`, { scroll: false });
                 toast.success("Filters applied successfully");
@@ -465,11 +465,14 @@ export function StockTransferHistoryList({
                                             const isRxCompleted = transfer.status === 'COMPLETED' || transfer.items?.some((i: any) => i.fulfilledQty !== null && i.fulfilledQty !== undefined);
 
                                             return (
-                                                <TableRow key={transfer.id} className={`hover:bg-muted/50 transition-colors ${transfer.transferType === 'OUTLET_TO_WAREHOUSE' ? 'bg-orange-50/20' : ''}`}>
+                                                <TableRow key={transfer.id} className={`hover:bg-muted/50 transition-colors ${transfer.transferType === 'OUTLET_TO_WAREHOUSE' ? 'bg-orange-50/20' : transfer.transferType === 'OUTLET_TO_OUTLET' ? 'bg-purple-50/20' : ''}`}>
                                                     <TableCell className="font-mono font-bold text-sm">
                                                         <div className="flex items-center gap-2">
                                                             {transfer.transferType === 'OUTLET_TO_WAREHOUSE' && (
                                                                 <RotateCcw className="h-4 w-4 text-orange-600" />
+                                                            )}
+                                                            {transfer.transferType === 'OUTLET_TO_OUTLET' && (
+                                                                <ArrowRightLeft className="h-4 w-4 text-purple-600" />
                                                             )}
                                                             {transfer.requestNo}
                                                         </div>
@@ -487,14 +490,25 @@ export function StockTransferHistoryList({
                                                                     </div>
                                                                     <div className="flex items-center gap-1.5 text-xs font-semibold">
                                                                         <Badge variant="outline" className="px-1.5 py-0 h-5 bg-primary/5 text-primary border-primary/20">TO</Badge>
-                                                                        <span className="font-bold">{transfer.fromWarehouse?.name || 'Main Warehouse'}</span>
+                                                                        <span className="font-bold">{transfer.toWarehouse?.name || transfer.fromWarehouse?.name || 'Main Warehouse'}</span>
+                                                                    </div>
+                                                                </>
+                                                            ) : transfer.transferType === 'OUTLET_TO_OUTLET' ? (
+                                                                <>
+                                                                    <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                                                        <Badge variant="outline" className="px-1.5 py-0 h-5 bg-purple-50 text-purple-700 border-purple-200">FROM</Badge>
+                                                                        <span className="text-muted-foreground font-semibold">{transfer.fromLocation?.name || 'Outlet'}</span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                                                        <Badge variant="outline" className="px-1.5 py-0 h-5 bg-primary/5 text-primary border-primary/20">TO</Badge>
+                                                                        <span className="font-bold">{transfer.toLocation?.name || 'Outlet'}</span>
                                                                     </div>
                                                                 </>
                                                             ) : (
                                                                 <>
                                                                     <div className="flex items-center gap-1.5 text-xs font-semibold">
                                                                         <Badge variant="outline" className="px-1.5 py-0 h-5 bg-background">FROM</Badge>
-                                                                        <span className="text-muted-foreground">{transfer.fromWarehouse?.name || "Warehouse"}</span>
+                                                                        <span className="text-muted-foreground">{transfer.fromWarehouse?.name || transfer.fromLocation?.name || "Warehouse"}</span>
                                                                     </div>
                                                                     <div className="flex items-center gap-1.5 text-xs font-semibold">
                                                                         <Badge variant="outline" className="px-1.5 py-0 h-5 bg-primary/5 text-primary border-primary/20">TO</Badge>
@@ -604,6 +618,40 @@ export function StockTransferHistoryList({
 
                     {selectedTransferForDetails && (
                         <div className="flex-1 overflow-y-auto overflow-x-auto space-y-4 my-2 pr-2">
+                            {/* Transfer Route & Details Info Strip */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-muted/40 p-3 rounded-lg text-xs font-semibold border">
+                                <div>
+                                    <span className="text-muted-foreground block text-[10px] uppercase font-bold">Transfer Type</span>
+                                    <span>
+                                        {selectedTransferForDetails.transferType === 'OUTLET_TO_OUTLET'
+                                            ? 'Outlet to Outlet'
+                                            : selectedTransferForDetails.transferType === 'OUTLET_TO_WAREHOUSE'
+                                                ? 'Outlet to Warehouse'
+                                                : 'Warehouse to Outlet'}
+                                    </span>
+                                </div>
+                                <div>
+                                    <span className="text-muted-foreground block text-[10px] uppercase font-bold">From</span>
+                                    <span className="font-bold text-foreground">
+                                        {selectedTransferForDetails.transferType === 'OUTLET_TO_WAREHOUSE' || selectedTransferForDetails.transferType === 'OUTLET_TO_OUTLET'
+                                            ? selectedTransferForDetails.fromLocation?.name || 'Outlet'
+                                            : selectedTransferForDetails.fromWarehouse?.name || 'Warehouse'}
+                                    </span>
+                                </div>
+                                <div>
+                                    <span className="text-muted-foreground block text-[10px] uppercase font-bold">To</span>
+                                    <span className="font-bold text-foreground">
+                                        {selectedTransferForDetails.transferType === 'OUTLET_TO_WAREHOUSE'
+                                            ? selectedTransferForDetails.toWarehouse?.name || selectedTransferForDetails.fromWarehouse?.name || 'Main Warehouse'
+                                            : selectedTransferForDetails.toLocation?.name || selectedTransferForDetails.toWarehouse?.name || 'Outlet'}
+                                    </span>
+                                </div>
+                                <div>
+                                    <span className="text-muted-foreground block text-[10px] uppercase font-bold">Status</span>
+                                    <span>{selectedTransferForDetails.status}</span>
+                                </div>
+                            </div>
+
                             <div className="border rounded-lg overflow-hidden min-w-max">
                                 <table className="w-full text-left border-collapse text-xs">
                                     <thead className="bg-muted/80 font-bold uppercase text-[10px] tracking-wider text-muted-foreground">

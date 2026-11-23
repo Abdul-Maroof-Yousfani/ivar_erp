@@ -972,7 +972,7 @@ export default function StockTransferPage() {
             } else if (transferMode === 'OUTLET_TO_WAREHOUSE') {
                 const res = await createReturnTransferRequest({
                     fromLocationId: destLocationId,
-                    fromWarehouseId: selectedWarehouseId,
+                    toWarehouseId: selectedWarehouseId,
                     items: itemsToTransfer,
                     notes: globalNotes
                 });
@@ -1247,7 +1247,7 @@ export default function StockTransferPage() {
                                     {filteredRequests.map((req: any) => {
                                         const totalQty = req.items?.reduce((sum: number, i: any) => sum + Number(i.quantity || 0), 0) || 0;
                                         const fromName = req.fromLocation?.name || req.fromLocationId || "Outlet Store";
-                                        const toWhName = req.fromWarehouse?.name || "Main Warehouse";
+                                        const toWhName = req.toWarehouse?.name || req.fromWarehouse?.name || "Main Warehouse";
 
                                         return (
                                             <Card key={req.id} className="border-border/60 hover:border-emerald-500/40 transition-colors shadow-xs">
@@ -2150,7 +2150,7 @@ export default function StockTransferPage() {
                                 </div>
                                 <div>
                                     <span className="text-muted-foreground block text-[10px] uppercase">Destination Warehouse</span>
-                                    <span>{inspectingRequest.fromWarehouse?.name || "Main Warehouse"}</span>
+                                    <span>{inspectingRequest.toWarehouse?.name || inspectingRequest.fromWarehouse?.name || "Main Warehouse"}</span>
                                 </div>
                             </div>
 

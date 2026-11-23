@@ -118,7 +118,7 @@ export default function TransferSlipPage({ params }: { params: Promise<{ id: str
                     </Button>
                     <Button onClick={printSlip}>
                         <Printer className="h-4 w-4 mr-2" /> 
-                        {transfer?.transferType === 'OUTLET_TO_WAREHOUSE' ? 'Print Return Challan' : 'Print Delivery Challan'}
+                        {transfer?.transferType === 'OUTLET_TO_WAREHOUSE' ? 'Print Return Challan' : transfer?.transferType === 'OUTLET_TO_OUTLET' ? 'Print Outlet Challan' : 'Print Delivery Challan'}
                     </Button>
                 </div>
 
@@ -269,10 +269,18 @@ export default function TransferSlipPage({ params }: { params: Promise<{ id: str
                 <div className="flex justify-between items-start border-b-2 border-gray-800 pb-6 mb-8">
                     <div>
                         <h1 className="text-4xl font-black uppercase tracking-tighter text-gray-900">
-                            {transfer.transferType === 'OUTLET_TO_WAREHOUSE' ? 'Return Challan' : 'Delivery Challan'}
+                            {transfer.transferType === 'OUTLET_TO_WAREHOUSE' 
+                                ? 'Return Challan' 
+                                : transfer.transferType === 'OUTLET_TO_OUTLET'
+                                    ? 'Outlet Transfer Challan'
+                                    : 'Delivery Challan'}
                         </h1>
                         <p className="text-gray-500 font-medium tracking-widest mt-1 text-sm">
-                            {transfer.transferType === 'OUTLET_TO_WAREHOUSE' ? 'INTERNAL STOCK RETURN' : 'INTERNAL STOCK TRANSFER'}
+                            {transfer.transferType === 'OUTLET_TO_WAREHOUSE' 
+                                ? 'INTERNAL STOCK RETURN' 
+                                : transfer.transferType === 'OUTLET_TO_OUTLET'
+                                    ? 'OUTLET TO OUTLET TRANSFER'
+                                    : 'INTERNAL STOCK TRANSFER'}
                         </p>
                     </div>
                     <div className="text-right">
@@ -305,24 +313,38 @@ export default function TransferSlipPage({ params }: { params: Promise<{ id: str
                                 // Return Transfer: Outlet → Warehouse
                                 <>
                                     <div className="border border-orange-200 p-3 rounded-md bg-orange-50/30">
-                                        <h3 className="text-xs font-bold text-orange-700 uppercase tracking-wider mb-1">From (Origin)</h3>
+                                        <h3 className="text-xs font-bold text-orange-700 uppercase tracking-wider mb-1">From (Origin Outlet)</h3>
                                         <p className="font-bold text-orange-900">{transfer.fromLocation?.name || 'Outlet Location'}</p>
                                         <p className="text-xs text-orange-700 font-mono mt-1">{transfer.fromLocation?.code}</p>
                                     </div>
                                     <div className="border border-gray-200 p-3 rounded-md">
-                                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">To (Destination)</h3>
-                                        <p className="font-bold text-gray-900">{transfer.fromWarehouse?.name || 'Main Warehouse'}</p>
+                                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">To (Destination Warehouse)</h3>
+                                        <p className="font-bold text-gray-900">{transfer.toWarehouse?.name || transfer.fromWarehouse?.name || 'Main Warehouse'}</p>
+                                    </div>
+                                </>
+                            ) : transfer.transferType === 'OUTLET_TO_OUTLET' ? (
+                                // Outlet to Outlet Transfer
+                                <>
+                                    <div className="border border-purple-200 p-3 rounded-md bg-purple-50/30">
+                                        <h3 className="text-xs font-bold text-purple-700 uppercase tracking-wider mb-1">From (Source Outlet)</h3>
+                                        <p className="font-bold text-purple-900">{transfer.fromLocation?.name || 'Source Outlet'}</p>
+                                        <p className="text-xs text-purple-700 font-mono mt-1">{transfer.fromLocation?.code}</p>
+                                    </div>
+                                    <div className="border border-blue-200 p-3 rounded-md bg-blue-50/30">
+                                        <h3 className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-1">To (Destination Outlet)</h3>
+                                        <p className="font-bold text-blue-900">{transfer.toLocation?.name || 'Destination Outlet'}</p>
+                                        <p className="text-xs text-blue-700 font-mono mt-1">{transfer.toLocation?.code}</p>
                                     </div>
                                 </>
                             ) : (
                                 // Normal Transfer: Warehouse → Outlet
                                 <>
                                     <div className="border border-gray-200 p-3 rounded-md">
-                                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">From (Origin)</h3>
-                                        <p className="font-bold text-gray-900">{transfer.fromWarehouse?.name || 'Main Warehouse'}</p>
+                                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">From (Origin Warehouse)</h3>
+                                        <p className="font-bold text-gray-900">{transfer.fromWarehouse?.name || transfer.fromLocation?.name || 'Main Warehouse'}</p>
                                     </div>
                                     <div className="border border-gray-200 p-3 rounded-md bg-blue-50/30">
-                                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">To (Destination)</h3>
+                                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">To (Destination Outlet)</h3>
                                         <p className="font-bold text-blue-900">{transfer.toLocation?.name || 'Shop Location'}</p>
                                         <p className="text-xs text-blue-700 font-mono mt-1">{transfer.toLocation?.code}</p>
                                     </div>
@@ -455,6 +477,25 @@ export default function TransferSlipPage({ params }: { params: Promise<{ id: str
                             <div className="text-center">
                                 <div className="border-b border-gray-400 w-3/4 mx-auto mb-2"></div>
                                 <p className="text-xs font-bold text-gray-600 uppercase">Received By (Warehouse)</p>
+                                <p className="text-xs text-gray-400 mt-1">Clear Name & Sign</p>
+                            </div>
+                        </>
+                    ) : transfer.transferType === 'OUTLET_TO_OUTLET' ? (
+                        // Outlet to Outlet Signatures
+                        <>
+                            <div className="text-center">
+                                <div className="border-b border-gray-400 w-3/4 mx-auto mb-2"></div>
+                                <p className="text-xs font-bold text-gray-600 uppercase">Dispatched By (Source Shop)</p>
+                                <p className="text-xs text-gray-400 mt-1">Sign & Stamp</p>
+                            </div>
+                            <div className="text-center">
+                                <div className="border-b border-gray-400 w-3/4 mx-auto mb-2"></div>
+                                <p className="text-xs font-bold text-gray-600 uppercase">Transferred By (Driver / Logistics)</p>
+                                <p className="text-xs text-gray-400 mt-1">Vehicle No. & Sign</p>
+                            </div>
+                            <div className="text-center">
+                                <div className="border-b border-gray-400 w-3/4 mx-auto mb-2"></div>
+                                <p className="text-xs font-bold text-gray-600 uppercase">Received By (Destination Shop)</p>
                                 <p className="text-xs text-gray-400 mt-1">Clear Name & Sign</p>
                             </div>
                         </>

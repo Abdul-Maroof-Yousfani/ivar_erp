@@ -114,14 +114,40 @@ export function StockTransferHistoryList({ initialEntries }: StockTransferHistor
                                 </TableCell>
                                 <TableCell>
                                     <div className="flex flex-col gap-1">
-                                        <div className="flex items-center gap-1.5 text-xs font-semibold">
-                                            <Badge variant="outline" className="px-1.5 py-0 h-5 bg-background">FROM</Badge>
-                                            <span className="text-muted-foreground">{transfer.fromWarehouse?.name}</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 text-xs font-semibold">
-                                            <Badge variant="outline" className="px-1.5 py-0 h-5 bg-primary/5 text-primary border-primary/20">TO</Badge>
-                                            <span className="font-bold">{transfer.toLocation?.name || transfer.toWarehouse?.name}</span>
-                                        </div>
+                                        {transfer.transferType === 'OUTLET_TO_WAREHOUSE' ? (
+                                            <>
+                                                <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                                    <Badge variant="outline" className="px-1.5 py-0 h-5 bg-orange-50 text-orange-700 border-orange-200">FROM</Badge>
+                                                    <span className="text-muted-foreground">{transfer.fromLocation?.name || 'Outlet'}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                                    <Badge variant="outline" className="px-1.5 py-0 h-5 bg-primary/5 text-primary border-primary/20">TO</Badge>
+                                                    <span className="font-bold">{transfer.toWarehouse?.name || transfer.fromWarehouse?.name || 'Main Warehouse'}</span>
+                                                </div>
+                                            </>
+                                        ) : transfer.transferType === 'OUTLET_TO_OUTLET' ? (
+                                            <>
+                                                <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                                    <Badge variant="outline" className="px-1.5 py-0 h-5 bg-purple-50 text-purple-700 border-purple-200">FROM</Badge>
+                                                    <span className="text-muted-foreground">{transfer.fromLocation?.name || 'Outlet'}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                                    <Badge variant="outline" className="px-1.5 py-0 h-5 bg-primary/5 text-primary border-primary/20">TO</Badge>
+                                                    <span className="font-bold">{transfer.toLocation?.name || 'Outlet'}</span>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                                    <Badge variant="outline" className="px-1.5 py-0 h-5 bg-background">FROM</Badge>
+                                                    <span className="text-muted-foreground">{transfer.fromWarehouse?.name || transfer.fromLocation?.name || 'Warehouse'}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 text-xs font-semibold">
+                                                    <Badge variant="outline" className="px-1.5 py-0 h-5 bg-primary/5 text-primary border-primary/20">TO</Badge>
+                                                    <span className="font-bold">{transfer.toLocation?.name || transfer.toWarehouse?.name || 'Outlet'}</span>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 </TableCell>
                                 <TableCell>
