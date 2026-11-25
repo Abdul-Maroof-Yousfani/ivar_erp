@@ -1416,24 +1416,41 @@ export class PosSessionService {
       }
 
       // ── Fetch cross-outlet EXCHANGE/REFUND vouchers ──
-      // These are vouchers issued at ANOTHER outlet for orders that BELONG to this location.
+      // These are vouchers issued TODAY at ANOTHER outlet for orders that BELONG to this location
+      // (regardless of what date the original sale occurred).
       // Per Option A logic: since Sales Return is attributed to the original sale outlet,
       // the Exchange/Refund vouchers from that return also belong to the original outlet.
-      const crossOutletReturnVouchers = orders.length > 0
-        ? await this.prisma.voucher.findMany({
+      let crossOutletReturnVouchers: typeof issuedVouchers = [];
+      if (targetLocWhere) {
+        const crossOutletCandidates = await this.prisma.voucher.findMany({
+          where: {
+            createdAt: timeFilter,
+            voucherType: { in: ['EXCHANGE', 'REFUND'] },
+            issuedByLocationId: { not: targetLocWhere },
+            sourceOrderId: { not: null },
+          },
+          include: {
+            claims: true,
+            merchant: true,
+          },
+        });
+        const candidateOrderIds = crossOutletCandidates
+          .map((v) => v.sourceOrderId)
+          .filter((id): id is string => !!id);
+        if (candidateOrderIds.length > 0) {
+          const matchingSourceOrders = await this.prisma.salesOrder.findMany({
             where: {
-              // No createdAt filter here — the RETURN may happen on a different day at another outlet
-              // We identify cross-outlet vouchers by sourceOrderId belonging to THIS location's orders
-              voucherType: { in: ['EXCHANGE', 'REFUND'] },
-              sourceOrderId: { in: Array.from(thisLocationOrderIds) },
-              ...(targetLocWhere && { issuedByLocationId: { not: targetLocWhere } }),
+              id: { in: candidateOrderIds },
+              locationId: targetLocWhere,
             },
-            include: {
-              claims: true,
-              merchant: true,
-            },
-          })
-        : [];
+            select: { id: true },
+          });
+          const matchingOrderIdSet = new Set(matchingSourceOrders.map((o) => o.id));
+          crossOutletReturnVouchers = crossOutletCandidates.filter(
+            (v) => v.sourceOrderId && matchingOrderIdSet.has(v.sourceOrderId),
+          );
+        }
+      }
 
 
 
@@ -1708,7 +1725,10 @@ export class PosSessionService {
         if (v.voucherType === 'EXCHANGE') {
           // ── Cross-outlet filter: skip EXCHANGE vouchers whose source order belongs to ANOTHER location ──
           // These cross-outlet vouchers will appear in the ORIGINAL outlet's report via crossOutletReturnVouchers query.
-          if (v.sourceOrderId && !thisLocationOrderIds.has(v.sourceOrderId)) {
+          const sourceOrderLocId = v.sourceOrderId
+            ? sourceOrderLocationMap.get(v.sourceOrderId)
+            : undefined;
+          if (targetLocWhere && sourceOrderLocId && sourceOrderLocId !== targetLocWhere) {
             continue;
           }
           const type =
@@ -1747,7 +1767,10 @@ export class PosSessionService {
         } else if (v.voucherType === 'REFUND') {
           // ── Cross-outlet filter: skip REFUND vouchers whose source order belongs to ANOTHER location ──
           // These cross-outlet vouchers will appear in the ORIGINAL outlet's report via crossOutletReturnVouchers query.
-          if (v.sourceOrderId && !thisLocationOrderIds.has(v.sourceOrderId)) {
+          const sourceOrderLocId = v.sourceOrderId
+            ? sourceOrderLocationMap.get(v.sourceOrderId)
+            : undefined;
+          if (targetLocWhere && sourceOrderLocId && sourceOrderLocId !== targetLocWhere) {
             continue;
           }
           // "Issue from" = original sale outlet (traceability)
