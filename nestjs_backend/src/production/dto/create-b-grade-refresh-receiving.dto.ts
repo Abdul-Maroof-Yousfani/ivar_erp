@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsArray, ValidateNested, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsNotEmpty, IsString, IsArray, ValidateNested, IsNumber, IsOptional, Min, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class BGradeRefreshReceivingItemDto {
@@ -37,6 +37,16 @@ export class CreateBGradeRefreshReceivingDto {
   @Min(0)
   @Type(() => Number)
   refreshCostPerPc?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  bRefreshCostPerPc?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  chargeDefectiveCmt?: boolean;
 
   @IsOptional()
   @IsString()

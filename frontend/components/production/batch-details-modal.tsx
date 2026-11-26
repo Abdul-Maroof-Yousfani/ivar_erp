@@ -28,11 +28,25 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+export interface BatchRefreshItemInfo {
+  batchId?: string;
+  batchNumber?: string;
+  articleItemId?: string;
+  articleSku?: string;
+  articleDescription?: string;
+  supplierName?: string;
+  qtyBGradeTotal?: number;
+  qtyRefreshed?: number;
+  qtyRemainingBGrade?: number;
+  bUnitValue?: number;
+  productionDate?: string | Date;
+}
+
 interface BatchDetailsModalProps {
   batch: ProductionBatch | null;
   isOpen: boolean;
   onClose: () => void;
-  onOpenRefresh?: (item: any) => void;
+  onOpenRefresh?: (item: BatchRefreshItemInfo) => void;
 }
 
 export function BatchDetailsModal({ batch, isOpen, onClose, onOpenRefresh }: BatchDetailsModalProps) {
@@ -190,7 +204,7 @@ export function BatchDetailsModal({ batch, isOpen, onClose, onOpenRefresh }: Bat
             </div>
 
             <div className="border border-border rounded-lg overflow-x-auto shadow-2xs bg-card">
-              <Table className="text-xs w-full min-w-[920px]">
+              <Table className="text-xs w-full min-w-[1000px]">
                 <TableHeader className="bg-muted/50 border-b border-border">
                   <TableRow className="hover:bg-transparent">
                     <TableHead className="font-bold text-foreground py-3 whitespace-nowrap">Finished Article</TableHead>
@@ -198,6 +212,7 @@ export function BatchDetailsModal({ batch, isOpen, onClose, onOpenRefresh }: Bat
                     <TableHead className="font-bold text-foreground text-center whitespace-nowrap">CONS (m/pc)</TableHead>
                     <TableHead className="font-bold text-foreground text-center whitespace-nowrap">Total Recv</TableHead>
                     <TableHead className="font-bold text-amber-700 dark:text-amber-400 text-center whitespace-nowrap">Defect (B)</TableHead>
+                    <TableHead className="font-bold text-amber-700 dark:text-amber-400 text-center whitespace-nowrap">B-Unit Value</TableHead>
                     <TableHead className="font-bold text-foreground text-center whitespace-nowrap">Sound (A)</TableHead>
                     <TableHead className="font-bold text-foreground text-right whitespace-nowrap">Vendor CMT</TableHead>
                     <TableHead className="font-bold text-foreground text-right whitespace-nowrap">Initial Net</TableHead>
@@ -263,11 +278,12 @@ export function BatchDetailsModal({ batch, isOpen, onClose, onOpenRefresh }: Bat
                             {itTot.toLocaleString()} pcs
                           </TableCell>
 
+                          <TableCell className="text-center font-medium tabular-nums text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                            {itB.toLocaleString()} pcs
+                          </TableCell>
+
                           <TableCell className="text-center tabular-nums text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">
-                            <div>{itB.toLocaleString()} pcs</div>
-                            <div className="text-[10px] text-muted-foreground font-normal">
-                              @ Rs {itBVal.toFixed(2)}
-                            </div>
+                            {itB > 0 ? `Rs ${itBVal.toFixed(2)}` : '—'}
                           </TableCell>
 
                           <TableCell className="text-center font-semibold tabular-nums text-foreground whitespace-nowrap">
@@ -308,6 +324,7 @@ export function BatchDetailsModal({ batch, isOpen, onClose, onOpenRefresh }: Bat
                       </TableCell>
                       <TableCell className="text-center font-semibold tabular-nums text-foreground whitespace-nowrap">{totalRecv.toLocaleString()} pcs</TableCell>
                       <TableCell className="text-center tabular-nums text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">{bPieces.toLocaleString()} pcs</TableCell>
+                      <TableCell className="text-center tabular-nums text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">{bPieces > 0 ? `Rs ${(initialNet * 0.5).toFixed(2)}` : '—'}</TableCell>
                       <TableCell className="text-center font-semibold tabular-nums text-foreground whitespace-nowrap">{aPieces.toLocaleString()} pcs</TableCell>
                       <TableCell className="text-right tabular-nums text-foreground whitespace-nowrap">Rs {Number(batch.cmtCostPerPc || 0).toFixed(2)}</TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground whitespace-nowrap">Rs {initialNet.toFixed(2)}</TableCell>
@@ -338,6 +355,9 @@ export function BatchDetailsModal({ batch, isOpen, onClose, onOpenRefresh }: Bat
                     </TableCell>
                     <TableCell className="text-center font-bold tabular-nums text-amber-600 dark:text-amber-400 whitespace-nowrap">
                       {bPieces.toLocaleString()} pcs
+                    </TableCell>
+                    <TableCell className="text-center font-bold tabular-nums text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                      {bPieces > 0 ? `Rs ${(initialNet * 0.5).toFixed(2)}` : '—'}
                     </TableCell>
                     <TableCell className="text-center font-bold tabular-nums text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
                       {aPieces.toLocaleString()} pcs

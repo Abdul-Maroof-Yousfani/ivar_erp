@@ -22,6 +22,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Autocomplete, AutocompleteOption } from '@/components/ui/autocomplete';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import {
   PackageCheck,
@@ -30,7 +31,10 @@ import {
   Building2,
   RotateCcw,
   CheckCircle2,
-  Sparkles,
+  CheckCheck,
+  Calendar,
+  Clock,
+  ArrowRight,
 } from 'lucide-react';
 import { warehouseApi, bGradeRefreshApi, BGradeRefreshOrder, Warehouse } from '@/lib/api';
 
@@ -60,6 +64,8 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('');
   const [refreshCostPerPc, setRefreshCostPerPc] = useState<number | ''>(0);
+  const [chargeDefectiveCmt, setChargeDefectiveCmt] = useState(false);
+  const [defectiveRate, setDefectiveRate] = useState<number | ''>('');
   const [receivedDate, setReceivedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   const [receiveItems, setReceiveItems] = useState<StagedReceiveItem[]>([]);
@@ -91,6 +97,8 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
           loadWarehouses();
           setSelectedWarehouseId('');
           setRefreshCostPerPc(0);
+          setChargeDefectiveCmt(false);
+          setDefectiveRate('');
           setReceivedDate(new Date().toISOString().split('T')[0]);
           setNotes('');
 
@@ -193,7 +201,12 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
   const totalNowBGrade = receiveItems.reduce((s, i) => s + i.qtyNowBGrade, 0);
   const totalTotalNow = totalNowFresh + totalNowBGrade;
   const costRate = Number(refreshCostPerPc) || 0;
-  const bCostRate = costRate * 0.5; // 50% rate for returned B-grade pieces (Rs. 60 when fresh is Rs. 120)
+  
+  // Defective Rate: 0 if vendor does not charge, otherwise custom rate or 50% of costRate
+  const bCostRate = chargeDefectiveCmt
+    ? (defectiveRate !== '' ? Math.max(0, Number(defectiveRate)) : costRate * 0.5)
+    : 0;
+
   const freshInvoiceAmount = totalNowFresh * costRate;
   const bInvoiceAmount = totalNowBGrade * bCostRate;
   const totalRefreshInvoiceAmount = freshInvoiceAmount + bInvoiceAmount;
@@ -219,6 +232,8 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
         orderId: order.id,
         aGradeWarehouseId: selectedWarehouseId || order.bGradeWarehouseId,
         refreshCostPerPc: costRate,
+        bRefreshCostPerPc: bCostRate,
+        chargeDefectiveCmt,
         receivedDate,
         notes: notes.trim() || undefined,
         items: receiveItems
@@ -274,7 +289,7 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Building2 className="h-3.5 w-3.5 text-emerald-500" />
+                <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
                 Destination Sound Warehouse (A-Grade) <span className="text-destructive">*</span>
               </Label>
               <Autocomplete
@@ -292,7 +307,7 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
 
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Receipt className="h-3.5 w-3.5 text-primary" />
+                <Receipt className="h-3.5 w-3.5 text-muted-foreground" />
                 Refresh Cost / Pc (PKR)
               </Label>
               <Input
@@ -313,7 +328,8 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-foreground">
+              <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
                 Received Date <span className="text-destructive">*</span>
               </Label>
               <Input
@@ -326,6 +342,67 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
               <p className="text-[11px] text-muted-foreground">
                 Inbound inventory posting date
               </p>
+            </div>
+          </div>
+
+          {/* Defective (B-Grade) Return Billing Policy */}
+          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <Checkbox
+                  id="chargeDefectiveCmt"
+                  checked={chargeDefectiveCmt}
+                  onCheckedChange={(checked) => {
+                    const isChecked = Boolean(checked);
+                    setChargeDefectiveCmt(isChecked);
+                    if (isChecked && (defectiveRate === '' || defectiveRate === 0)) {
+                      setDefectiveRate(costRate > 0 ? Number((costRate * 0.5).toFixed(2)) : '');
+                    }
+                  }}
+                  disabled={submitting}
+                  className="mt-0.5"
+                />
+                <div className="space-y-0.5">
+                  <Label htmlFor="chargeDefectiveCmt" className="text-xs font-semibold cursor-pointer flex items-center gap-1.5 flex-wrap">
+                    <span>Bill vendor CMT for returned defective pieces?</span>
+                    {!chargeDefectiveCmt ? (
+                      <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 font-semibold">
+                        Free Return (Rs. 0.00 / Pc)
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] py-0 px-1.5 border-amber-500/40 text-amber-700 dark:text-amber-300 bg-amber-500/10 font-semibold">
+                        Billed @ Rs. {bCostRate.toFixed(2)} / Pc
+                      </Badge>
+                    )}
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {chargeDefectiveCmt
+                      ? 'Vendor is compensated for labor on pieces that could not be made fresh (default 50% rate, customizable).'
+                      : 'Uncheck if vendor does not charge for pieces that could not be made fresh (Defective returns will be billed at Rs. 0).'}
+                  </p>
+                </div>
+              </div>
+
+              {chargeDefectiveCmt && (
+                <div className="flex items-center gap-1.5 sm:self-center shrink-0 pl-6 sm:pl-0">
+                  <Label htmlFor="defectiveRateInput" className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">
+                    B-Rate / Pc (PKR):
+                  </Label>
+                  <Input
+                    id="defectiveRateInput"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={defectiveRate !== '' ? defectiveRate : (costRate > 0 ? Number((costRate * 0.5).toFixed(2)) : '')}
+                    onChange={(e) =>
+                      setDefectiveRate(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)
+                    }
+                    className="h-8 w-24 text-xs tabular-nums font-semibold"
+                    placeholder="e.g. 60"
+                    disabled={submitting}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -362,7 +439,7 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
                   onClick={setAllFresh}
                   disabled={submitting || receiveItems.length === 0}
                 >
-                  <Sparkles className="h-3 w-3 mr-1" />
+                  <CheckCheck className="h-3.5 w-3.5 mr-1" />
                   All Fresh
                 </Button>
                 <Button
@@ -390,11 +467,17 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
                       <TableHead className="text-center tabular-nums font-semibold w-24">Sent</TableHead>
                       <TableHead className="text-center tabular-nums font-semibold w-28">Prev Received</TableHead>
                       <TableHead className="text-center tabular-nums font-semibold w-28">Pending with Vendor</TableHead>
-                      <TableHead className="text-center tabular-nums font-semibold w-36 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                        ✨ Fresh (A-Grade)
+                      <TableHead className="text-center tabular-nums font-semibold w-36 text-emerald-700 dark:text-emerald-400">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          <span>Fresh (A-Grade)</span>
+                        </div>
                       </TableHead>
-                      <TableHead className="text-center tabular-nums font-semibold w-36 bg-amber-500/10 text-amber-700 dark:text-amber-300">
-                        🔁 Defective (Return B)
+                      <TableHead className="text-center tabular-nums font-semibold w-36 text-amber-700 dark:text-amber-400">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          <span>Defective (Return B)</span>
+                        </div>
                       </TableHead>
                       <TableHead className="text-center tabular-nums font-semibold w-28">Balance Remaining</TableHead>
                     </TableRow>
@@ -498,14 +581,15 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 text-center">
                   <div className="text-[11px] text-muted-foreground font-medium flex items-center justify-center gap-1">
-                    <Sparkles className="h-3 w-3 text-emerald-600" />
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600" />
                     Inbound Fresh (Sound WH)
                   </div>
                   <div className="text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5">
                     {totalNowFresh} <span className="text-xs font-normal">pcs</span>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    → {selectedWarehouse?.name || 'Sound Warehouse'}
+                  <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
+                    <ArrowRight className="h-2.5 w-2.5" />
+                    {selectedWarehouse?.name || 'Sound Warehouse'}
                   </p>
                 </div>
 
@@ -517,13 +601,17 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
                   <div className="text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">
                     {totalNowBGrade} <span className="text-xs font-normal">pcs</span>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    → {order.bGradeWarehouse?.name || 'B-Warehouse'}
+                  <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
+                    <ArrowRight className="h-2.5 w-2.5" />
+                    {order.bGradeWarehouse?.name || 'B-Warehouse'}
                   </p>
                 </div>
 
                 <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-center">
-                  <div className="text-[11px] text-muted-foreground font-medium">Pending at Vendor</div>
+                  <div className="text-[11px] text-muted-foreground font-medium flex items-center justify-center gap-1">
+                    <Clock className="h-3 w-3 text-red-600" />
+                    Pending at Vendor
+                  </div>
                   <div className="text-xl font-bold tabular-nums text-red-600 dark:text-red-400 mt-0.5">
                     {totalStillRemainingAtVendor} <span className="text-xs font-normal">pcs</span>
                   </div>
@@ -541,7 +629,9 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
                     Rs. {totalRefreshInvoiceAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    Fresh: Rs. {freshInvoiceAmount.toLocaleString()} + B: Rs. {bInvoiceAmount.toLocaleString()}
+                    {bCostRate > 0
+                      ? `Fresh: Rs. ${freshInvoiceAmount.toLocaleString()} + B: Rs. ${bInvoiceAmount.toLocaleString()}`
+                      : `Fresh: Rs. ${freshInvoiceAmount.toLocaleString()} + B: Rs. 0 (Free)`}
                   </p>
                 </div>
               </div>
@@ -564,20 +654,39 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
                     <li>
                       <strong className="text-foreground">{totalNowBGrade} Defective pcs</strong> will return to{' '}
                       <strong className="text-foreground">{order.bGradeWarehouse?.name}</strong> at{' '}
-                      <strong className="text-foreground">50% of the fresh A-Grade unit cost</strong> (New B-Valuation = 50% of Fresh A-Cost).
+                      {bCostRate > 0 ? (
+                        <>
+                          <strong className="text-foreground">50% of the fresh A-Grade unit cost</strong> (New B-Valuation = 50% of Fresh A-Cost).
+                        </>
+                      ) : (
+                        <>
+                          <strong className="text-foreground">Original B-Unit value</strong> (Free return — Rs. 0 refresh charge).
+                        </>
+                      )}
                     </li>
                   )}
-                  {totalRefreshInvoiceAmount > 0 && (
+                  {totalRefreshInvoiceAmount > 0 ? (
                     <li>
-                      <strong className="text-foreground">CMT Purchase Invoice (PI-REFRESH) of Rs. {totalRefreshInvoiceAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong> will be auto-generated with 2 line items:
+                      <strong className="text-foreground">CMT Purchase Invoice (PI-REFRESH) of Rs. {totalRefreshInvoiceAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong> will be auto-generated:
                       <span className="block mt-0.5 text-foreground/90 pl-2">
                         • Fresh (A-Grade): {totalNowFresh} pcs @ Rs. {costRate.toFixed(2)} = <strong>Rs. {freshInvoiceAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                       </span>
-                      {totalNowBGrade > 0 && (
+                      {totalNowBGrade > 0 && bCostRate > 0 && (
                         <span className="block mt-0.5 text-foreground/90 pl-2">
-                          • Returned (B-Grade): {totalNowBGrade} pcs @ 50% rate (Rs. {bCostRate.toFixed(2)}) = <strong>Rs. {bInvoiceAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                          • Returned (B-Grade): {totalNowBGrade} pcs @ Rs. {bCostRate.toFixed(2)} = <strong>Rs. {bInvoiceAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                         </span>
                       )}
+                      {totalNowBGrade > 0 && bCostRate === 0 && (
+                        <span className="block mt-0.5 text-muted-foreground pl-2">
+                          • Returned (B-Grade): {totalNowBGrade} pcs @ <strong>Rs. 0.00 (Free / No charge)</strong>
+                        </span>
+                      )}
+                    </li>
+                  ) : (
+                    <li>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                        No CMT Purchase Invoice will be billed (Total refresh charge is Rs. 0.00).
+                      </span>
                     </li>
                   )}
                   <li>

@@ -590,7 +590,7 @@ export function BGradeOrderDetailsModal({
                             const qRcv = Number(rit.qtyReceived) || 0;
                             const qBRet = Number(rit.qtyReturnedBGrade) || 0;
                             const unitCost = Number(rit.refreshCostPerPc) || rcvCostPerPc;
-                            const bRate = unitCost * 0.5;
+                            const bRate = rcv.bRefreshCostPerPc !== undefined ? Number(rcv.bRefreshCostPerPc) : unitCost * 0.5;
                             const lineTotal = (qRcv * unitCost) + (qBRet * bRate);
 
                             // Find original order item to get target sound A-Cost or B-Unit Value
@@ -617,7 +617,9 @@ export function BGradeOrderDetailsModal({
                                 <TableCell className="text-right tabular-nums py-2 text-muted-foreground">
                                   <div>Rs. {unitCost.toFixed(2)}</div>
                                   {qBRet > 0 && (
-                                    <div className="text-[10px] text-amber-600">B: Rs. {bRate.toFixed(2)}</div>
+                                    <div className="text-[10px] text-amber-600 font-medium">
+                                      B: {bRate > 0 ? `Rs. ${bRate.toFixed(2)}` : 'Free (Rs. 0)'}
+                                    </div>
                                   )}
                                 </TableCell>
                                 <TableCell className="text-right tabular-nums font-semibold text-foreground py-2">

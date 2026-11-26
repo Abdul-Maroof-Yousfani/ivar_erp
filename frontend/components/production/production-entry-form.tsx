@@ -940,8 +940,7 @@ export function ProductionEntryForm({
                         value="direct"
                         className="text-xs font-semibold text-foreground"
                       >
-                        ⚡ Direct / Standalone Entry (No prior fabric issue
-                        recorded)
+                        Direct / Standalone Entry (No prior fabric issue recorded)
                       </SelectItem>
                       {availableTrackers.map((t) => {
                         const iss = Number(t.qtyIssued || 0);
@@ -1263,7 +1262,7 @@ export function ProductionEntryForm({
                 {/* Receiving Table Grid */}
                 {/* Receiving & Costing Table Grid (Full Width) */}
                 <div className="overflow-x-auto min-w-full">
-                  <Table className="text-xs min-w-[1100px] w-full">
+                  <Table className="text-xs min-w-[1180px] w-full">
                     <TableHeader className="bg-muted/40">
                       <TableRow>
                         <TableHead className="min-w-[220px] font-bold">
@@ -1284,8 +1283,11 @@ export function ProductionEntryForm({
                         <TableHead className="w-[95px] min-w-[95px] font-bold text-center whitespace-nowrap">
                           Total (A + B)
                         </TableHead>
-                        <TableHead className="w-[105px] min-w-[105px] font-bold text-center text-amber-700 dark:text-amber-400 whitespace-nowrap">
+                        <TableHead className="w-[100px] min-w-[100px] font-bold text-center text-amber-700 dark:text-amber-400 whitespace-nowrap">
                           Defect (B)
+                        </TableHead>
+                        <TableHead className="w-[105px] min-w-[105px] font-bold text-center text-amber-700 dark:text-amber-400 whitespace-nowrap">
+                          B-Unit Value
                         </TableHead>
                         <TableHead className="w-[95px] min-w-[95px] font-bold text-center text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
                           Sound (A)
@@ -1398,7 +1400,7 @@ export function ProductionEntryForm({
                             </TableCell>
 
                             {/* 5. B-Grade Defective Pieces */}
-                            <TableCell className="p-2 w-[105px] min-w-[105px] text-center">
+                            <TableCell className="p-2 w-[100px] min-w-[100px] text-center">
                               <Input
                                 type="number"
                                 min="0"
@@ -1411,7 +1413,7 @@ export function ProductionEntryForm({
                                     e.target.value,
                                   )
                                 }
-                                className="h-8 w-full min-w-[80px] px-2 text-xs tabular-nums text-center font-semibold text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/30 focus:border-amber-500 shadow-2xs"
+                                className="h-8 w-full min-w-[75px] px-2 text-xs tabular-nums text-center font-semibold text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/30 focus:border-amber-500 shadow-2xs"
                               />
                               {qTot > 0 && qB > 0 && (
                                 <div className="mt-0.5 leading-none">
@@ -1424,12 +1426,25 @@ export function ProductionEntryForm({
                                   >
                                     {((qB / qTot) * 100).toFixed(0)}% Defect
                                   </span>
-                                  {itemCost && (
-                                    <span className="text-[10px] text-muted-foreground block font-mono">
-                                      @ Rs {itemCost.bUnitValue.toFixed(2)}
+                                </div>
+                              )}
+                            </TableCell>
+
+                            {/* 5b. B-Grade Unit Value (50% of Initial Net) */}
+                            <TableCell className="p-2 w-[105px] min-w-[105px] text-center tabular-nums">
+                              {itemCost && itemCost.qtyTotalReceived > 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-400 font-mono">
+                                    Rs {itemCost.bUnitValue.toFixed(2)}
+                                  </span>
+                                  {qB > 0 && (
+                                    <span className="text-[10px] text-muted-foreground font-mono">
+                                      Total: Rs {itemCost.bTotalValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                     </span>
                                   )}
                                 </div>
+                              ) : (
+                                <span className="text-muted-foreground text-[11px]">—</span>
                               )}
                             </TableCell>
 
@@ -1573,9 +1588,14 @@ export function ProductionEntryForm({
                           {/* Col 5: Defect (B) */}
                           <TableCell className="p-2 text-center font-bold tabular-nums text-amber-600 dark:text-amber-400 whitespace-nowrap">
                             <div>{costing.qtyBGrade.toLocaleString()} pcs</div>
+                          </TableCell>
+
+                          {/* Col 5b: B-Unit Value */}
+                          <TableCell className="p-2 text-center font-bold tabular-nums text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                            <div>Rs {(costing.initialNetCost * 0.5).toFixed(2)}</div>
                             {costing.qtyBGrade > 0 && (
-                              <div className="text-[10px] text-amber-700 dark:text-amber-400 font-mono font-normal">
-                                -Rs {costing.bTotalValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                              <div className="text-[10px] text-muted-foreground font-mono font-normal">
+                                Total: Rs {costing.bTotalValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                               </div>
                             )}
                           </TableCell>

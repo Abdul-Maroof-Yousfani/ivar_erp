@@ -1860,6 +1860,7 @@ export interface BGradeRefreshReceiving {
   supplierId: string;
   aGradeWarehouseId: string;
   refreshCostPerPc: number | string;
+  bRefreshCostPerPc?: number | string;
   totalRefreshCost: number | string;
   purchaseInvoiceId?: string | null;
   receivedDate: string;
@@ -1919,6 +1920,8 @@ export const bGradeRefreshApi = {
     orderId: string;
     aGradeWarehouseId: string;
     refreshCostPerPc?: number;
+    bRefreshCostPerPc?: number;
+    chargeDefectiveCmt?: boolean;
     receivedDate?: string;
     notes?: string;
     items: { orderItemId: string; itemId: string; qtyReceived: number; qtyReturnedBGrade?: number }[];

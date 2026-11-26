@@ -1314,7 +1314,14 @@ export class ProductionService {
         throw new BadRequestException('Please enter at least 1 piece to receive (either fresh A-grade or returned B-grade).');
       }
 
-      const bRefreshRatePerPc = refreshCostPerPc * 0.5; // 50% rate for returned B-grade pieces (Rs. 60 when fresh is Rs. 120)
+      // Determine rate for returned B-grade pieces (0 if vendor does not charge, custom or 50% if charged)
+      let bRefreshRatePerPc = 0;
+      if (dto.bRefreshCostPerPc !== undefined) {
+        bRefreshRatePerPc = Math.max(0, Number(dto.bRefreshCostPerPc));
+      } else if (dto.chargeDefectiveCmt !== false) {
+        bRefreshRatePerPc = refreshCostPerPc * 0.5;
+      }
+
       const freshCostTotal = totalQtyFresh * refreshCostPerPc;
       const bCostTotal = totalQtyReturnedBGrade * bRefreshRatePerPc;
       const totalRefreshCost = freshCostTotal + bCostTotal;
@@ -1325,7 +1332,7 @@ export class ProductionService {
         const piCount = await tx.purchaseInvoice.count();
         const invoiceNumber = `PI-REFRESH-${year}-${(piCount + 1).toString().padStart(4, '0')}`;
 
-        // Build separate line items: Fresh (Full Rate) + Returned B-Grade (50% Rate)
+        // Build separate line items: Fresh (Full Rate) + Returned B-Grade (Defective Rate if > 0)
         const invoiceLines: Array<{
           itemId: string;
           description: string;
@@ -1352,7 +1359,7 @@ export class ProductionService {
           if (qBRet > 0 && bRefreshRatePerPc > 0) {
             invoiceLines.push({
               itemId: i.itemId,
-              description: `Refresh CMT (Returned B-Grade) — ${oi.item?.sku || oi.itemId} (${qBRet} pcs @ 50% rate Rs ${bRefreshRatePerPc}/pc)`,
+              description: `Refresh CMT (Returned B-Grade) — ${oi.item?.sku || oi.itemId} (${qBRet} pcs @ Rs ${bRefreshRatePerPc}/pc)`,
               quantity: qBRet,
               unitPrice: bRefreshRatePerPc,
               lineTotal: qBRet * bRefreshRatePerPc,
@@ -1376,7 +1383,9 @@ export class ProductionService {
             paidAmount: 0,
             paymentStatus: 'UNPAID',
             status: 'SUBMITTED',
-            notes: `B-Grade Refresh charges — Order ${order.orderNumber}. ${totalQtyFresh} fresh pcs @ Rs ${refreshCostPerPc}/pc (Rs ${freshCostTotal}) + ${totalQtyReturnedBGrade} returned B-grade pcs @ Rs ${bRefreshRatePerPc}/pc (Rs ${bCostTotal}) = Total Rs ${totalRefreshCost}`,
+            notes: bRefreshRatePerPc > 0
+              ? `B-Grade Refresh charges — Order ${order.orderNumber}. ${totalQtyFresh} fresh pcs @ Rs ${refreshCostPerPc}/pc (Rs ${freshCostTotal}) + ${totalQtyReturnedBGrade} returned B-grade pcs @ Rs ${bRefreshRatePerPc}/pc (Rs ${bCostTotal}) = Total Rs ${totalRefreshCost}`
+              : `B-Grade Refresh charges — Order ${order.orderNumber}. ${totalQtyFresh} fresh pcs @ Rs ${refreshCostPerPc}/pc (Rs ${freshCostTotal}). ${totalQtyReturnedBGrade} returned B-grade pcs (Free / No charge) = Total Rs ${totalRefreshCost}`,
             items: {
               create: invoiceLines,
             },
@@ -1393,6 +1402,7 @@ export class ProductionService {
           supplierId: order.supplierId,
           aGradeWarehouseId: dto.aGradeWarehouseId,
           refreshCostPerPc,
+          bRefreshCostPerPc: bRefreshRatePerPc,
           totalRefreshCost,
           purchaseInvoiceId,
           receivedDate: dto.receivedDate ? new Date(dto.receivedDate) : new Date(),
@@ -1403,7 +1413,7 @@ export class ProductionService {
               const qBRet = Number(i.qtyReturnedBGrade) || 0;
               const oi = order.items.find((x) => x.id === i.orderItemId)!;
               const freshACost = Number(oi.aFinalUnitCost) + refreshCostPerPc;
-              const bUnitVal = freshACost * 0.5;
+              const bUnitVal = bRefreshRatePerPc > 0 ? (freshACost * 0.5) : Number(oi.bUnitValue);
               return {
                 orderItemId: i.orderItemId,
                 itemId: i.itemId,
@@ -1428,7 +1438,7 @@ export class ProductionService {
 
         const orderItem = order.items.find((oi) => oi.id === ri.orderItemId)!;
         const freshACost = Number(orderItem.aFinalUnitCost) + refreshCostPerPc;
-        const bUnitVal = freshACost * 0.5;
+        const bUnitVal = bRefreshRatePerPc > 0 ? (freshACost * 0.5) : Number(orderItem.bUnitValue);
 
         // Inbound Fresh pieces to A-grade warehouse
         if (qRecv > 0) {

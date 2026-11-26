@@ -161,6 +161,7 @@ model BGradeRefreshReceiving {
   supplierId        String   @map("supplier_id")
   aGradeWarehouseId String   @map("a_grade_warehouse_id")
   refreshCostPerPc  Decimal  @default(0) @db.Decimal(15, 4) @map("refresh_cost_per_pc")
+  bRefreshCostPerPc Decimal  @default(0) @db.Decimal(15, 4) @map("b_refresh_cost_per_pc")
   totalRefreshCost  Decimal  @default(0) @db.Decimal(15, 4) @map("total_refresh_cost")
   purchaseInvoiceId String?  @unique @map("purchase_invoice_id")
   receivedDate      DateTime @default(now()) @map("received_date")
