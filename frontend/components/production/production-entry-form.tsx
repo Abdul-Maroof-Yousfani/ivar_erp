@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Autocomplete, AutocompleteOption } from "@/components/ui/autocomplete";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
@@ -125,6 +126,23 @@ export function ProductionEntryForm({
       return t.status !== "COMPLETED" && rem > 0.001;
     });
   }, [trackers, trackerId]);
+
+  // Autocomplete options for Finished Articles
+  const articleOptions = useMemo<AutocompleteOption[]>(
+    () =>
+      Array.isArray(articleItems)
+        ? articleItems.map((a) => {
+            const sizeBadge = a.size?.name ? ` (Size: ${a.size.name})` : "";
+            const desc = a.description || a.name || "";
+            return {
+              value: a.id,
+              label: `${a.sku}${sizeBadge}`,
+              description: desc ? `— ${desc}` : "",
+            };
+          })
+        : [],
+    [articleItems],
+  );
 
   // Stage 2: Dynamic Multi-Article / Size Receiving Matrix (Step 2 - No hardcoded sizes)
   const [lines, setLines] = useState<ReceivingLine[]>([
@@ -1231,19 +1249,15 @@ export function ProductionEntryForm({
                     <strong>Quick Size Loader:</strong> Pick an article to load
                     all its size variants at once:
                   </span>
-                  <Select onValueChange={handleAutoAddAllSizes}>
-                    <SelectTrigger className="w-full sm:w-[260px] bg-background border-input h-7.5 text-xs">
-                      <SelectValue placeholder="Auto-Load All Sizes for Style..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {articleItems.map((a) => (
-                        <SelectItem key={a.id} value={a.id} className="text-xs">
-                          {a.sku} ({a.size?.name || "Standard"}) -{" "}
-                          {a.description || a.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Autocomplete
+                    options={articleOptions}
+                    onValueChange={handleAutoAddAllSizes}
+                    placeholder="Auto-Load All Sizes for Style..."
+                    searchPlaceholder="Search style to auto-load sizes..."
+                    className="w-full sm:w-[260px] bg-background border-input h-7.5 text-xs"
+                    popoverClassName="w-[340px]"
+                    disabled={submitting}
+                  />
                 </div>
 
                 {/* Receiving Table Grid */}
@@ -1300,42 +1314,20 @@ export function ProductionEntryForm({
 
                         return (
                           <TableRow key={line.id} className="hover:bg-muted/20">
-                            {/* 1. Article Selector with Size display */}
+                            {/* 1. Article Selector with Search & Size display */}
                             <TableCell className="p-2 min-w-[220px]">
-                              <Select
+                              <Autocomplete
+                                options={articleOptions}
                                 value={line.articleItemId}
                                 onValueChange={(val) =>
                                   handleLineArticleChange(line.id, val)
                                 }
-                              >
-                                <SelectTrigger className="w-full h-8 text-xs bg-background border-input">
-                                  <SelectValue placeholder="Select Article / SKU..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {articleItems.map((a) => (
-                                    <SelectItem
-                                      key={a.id}
-                                      value={a.id}
-                                      className="text-xs"
-                                    >
-                                      <span className="font-semibold">
-                                        {a.sku}
-                                      </span>
-                                      {a.size?.name && (
-                                        <Badge
-                                          variant="outline"
-                                          className="ml-1.5 text-[10px] py-0 px-1 tabular-nums font-semibold"
-                                        >
-                                          Size: {a.size.name}
-                                        </Badge>
-                                      )}
-                                      <span className="text-muted-foreground ml-1.5 truncate max-w-[150px]">
-                                        — {a.description}
-                                      </span>
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                                placeholder="Select Article / SKU..."
+                                searchPlaceholder="Search SKU, name, size..."
+                                className="w-full h-8 px-2 text-xs bg-background border-input"
+                                popoverClassName="w-[360px]"
+                                disabled={submitting}
+                              />
                               {line.sizeName && (
                                 <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                                   <span>Assigned Size:</span>

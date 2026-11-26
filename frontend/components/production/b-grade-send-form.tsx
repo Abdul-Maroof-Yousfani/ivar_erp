@@ -363,8 +363,10 @@ export function BGradeSendForm({ open, onClose, onSuccess }: BGradeSendFormProps
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent className="sm:max-w-[1020px] w-[96vw]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-lg font-bold text-foreground">
-            <Send className="h-5 w-5 text-orange-500" />
+          <DialogTitle className="flex items-center gap-2.5 text-lg font-bold text-foreground">
+            <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <Send className="h-4 w-4" />
+            </div>
             Send B-Grade Stock for Refresh (Phase 1)
           </DialogTitle>
           <DialogDescription>
@@ -435,7 +437,7 @@ export function BGradeSendForm({ open, onClose, onSuccess }: BGradeSendFormProps
             <div className="space-y-2.5 p-3.5 bg-muted/20 border border-border/80 rounded-lg">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
-                  <Sparkles className="h-4 w-4 text-orange-500" />
+                  <Sparkles className="h-4 w-4 text-primary" />
                   Available Defective Items in Warehouse
                 </div>
                 {quickStockItems.length > 0 && (
@@ -447,7 +449,7 @@ export function BGradeSendForm({ open, onClose, onSuccess }: BGradeSendFormProps
 
               {loadingStock ? (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground py-3">
-                  <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
                   Scanning warehouse for B-grade items...
                 </div>
               ) : quickStockItems.length === 0 ? (
@@ -656,12 +658,12 @@ export function BGradeSendForm({ open, onClose, onSuccess }: BGradeSendFormProps
               </div>
 
               {/* Total Banner */}
-              <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/30 rounded-md px-4 py-2.5 text-xs">
+              <div className="flex items-center justify-between bg-primary/5 border border-primary/20 rounded-lg px-4 py-2.5 text-xs">
                 <div className="text-muted-foreground">
                   Sending <strong className="tabular-nums text-foreground">{totalPieces} pcs</strong> across{' '}
                   <strong className="text-foreground">{stagedItems.length} article(s)</strong>
                 </div>
-                <div className="font-bold tabular-nums text-amber-700 dark:text-amber-300 text-sm">
+                <div className="font-bold tabular-nums text-primary text-sm">
                   Total Dispatched B-Value: Rs{' '}
                   {totalBValue.toLocaleString('en-PK', {
                     minimumFractionDigits: 2,
@@ -685,7 +687,7 @@ export function BGradeSendForm({ open, onClose, onSuccess }: BGradeSendFormProps
                 !selectedWarehouseId ||
                 !selectedSupplierId
               }
-              className="bg-orange-600 hover:bg-orange-700 text-white font-medium text-xs h-9"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-xs h-9 shadow-xs"
             >
               {submitting ? (
                 <>

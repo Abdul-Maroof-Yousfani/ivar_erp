@@ -74,8 +74,10 @@ export function BGradeRefreshModal({ item, isOpen, onClose, onSuccess }: BGradeR
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <div className="flex items-center gap-2">
-            <RefreshCw className="h-5 w-5 text-indigo-600" />
+          <div className="flex items-center gap-2.5">
+            <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <RefreshCw className="h-4.5 w-4.5" />
+            </div>
             <DialogTitle className="text-xl">Send B-Grade Stock for Refresh</DialogTitle>
           </div>
           <DialogDescription className="text-xs">
@@ -126,7 +128,7 @@ export function BGradeRefreshModal({ item, isOpen, onClose, onSuccess }: BGradeR
                   variant="link"
                   size="sm"
                   onClick={handleMaxClick}
-                  className="h-auto p-0 text-xs text-indigo-600 dark:text-indigo-400 font-medium"
+                  className="h-auto p-0 text-xs text-primary font-medium hover:underline"
                 >
                   Use Max ({available})
                 </Button>
@@ -192,7 +194,7 @@ export function BGradeRefreshModal({ item, isOpen, onClose, onSuccess }: BGradeR
                 <strong className="tabular-nums font-bold text-emerald-700 dark:text-emerald-400">Rs {Number(item.aFinalUnitCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>).
               </div>
               {numRate > 0 && (
-                <div className="text-indigo-700 dark:text-indigo-300 font-semibold pt-1 border-t border-emerald-500/20">
+                <div className="text-primary font-semibold pt-1 border-t border-emerald-500/20">
                   • Raises separate Refresh Purchase Invoice for Rs {totalRefreshBill.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({numQty} pcs × Rs {numRate.toFixed(2)}) in vendor&apos;s name.
                 </div>
               )}
@@ -206,7 +208,7 @@ export function BGradeRefreshModal({ item, isOpen, onClose, onSuccess }: BGradeR
             <Button
               type="submit"
               disabled={submitting || !isValid}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium shadow-xs"
             >
               {submitting ? 'Transferring...' : `Confirm & Move ${numQty || 0} pcs to A-Stock`}
             </Button>

@@ -221,7 +221,7 @@ export default function BGradeRefreshPage() {
             </h1>
             <Badge
               variant="outline"
-              className="border-orange-500/30 text-orange-700 dark:text-orange-300 bg-orange-500/10 font-semibold"
+              className="border-primary/25 text-primary bg-primary/10 font-semibold"
             >
               2-Phase Logistics
             </Badge>
@@ -243,7 +243,7 @@ export default function BGradeRefreshPage() {
           </Button>
           <Button
             onClick={() => setIsSendOpen(true)}
-            className="bg-orange-600 hover:bg-orange-700 text-white font-medium shadow-sm"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium shadow-xs"
           >
             <Plus className="h-4 w-4 mr-1.5" />
             New Refresh Order (Dispatch)
@@ -253,12 +253,12 @@ export default function BGradeRefreshPage() {
 
       {/* ── KPI Dashboard Cards ── */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-l-4 border-l-orange-500 shadow-2xs hover:shadow-sm transition-shadow">
+        <Card className="border-l-4 border-l-primary shadow-2xs hover:shadow-sm transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Total Refresh Orders
             </CardTitle>
-            <Truck className="h-4 w-4 text-orange-500" />
+            <Truck className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold tabular-nums text-foreground">
@@ -495,7 +495,7 @@ export default function BGradeRefreshPage() {
                                       <>
                                         <Button
                                           size="sm"
-                                          className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                                          className="h-7 text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-medium shadow-xs"
                                           onClick={() => handleOpenReceive(order)}
                                         >
                                           <PackageCheck className="h-3 w-3 mr-1" />

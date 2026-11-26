@@ -206,10 +206,10 @@ export function BGradeOrderDetailsModal({
                     <strong className="text-foreground font-normal">
                       {order?.sentDate
                         ? new Date(order.sentDate).toLocaleDateString('en-PK', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })
                         : '—'}
                     </strong>
                   </span>
@@ -239,7 +239,7 @@ export function BGradeOrderDetailsModal({
                 {onReceiveClick && (
                   <Button
                     size="sm"
-                    className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                    className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-medium shadow-xs"
                     onClick={() => {
                       onClose();
                       onReceiveClick(order);
@@ -483,7 +483,7 @@ export function BGradeOrderDetailsModal({
                 {order && (order.status === 'PENDING' || order.status === 'PARTIALLY_RECEIVED') && onReceiveClick && (
                   <Button
                     size="sm"
-                    className="mt-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium h-7"
+                    className="mt-2 text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-medium h-7 shadow-xs"
                     onClick={() => {
                       onClose();
                       onReceiveClick(order);
@@ -544,11 +544,10 @@ export function BGradeOrderDetailsModal({
                               </Badge>
                               <Badge
                                 variant="outline"
-                                className={`text-[10px] font-medium ${
-                                  rcv.purchaseInvoice.paymentStatus === 'PAID'
+                                className={`text-[10px] font-medium ${rcv.purchaseInvoice.paymentStatus === 'PAID'
                                     ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
                                     : 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30'
-                                }`}
+                                  }`}
                               >
                                 {rcv.purchaseInvoice.paymentStatus || 'UNPAID'}
                               </Badge>
@@ -673,7 +672,7 @@ export function BGradeOrderDetailsModal({
             {order && (order.status === 'PENDING' || order.status === 'PARTIALLY_RECEIVED') && onReceiveClick && (
               <Button
                 size="sm"
-                className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-medium shadow-xs"
                 onClick={() => {
                   onClose();
                   onReceiveClick(order);

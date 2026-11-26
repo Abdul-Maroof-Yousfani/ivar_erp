@@ -176,10 +176,10 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
     () =>
       Array.isArray(warehouses)
         ? warehouses.map((w) => ({
-            value: w.id,
-            label: w.code ? `${w.name} (${w.code})` : w.name,
-            description: w.code || '',
-          }))
+          value: w.id,
+          label: w.code ? `${w.name} (${w.code})` : w.name,
+          description: w.code || '',
+        }))
         : [],
     [warehouses],
   );
@@ -254,7 +254,7 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
         {/* Header */}
         <DialogHeader className="p-5 pb-4 border-b bg-muted/20 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
               <PackageCheck className="h-5 w-5" />
             </div>
             <div>
@@ -532,7 +532,7 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
                   </p>
                 </div>
 
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 text-center">
+                <div className="bg-primary/10 border border-primary/25 rounded-lg p-3 text-center">
                   <div className="text-[11px] text-muted-foreground font-medium flex items-center justify-center gap-1">
                     <Receipt className="h-3 w-3 text-primary" />
                     CMT Refresh Bill
@@ -613,7 +613,7 @@ export function BGradeReceiveForm({ open, order, onClose, onSuccess }: BGradeRec
             <Button
               onClick={handleSubmit}
               disabled={submitting || totalTotalNow <= 0 || (totalNowFresh > 0 && !selectedWarehouseId)}
-              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+              className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground font-medium shadow-xs"
             >
               {submitting ? (
                 <>
