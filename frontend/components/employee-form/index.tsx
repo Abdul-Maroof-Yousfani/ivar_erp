@@ -76,8 +76,8 @@ const formatCNICValue = (value: string): string => {
 // Email validation regex
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Account number validation regex
-const accountNumberRegex = /^\d{7,26}$/;
+// Account number / IBAN validation regex (supports numeric accounts, IBANs, spaces, hyphens, slashes, and N/A)
+const accountNumberRegex = /^[A-Za-z0-9/\s-]+$/;
 
 // Zod Validation Schema
 const employeeFormSchema = z.object({
@@ -343,8 +343,14 @@ const employeeFormSchema = z.object({
     .string()
     .optional()
     .refine(
-      (val) => !val || accountNumberRegex.test(val),
-      "Account Number must be between 7-26 digits"
+      (val) => {
+        if (!val || !val.trim()) return true;
+        const trimmed = val.trim().toUpperCase();
+        if (trimmed === "N/A" || trimmed === "NA") return true;
+        const cleaned = trimmed.replace(/[\s/-]/g, "");
+        return /^[A-Za-z0-9]{5,34}$/.test(cleaned) && accountNumberRegex.test(trimmed);
+      },
+      "Account Number / IBAN must be 5-34 alphanumeric characters"
     ),
 
   accountTitle: z

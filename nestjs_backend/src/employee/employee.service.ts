@@ -794,7 +794,8 @@ export class EmployeeService {
           user = await this.prismaMaster.user.findUnique({
             where: { email: officialEmailValue },
           });
-        } else if (employeeIdValue) {
+        }
+        if (!user && employeeIdValue) {
           user = await this.prismaMaster.user.findUnique({
             where: { employeeId: employeeIdValue },
           });
@@ -1757,26 +1758,33 @@ export class EmployeeService {
       // If we have an email OR an employeeId, manage the user account
       const currentEmployeeId = employeeIdValue || existing?.employeeId;
       if (officialEmailValue || currentEmployeeId) {
-        if (updated.userId) {
-          // Employee already has a user, update details
+        const existingMasterUser = updated.userId
+          ? await this.prismaMaster.user.findUnique({
+              where: { id: updated.userId },
+            })
+          : null;
+
+        if (existingMasterUser) {
+          // Employee already has a valid user in Master DB, update details
           const updateData: any = {};
           if (avatarUrlValue !== undefined) updateData.avatar = avatarUrlValue;
           if (employeeIdValue !== undefined) updateData.employeeId = employeeIdValue;
           if (officialEmailValue !== undefined) updateData.email = officialEmailValue || null;
           if (Object.keys(updateData).length > 0) {
             await this.prismaMaster.user.update({
-              where: { id: updated.userId },
+              where: { id: existingMasterUser.id },
               data: updateData,
             });
           }
         } else {
-          // Employee doesn't have a user yet, create or link one
+          // Employee has no user (or stale userId missing from Master DB); find/link or create one
           let user: any = null;
           if (officialEmailValue) {
             user = await this.prismaMaster.user.findUnique({
               where: { email: officialEmailValue },
             });
-          } else if (currentEmployeeId) {
+          }
+          if (!user && currentEmployeeId) {
             user = await this.prismaMaster.user.findUnique({
               where: { employeeId: currentEmployeeId },
             });
@@ -2795,9 +2803,9 @@ export class EmployeeService {
         } as Prisma.EmployeeRejoiningHistoryUncheckedCreateInput,
       });
 
-      // Reactivate user if exists
+      // Reactivate user if exists in Master DB
       if (existing.userId) {
-        await this.prismaMaster.user.update({
+        await this.prismaMaster.user.updateMany({
           where: { id: existing.userId },
           data: { status: 'active' },
         });
