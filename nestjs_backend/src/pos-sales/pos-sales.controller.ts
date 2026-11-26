@@ -454,9 +454,20 @@ export class PosSalesController {
     ) {
         // Determine effective filtering context
         let effectivePosId = posId;
-        let effectiveLocationId: string | undefined = locationId;
+        // Parse locationId — may be a single ID or comma-separated list of IDs
+        let effectiveLocationId: string | undefined = undefined;
+        let effectiveLocationIds: string[] | undefined = undefined;
 
-        if (!effectiveLocationId) {
+        if (locationId) {
+            const ids = locationId.split(',').map(id => id.trim()).filter(Boolean);
+            if (ids.length === 1) {
+                effectiveLocationId = ids[0];
+            } else if (ids.length > 1) {
+                effectiveLocationIds = ids;
+            }
+        }
+
+        if (!effectiveLocationId && !effectiveLocationIds) {
             // 1. Context from logged-in user
             if (req.user?.isPosUser || req.user?.isTerminal) {
                 if (!effectivePosId && !search) effectivePosId = req.user.posId || req.user.terminalId;
@@ -485,7 +496,7 @@ export class PosSalesController {
             effectivePosId,
             activityType,
             { startDate, endDate, search, merchantId, paymentMethod },
-            effectiveLocationId,
+            effectiveLocationIds ?? effectiveLocationId,
         );
     }
 
@@ -576,15 +587,16 @@ export class PosSalesController {
     @ApiOperation({ summary: 'Refund only — money back, no stock movement' })
     async refundOrder(
         @Param('id') id: string,
-        @Body() body: { refundAmount: number; items?: { orderItemId: string; itemId: string; quantity: number }[]; reason?: string; managerUserId?: string },
+        @Body() body: { refundAmount: number; items?: { orderItemId: string; itemId: string; quantity: number }[]; reason?: string; managerUserId?: string; returnLocationId?: string; locationId?: string },
         @Req() req: any,
     ) {
+        const returnLocationId = body.returnLocationId || body.locationId || req.user?.locationId || req.headers?.['x-location-id'] || req.headers?.['location-id'];
         const ctx = {
             userId: body.managerUserId || req.user?.id,
             ipAddress: req.ip,
             userAgent: req.headers['user-agent'],
         };
-        return this.posSalesService.refundOnly(id, body.refundAmount, body.items, body.reason, ctx);
+        return this.posSalesService.refundOnly(id, body.refundAmount, body.items, body.reason, ctx, returnLocationId);
     }
 
     // ─── Void order ───────────────────────────────────────────────────

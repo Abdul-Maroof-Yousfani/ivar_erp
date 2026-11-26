@@ -77,17 +77,17 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
       </div>
 
       <div className="space-y-2">
-        <Label>Employee ID <span className="text-destructive">*</span></Label>
+        <Label>Employee ID</Label>
         <Input placeholder="456XXXXXXXXXX" {...register("employeeId")} disabled={isPending} />
         {errors?.employeeId && <p className="text-xs text-red-500">{errors.employeeId.message}</p>}
       </div>
       <div className="space-y-2">
-        <Label>Employee Name <span className="text-destructive">*</span></Label>
+        <Label>Employee Name</Label>
         <Input placeholder="(eg John Doe)" {...register("employeeName")} disabled={isPending} />
         {errors?.employeeName && <p className="text-xs text-red-500">{errors.employeeName.message}</p>}
       </div>
       <div className="space-y-2">
-        <Label>Father / Husband Name <span className="text-destructive">*</span></Label>
+        <Label>Father / Husband Name</Label>
         <Input placeholder="(eg Richard Roe)" {...register("fatherHusbandName")} disabled={isPending} />
         {errors?.fatherHusbandName && <p className="text-xs text-red-500">{errors.fatherHusbandName.message}</p>}
       </div>
@@ -110,7 +110,7 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
         {errors?.allocation && <p className="text-xs text-red-500">{errors.allocation.message}</p>}
       </div>
       <div className="space-y-2">
-        <Label>Department <span className="text-destructive">*</span></Label>
+        <Label>Department</Label>
         <Controller name="department" control={control} render={({ field }) => (
           <Autocomplete
             options={filteredDepartments.map(d => ({ value: d.id, label: d.name }))}
@@ -133,19 +133,19 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
         )} />
       </div>
       <div className="space-y-2">
-        <Label>Employee Grade <span className="text-destructive">*</span></Label>
+        <Label>Employee Grade</Label>
         <Controller name="employeeGrade" control={control} render={({ field }) => (
           <Autocomplete options={employeeGrades.map(g => ({ value: g.id, label: g.grade }))} value={field.value as string | undefined} onValueChange={field.onChange} placeholder="Select Grade" disabled={isPending || loadingData} />
         )} />
         {errors?.employeeGrade && <p className="text-xs text-red-500">{errors.employeeGrade.message}</p>}
       </div>
       <div className="space-y-2">
-        <Label>Attendance ID <span className="text-destructive">*</span></Label>
+        <Label>Attendance ID</Label>
         <Input placeholder="(eg ATT-00123)" {...register("attendanceId")} disabled={isPending} />
         {errors?.attendanceId && <p className="text-xs text-red-500">{errors.attendanceId.message}</p>}
       </div>
       <div className="space-y-2">
-        <Label>Designation <span className="text-destructive">*</span></Label>
+        <Label>Designation</Label>
         <Controller name="designation" control={control} render={({ field }) => (
           <Autocomplete options={designations.map(d => ({ value: d.id, label: d.name }))} value={field.value as string | undefined} onValueChange={field.onChange} placeholder="Select Designation" disabled={isPending || loadingData} />
         )} />
@@ -174,7 +174,7 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
       </div>
 
       <div className="space-y-2">
-        <Label>CNIC Number <span className="text-destructive">*</span></Label>
+        <Label>CNIC Number</Label>
         <Controller name="cnicNumber" control={control} render={({ field }) => (
           <Input
             placeholder="00000-0000000-0"
@@ -211,7 +211,7 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
       </div>
 
       <div className="space-y-2">
-        <Label>Nationality <span className="text-destructive">*</span></Label>
+        <Label>Nationality</Label>
         <Controller name="nationality" control={control} render={({ field }) => (
           <Select value={field.value as string | undefined} onValueChange={field.onChange} disabled={isPending}>
             <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
@@ -224,7 +224,7 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
 
 
       <div className="space-y-2">
-        <Label>Gender <span className="text-destructive">*</span></Label>
+        <Label>Gender</Label>
         <Controller name="gender" control={control} render={({ field }) => (
           <Select value={field.value as string | undefined} onValueChange={field.onChange} disabled={isPending}>
             <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
@@ -248,7 +248,7 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
 
       <div className="col-span-1 md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="space-y-2">
-          <Label>Contact Number <span className="text-destructive">*</span></Label>
+          <Label>Contact Number</Label>
           <Controller name="contactNumber" control={control} render={({ field }) => (
             <Input
               placeholder="03XX-XXXXXXX"
@@ -287,14 +287,14 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
         </div>
 
         <div className="space-y-2">
-          <Label>State <span className="text-destructive">*</span></Label>
+          <Label>State</Label>
           <Controller name="state" control={control} render={({ field }) => (
             <Autocomplete options={states.map((s) => ({ value: s.id, label: s.name }))} value={field.value as string | undefined} onValueChange={field.onChange} placeholder="Select State" disabled={isPending || loadingData} />
           )} />
           {errors?.state && <p className="text-xs text-red-500">{errors.state.message}</p>}
         </div>
         <div className="space-y-2">
-          <Label>City <span className="text-destructive">*</span></Label>
+          <Label>City</Label>
           <Controller name="city" control={control} render={({ field }) => (
             <Autocomplete options={cities.map((c) => ({ value: c.id, label: c.name }))} value={field.value as string | undefined} onValueChange={field.onChange} placeholder={state ? "Select City" : "Select State first"} disabled={isPending || !state || loadingData || loadingCities} isLoading={loadingCities} />
           )} />
@@ -310,7 +310,7 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
       <div className="col-span-1 md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="space-y-2">
           <Label>
-            Employee Salary (Compensation) <span className="text-destructive">*</span>
+            Employee Salary (Compensation)
           </Label>
           <Controller
             name="employeeSalary"
@@ -375,7 +375,7 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
 
 
         <div className="space-y-2">
-          <Label>Working Hours Policy <span className="text-destructive">*</span></Label>
+          <Label>Working Hours Policy</Label>
           <Controller name="workingHoursPolicy" control={control} render={({ field }) => (
             <Autocomplete
               options={workingHoursPolicies.map((p) => ({ value: p.id, label: `${p.name}${p.isDefault ? " (Default)" : ""}` }))}
@@ -401,7 +401,7 @@ export function BasicInfoSection({ form, isPending, loadingData, departments, su
           {errors?.location && <p className="text-xs text-red-500">{errors.location.message}</p>}
         </div>
         <div className="space-y-2">
-          <Label>Leaves Policy <span className="text-destructive">*</span></Label>
+          <Label>Leaves Policy</Label>
           <Controller name="leavesPolicy" control={control} render={({ field }) => (
             <Autocomplete
               options={leavesPolicies.map((policy) => ({

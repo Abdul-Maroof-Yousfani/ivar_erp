@@ -270,7 +270,7 @@ export function QualificationSection({
         return updated;
       });
     } else {
-      toast.error("At least one qualification is required");
+      remove(index);
     }
   };
 
@@ -442,7 +442,7 @@ export function QualificationSection({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>
-                    Qualification <span className="text-destructive">*</span>
+                    Qualification
                   </Label>
                   <Controller
                     name={`qualifications.${index}.qualification`}

@@ -1775,6 +1775,15 @@ export class PosSalesService implements OnModuleInit {
     }
   }
 
+  private getCourierifyService(): CourierifyService | null {
+    try {
+      const { CourierifyService: ServiceClass } = require('../courierify/courierify.service');
+      return this.moduleRef.get(ServiceClass, { strict: false }) || null;
+    } catch {
+      return null;
+    }
+  }
+
   // ─── Search order for return (unrestricted by location / POS) ─────
   async searchOrderForReturn(orderNumber: string) {
     if (!orderNumber || !orderNumber.trim()) {
@@ -1831,6 +1840,8 @@ export class PosSalesService implements OnModuleInit {
               description: true,
               sku: true,
               barCode: true,
+              unitPrice: true,
+              taxRate1: true,
               size: { select: { name: true } },
               color: { select: { name: true } },
               brand: { select: { name: true } },
@@ -1915,10 +1926,7 @@ export class PosSalesService implements OnModuleInit {
     // 3. If no order found in local database, fetch from Courierify / Shopify and import to POS
     if (rawOrders.length === 0) {
       try {
-        const { CourierifyService: ServiceClass } = require('../courierify/courierify.service');
-        const courierifyService: CourierifyService = this.moduleRef.get(ServiceClass, {
-          strict: false,
-        });
+        const courierifyService = this.getCourierifyService();
         if (courierifyService) {
           const candidateQueries = Array.from(
             new Set([strippedHash, cleanSearch, withHash].filter(Boolean)),
@@ -2066,6 +2074,43 @@ export class PosSalesService implements OnModuleInit {
         claimsMap.set(claim.salesOrderId, []);
       }
       claimsMap.get(claim.salesOrderId)!.push(claim);
+    }
+
+    // Repair any unreturned, non-FBR-synced Courierify order that was previously
+    // imported with equal-split prices when ERP Item prices match unambiguously.
+    const courierifyServiceForRepair = this.getCourierifyService();
+    if (courierifyServiceForRepair) {
+      const repairedIds: string[] = [];
+      for (const order of rawOrders) {
+        const flags = orderReturnFlags.get(order.id);
+        const orderClaims = claimsMap.get(order.id) || [];
+        if (
+          !flags?.hasReturn &&
+          !flags?.hasRefund &&
+          orderClaims.length === 0
+        ) {
+          try {
+            const wasRepaired =
+              await courierifyServiceForRepair.repairEqualSplitOrderIfNeeded(order);
+            if (wasRepaired) {
+              repairedIds.push(order.id);
+            }
+          } catch (repairErr: any) {
+            this.logger.warn(
+              `[POS Return] Equal-split repair skipped for ${order.orderNumber}: ${repairErr.message}`,
+            );
+          }
+        }
+      }
+
+      if (repairedIds.length > 0) {
+        const refreshed = await this.prisma.salesOrder.findMany({
+          where: { id: { in: repairedIds } },
+          include: includeRelations,
+        });
+        const refreshedMap = new Map(refreshed.map((r) => [r.id, r]));
+        rawOrders = rawOrders.map((o) => refreshedMap.get(o.id) || o);
+      }
     }
 
     const locIds = [
@@ -2288,6 +2333,14 @@ export class PosSalesService implements OnModuleInit {
             select: {
               amountUsed: true,
               voucher: { select: { code: true, faceValue: true } },
+            },
+          },
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              contactNo: true,
+              email: true,
             },
           },
         },
@@ -2595,7 +2648,7 @@ export class PosSalesService implements OnModuleInit {
       merchantId?: string;
       paymentMethod?: string;
     },
-    locationId?: string,
+    locationId?: string | string[],
   ) {
     const skip = (page - 1) * limit;
     const where: any = {};
@@ -2607,7 +2660,13 @@ export class PosSalesService implements OnModuleInit {
         where.posId = posId;
       }
     }
-    if (locationId) where.locationId = locationId;
+    if (locationId) {
+      if (Array.isArray(locationId)) {
+        where.locationId = { in: locationId };
+      } else {
+        where.locationId = locationId;
+      }
+    }
 
     if (filters?.merchantId) {
       where.merchantId = filters.merchantId;
@@ -2715,7 +2774,7 @@ export class PosSalesService implements OnModuleInit {
         createdAt: voucherRangeQuery,
         isDeleted: false,
       };
-      if (locationId) voucherWhereRange.issuedByLocationId = locationId;
+      if (locationId) voucherWhereRange.issuedByLocationId = Array.isArray(locationId) ? { in: locationId } : locationId;
 
       const vouchersInRange = await this.prisma.voucher.findMany({
         where: voucherWhereRange,
@@ -2962,7 +3021,7 @@ export class PosSalesService implements OnModuleInit {
         voucherType: { in: ['EXCHANGE', 'REFUND', 'CREDIT'] },
         createdAt: vDateQuery,
       };
-      if (locationId) vLocWhere.issuedByLocationId = locationId;
+      if (locationId) vLocWhere.issuedByLocationId = Array.isArray(locationId) ? { in: locationId } : locationId;
       ORs.push(vLocWhere);
     }
     if (ORs.length > 0) {
@@ -3514,37 +3573,38 @@ export class PosSalesService implements OnModuleInit {
 
   // ─── Get single order ─────────────────────────────────────────────
   async getOrder(id: string) {
-    const order = await this.prisma.salesOrder.findUnique({
-      where: { id },
-      include: {
-        customer: true,
-        items: { include: { item: { include: { size: true, color: true } } } },
-        promo: { select: { name: true, code: true } },
-        coupon: { select: { code: true, description: true } },
-        alliance: {
-          select: {
-            partnerName: true,
-            code: true,
-            discountPercent: true,
-            maxDiscount: true,
-          },
-        },
-        merchant: {
-          select: {
-            id: true,
-            bankName: true,
-            description: true,
-            commissionRate: true,
-            bankGlCode: true,
-          },
-        },
-        voucherRedemptions: {
-          select: {
-            amountUsed: true,
-            voucher: { select: { code: true, faceValue: true } },
-          },
+    const orderInclude = {
+      customer: true,
+      items: { include: { item: { include: { size: true, color: true } } } },
+      promo: { select: { name: true, code: true } },
+      coupon: { select: { code: true, description: true } },
+      alliance: {
+        select: {
+          partnerName: true,
+          code: true,
+          discountPercent: true,
+          maxDiscount: true,
         },
       },
+      merchant: {
+        select: {
+          id: true,
+          bankName: true,
+          description: true,
+          commissionRate: true,
+          bankGlCode: true,
+        },
+      },
+      voucherRedemptions: {
+        select: {
+          amountUsed: true,
+          voucher: { select: { code: true, faceValue: true } },
+        },
+      },
+    };
+    let order = await this.prisma.salesOrder.findUnique({
+      where: { id },
+      include: orderInclude,
     });
     if (!order) return { status: false, message: 'Order not found' };
 
@@ -3646,6 +3706,26 @@ export class PosSalesService implements OnModuleInit {
           claimed: current.claimed + claimedToAdd,
           approved: current.approved + Number(claimItem.approvedQty),
         });
+      }
+    }
+
+    if (!hasReturn && !hasRefund && orderClaims.length === 0) {
+      const courierifyService = this.getCourierifyService();
+      if (courierifyService) {
+        try {
+          const wasRepaired = await courierifyService.repairEqualSplitOrderIfNeeded(order);
+          if (wasRepaired) {
+            const refreshed = await this.prisma.salesOrder.findUnique({
+              where: { id },
+              include: orderInclude,
+            });
+            if (refreshed) order = refreshed;
+          }
+        } catch (repairErr: any) {
+          this.logger.warn(
+            `[POS GetOrder] Equal-split repair skipped for ${order.orderNumber}: ${repairErr.message}`,
+          );
+        }
       }
     }
 
@@ -5540,6 +5620,7 @@ export class PosSalesService implements OnModuleInit {
     items?: { orderItemId: string; itemId: string; quantity: number }[],
     reason?: string,
     ctx?: { userId?: string; ipAddress?: string; userAgent?: string },
+    returnLocationId?: string,
   ) {
     try {
       const order = await this.prisma.salesOrder.findUnique({
@@ -5575,7 +5656,9 @@ export class PosSalesService implements OnModuleInit {
         });
         if (!warehouse) throw new Error('No active warehouse found');
 
-        const effectiveLocationId = order.locationId;
+        // Determine effective location: where the refund is being processed
+        // (Bukhari branch), not necessarily the original sale location (SFD2).
+        const effectiveLocationId = returnLocationId || order.locationId;
 
         // Generate sequential refund number
         const refundNumber = await this.generateRefundNumber(
@@ -5667,13 +5750,15 @@ export class PosSalesService implements OnModuleInit {
         const newStatus = allItemsReturned ? 'refunded' : 'partially_returned';
 
         // ── Generate REFUND Voucher (record-only, cash refunded to customer) ──
+        // issuedByLocationId = effectiveLocationId (where refund was processed, e.g. Bukhari)
+        // NOT order.locationId (original sale location, e.g. SFD2-KHI)
         let refundVoucher: any = null;
         if (refundAmount > 0) {
           const voucherResult = await this.voucherService.issueRefundVoucher(
             {
               faceValue: Math.round(refundAmount * 100) / 100,
               sourceOrderId: id,
-              issuedByLocationId: order.locationId || '',
+              issuedByLocationId: effectiveLocationId || order.locationId || '',
               issuedByUserId: ctx?.userId,
               customerId: order.customerId || undefined,
             },

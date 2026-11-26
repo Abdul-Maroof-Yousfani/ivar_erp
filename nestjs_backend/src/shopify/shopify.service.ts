@@ -482,7 +482,13 @@ export class ShopifyService {
         const res = await fetch(this.baseUrl + `/orders.json?name=${encodeURIComponent(numericId)}&status=any`, {
           headers: { 'X-Shopify-Access-Token': token },
         });
-        if (!res.ok) return null;
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          this.logger.warn(
+            `[Shopify] Order lookup by name "${numericId}" failed (${res.status}): ${errText.slice(0, 200)}`,
+          );
+          return null;
+        }
         const data: any = await res.json();
         return data.orders && data.orders.length > 0 ? data.orders[0] : null;
       }
@@ -491,7 +497,13 @@ export class ShopifyService {
       const res = await fetch(this.baseUrl + `/orders/${numericId}.json`, {
         headers: { 'X-Shopify-Access-Token': token },
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        this.logger.warn(
+          `[Shopify] Order lookup by ID "${numericId}" failed (${res.status}): ${errText.slice(0, 200)}`,
+        );
+        return null;
+      }
       const data: any = await res.json();
       return data.order;
     } catch (err: any) {

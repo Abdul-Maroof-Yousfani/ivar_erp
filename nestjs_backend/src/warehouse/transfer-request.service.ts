@@ -635,7 +635,14 @@ export class TransferRequestService {
    * Helper to manually enrichment location data and claim data
    */
   private async enrichRequest(req: any) {
-    if (req.toLocationId) {
+    if (req.fromLocationId && (!req.fromLocation || !req.fromLocation.name)) {
+      const masterLoc = await this.prisma.location.findUnique({
+        where: { id: req.fromLocationId },
+      });
+      if (masterLoc) req.fromLocation = masterLoc;
+    }
+
+    if (req.toLocationId && (!req.toLocation || !req.toLocation.name)) {
       const masterLoc = await this.prisma.location.findUnique({
         where: { id: req.toLocationId },
       });

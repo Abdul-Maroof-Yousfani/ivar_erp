@@ -46,6 +46,7 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
+        suppressHydrationWarning
         className={`${fontSans.variable} ${fontSerif.variable} ${fontMono.variable} antialiased`}
         cz-shortcut-listen="true"
       >

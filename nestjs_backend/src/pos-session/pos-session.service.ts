@@ -1391,6 +1391,86 @@ export class PosSessionService {
         },
       });
 
+      // ── Build a Set of this location's order IDs (for cross-outlet voucher filtering) ──
+      const thisLocationOrderIds = new Set(orders.map((o) => o.id));
+
+      // ── Batch-fetch source order locations for EXCHANGE/REFUND vouchers (traceability) ──
+      // When BC1-KHI (Bukhari) issues an exchange voucher for a Sharfabad order,
+      // "Issue from" in the report should show SFD2-KHI (original sale outlet), not BC1-KHI.
+      const exchangeRefundSourceOrderIds = issuedVouchers
+        .filter((v) => v.voucherType === 'EXCHANGE' || v.voucherType === 'REFUND')
+        .map((v) => v.sourceOrderId)
+        .filter((id): id is string => !!id);
+
+      const sourceOrderLocationMap = new Map<string, string>();
+      if (exchangeRefundSourceOrderIds.length > 0) {
+        const sourceOrders = await this.prisma.salesOrder.findMany({
+          where: { id: { in: exchangeRefundSourceOrderIds } },
+          select: { id: true, locationId: true },
+        });
+        for (const so of sourceOrders) {
+          if (so.id && so.locationId) {
+            sourceOrderLocationMap.set(so.id, so.locationId);
+          }
+        }
+      }
+
+      // ── Fetch cross-outlet EXCHANGE/REFUND vouchers ──
+      // These are vouchers issued TODAY at ANOTHER outlet for orders that BELONG to this location
+      // (regardless of what date the original sale occurred).
+      // Per Option A logic: since Sales Return is attributed to the original sale outlet,
+      // the Exchange/Refund vouchers from that return also belong to the original outlet.
+      let crossOutletReturnVouchers: typeof issuedVouchers = [];
+      if (targetLocWhere) {
+        const crossOutletCandidates = await this.prisma.voucher.findMany({
+          where: {
+            createdAt: timeFilter,
+            voucherType: { in: ['EXCHANGE', 'REFUND'] },
+            issuedByLocationId: { not: targetLocWhere },
+            sourceOrderId: { not: null },
+          },
+          include: {
+            claims: true,
+            merchant: true,
+          },
+        });
+        const candidateOrderIds = crossOutletCandidates
+          .map((v) => v.sourceOrderId)
+          .filter((id): id is string => !!id);
+        if (candidateOrderIds.length > 0) {
+          const matchingSourceOrders = await this.prisma.salesOrder.findMany({
+            where: {
+              id: { in: candidateOrderIds },
+              locationId: targetLocWhere,
+            },
+            select: { id: true },
+          });
+          const matchingOrderIdSet = new Set(matchingSourceOrders.map((o) => o.id));
+          crossOutletReturnVouchers = crossOutletCandidates.filter(
+            (v) => v.sourceOrderId && matchingOrderIdSet.has(v.sourceOrderId),
+          );
+        }
+      }
+
+
+
+      // ── Option A: Sales Return is charged to the ORIGINAL outlet (where sale happened) ──
+      // PosReturn records where originalLocationId matches this location, regardless of
+      // which outlet physically processed the return (returnLocationId).
+      const posReturnsOnOriginalLocation = await this.prisma.posReturn.findMany({
+        where: {
+          createdAt: timeFilter,
+          ...(targetLocWhere && { originalLocationId: targetLocWhere }),
+        },
+        select: {
+          id: true,
+          grandTotal: true,
+          returnType: true,
+          locationId: true,
+          originalLocationId: true,
+        },
+      });
+
       let grossSales = 0;
       let totalTaxes = 0;
       let totalDiscounts = 0;
@@ -1600,6 +1680,7 @@ export class PosSessionService {
         amount: number;
         from: string;
         createdBranch?: string;
+        physicalBranch?: string;
         redeemedBranch?: string;
       }> = [];
       const creditVouchers: Array<{
@@ -1608,6 +1689,7 @@ export class PosSessionService {
         from: string;
         to: string;
         createdBranch?: string;
+        physicalBranch?: string;
         redeemedBranch?: string;
       }> = [];
       const giftVouchers: Array<{
@@ -1616,6 +1698,7 @@ export class PosSessionService {
         from: string;
         to: string;
         createdBranch?: string;
+        physicalBranch?: string;
         redeemedBranch?: string;
       }> = [];
       const refundVouchers: Array<{
@@ -1623,6 +1706,7 @@ export class PosSessionService {
         amount: number;
         from: string;
         createdBranch?: string;
+        physicalBranch?: string;
         redeemedBranch?: string;
       }> = [];
 
@@ -1639,15 +1723,31 @@ export class PosSessionService {
         }
 
         if (v.voucherType === 'EXCHANGE') {
+          // ── Cross-outlet filter: skip EXCHANGE vouchers whose source order belongs to ANOTHER location ──
+          // These cross-outlet vouchers will appear in the ORIGINAL outlet's report via crossOutletReturnVouchers query.
+          const sourceOrderLocId = v.sourceOrderId
+            ? sourceOrderLocationMap.get(v.sourceOrderId)
+            : undefined;
+          if (targetLocWhere && sourceOrderLocId && sourceOrderLocId !== targetLocWhere) {
+            continue;
+          }
           const type =
             v.claims && v.claims.length > 0
               ? 'Claim Vouchers'
               : 'Exchange Vouchers';
+          // "Issue from" = original sale outlet (traceability)
+          // e.g. EXC-PWYEXZ issued at Bukhari for a Sharfabad order → shows SFD2-KHI
+          const originalSaleLocId = v.sourceOrderId
+            ? (sourceOrderLocationMap.get(v.sourceOrderId) || v.issuedByLocationId)
+            : v.issuedByLocationId;
+          const origName = locationMap.get(originalSaleLocId || '') || '-';
+          const physName = locationMap.get(v.issuedByLocationId || '') || undefined;
           exchangeAndClaims.push({
             type,
             amount: faceValue,
             from: v.code,
-            createdBranch: locationMap.get(v.issuedByLocationId || '') || '-',
+            createdBranch: origName,
+            physicalBranch: (physName && physName !== origName) ? physName : undefined,
             redeemedBranch: '-',
           });
         } else if (v.voucherType === 'CREDIT') {
@@ -1665,11 +1765,26 @@ export class PosSessionService {
             redeemedBranch: '-',
           });
         } else if (v.voucherType === 'REFUND') {
+          // ── Cross-outlet filter: skip REFUND vouchers whose source order belongs to ANOTHER location ──
+          // These cross-outlet vouchers will appear in the ORIGINAL outlet's report via crossOutletReturnVouchers query.
+          const sourceOrderLocId = v.sourceOrderId
+            ? sourceOrderLocationMap.get(v.sourceOrderId)
+            : undefined;
+          if (targetLocWhere && sourceOrderLocId && sourceOrderLocId !== targetLocWhere) {
+            continue;
+          }
+          // "Issue from" = original sale outlet (traceability)
+          const originalSaleLocId = v.sourceOrderId
+            ? (sourceOrderLocationMap.get(v.sourceOrderId) || v.issuedByLocationId)
+            : v.issuedByLocationId;
+          const origName = locationMap.get(originalSaleLocId || '') || '-';
+          const physName = locationMap.get(v.issuedByLocationId || '') || undefined;
           refundVouchers.push({
             type: 'Refund Vouchers',
             amount: faceValue,
             from: v.code,
-            createdBranch: locationMap.get(v.issuedByLocationId || '') || '-',
+            createdBranch: origName,
+            physicalBranch: (physName && physName !== origName) ? physName : undefined,
             redeemedBranch: '-',
           });
         } else if (v.voucherType === 'GIFT' || v.voucherType === 'CORPORATE') {
@@ -1758,6 +1873,40 @@ export class PosSessionService {
         }
       }
 
+      // ── Process cross-outlet EXCHANGE/REFUND vouchers for the ORIGINAL outlet ──
+      // These vouchers were physically issued at another outlet (e.g. BC1-KHI) but
+      // the source order belongs to THIS location (e.g. SFD2-KHI). Per Option A,
+      // they should appear in THIS outlet's "Issued" section.
+      for (const v of crossOutletReturnVouchers) {
+        const faceValue = Number(v.faceValue);
+        // createdBranch = original outlet (SFD2-KHI)
+        // physicalBranch = outlet that physically issued it (BC1-KHI) — sent as separate field
+        const originalOutletName = locationMap.get(targetLocId || '') || displayName;
+        const physicalOutletName = locationMap.get(v.issuedByLocationId || '') || undefined;
+
+        if (v.voucherType === 'EXCHANGE') {
+          const type =
+            v.claims && v.claims.length > 0 ? 'Claim Vouchers' : 'Exchange Vouchers';
+          exchangeAndClaims.push({
+            type,
+            amount: faceValue,
+            from: v.code,
+            createdBranch: originalOutletName,
+            physicalBranch: physicalOutletName !== originalOutletName ? physicalOutletName : undefined,
+            redeemedBranch: '-',
+          });
+        } else if (v.voucherType === 'REFUND') {
+          refundVouchers.push({
+            type: 'Refund Vouchers',
+            amount: faceValue,
+            from: v.code,
+            createdBranch: originalOutletName,
+            physicalBranch: physicalOutletName !== originalOutletName ? physicalOutletName : undefined,
+            redeemedBranch: '-',
+          });
+        }
+      }
+
       let fbrCashCount = 0;
       let fbrCardCount = 0;
       for (const order of orders) {
@@ -1816,9 +1965,13 @@ export class PosSessionService {
         fbrTotal -
         unusedBalanceVouchersTotal;
 
-      const returnAmount =
-        exchangeAndClaims.reduce((sum, v) => sum + v.amount, 0) +
-        refundVouchers.reduce((sum, v) => sum + v.amount, 0);
+      // ── Option A: Sales Return deducted from ORIGINAL outlet's reconciliation ──
+      // Uses PosReturn.originalLocationId so cross-outlet returns are attributed
+      // to the outlet where the original sale was made, not where return was processed.
+      const returnAmount = posReturnsOnOriginalLocation.reduce(
+        (sum, r) => sum + Number(r.grandTotal),
+        0,
+      );
 
       const refundVouchersTotal = refundVouchers.reduce(
         (sum, v) => sum + v.amount,

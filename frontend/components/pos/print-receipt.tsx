@@ -456,6 +456,9 @@ export function PrintReceipt({
     0,
   );
 
+  const fbrPosFee = hasFbrInfo ? Number(order?.fbrPosFee ?? 0) || 1 : 0;
+  const isCourierifyOrder = Boolean(order?.notes?.includes("Source: Courierify"));
+
   const deliveryFee = (() => {
     const match = order?.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
     if (match && match[1]) return parseFloat(match[1].replace(/,/g, ""));
@@ -463,8 +466,9 @@ export function PrintReceipt({
       (acc: number, item: any) => acc + Number(item.lineTotal || 0),
       0,
     );
-    if (itemsTotal > 0 && grandTotal > itemsTotal) {
-      return grandTotal - itemsTotal;
+    const savedFbrFee = isSavedOrder && order?.fbrInvoiceNumber ? fbrPosFee : 0;
+    if (isCourierifyOrder && itemsTotal > 0 && grandTotal > itemsTotal + savedFbrFee + 1) {
+      return grandTotal - itemsTotal - savedFbrFee;
     }
     return 0;
   })();
@@ -473,7 +477,6 @@ export function PrintReceipt({
     grandTotal,
     valueForSales + totalTax + deliveryFee,
   );
-  const fbrPosFee = hasFbrInfo ? Number(order?.fbrPosFee ?? 0) || 1 : 0;
   const finalGrandTotal = isSavedOrder
     ? effectiveGrandTotal
     : effectiveGrandTotal + fbrPosFee;
@@ -1170,7 +1173,7 @@ function ReceiptBody({
               value={fmt(t.amount)}
             />
           ))}
-          {totalPaid > 0 && totalPaid !== finalGrandTotal && (
+          {totalPaid > 0 && Math.round(totalPaid) !== Math.round(finalGrandTotal) && (
             <Row label="Total Paid" value={fmt(totalPaid)} />
           )}
           {changeAmount > 0 && (

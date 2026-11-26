@@ -3,7 +3,15 @@
 import { authFetch } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
-export async function getTransferRequests(params?: { warehouseId?: string; status?: string; id?: string }) {
+export async function getTransferRequests(params?: {
+    warehouseId?: string;
+    status?: string;
+    id?: string;
+    transferType?: string;
+    search?: string;
+    dateFrom?: string;
+    dateTo?: string;
+}) {
     try {
         const query = params ? new URLSearchParams(params as any).toString() : '';
         const response = await authFetch(`/transfer-request?${query}`);

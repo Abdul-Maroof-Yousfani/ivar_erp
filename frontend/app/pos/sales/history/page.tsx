@@ -23,7 +23,7 @@ import {
     Printer, Eye, ShoppingCart, Wallet, Calendar as CalendarIcon,
     PauseCircle, RotateCcw, Clock, Pencil, Plus, Trash2, Loader2,
     Banknote, CreditCard, Building2, Ticket, BookOpen, FileText,
-    CheckCircle2, XCircle, Upload, ShieldCheck, RefreshCw,
+    CheckCircle2, XCircle, Upload, ShieldCheck, RefreshCw, Download,
 } from "lucide-react";
 
 import DataTable from "@/components/common/data-table";
@@ -530,6 +530,295 @@ export default function SalesHistoryPage() {
     const [selectedClaim, setSelectedClaim] = useState<any>(null);
     const [retryingFbrId, setRetryingFbrId] = useState<string | null>(null);
     const [isSyncingAllFbr, setIsSyncingAllFbr] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+
+    const handleExportCSV = async () => {
+        setIsExporting(true);
+        try {
+            let exportOrders = orders;
+            // If total matching records exceed current page, or if not on first page, fetch all matching records
+            if (rowCount > orders.length || pagination.pageIndex > 0) {
+                const res = await authFetch("/pos-sales/orders", {
+                    params: {
+                        page: 1,
+                        limit: Math.max(rowCount, 1000),
+                        search: search.trim() || undefined,
+                        startDate: dateRange.from?.toISOString(),
+                        endDate: (dateRange.to || dateRange.from)?.toISOString(),
+                        locationId: user?.locationId || undefined,
+                    }
+                });
+                if (res.ok && res.data?.status && Array.isArray(res.data.data)) {
+                    exportOrders = res.data.data;
+                }
+            }
+
+            if (!exportOrders || exportOrders.length === 0) {
+                toast.error("No sales records found to export");
+                return;
+            }
+
+            const headers = [
+                "Order #",
+                "Ref #",
+                "Date & Time",
+                "Status",
+                "Customer Name",
+                "Customer Phone",
+                "Items Count",
+                "Total Qty",
+                "Items Summary",
+                "Subtotal",
+                "Discount",
+                "Tax",
+                "Grand Total",
+                "Refunded Amount",
+                "Net Total",
+                "Payment Status",
+                "Payment Method",
+                "Cash Paid",
+                "Card Paid",
+                "Bank Transfer",
+                "Voucher Amount",
+                "Advance Paid",
+                "COD to Collect",
+                "Payment Details",
+                "FBR Invoice #",
+                "FBR Status",
+                "Notes",
+            ];
+
+            const rows = exportOrders.map((order) => {
+                const date = order.createdAt ? new Date(order.createdAt) : null;
+                const formattedDate = date
+                    ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                    : "-";
+
+                const isRefunded = order.status === "refunded";
+                const isPartiallyReturned = order.status === "partially_returned";
+                const refundMatch = order.notes?.match(/Cash refund(?:ed)?\s*Rs\.?\s*([\d.,]+)/i);
+                const matchedRefund = refundMatch ? parseFloat(refundMatch[1].replace(/,/g, "")) : null;
+
+                const grandTotal = Number(order.grandTotal ?? 0);
+                let actualRefunded = 0;
+                if (isRefunded) {
+                    actualRefunded = matchedRefund ?? grandTotal;
+                } else if (isPartiallyReturned && matchedRefund != null) {
+                    actualRefunded = matchedRefund;
+                }
+
+                const netTotal = isRefunded ? 0 : Math.max(0, grandTotal - actualRefunded);
+                const refNo = order.referenceNumber ? String(order.referenceNumber).replace("#", "") : "";
+
+                // ── Customer Name & Phone Extraction ──
+                let custName = order.customer?.name || order.customerName || "";
+                let custPhone = order.customer?.contactNo || order.customerPhone || "";
+
+                if (order.notes) {
+                    // Check if customer details are in notes: "Customer: Name (Phone)" or "Customer: Name"
+                    const matchWithPhone = order.notes.match(/Customer:\s*([^()|]+?)\s*\(([^()|]+)\)/i);
+                    if (matchWithPhone) {
+                        if (!custName) custName = matchWithPhone[1].trim();
+                        if (!custPhone) {
+                            const p = matchWithPhone[2].trim();
+                            if (p.toUpperCase() !== "N/A") custPhone = p;
+                        }
+                    } else {
+                        const matchNameOnly = order.notes.match(/Customer:\s*([^|]+)/i);
+                        if (matchNameOnly && !custName) {
+                            custName = matchNameOnly[1].trim();
+                        }
+                    }
+                    if (!custPhone) {
+                        const phoneMatch = order.notes.match(/(?:Contact|Phone|Mobile):\s*([0-9+ -]+)/i);
+                        if (phoneMatch) custPhone = phoneMatch[1].trim();
+                    }
+                }
+                if (!custName) custName = "-";
+                if (!custPhone) custPhone = "-";
+
+                // ── Quantity & Items Summary ──
+                const itemsCount = order.items?.length || 0;
+                const totalQty = (order.items || []).reduce((sum: number, oi: any) => {
+                    const q = Number(oi.quantity ?? oi.qty ?? 1);
+                    return sum + (isNaN(q) ? 1 : q);
+                }, 0);
+
+                const itemsSummary = (order.items || []).map((oi: any) => {
+                    const desc = oi.item?.description || oi.item?.sku || "Item";
+                    const q = oi.quantity ?? oi.qty ?? 1;
+                    return `${desc} (x${q})`;
+                }).join("; ");
+
+                // ── Payment Information Extraction ──
+                let paymentStatus = order.paymentStatus || "";
+                if (!paymentStatus && order.notes) {
+                    const psMatch = order.notes.match(/Payment:\s*[^(|]+\s*\(([^)]+)\)/i);
+                    if (psMatch) paymentStatus = psMatch[1].trim();
+                }
+                if (!paymentStatus) {
+                    paymentStatus = (order.status === "completed" || order.status === "refunded") ? "PAID" : "PENDING";
+                }
+                paymentStatus = paymentStatus.toUpperCase();
+
+                let paymentMethod = order.paymentMethod || order.tenderType || "";
+                if (!paymentMethod && order.notes) {
+                    const pmMatch = order.notes.match(/Payment:\s*([^(|]+)/i);
+                    if (pmMatch) paymentMethod = pmMatch[1].trim();
+                }
+                paymentMethod = paymentMethod ? paymentMethod.toUpperCase() : "CASH";
+
+                // Advance Paid & COD from notes
+                const advMatch = order.notes?.match(/Advance Paid:\s*Rs\.?\s*([\d.,]+)(?:\s*\(([^)]+)\))?/i);
+                const advanceAmount = advMatch ? parseFloat(advMatch[1].replace(/,/g, "")) : 0;
+                const advanceDetail = advMatch && advMatch[2] ? advMatch[2].trim() : "";
+
+                const codMatch = order.notes?.match(/COD to Collect:\s*Rs\.?\s*([\d.,]+)/i);
+                const codAmount = codMatch ? parseFloat(codMatch[1].replace(/,/g, "")) : (paymentMethod === "COD" ? grandTotal : 0);
+
+                // Tender amounts breakdown
+                let cashPaid = Number(order.cashAmount ?? 0);
+                let cardPaid = Number(order.cardAmount ?? 0);
+                let voucherPaid = Number(order.voucherAmount ?? 0);
+                let bankTransferPaid = 0;
+
+                if (Array.isArray(order.tenders) && order.tenders.length > 0) {
+                    for (const t of order.tenders) {
+                        const m = String(t.method || "").toLowerCase();
+                        const amt = Number(t.amount ?? 0);
+                        if (m.includes("cash")) {
+                            if (cashPaid === 0) cashPaid = amt;
+                        } else if (m.includes("card")) {
+                            if (cardPaid === 0) cardPaid = amt;
+                        } else if (m.includes("bank")) {
+                            bankTransferPaid += amt;
+                        } else if (m.includes("voucher")) {
+                            if (voucherPaid === 0) voucherPaid = amt;
+                        }
+                    }
+                }
+
+                // Advance paid method attribution
+                if (advanceAmount > 0) {
+                    const advLower = advanceDetail.toLowerCase();
+                    if (advLower.includes("bank") && bankTransferPaid === 0) {
+                        bankTransferPaid = advanceAmount;
+                    } else if (advLower.includes("card") && cardPaid === 0) {
+                        cardPaid = advanceAmount;
+                    } else if (advLower.includes("cash") && cashPaid === 0) {
+                        cashPaid = advanceAmount;
+                    }
+                }
+
+                // Fallback for simple orders
+                if (cashPaid === 0 && cardPaid === 0 && bankTransferPaid === 0 && voucherPaid === 0 && paymentMethod !== "COD") {
+                    const pmLower = paymentMethod.toLowerCase();
+                    if (pmLower === "cash") cashPaid = grandTotal;
+                    else if (pmLower === "card") cardPaid = grandTotal;
+                    else if (pmLower === "bank_transfer" || pmLower.includes("bank")) bankTransferPaid = grandTotal;
+                    else if (pmLower === "voucher") voucherPaid = grandTotal;
+                }
+
+                // Payment Details summary
+                const pDetails: string[] = [];
+                if (paymentMethod) pDetails.push(`Method: ${paymentMethod}`);
+                if (paymentStatus) pDetails.push(`Status: ${paymentStatus}`);
+                if (cashPaid > 0) pDetails.push(`Cash: ${cashPaid.toFixed(2)}`);
+                if (cardPaid > 0) pDetails.push(`Card: ${cardPaid.toFixed(2)}`);
+                if (bankTransferPaid > 0) pDetails.push(`Bank Transfer: ${bankTransferPaid.toFixed(2)}`);
+                if (voucherPaid > 0) pDetails.push(`Voucher: ${voucherPaid.toFixed(2)}`);
+                if (advanceAmount > 0) pDetails.push(`Advance: ${advanceAmount.toFixed(2)}${advanceDetail ? ` (${advanceDetail})` : ""}`);
+                if (codAmount > 0) pDetails.push(`COD: ${codAmount.toFixed(2)}`);
+                const paymentDetails = pDetails.join(" | ");
+
+                const fbrStatus = order.fbrInvoiceNumber ? "Synced" : (order.fbrStatus || "Unsynced");
+
+                return [
+                    order.orderNumber || "",
+                    refNo,
+                    formattedDate,
+                    order.status || "-",
+                    custName,
+                    custPhone,
+                    itemsCount,
+                    totalQty,
+                    itemsSummary,
+                    Number(order.subtotal ?? 0).toFixed(2),
+                    Number(order.discountAmount ?? 0).toFixed(2),
+                    Number(order.taxAmount ?? 0).toFixed(2),
+                    grandTotal.toFixed(2),
+                    actualRefunded > 0 ? actualRefunded.toFixed(2) : "0.00",
+                    netTotal.toFixed(2),
+                    paymentStatus,
+                    paymentMethod,
+                    cashPaid > 0 ? cashPaid.toFixed(2) : "0.00",
+                    cardPaid > 0 ? cardPaid.toFixed(2) : "0.00",
+                    bankTransferPaid > 0 ? bankTransferPaid.toFixed(2) : "0.00",
+                    voucherPaid > 0 ? voucherPaid.toFixed(2) : "0.00",
+                    advanceAmount > 0 ? `${advanceAmount.toFixed(2)}${advanceDetail ? ` (${advanceDetail})` : ""}` : "0.00",
+                    codAmount > 0 ? codAmount.toFixed(2) : "0.00",
+                    paymentDetails,
+                    order.fbrInvoiceNumber || "-",
+                    fbrStatus,
+                    order.notes || "",
+                ];
+            });
+
+            // Escape function for CSV (standard RFC 4180)
+            const escapeCsv = (val: any) => {
+                if (val === null || val === undefined) return '""';
+                const str = String(val).replace(/"/g, '""').replace(/[\r\n]+/g, ' ');
+                return `"${str}"`;
+            };
+
+            const csvContent = [
+                headers.map(escapeCsv).join(","),
+                ...rows.map(row => row.map(escapeCsv).join(","))
+            ].join("\r\n");
+
+            // Format date for filename in local timezone (YYYY-MM-DD)
+            const formatLocalYMD = (d: Date) => {
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, "0");
+                const day = String(d.getDate()).padStart(2, "0");
+                return `${year}-${month}-${day}`;
+            };
+
+            let fileName = "sales-history";
+            if (dateRange.from && dateRange.to) {
+                const fromStr = formatLocalYMD(dateRange.from);
+                const toStr = formatLocalYMD(dateRange.to);
+                fileName += fromStr === toStr ? `_${fromStr}` : `_${fromStr}_to_${toStr}`;
+            } else if (dateRange.from) {
+                fileName += `_${formatLocalYMD(dateRange.from)}`;
+            } else {
+                fileName += `_all_${formatLocalYMD(new Date())}`;
+            }
+
+            if (search.trim()) {
+                fileName += `_${search.trim().replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+            }
+            fileName += ".csv";
+
+            // Trigger download with UTF-8 BOM
+            const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.setAttribute("download", fileName);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            toast.success(`Exported ${exportOrders.length} order(s) successfully`);
+        } catch (error) {
+            console.error("Export CSV error:", error);
+            toast.error("Failed to export sales history");
+        } finally {
+            setIsExporting(false);
+        }
+    };
 
     const fetchOrders = useCallback(async () => {
         setIsLoading(true);
@@ -1019,6 +1308,20 @@ export default function SalesHistoryPage() {
                             placeholder="Filter by date"
                         />
                     </div>
+                    {/* ── Export CSV button ── */}
+                    <Button
+                        variant="outline"
+                        onClick={handleExportCSV}
+                        disabled={isExporting}
+                        className="gap-2"
+                    >
+                        {isExporting ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                            <Download className="h-4 w-4" />
+                        )}
+                        Export CSV
+                    </Button>
                     {/* ── Floating import progress button ── */}
                     {activeUploadId && !isBulkUploadOpen && (
                         <Button

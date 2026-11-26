@@ -176,15 +176,17 @@ export default function OrderDetailsPage() {
         return s + Number(t.amount);
     }, 0) || 0;
 
-    const allTendersSum = (order.tenders || []).reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
+    const fbrPosFee = order.fbrInvoiceNumber ? 1 : 0;
+    const itemsTotal = Number(order.subtotal || 0) + Number(order.taxAmount || 0) - Number(order.discountAmount || 0);
     const deliveryCharges = (() => {
         const match = order.notes?.match(/Delivery Charges:\s*Rs\.?\s*([\d.,]+)/i);
         if (match && match[1]) return parseFloat(match[1].replace(/,/g, ""));
-        if (allTendersSum > Number(order.grandTotal)) return allTendersSum - Number(order.grandTotal);
+        if (isCourierify && Number(order.grandTotal) > itemsTotal + fbrPosFee + 1) {
+            return Number(order.grandTotal) - itemsTotal - fbrPosFee;
+        }
         return 0;
     })();
-    const itemsTotal = Number(order.subtotal || 0) + Number(order.taxAmount || 0) - Number(order.discountAmount || 0);
-    const effectiveGrandTotal = Math.max(Number(order.grandTotal || 0), itemsTotal + deliveryCharges);
+    const effectiveGrandTotal = Math.max(Number(order.grandTotal || 0), itemsTotal + fbrPosFee + deliveryCharges);
     
     const balanceDue = Math.max(0, effectiveGrandTotal - totalPaid);
     const isHold = order.status === "hold";
@@ -215,9 +217,9 @@ export default function OrderDetailsPage() {
                                 </Badge>
                             )}
                             {!isHold && (
-                                <Badge variant={balanceDue > 0 ? "outline" : "default"}
-                                    className={cn("uppercase text-xs px-2", balanceDue > 0 ? "border-orange-500 text-orange-500" : "bg-emerald-600")}>
-                                    {balanceDue === Number(order.grandTotal) && balanceDue > 0 ? "Unpaid" : balanceDue > 0 ? "Partial" : "Fully Paid"}
+                                <Badge variant={Math.round(balanceDue) > 0 ? "outline" : "default"}
+                                    className={cn("uppercase text-xs px-2", Math.round(balanceDue) > 0 ? "border-orange-500 text-orange-500" : "bg-emerald-600")}>
+                                    {totalPaid <= 0 && Math.round(balanceDue) > 0 ? "Unpaid" : Math.round(balanceDue) > 0 ? "Partial" : "Fully Paid"}
                                 </Badge>
                             )}
                             <Badge variant={order.status === "completed" ? "default" : "secondary"}
@@ -664,7 +666,7 @@ export default function OrderDetailsPage() {
                                                 <span>{formatCurrency(totalPaid)}</span>
                                             </div>
 
-                                            {balanceDue > 0 && (
+                                            {Math.round(balanceDue) > 0 && (
                                                 <div className="flex justify-between text-orange-600 font-bold">
                                                     <span>Balance Due</span>
                                                     <span>{formatCurrency(balanceDue)}</span>

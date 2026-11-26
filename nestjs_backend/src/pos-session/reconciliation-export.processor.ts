@@ -204,27 +204,44 @@ export class ReconciliationExportProcessor {
 
       // 5. Issued
       addSectionHeader('ISSUED VOUCHERS');
-      addTableHeader(['Voucher Type', 'Amount', '', '', 'From', 'To']);
+      addTableHeader(['Voucher Type', 'Amount', '', '', 'From', 'To', 'Issue From']);
       const issuedExchangeSubtotal = data.issuedVouchers.exchangeAndClaims?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
       const issuedCreditSubtotal = data.issuedVouchers.creditVouchers?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
       const issuedGiftSubtotal = data.issuedVouchers.giftVouchers?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
       const issuedRefundSubtotal = data.issuedVouchers.refundVouchers?.reduce((acc: number, v: any) => acc + v.amount, 0) || 0;
       const totalIssuedSubtotal = issuedExchangeSubtotal + issuedGiftSubtotal + issuedRefundSubtotal;
 
+      const formatIssueFrom = (v: any) => {
+        if (!v.createdBranch || v.createdBranch === '-') return '-';
+        return v.physicalBranch ? `${v.createdBranch}\n(${v.physicalBranch})` : v.createdBranch;
+      };
+
       for (const v of data.issuedVouchers.exchangeAndClaims || []) {
-        sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '']);
+        const row = sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '', formatIssueFrom(v)]);
+        if (v.physicalBranch) {
+          row.getCell(7).alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+        }
       }
       for (const v of data.issuedVouchers.creditVouchers || []) {
-        sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', v.to || '-']);
+        const row = sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', v.to || '-', formatIssueFrom(v)]);
+        if (v.physicalBranch) {
+          row.getCell(7).alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+        }
       }
       for (const v of data.issuedVouchers.giftVouchers || []) {
-        sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', v.to || '-']);
+        const row = sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', v.to || '-', formatIssueFrom(v)]);
+        if (v.physicalBranch) {
+          row.getCell(7).alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+        }
       }
       if (data.issuedVouchers.totalGiftVoucherDiscount > 0) {
         sheet.addRow(['Gift Vouchers Discount', formatCurrencyCell(data.issuedVouchers.totalGiftVoucherDiscount)]);
       }
       for (const v of data.issuedVouchers.refundVouchers || []) {
-        sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '']);
+        const row = sheet.addRow([v.type, formatCurrencyCell(v.amount), '', '', v.from || '-', '', formatIssueFrom(v)]);
+        if (v.physicalBranch) {
+          row.getCell(7).alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+        }
       }
 
       const issuedSubRow = sheet.addRow(['TOTAL ISSUED', formatCurrencyCell(totalIssuedSubtotal)]);
