@@ -37,6 +37,7 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { cn, getApiBaseUrl, formatCurrency } from "@/lib/utils";
+import { PermissionGuard } from "@/components/auth/permission-guard";
 
 export default function ERPAvailableStockSummaryCostingReportPage() {
     const [locations, setLocations] = useState<Location[]>([]);
@@ -554,6 +555,7 @@ export default function ERPAvailableStockSummaryCostingReportPage() {
     };
 
     return (
+        <PermissionGuard permissions={["erp.report.available-stock-summary", "erp.report.view"]}>
         <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
             {/* Header Block */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-5 no-print">
@@ -1174,5 +1176,6 @@ export default function ERPAvailableStockSummaryCostingReportPage() {
                 </div>
             </div>
         </div>
+        </PermissionGuard>
     );
 }

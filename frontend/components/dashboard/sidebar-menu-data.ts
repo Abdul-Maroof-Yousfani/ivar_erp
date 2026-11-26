@@ -788,7 +788,11 @@ export const menuData: MenuItem[] = [
     environment: "ERP",
     permissions: ["inventory.read", "erp.item.read", "erp.item.create"],
     children: [
-      { title: "Dashboard", href: "/erp/inventory" },
+      {
+        title: "Dashboard",
+        href: "/erp/inventory",
+        permissions: ["erp.inventory.view"],
+      },
       {
         title: "Warehouse WMS",
         children: [
@@ -878,6 +882,7 @@ export const menuData: MenuItem[] = [
         title: "Reports",
         permissions: [
           "erp.report.available-stock-summary",
+          "erp.report.pos-available-stock-summary",
           "erp.report.out-of-stock",
           "erp.report.view",
           "inventory.read",
@@ -890,6 +895,11 @@ export const menuData: MenuItem[] = [
               "erp.report.available-stock-summary",
               "erp.report.view",
             ],
+          },
+          {
+            title: "Available Stock Summary",
+            href: "/erp/reports/pos/available-stock-summary",
+            permissions: ["erp.report.pos-available-stock-summary"],
           },
           {
             title: "Out-of-Stock Report",

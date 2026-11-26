@@ -6,6 +6,7 @@ export interface StockByLocationExportOpts {
   locationId?: string;   // comma-separated location IDs (empty = all)
   warehouseId?: string;  // comma-separated warehouse IDs
   asOfDate?: string;
+  excludeWarehouses?: boolean;
 }
 
 @Injectable()
@@ -15,14 +16,14 @@ export class AvailableStockByLocationExportService {
   constructor(private readonly prisma: PrismaService) {}
 
   async streamExcelByLocation(opts: StockByLocationExportOpts, res: any): Promise<void> {
-    const { locationId, warehouseId, asOfDate } = opts;
+    const { locationId, warehouseId, asOfDate, excludeWarehouses } = opts;
 
     const targetDate = asOfDate ? new Date(asOfDate) : new Date();
     targetDate.setHours(23, 59, 59, 999);
 
     // ── 1. Resolve locations ──────────────────────────────────────────────────
     const locIds = locationId ? locationId.split(',').map(s => s.trim()).filter(Boolean) : [];
-    const whIds = warehouseId ? warehouseId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const whIds = !excludeWarehouses && warehouseId ? warehouseId.split(',').map(s => s.trim()).filter(Boolean) : [];
 
     let locations: { id: string; name: string; code: string | null }[];
     if (locIds.length > 0) {
@@ -56,8 +57,10 @@ export class AvailableStockByLocationExportService {
     const transitOrConditions: any[] = [];
     if (locIds.length > 0) {
       transitOrConditions.push({ toLocationId: { in: locIds } });
+    } else if (excludeWarehouses) {
+      transitOrConditions.push({ toLocationId: { in: locationIds } });
     }
-    if (whIds.length > 0) {
+    if (!excludeWarehouses && whIds.length > 0) {
       transitOrConditions.push({ toWarehouseId: { in: whIds } });
     }
     const transitWhere = transitOrConditions.length > 0 ? { OR: transitOrConditions } : {};

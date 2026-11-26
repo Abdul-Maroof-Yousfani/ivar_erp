@@ -129,7 +129,11 @@ const ERPDashboard = () => {
 
   useEffect(() => {
     if (!isAdmin() && !hasPermission("erp.dashboard.overview.view") && !hasPermission("erp.dashboard.inventory.view")) {
-      if (hasPermission("erp.report.available-stock-summary") || hasPermission("erp.report.view")) {
+      if (
+        hasPermission("erp.report.available-stock-summary") ||
+        hasPermission("erp.report.pos-available-stock-summary") ||
+        hasPermission("erp.report.view")
+      ) {
         router.replace("/erp/reports/pos/available-stock-summary");
       }
     }

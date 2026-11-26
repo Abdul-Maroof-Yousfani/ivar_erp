@@ -27,6 +27,7 @@ export interface QueueAvailableStockSummaryExportOptions {
   showArticle?: boolean;
   showVariant?: boolean;
   includeCosting?: boolean;
+  excludeWarehouses?: boolean;
 }
 
 @Injectable()
@@ -64,7 +65,7 @@ export class AvailableStockSummaryExportService {
         tenantId,
         tenantDbUrl,
         locationId: opts.locationId,
-        warehouseId: opts.warehouseId,
+        warehouseId: opts.excludeWarehouses ? undefined : opts.warehouseId,
         asOfDate: opts.asOfDate || opts.date || opts.endDate,
         startDate: opts.startDate,
         endDate: opts.endDate,
@@ -78,7 +79,8 @@ export class AvailableStockSummaryExportService {
         showSilhouette: opts.showSilhouette,
         showArticle: opts.showArticle,
         showVariant: opts.showVariant,
-        includeCosting: !!opts.includeCosting,
+        includeCosting: opts.excludeWarehouses ? false : !!opts.includeCosting,
+        excludeWarehouses: !!opts.excludeWarehouses,
       },
       {
         jobId,
@@ -170,6 +172,7 @@ export class AvailableStockSummaryExportService {
     showSilhouette?: boolean;
     showArticle?: boolean;
     showVariant?: boolean;
+    excludeWarehouses?: boolean;
   }) {
     const tenantId = this.prisma.getTenantId() ?? '';
     const tenantDbUrl = this.prisma.getTenantDbUrl() ?? '';
@@ -196,6 +199,7 @@ export class AvailableStockSummaryExportService {
       showSilhouette?: boolean;
       showArticle?: boolean;
       showVariant?: boolean;
+      excludeWarehouses?: boolean;
     },
   ) {
     const {
@@ -212,10 +216,12 @@ export class AvailableStockSummaryExportService {
       showSilhouette,
       showArticle,
       showVariant,
+      excludeWarehouses,
     } = opts;
 
     const locIds = locationId ? locationId.split(',').map(s => s.trim()).filter(Boolean) : [];
     let locationWhere: any;
+    let stockLocIds: string[] = [];
 
     if (locIds.length > 0) {
       locationWhere = locIds.length > 1 ? { in: locIds } : locIds[0];
@@ -224,11 +230,11 @@ export class AvailableStockSummaryExportService {
         where: { isStockLocation: true, isDeleted: false },
         select: { id: true },
       });
-      const stockLocIds = stockLocations.map(l => l.id);
+      stockLocIds = stockLocations.map(l => l.id);
       locationWhere = { in: stockLocIds };
     }
 
-    const whIds = warehouseId ? warehouseId.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const whIds = !excludeWarehouses && warehouseId ? warehouseId.split(',').map(s => s.trim()).filter(Boolean) : [];
     const warehouseWhere = whIds.length > 1 ? { in: whIds } : (whIds.length === 1 ? whIds[0] : undefined);
 
     const locOrWhFilters: any[] = [];
@@ -310,6 +316,8 @@ export class AvailableStockSummaryExportService {
     } else if (hasExplicitLoc && hasExplicitWh) {
       transitOrConditions.push({ toLocationId: locationWhere });
       transitOrConditions.push({ toWarehouseId: warehouseWhere });
+    } else if (excludeWarehouses) {
+      transitOrConditions.push({ toLocationId: locationWhere });
     }
     const transitWhere = transitOrConditions.length > 0 ? { OR: transitOrConditions } : {};
 
@@ -419,24 +427,26 @@ export class AvailableStockSummaryExportService {
       transitMap.set(row.itemId, (transitMap.get(row.itemId) || 0) + remainingQty);
     }
 
-    // Query reserved stock for matched items as of targetDate
-    const reserveGroup = await prisma.stockReserve.groupBy({
-      by: ['itemId'],
-      where: {
-        itemId: { in: matchedItemIds },
-        createdAt: { lte: targetDate },
-        ...(warehouseWhere ? { warehouseId: warehouseWhere } : {}),
-        OR: [
-          { expiresAt: null },
-          { expiresAt: { gte: targetDate } }
-        ]
-      },
-      _sum: { quantity: true },
-    });
-
+    // Query reserved stock for matched items as of targetDate (warehouse-only; skip when warehouses excluded)
     const reserveMap = new Map<string, number>();
-    for (const row of reserveGroup) {
-      reserveMap.set(row.itemId, Number(row._sum.quantity || 0));
+    if (!excludeWarehouses) {
+      const reserveGroup = await prisma.stockReserve.groupBy({
+        by: ['itemId'],
+        where: {
+          itemId: { in: matchedItemIds },
+          createdAt: { lte: targetDate },
+          ...(warehouseWhere ? { warehouseId: warehouseWhere } : {}),
+          OR: [
+            { expiresAt: null },
+            { expiresAt: { gte: targetDate } }
+          ]
+        },
+        _sum: { quantity: true },
+      });
+
+      for (const row of reserveGroup) {
+        reserveMap.set(row.itemId, Number(row._sum.quantity || 0));
+      }
     }
 
     const root: any[] = [];

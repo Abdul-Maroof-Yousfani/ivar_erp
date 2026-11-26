@@ -37,8 +37,21 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { cn, getApiBaseUrl, formatCurrency } from "@/lib/utils";
+import { useAuth } from "@/components/providers/auth-provider";
+import { PermissionGuard } from "@/components/auth/permission-guard";
 
 export default function ERPAvailableStockSummaryReportPage() {
+    const { isAdmin, hasAnyPermission } = useAuth();
+    const canViewWarehouses =
+        isAdmin() ||
+        hasAnyPermission([
+            "erp.report.view",
+            "erp.report.available-stock-summary",
+            "erp.inventory.view",
+            "erp.inventory.warehouse.view",
+            "erp.dashboard.inventory.view",
+        ]);
+
     const [locations, setLocations] = useState<Location[]>([]);
     const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
     const [isLoadingLocations, setIsLoadingLocations] = useState<boolean>(true);
@@ -97,8 +110,13 @@ export default function ERPAvailableStockSummaryReportPage() {
         fetchLocationsList();
     }, []);
 
-    // Fetch Warehouses on mount
+    // Fetch Warehouses on mount (only when user has warehouse-level report access)
     useEffect(() => {
+        if (!canViewWarehouses) {
+            setWarehouses([]);
+            setSelectedWarehouseIds([]);
+            return;
+        }
         async function fetchWarehousesList() {
             try {
                 const data = await getWarehouses();
@@ -110,7 +128,7 @@ export default function ERPAvailableStockSummaryReportPage() {
             }
         }
         fetchWarehousesList();
-    }, []);
+    }, [canViewWarehouses]);
 
     // Format location options for MultiSelect
     const locationOptions: MultiSelectOption[] = useMemo(() => {
@@ -135,8 +153,9 @@ export default function ERPAvailableStockSummaryReportPage() {
     }, [selectedLocationIds]);
 
     const warehouseParam = useMemo(() => {
+        if (!canViewWarehouses) return undefined;
         return selectedWarehouseIds.length > 0 ? selectedWarehouseIds.join(",") : undefined;
-    }, [selectedWarehouseIds]);
+    }, [selectedWarehouseIds, canViewWarehouses]);
 
     const fetchReport = useCallback(() => {
         startTransition(async () => {
@@ -535,11 +554,13 @@ export default function ERPAvailableStockSummaryReportPage() {
 
     const getSelectedLocationText = () => {
         const parts: string[] = [];
-        if (selectedWarehouseIds.length === 1) {
-            const match = warehouses.find(w => w.id === selectedWarehouseIds[0]);
-            parts.push(match ? match.name : "1 Warehouse");
-        } else if (selectedWarehouseIds.length > 1) {
-            parts.push(`${selectedWarehouseIds.length} Warehouses`);
+        if (canViewWarehouses) {
+            if (selectedWarehouseIds.length === 1) {
+                const match = warehouses.find(w => w.id === selectedWarehouseIds[0]);
+                parts.push(match ? match.name : "1 Warehouse");
+            } else if (selectedWarehouseIds.length > 1) {
+                parts.push(`${selectedWarehouseIds.length} Warehouses`);
+            }
         }
         if (selectedLocationIds.length === 1) {
             const match = locations.find(l => l.id === selectedLocationIds[0]);
@@ -547,10 +568,11 @@ export default function ERPAvailableStockSummaryReportPage() {
         } else if (selectedLocationIds.length > 1) {
             parts.push(`${selectedLocationIds.length} Outlets`);
         }
-        return parts.length > 0 ? parts.join(" | ") : "All Warehouses & Outlets";
+        return parts.length > 0 ? parts.join(" | ") : (canViewWarehouses ? "All Warehouses & Outlets" : "All Outlets");
     };
 
     return (
+        <PermissionGuard permissions={["erp.report.pos-available-stock-summary", "erp.report.available-stock-summary", "erp.report.view"]}>
         <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
             {/* Header Block */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-5 no-print">
@@ -632,20 +654,22 @@ export default function ERPAvailableStockSummaryReportPage() {
             {/* Filters Row */}
             <div className="flex flex-wrap items-end justify-between gap-4 bg-slate-50 dark:bg-slate-900/40 border p-4 rounded-xl shadow-sm no-print">
                 <div className="flex flex-wrap items-end gap-4 flex-1">
-                    {/* Warehouse selector (MultiSelect in ERP) */}
-                    <div className="flex flex-col gap-1.5 min-w-[240px]">
-                        <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 leading-none">
-                            <Package className="h-3.5 w-3.5 text-primary" />
-                            Select Warehouses
-                        </span>
-                        <MultiSelect
-                            options={warehouseOptions}
-                            value={selectedWarehouseIds}
-                            onValueChange={setSelectedWarehouseIds}
-                            placeholder="All Warehouses"
-                            className="bg-background"
-                        />
-                    </div>
+                    {/* Warehouse selector (MultiSelect in ERP — hidden for outlet-only users) */}
+                    {canViewWarehouses && (
+                        <div className="flex flex-col gap-1.5 min-w-[240px]">
+                            <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 leading-none">
+                                <Package className="h-3.5 w-3.5 text-primary" />
+                                Select Warehouses
+                            </span>
+                            <MultiSelect
+                                options={warehouseOptions}
+                                value={selectedWarehouseIds}
+                                onValueChange={setSelectedWarehouseIds}
+                                placeholder="All Warehouses"
+                                className="bg-background"
+                            />
+                        </div>
+                    )}
 
                     {/* Location selector (MultiSelect in ERP) */}
                     <div className="flex flex-col gap-1.5 min-w-[240px]">
@@ -1121,5 +1145,6 @@ export default function ERPAvailableStockSummaryReportPage() {
                 </div>
             </div>
         </div>
+        </PermissionGuard>
     );
 }

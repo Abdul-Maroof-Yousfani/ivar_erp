@@ -32,6 +32,7 @@ export interface AvailableStockSummaryExportJobData {
   showArticle?: boolean;
   showVariant?: boolean;
   includeCosting?: boolean;
+  excludeWarehouses?: boolean;
 }
 
 const COLUMNS = [
@@ -119,6 +120,7 @@ export class AvailableStockSummaryExportProcessor {
       showArticle,
       showVariant,
       includeCosting,
+      excludeWarehouses,
     } = job.data;
     this.logger.log(
       `[AvailableStockSummaryExport ${jobId}] Starting ${format.toUpperCase()} export for user ${userId}`,
@@ -147,7 +149,7 @@ export class AvailableStockSummaryExportProcessor {
         : [];
 
       const nameParts: string[] = [];
-      if (whIds.length > 0) {
+      if (!excludeWarehouses && whIds.length > 0) {
         const warehouses = await prisma.warehouse.findMany({
           where: { id: { in: whIds } },
           select: { name: true },
@@ -170,7 +172,9 @@ export class AvailableStockSummaryExportProcessor {
       const locationName =
         nameParts.length > 0
           ? nameParts.join(' | ')
-          : 'All Warehouses & Locations';
+          : excludeWarehouses
+            ? 'All Outlets'
+            : 'All Warehouses & Locations';
 
       const targetDateStr =
         asOfParam || dateParam || endStr || new Date().toISOString();
@@ -178,13 +182,15 @@ export class AvailableStockSummaryExportProcessor {
 
       await job.progress(25);
 
+      const effectiveIncludeCosting = excludeWarehouses ? false : !!includeCosting;
+
       // Generate structured data using our service core method
       const { root, grandTotals, flatItems } =
         await this.availableStockSummaryService.generateAvailableStockSummaryReportDataInternal(
           prisma,
           {
             locationId,
-            warehouseId,
+            warehouseId: excludeWarehouses ? undefined : warehouseId,
             asOfDate: targetDateStr,
             startDate: startStr,
             endDate: endStr,
@@ -196,6 +202,7 @@ export class AvailableStockSummaryExportProcessor {
             showSilhouette,
             showArticle,
             showVariant,
+            excludeWarehouses,
           },
         );
 
@@ -209,7 +216,7 @@ export class AvailableStockSummaryExportProcessor {
           dateFormattedStr,
           grandTotals,
           !!summaryOnly,
-          !!includeCosting,
+          effectiveIncludeCosting,
         );
 
         const launchArgs =
@@ -275,14 +282,14 @@ export class AvailableStockSummaryExportProcessor {
             filePath,
             root,
             grandTotals,
-            !!includeCosting,
+            effectiveIncludeCosting,
           );
         } else {
           await this.writeFlatWorkbook(
             filePath,
             flatItems || [],
             grandTotals,
-            !!includeCosting,
+            effectiveIncludeCosting,
           );
         }
       }

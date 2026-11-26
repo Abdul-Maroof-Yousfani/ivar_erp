@@ -1891,7 +1891,7 @@ export class PosSalesService implements OnModuleInit {
       include: includeRelations,
     });
 
-    // 2. If no exact match found, fall back to contains / partial matching
+    // 2. If no exact match found, fall back to contains / partial matching on order/reference numbers
     if (rawOrders.length === 0) {
       const fuzzyOr: Prisma.SalesOrderWhereInput[] = [
         {
@@ -1906,11 +1906,7 @@ export class PosSalesService implements OnModuleInit {
             mode: 'insensitive',
           },
         },
-        { notes: { contains: cleanSearch, mode: 'insensitive' } },
       ];
-      if (strippedHash && strippedHash !== cleanSearch) {
-        fuzzyOr.push({ notes: { contains: strippedHash, mode: 'insensitive' } });
-      }
 
       rawOrders = await this.prisma.salesOrder.findMany({
         where: {

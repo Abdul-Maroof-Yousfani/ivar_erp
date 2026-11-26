@@ -32,8 +32,8 @@ function findFirstAccessibleRoute(
             if (item.environment && item.environment !== env) continue;
 
             if (item.href) {
-                // No permissions required, or user has at least one
-                if (!item.permissions?.length || hasAnyPermission(item.permissions)) {
+                // Only match leaves with explicit permissions that the user satisfies
+                if (item.permissions?.length && hasAnyPermission(item.permissions)) {
                     return item.href;
                 }
             }

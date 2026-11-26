@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Query, Param, Req, Res, UseGuards, Body } from '@nestjs/common';
+import { Controller, Get, Post, Query, Param, Req, Res, UseGuards, Body, ForbiddenException } from '@nestjs/common';
 import { StockLedgerService } from './stock-ledger.service';
 import { StockActivityExportService } from './stock-activity-export.service';
 import { StockValuationExportService } from './stock-valuation-export.service';
@@ -383,9 +383,36 @@ export class StockLedgerController {
     }
   }
 
+  private resolveAvailableStockAccess(req: any): { excludeWarehouses: boolean } {
+    const perms: string[] = Array.isArray(req?.user?.permissions) ? req.user.permissions : [];
+    const hasFullAccess =
+      perms.includes('*') ||
+      perms.includes('erp.report.view') ||
+      perms.includes('erp.report.available-stock-summary') ||
+      perms.includes('erp.inventory.view') ||
+      perms.includes('erp.inventory.warehouse.view') ||
+      perms.includes('erp.dashboard.inventory.view');
+
+    if (hasFullAccess) {
+      return { excludeWarehouses: false };
+    }
+
+    const hasOutletAccess =
+      perms.includes('erp.report.pos-available-stock-summary') ||
+      perms.includes('pos.report.view') ||
+      perms.includes('pos:*');
+
+    if (hasOutletAccess) {
+      return { excludeWarehouses: true };
+    }
+
+    throw new ForbiddenException('Missing required permission to view Available Stock Summary');
+  }
+
   @Get(['available-stock-summary', 'available-stock-summary-report'])
   @UseGuards(JwtAuthGuard)
   async getAvailableStockSummaryReport(
+    @Req() req: any,
     @Query('locationId') locationId?: string,
     @Query('warehouseId') warehouseId?: string,
     @Query('asOfDate') asOfDate?: string,
@@ -401,9 +428,10 @@ export class StockLedgerController {
     @Query('showArticle') showArticle?: string,
     @Query('showVariant') showVariant?: string,
   ) {
+    const { excludeWarehouses } = this.resolveAvailableStockAccess(req);
     const data = await this.availableStockSummaryExportService.getAvailableStockSummaryReportData({
       locationId,
-      warehouseId,
+      warehouseId: excludeWarehouses ? undefined : warehouseId,
       asOfDate,
       date,
       startDate,
@@ -416,6 +444,7 @@ export class StockLedgerController {
       showSilhouette: showSilhouette !== undefined ? showSilhouette === 'true' : undefined,
       showArticle: showArticle !== undefined ? showArticle === 'true' : undefined,
       showVariant: showVariant !== undefined ? showVariant === 'true' : undefined,
+      excludeWarehouses,
     });
     return { status: true, data };
   }
@@ -444,11 +473,12 @@ export class StockLedgerController {
       includeCosting?: boolean;
     },
   ) {
+    const { excludeWarehouses } = this.resolveAvailableStockAccess(req);
     const userId = req.user?.id || req.user?.userId;
     const result = await this.availableStockSummaryExportService.queueExport({
       userId,
       locationId: body.locationId,
-      warehouseId: body.warehouseId,
+      warehouseId: excludeWarehouses ? undefined : body.warehouseId,
       asOfDate: body.asOfDate,
       date: body.date,
       startDate: body.startDate,
@@ -463,7 +493,8 @@ export class StockLedgerController {
       showSilhouette: body.showSilhouette,
       showArticle: body.showArticle,
       showVariant: body.showVariant,
-      includeCosting: body.includeCosting,
+      includeCosting: excludeWarehouses ? false : body.includeCosting,
+      excludeWarehouses,
     });
     return { status: true, data: result };
   }
@@ -679,14 +710,21 @@ export class StockLedgerController {
   @Get('available-stock-summary/export-by-location')
   @UseGuards(JwtAuthGuard)
   async exportStockByLocation(
+    @Req() req: any,
     @Query('locationId') locationId?: string,
     @Query('warehouseId') warehouseId?: string,
     @Query('asOfDate') asOfDate?: string,
     @Res() res?: any,
   ) {
     try {
+      const { excludeWarehouses } = this.resolveAvailableStockAccess(req);
       await this.availableStockByLocationExportService.streamExcelByLocation(
-        { locationId, warehouseId, asOfDate },
+        {
+          locationId,
+          warehouseId: excludeWarehouses ? undefined : warehouseId,
+          asOfDate,
+          excludeWarehouses,
+        },
         res,
       );
     } catch (err: any) {
